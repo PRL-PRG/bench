@@ -1,6 +1,26 @@
-from benchr import *
+#!/usr/bin/env -S uv run --script --quiet
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["benchr"]
+#
+# [tool.uv.sources]
+# benchr = { path = "..", editable = true }
+# ///
+"""Multi-suite R benchmark configuration.
 
-INPUTS = Path(__file__).resolve() / "inputs"
+Demonstrates:
+- Five suites sharing a common locale environment.
+- Mixing static and dynamic working directories.
+- ``Rebench`` processor over many benchmark families.
+"""
+
+from dataclasses import dataclass
+
+from benchr import B, P, Path, run, suite
+
+
+HERE = Path(__file__).resolve().parent
+INPUTS = HERE / "inputs"
 BENCHMARKS = INPUTS / "Benchmarks"
 
 
@@ -19,119 +39,99 @@ LOCALE = {
     "LC_IDENTIFICATION": "C",
 }
 
-AreWeFast = suite(
-    name="areWeFast",
-    working_directory=BENCHMARKS / "areWeFast",
-    benchmarks=[
-        B("Mandelbrot", 500),
-        B("Bounce", 35),
-        B("Bounce_nonames", 35),
-        B("Bounce_nonames_simple", 35),
-        B("Storage", 100),
-    ],
-    parser=RebenchParser(),
-    command=lambda parameters, benchmark: [
-        str(Path(parameters.Rpath) / "bin" / "Rscript"),
-        "harness.r",
-        benchmark.name,
-        str(parameters.iterations),
-        str(benchmark.data),
-    ],
-)
 
-Shootout = suite(
-    name="shootout",
-    benchmarks=[
-        B("binarytrees", "binarytrees", 9),
-        B("fannkuchredux", "fannkuch", 9),
-        B("fasta", "fasta", 60000),
-        B("fastaredux", "fastaredux", 80000),
-        B("knucleotide", "knucleotide", 2000),
-        B("mandelbrot_ascii", "mandelbrot", 300),
-        B("mandelbrot_naive_ascii", "mandelbrot", 200),
-        B("nbody", "nbody", 25000),
-        B("nbody_naive", "nbody", 20000),
-        B("pidigits", "pidigits", 30),
-        B("regexdna", "regexdna", 500000),
-        B("reversecomplement", "reversecomplement", 150000),
-        B("spectralnorm", "spectralnorm", 1200),
-        B("spectralnorm_math", "spectralnorm", 1200),
-    ],
-    parser=RebenchParser(),
-    working_directory=lambda parameters, benchmark: (
-        BENCHMARKS / "shootout" / benchmark.data[0]
-    ),
-    command=lambda parameters, benchmark: [
-        str(Path(parameters.Rpath) / "bin" / "Rscript"),
-        "harness.r",
-        benchmark.name,
-        str(parameters.iterations),
-        str(benchmark.data[1]),
-    ],
+@dataclass
+class RParams:
+    Rpath: Path                        # required: path to R install
+    iterations: int = 15               # optional
+
+
+def _rscript(ctx: RParams) -> str:
+    return str(ctx.Rpath / "bin" / "Rscript")
+
+
+# ----------------------------------------------------------------------
+# Suites
+# ----------------------------------------------------------------------
+
+areWeFast = (
+    suite("areWeFast")
+    .add(B("Mandelbrot", size=500))
+    .add(B("Bounce", size=35))
+    .add(B("Bounce_nonames", size=35))
+    .add(B("Bounce_nonames_simple", size=35))
+    .add(B("Storage", size=100))
+    .with_cwd(BENCHMARKS / "areWeFast")
+    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
+    .with_process(P.rebench())
 )
 
 
-RealThing = suite(
-    name="RealThing",
-    working_directory=BENCHMARKS / "RealThing",
-    benchmarks=[
-        B("convolution", 500),
-        B("convolution_slow", 1500),
-        B("volcano", 1),
-        B("flexclust", 5),
-    ],
-    parser=RebenchParser(),
-    command=lambda parameters, benchmark: [
-        str(Path(parameters.Rpath) / "bin" / "Rscript"),
-        "harness.r",
-        benchmark.name,
-        str(parameters.iterations),
-        str(benchmark.data),
-    ],
+# Shootout: each benchmark has its own subfolder, derived from a data attr.
+def _shootout(name: str, subfolder: str, arg: int):
+    return B(name, subfolder=subfolder, arg=arg)
+
+
+shootout = (
+    suite("shootout")
+    .add(_shootout("binarytrees",            "binarytrees",      9))
+    .add(_shootout("fannkuchredux",          "fannkuch",         9))
+    .add(_shootout("fasta",                  "fasta",            60000))
+    .add(_shootout("fastaredux",             "fastaredux",       80000))
+    .add(_shootout("knucleotide",            "knucleotide",      2000))
+    .add(_shootout("mandelbrot_ascii",       "mandelbrot",       300))
+    .add(_shootout("mandelbrot_naive_ascii", "mandelbrot",       200))
+    .add(_shootout("nbody",                  "nbody",            25000))
+    .add(_shootout("nbody_naive",            "nbody",            20000))
+    .add(_shootout("pidigits",               "pidigits",         30))
+    .add(_shootout("regexdna",               "regexdna",         500000))
+    .add(_shootout("reversecomplement",      "reversecomplement", 150000))
+    .add(_shootout("spectralnorm",           "spectralnorm",     1200))
+    .add(_shootout("spectralnorm_math",      "spectralnorm",     1200))
+    .with_cwd(lambda b, ctx: BENCHMARKS / "shootout" / b.subfolder)
+    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.arg)])
+    .with_process(P.rebench())
 )
 
 
-Kaggles = suite(
-    name="kaggle",
-    benchmarks=[
-        "basic-analysis",
-        "bolt-driver",
-        "london-airbnb",
-        "placement",
-        "titanic",
-    ],
-    parser=RebenchParser(),
-    working_directory=lambda parameters, benchmark: INPUTS / "kaggle" / benchmark.name,
-    command=lambda parameters, benchmark: [
-        str(Path(parameters.Rpath) / "bin" / "Rscript"),
-        "../../harness.r",
-        benchmark.name,
-        str(parameters.iterations),
-    ],
+realThing = (
+    suite("RealThing")
+    .add(B("convolution", size=500))
+    .add(B("convolution_slow", size=1500))
+    .add(B("volcano", size=1))
+    .add(B("flexclust", size=5))
+    .with_cwd(BENCHMARKS / "RealThing")
+    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
+    .with_process(P.rebench())
 )
 
 
-Recommenderlab = suite(
-    name="recommenderlab",
-    benchmarks=["recommenderlab"],
-    working_directory=INPUTS / "recommenderlab",
-    parser=RebenchParser(),
-    command=lambda parameters, benchmark: [
-        str(Path(parameters.Rpath) / "bin" / "Rscript"),
-        "runner.r",
-    ],
+kaggle = (
+    suite("kaggle")
+    .add(B("basic-analysis"))
+    .add(B("bolt-driver"))
+    .add(B("london-airbnb"))
+    .add(B("placement"))
+    .add(B("titanic"))
+    .with_cwd(lambda b, ctx: INPUTS / "kaggle" / b.name)
+    .with_command(lambda b, ctx: [_rscript(ctx), "../../harness.r", b.name, str(ctx.iterations)])
+    .with_process(P.rebench())
 )
 
 
-conf = Config(
-    [
-        AreWeFast,
-        Shootout,
-        RealThing,
-        Kaggles,
-        Recommenderlab,
-    ]
-).env(LOCALE)
+recommenderlab = (
+    suite("recommenderlab")
+    .add(B("recommenderlab"))
+    .with_cwd(INPUTS / "recommenderlab")
+    .with_command(lambda b, ctx: [_rscript(ctx), "runner.r"])
+    .with_process(P.rebench())
+)
+
+
+SUITES = [areWeFast, shootout, realThing, kaggle, recommenderlab]
+# Apply the locale env to every benchmark.
+SUITES = [s.with_env(LOCALE) for s in SUITES]
+
 
 if __name__ == "__main__":
-    main(conf, ["Rpath"], {"iterations": 15})
+    run(SUITES, params=RParams)
