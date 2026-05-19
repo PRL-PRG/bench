@@ -1,3 +1,4 @@
+from __future__ import annotations
 import argparse
 import dataclasses
 import re
@@ -5,10 +6,10 @@ import resource
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Optional, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence
 
 if TYPE_CHECKING:
-    from benchr._parsers import ResultParser
+    from benchr.parsers import ResultParser
 
 
 def const[T](x: T) -> Callable[..., T]:
@@ -185,7 +186,7 @@ class Benchmark:
         *paths: Path,
         recursive: bool = True,
         pattern: str | None = None,
-    ) -> list["Benchmark"]:
+    ) -> list[Benchmark]:
         """
         Create benchmarks from files and/or directories.
 
@@ -199,7 +200,7 @@ class Benchmark:
         (``re.search``); only matching files are included.
         """
         compiled = re.compile(pattern) if pattern is not None else None
-        res: list["Benchmark"] = []
+        res: list[Benchmark] = []
         for p in paths:
             if p.is_dir():
                 if recursive:

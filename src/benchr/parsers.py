@@ -6,13 +6,13 @@ import sys
 from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Literal, Optional
 
-from benchr._types import (
+from benchr.types import (
     ProcessResult,
     SuccessfulProcessResult,
     FailedProcessResult,
     Execution,
 )
-from benchr._results import Measurement, ExecutionResult
+from benchr.results import Measurement, ExecutionResult
 
 
 class ResultParser(abc.ABC):

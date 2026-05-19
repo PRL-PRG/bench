@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Optional, Sequence, TYPE_CHECKING
 
-from benchr._types import const, Env, Command, Parameters, Execution, Benchmark
+from benchr.types import const, Env, Command, Parameters, Execution, Benchmark
 
 if TYPE_CHECKING:
-    from benchr._parsers import ResultParser
+    from benchr.parsers import ResultParser
 
 
 class BenchmarkCollection[This](abc.ABC):

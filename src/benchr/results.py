@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from benchr._types import Execution
+from benchr.types import Execution
 
 
 @dataclass
@@ -176,7 +176,7 @@ def _dict_to_execution_result(d: dict) -> ExecutionResult:
 _META_METRICS = {"failed"}
 
 
-def _extract_unique_names(paths: list[Path]) -> list[str]:
+def extract_unique_names(paths: list[Path]) -> list[str]:
     """
     Extract short, unique display names from a list of file paths.
     Strips extension and any common path prefix/suffix components.
@@ -209,7 +209,7 @@ MetricKey = tuple[str, str]  # (metric_name, unit)
 # with the same logical info compare equal regardless of the original
 # insertion order in `Execution.info`. The tuple form is required because
 # this value is used as a dict key when grouping/indexing variants for
-# summary and comparison (see `_group_execution_result`, `compare_and_print`).
+# summary and comparison (see `group_execution_result`, `compare_and_print`).
 VariantInfo = tuple[tuple[str, str], ...]
 
 
@@ -259,7 +259,7 @@ class GroupedResult:
     lower_is_better: dict[MetricKey, bool]
 
 
-def _group_execution_result(result: ExecutionResult, name: str) -> GroupedResult:
+def group_execution_result(result: ExecutionResult, name: str) -> GroupedResult:
     """
     Reshape an ExecutionResult into a GroupedResult for comparison/summary.
 
@@ -325,7 +325,7 @@ def _group_execution_result(result: ExecutionResult, name: str) -> GroupedResult
 BenchmarkId = tuple[str, str, VariantInfo]
 
 
-def _scale_unit(mean_val: float, unit: str) -> tuple[float, str]:
+def scale_unit(mean_val: float, unit: str) -> tuple[float, str]:
     """Choose a human-friendly scale and unit suffix."""
     abs_val = abs(mean_val)
     if unit == "s":
@@ -541,7 +541,7 @@ def _compute_all_ratios(
     return result
 
 
-def _geomean_with_sigma(mrs: list[MetricRatio]) -> tuple[float, float]:
+def geomean_with_sigma(mrs: list[MetricRatio]) -> tuple[float, float]:
     """Compute geometric mean of display_ratios and propagated sigma error."""
     N = len(mrs)
     geo = math.exp(statistics.mean(math.log(mr.display_ratio) for mr in mrs))
@@ -581,7 +581,7 @@ def _compute_geomean_ratios(
             if any(mr.display_ratio <= 0 for mr in mrs):
                 continue
 
-            geo, sigma = _geomean_with_sigma(mrs)
+            geo, sigma = geomean_with_sigma(mrs)
 
             run_counts = set()
             for bid in bids:
@@ -632,7 +632,7 @@ def build_summary_data(
     baseline_paths: list[Path],
 ) -> SummaryData:
     """Build pre-computed summary statistics from a run and optional baselines."""
-    current_grouped = _group_execution_result(result, name="current")
+    current_grouped = group_execution_result(result, name="current")
     current_stats = [
         _compute_group_stats(g, current_grouped.lower_is_better)
         for g in current_grouped.benchmarks
@@ -648,9 +648,9 @@ def build_summary_data(
             geomeans={},
         )
 
-    names = _extract_unique_names(baseline_paths)
+    names = extract_unique_names(baseline_paths)
     loaded = [execution_result_from_json(p.read_text()) for p in baseline_paths]
-    grouped = [_group_execution_result(r, n) for r, n in zip(loaded, names)]
+    grouped = [group_execution_result(r, n) for r, n in zip(loaded, names)]
 
     the_baseline = grouped[0]
     comparees = grouped[1:] + [current_grouped]

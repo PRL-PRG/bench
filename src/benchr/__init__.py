@@ -1,6 +1,6 @@
 """benchr -- a lightweight Python benchmarking framework."""
 
-from benchr._types import (
+from benchr.types import (
     const,
     Env,
     Command,
@@ -11,7 +11,7 @@ from benchr._types import (
     Execution,
     Benchmark,
 )
-from benchr._suites import (
+from benchr.suites import (
     BenchmarkCollection,
     Suite,
     BaseSuite,
@@ -23,7 +23,7 @@ from benchr._suites import (
     TimeoutSuite,
     Config,
 )
-from benchr._results import (
+from benchr.results import (
     Measurement,
     ExecutionResult,
     execution_result_to_json,
@@ -41,8 +41,12 @@ from benchr._results import (
     SummaryData,
     build_summary_data,
     build_summary_data_from_grouped,
+    scale_unit,
+    geomean_with_sigma,
+    group_execution_result,
+    extract_unique_names,
 )
-from benchr._parsers import (
+from benchr.parsers import (
     ResultParser,
     MixedResultParser,
     PlainFloatParser,
@@ -56,7 +60,7 @@ from benchr._parsers import (
     IgnoreFailParserDecorator,
     DirectionParserDecorator,
 )
-from benchr._output import (
+from benchr.output import (
     console,
     err_console,
     Reporter,
@@ -126,6 +130,10 @@ __all__ = [
     "SummaryData",
     "build_summary_data",
     "build_summary_data_from_grouped",
+    "scale_unit",
+    "geomean_with_sigma",
+    "group_execution_result",
+    "extract_unique_names",
     # Parsers
     "ResultParser",
     "MixedResultParser",

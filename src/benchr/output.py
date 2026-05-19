@@ -17,10 +17,17 @@ from threading import Lock
 from typing import Any, Callable, Optional
 
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TimeElapsedColumn,
+    SpinnerColumn,
+    TextColumn,
+)
 from rich.table import Table
 from rich.theme import Theme
 
-from benchr._types import (
+from benchr.types import (
     const,
     Env,
     Command,
@@ -30,8 +37,8 @@ from benchr._types import (
     FailedProcessResult,
     Execution,
 )
-from benchr._suites import Config
-from benchr._results import (
+from benchr.suites import Config
+from benchr.results import (
     Measurement,
     ExecutionResult,
     execution_result_to_json,
@@ -49,30 +56,46 @@ from benchr._results import (
     SummaryData,
     build_summary_data,
     build_summary_data_from_grouped,
-    _scale_unit,
-    _geomean_with_sigma,
+    scale_unit,
+    geomean_with_sigma,
 )
-from benchr._parsers import ResultParser
+from benchr.parsers import ResultParser
 
 
 # Centralized style definitions — change colors in one place
-BENCHR_THEME = Theme({
-    "benchr.success": "green",
-    "benchr.failure": "red",
-    "benchr.metric": "cyan",
-    "benchr.value": "green bold",
-    "benchr.min": "cyan",
-    "benchr.max": "magenta",
-    "benchr.name": "magenta",
-    "benchr.label": "bold",
-    "benchr.better": "green bold",
-    "benchr.worse": "red bold",
-    "benchr.progress": "blue bold",
-    "benchr.in_process": "magenta bold",
-})
+BENCHR_THEME = Theme(
+    {
+        "benchr.success": "green",
+        "benchr.failure": "red",
+        "benchr.metric": "cyan",
+        "benchr.value": "green bold",
+        "benchr.min": "cyan",
+        "benchr.max": "magenta",
+        "benchr.name": "magenta",
+        "benchr.label": "bold",
+        "benchr.better": "green bold",
+        "benchr.worse": "red bold",
+        "benchr.progress": "blue bold",
+        "benchr.in_process": "magenta bold",
+    }
+)
 
 console = Console(theme=BENCHR_THEME, highlight=False)
 err_console = Console(theme=BENCHR_THEME, highlight=False, stderr=True)
+
+
+def _make_progress() -> Progress:
+    return Progress(
+        SpinnerColumn(),
+        TimeElapsedColumn(),
+        BarColumn(),
+        TextColumn(
+            "({task.fields[failures]}/{task.fields[successes]}/{task.total:.0f})"
+        ),
+        TextColumn("{task.description}"),
+        console=console,
+        transient=True,
+    )
 
 
 class Reporter(abc.ABC):
@@ -169,7 +192,9 @@ class CsvReporter(Reporter):
             for col in self._info_cols:
                 row.append(measure.execution.info.get(col, ""))
 
-            lib_str = "" if measure.lower_is_better is None else str(measure.lower_is_better)
+            lib_str = (
+                "" if measure.lower_is_better is None else str(measure.lower_is_better)
+            )
             row += [lib_str, measure.metric, str(measure.value), measure.unit]
 
             self._writer.writerow(row)
@@ -225,7 +250,11 @@ class TableReporter(Reporter):
         def lib_str(m: Measurement) -> str:
             return "" if m.lower_is_better is None else str(m.lower_is_better)
 
-        headers = ["benchmark", "suite", "run"] + info_cols + ["lower_is_better", "metric", "value", "unit"]
+        headers = (
+            ["benchmark", "suite", "run"]
+            + info_cols
+            + ["lower_is_better", "metric", "value", "unit"]
+        )
         rows = []
         for m in result.measurements:
             row = [
@@ -265,6 +294,12 @@ class SummaryFormatter(abc.ABC):
 class DefaultSummaryFormatter(SummaryFormatter):
     """Reproduces the original SummaryReporter + compare_and_print output."""
 
+    def __init__(self, metrics: set[str] | None = None) -> None:
+        self.metrics = metrics
+
+    def _include_metric(self, mk: MetricKey) -> bool:
+        return self.metrics is None or mk[0] in self.metrics
+
     def format(self, data: SummaryData) -> str:
         lines: list[str] = []
         if data.groups:
@@ -277,8 +312,7 @@ class DefaultSummaryFormatter(SummaryFormatter):
             self._format_comparison(data, lines)
         return "\n".join(lines)
 
-    @staticmethod
-    def _format_group(gs: GroupStats, lines: list[str]) -> None:
+    def _format_group(self, gs: GroupStats, lines: list[str]) -> None:
         name = f"{gs.suite}/{gs.benchmark}"
         if gs.info:
             info_str = ", ".join(f"{k}={v}" for k, v in gs.info)
@@ -296,14 +330,20 @@ class DefaultSummaryFormatter(SummaryFormatter):
 
         scaled_info: dict[MetricKey, tuple[float, str]] = {}
         for mk, ms in gs.metrics.items():
-            scaled_info[mk] = _scale_unit(ms.mean, ms.unit)
+            if not self._include_metric(mk):
+                continue
+            scaled_info[mk] = scale_unit(ms.mean, ms.unit)
+
+        if not scaled_info:
+            return
 
         multi_run = total_runs > 1
         suffix = " (mean \u00b1 \u03c3):" if multi_run else ":"
-        labels = {mk: f"{mk[0]} \\[{scaled_info[mk][1]}]{suffix}" for mk in gs.metrics}
+        labels = {mk: f"{mk[0]} \\[{scaled_info[mk][1]}]{suffix}" for mk in scaled_info}
         max_label_w = max(len(l) for l in labels.values())
 
-        for mk, ms in gs.metrics.items():
+        for mk, ms in scaled_info.items():
+            ms = gs.metrics[mk]
             label = labels[mk].ljust(max_label_w)
             scale, _ = scaled_info[mk]
             mean_val = ms.mean * scale
@@ -319,20 +359,15 @@ class DefaultSummaryFormatter(SummaryFormatter):
                     f" \u2026 [benchr.max]{max_val:.2f}[/])"
                 )
             else:
-                lines.append(
-                    f"  {label}  [benchr.value]{mean_val:.2f}[/]"
-                )
+                lines.append(f"  {label}  [benchr.value]{mean_val:.2f}[/]")
 
-    @staticmethod
-    def _format_comparison(data: SummaryData, lines: list[str]) -> None:
+    def _format_comparison(self, data: SummaryData, lines: list[str]) -> None:
         assert data.baseline is not None
         baseline = data.baseline
 
         def format_runs(name: str, rc: BenchmarkRunCounts) -> str:
             f_s = (
-                f"[benchr.failure]{rc.failures}[/]"
-                if rc.failures
-                else str(rc.failures)
+                f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
             )
             s_s = f"[benchr.success]{rc.successes}[/]"
             return f"{name}: {f_s} failed / {s_s} succeeded"
@@ -400,7 +435,7 @@ class DefaultSummaryFormatter(SummaryFormatter):
             for cname, comp_g in present:
                 lines.append(f"    {format_runs(cname, comp_g.run_counts)}")
             for mk in bl_group.metrics:
-                if mk not in all_lib:
+                if mk not in all_lib or not self._include_metric(mk):
                     continue
                 metric_printed = False
                 for cname, _ in present:
@@ -459,7 +494,7 @@ class DefaultSummaryFormatter(SummaryFormatter):
                         suite_metric_keys.append(mk)
 
             for mk in suite_metric_keys:
-                if mk not in all_lib:
+                if mk not in all_lib or not self._include_metric(mk):
                     continue
                 metric_printed = False
                 for cname in data.comparee_names:
@@ -487,12 +522,13 @@ class CompactFormatter(SummaryFormatter):
 
     def __init__(
         self,
-        metric: str,
+        metric: "str | list[str]",
         suite: Optional[str] = None,
         baseline_name: Optional[str] = None,
         precision: int = 2,
     ) -> None:
-        self._metric = metric
+        self._metrics = [metric] if isinstance(metric, str) else list(metric)
+        self._metrics_set = set(self._metrics)
         self._suite = suite
         self._baseline_name = baseline_name
         self._precision = precision
@@ -515,70 +551,86 @@ class CompactFormatter(SummaryFormatter):
 
         bench_ratios = data.ratios[cname]
 
-        # Collect entries for the target metric
+        # Collect entries for any of the target metrics
         entries: list[tuple[str, MetricRatio]] = []
-        target_mk: Optional[MetricKey] = None
+        matched_mks: set[MetricKey] = set()
         for bid, metrics in bench_ratios.items():
             if self._suite is not None and bid[0] != self._suite:
                 continue
             for mk, mr in metrics.items():
-                if mk[0] == self._metric:
+                if mk[0] in self._metrics_set:
                     entries.append((bid[1], mr))
-                    target_mk = mk
+                    matched_mks.add(mk)
                     break
 
-        if not entries or target_mk is None:
-            return f"No data for metric {self._metric!r}"
+        if not entries:
+            return f"No data for metric(s) {', '.join(self._metrics)!r}"
 
         # Compute geo-mean: use pre-computed per-suite or pool across suites
         gmr: Optional[GeoMeanRatio] = None
-        if self._suite:
+        gmr_error: Optional[str] = None
+        if self._suite and len(matched_mks) == 1:
+            target_mk = next(iter(matched_mks))
             gmr = data.geomeans.get(self._suite, {}).get(cname, {}).get(target_mk)
         else:
-            # Pool across all suites
+            # Pool across all suites / metrics
             all_mrs = [mr for _, mr in entries]
             if all_mrs and all(mr.display_ratio > 0 for mr in all_mrs):
-                geo, sigma = _geomean_with_sigma(all_mrs)
+                geo, sigma = geomean_with_sigma(all_mrs)
 
                 runs = set()
                 for gs in data.groups:
                     bid_gs: BenchmarkId = (gs.suite, gs.benchmark, gs.info)
-                    if bid_gs in bench_ratios and target_mk in bench_ratios[bid_gs]:
-                        runs.add(gs.run_counts.successes)
+                    if bid_gs in bench_ratios:
+                        for mk in matched_mks:
+                            if mk in bench_ratios[bid_gs]:
+                                runs.add(gs.run_counts.successes)
+                                break
                 # Fallback: check comparee GroupedResults if groups is empty
                 if not runs:
                     idx = data.comparee_names.index(cname)
                     comp_gr = data.comparees[idx]
                     for g in comp_gr.benchmarks:
                         bid_g: BenchmarkId = (g.suite, g.benchmark, g.info)
-                        if bid_g in bench_ratios and target_mk in bench_ratios[bid_g]:
-                            runs.add(g.run_counts.successes)
+                        if bid_g in bench_ratios:
+                            for mk in matched_mks:
+                                if mk in bench_ratios[bid_g]:
+                                    runs.add(g.run_counts.successes)
+                                    break
 
                 if len(runs) != 1:
                     raise ValueError(
-                        f"Inconsistent run counts for metric {self._metric!r}: {runs}"
+                        f"Inconsistent run counts for metric(s)"
+                        f" {', '.join(self._metrics)!r}: {runs}"
                     )
 
+                first_mr = all_mrs[0]
                 gmr = GeoMeanRatio(
-                    metric=target_mk[0],
-                    unit=target_mk[1],
-                    lower_is_better=all_mrs[0].lower_is_better,
+                    metric=first_mr.metric,
+                    unit=first_mr.unit,
+                    lower_is_better=first_mr.lower_is_better,
                     display_ratio=geo,
                     sigma=sigma,
                     n_benchmarks=len(all_mrs),
                     runs_per_benchmark=runs.pop(),
                 )
+            elif all_mrs:
+                gmr_error = "[red]geomean: skipped (negative values)[/]"
 
         p = self._precision
         lines: list[str] = []
 
         if gmr is not None:
+            label = "speedup" if len(matched_mks) == 1 else "improvement"
             lines.append(
-                f"geometric mean speedup vs baseline:"
+                f"geometric mean {label} vs baseline:"
                 f" {gmr.display_ratio:.{p}f}"
                 f" \u00b1 {gmr.sigma:.{p}f}"
                 f" ({gmr.runs_per_benchmark} runs)"
             )
+            lines.append("")
+        elif gmr_error is not None:
+            lines.append(gmr_error)
             lines.append("")
 
         for name, mr in sorted(entries, key=lambda e: e[0]):
@@ -588,40 +640,65 @@ class CompactFormatter(SummaryFormatter):
 
     def _format_no_baseline(self, data: SummaryData) -> str:
         """Fallback: mean +/- sigma per benchmark when no baseline."""
-        entries: list[tuple[str, MetricStats]] = []
-        target_unit = ""
+        # Group entries by metric name for proper unit scaling
+        by_metric: dict[str, list[tuple[str, MetricStats]]] = {}
         for gs in data.groups:
             if self._suite is not None and gs.suite != self._suite:
                 continue
             for mk, ms in gs.metrics.items():
-                if mk[0] == self._metric:
-                    entries.append((gs.benchmark, ms))
-                    target_unit = ms.unit
+                if mk[0] in self._metrics_set:
+                    by_metric.setdefault(mk[0], []).append((gs.benchmark, ms))
                     break
-        if not entries:
-            return f"No data for metric {self._metric!r}"
-
-        n = entries[0][1].n
-        run_word = "run" if n == 1 else "runs"
-
-        all_means = [ms.mean for _, ms in entries]
-        avg_mean = statistics.mean(all_means) if all_means else 0
-        scale, scaled_unit = _scale_unit(avg_mean, target_unit)
+        if not by_metric:
+            return f"No data for metric(s) {', '.join(self._metrics)!r}"
 
         p = self._precision
         lines: list[str] = []
-        lines.append(f"{self._metric} (mean \u00b1 \u03c3, {n} {run_word}):")
-        lines.append("")
 
-        for name, ms in sorted(entries, key=lambda e: e[0]):
-            mean_val = ms.mean * scale
-            if ms.n >= 2:
-                std_val = ms.stdev * scale
-                lines.append(
-                    f"{name}: {mean_val:.{p}f} \u00b1 {std_val:.{p}f} {scaled_unit}"
-                )
-            else:
-                lines.append(f"{name}: {mean_val:.{p}f} {scaled_unit}")
+        for metric_name in self._metrics:
+            entries = by_metric.get(metric_name)
+            if not entries:
+                continue
+
+            n = entries[0][1].n
+            run_word = "run" if n == 1 else "runs"
+
+            all_means = [ms.mean for _, ms in entries]
+            avg_mean = statistics.mean(all_means) if all_means else 0
+            target_unit = entries[0][1].unit
+            sc, scaled_unit = scale_unit(avg_mean, target_unit)
+
+            if lines:
+                lines.append("")
+            lines.append(f"{metric_name} (mean \u00b1 \u03c3, {n} {run_word}):")
+            lines.append("")
+
+            for name, ms in sorted(entries, key=lambda e: e[0]):
+                mean_val = ms.mean * sc
+                if ms.n >= 2:
+                    std_val = ms.stdev * sc
+                    lines.append(
+                        f"{name}: {mean_val:.{p}f} \u00b1 {std_val:.{p}f} {scaled_unit}"
+                    )
+                else:
+                    lines.append(f"{name}: {mean_val:.{p}f} {scaled_unit}")
+
+            # Geometric mean across benchmarks for this metric
+            if len(entries) > 1:
+                if all(ms.mean > 0 for _, ms in entries):
+                    log_means = [math.log(ms.mean) for _, ms in entries]
+                    geo = math.exp(statistics.mean(log_means)) * sc
+                    if n >= 2:
+                        rel_errs_sq = [(ms.stdev / ms.mean) ** 2 for _, ms in entries]
+                        sigma_log = math.sqrt(sum(rel_errs_sq)) / len(entries)
+                        geo_sigma = geo * sigma_log
+                        lines.append(
+                            f"geomean: {geo:.{p}f} \u00b1 {geo_sigma:.{p}f} {scaled_unit}"
+                        )
+                    else:
+                        lines.append(f"geomean: {geo:.{p}f} {scaled_unit}")
+                else:
+                    lines.append("[red]geomean: skipped (negative values)[/]")
 
         return "\n".join(lines)
 
@@ -647,17 +724,34 @@ class SummaryReporter(Reporter):
             if baseline
             else []
         )
+        self._start_time: float = 0.0
+        self._total: int = 0
+        self._failures: int = 0
 
     def set_baseline(self, paths: list[Path]) -> None:
         """Override baselines (used by ``main()`` to forward ``--compare``)."""
         self._baseline_paths = list(paths)
 
+    def start(self, executions: list[Execution]) -> None:
+        self._start_time = time.monotonic()
+        self._total = len(executions)
+
     def report(self, process_result: ProcessResult, parsed: ExecutionResult):
         self._result.measurements.extend(parsed.measurements)
+        if isinstance(process_result, FailedProcessResult):
+            self._failures += 1
 
     def finalize(self) -> None:
+        elapsed = time.monotonic() - self._start_time
+        successes = self._total - self._failures
         data = build_summary_data(self._result, self._baseline_paths)
         out = self._formatter.format(data)
+        header = (
+            f"Ran ({self._failures}/{successes}/{self._total})"
+            f" executions in {elapsed:.1f}s."
+        )
+        console.print(header)
+        console.print()
         if out:
             console.print(out)
 
@@ -727,7 +821,10 @@ class DirReporter(Reporter):
         csv_reporter.finalize()
 
 
-def compare_and_print(datasets: list[GroupedResult]):
+def compare_and_print(
+    datasets: list[GroupedResult],
+    metrics: set[str] | None = None,
+):
     """
     Compare N grouped result sets. The first dataset is the baseline; all
     subsequent datasets are compared against it.
@@ -738,7 +835,7 @@ def compare_and_print(datasets: list[GroupedResult]):
     if len(datasets) < 2:
         return
     data = build_summary_data_from_grouped(datasets)
-    out = DefaultSummaryFormatter().format(data)
+    out = DefaultSummaryFormatter(metrics=metrics).format(data)
     if out:
         console.print(out)
 
@@ -795,7 +892,15 @@ class DefaultExecutor(Executor):
     def execute_all(self, executions: list[Execution]) -> ExecutionResult:
         self.all_executions = len(executions)
         self.reporter.start(executions)
-        super().execute_all(executions)
+        self.progress = _make_progress()
+        self.progress.start()
+        self.task_id = self.progress.add_task(
+            "Running", total=self.all_executions, failures=0, successes=0
+        )
+        try:
+            Executor.execute_all(self, executions)
+        finally:
+            self.progress.stop()
         return self.result
 
     def execute(self, execution: Execution):
@@ -807,6 +912,7 @@ class DefaultExecutor(Executor):
                     reason=f"Command not found ({execution.command[0]})",
                 )
             )
+            self.progress.advance(self.task_id)
             return
 
         execution.command[0] = cmd
@@ -884,6 +990,7 @@ class DefaultExecutor(Executor):
                 )
 
             self.finalize(result)
+            self.progress.advance(self.task_id)
 
         except OSError as e:
             self.error_execution(
@@ -892,25 +999,17 @@ class DefaultExecutor(Executor):
                     reason=str(e),
                 )
             )
+            self.progress.advance(self.task_id)
         finally:
             stdout_file.close()
             stderr_file.close()
 
     def start_execution(self, execution: Execution) -> None:
-        total = (
-            f"/[benchr.progress]{self.all_executions}[/]"
-            if self.all_executions is not None
-            else ""
-        )
-        console.print(
-            f"\\[[benchr.failure]{self.failed_executions}[/]"
-            f"/[benchr.success]{self.finished_executions}[/]"
-            f"{total}] "
-            + execution.as_identifier()
-        )
+        self.progress.update(self.task_id, description=execution.as_identifier())
 
     def error_execution(self, process_result: FailedProcessResult):
         self.failed_executions += 1
+        self.progress.update(self.task_id, failures=self.failed_executions)
         lines = [
             f"[benchr.failure]Error in {process_result.execution.as_identifier()}[/]"
         ]
@@ -929,6 +1028,8 @@ class DefaultExecutor(Executor):
 
     def finalize(self, process_result: ProcessResult) -> None:
         self.finished_executions += 1
+        successes = self.finished_executions - self.failed_executions
+        self.progress.update(self.task_id, successes=successes)
         parser = process_result.execution.parser
         assert parser is not None, "finalize only called for fully-resolved executions"
         parsed = parser.parse(process_result)
@@ -953,7 +1054,6 @@ class ParallelExecutor(DefaultExecutor):
     futures: list[Future]
     lock: Lock
     in_process_runs: int
-    last_info: Optional[str]
 
     def __init__(
         self,
@@ -966,7 +1066,6 @@ class ParallelExecutor(DefaultExecutor):
         self.futures = []
         self.lock = Lock()
         self.in_process_runs = 0
-        self.last_info = None
 
     def execute(self, execution: Execution):
         future = self.pool.submit(super().execute, execution)
@@ -986,27 +1085,13 @@ class ParallelExecutor(DefaultExecutor):
         super().__exit__(*args)
         return False
 
-    def print_execution(self):
-        assert self.last_info is not None
-
-        total = (
-            f"/[benchr.progress]{self.all_executions}[/]"
-            if self.all_executions is not None
-            else ""
-        )
-        console.print(
-            f"\\[[benchr.in_process]{self.in_process_runs}[/]"
-            f"/[benchr.failure]{self.failed_executions}[/]"
-            f"/[benchr.success]{self.finished_executions}[/]"
-            f"{total}] "
-            + self.last_info
-        )
-
     def start_execution(self, execution: Execution) -> None:
         with self.lock:
             self.in_process_runs += 1
-            self.last_info = execution.as_identifier()
-            self.print_execution()
+            self.progress.update(
+                self.task_id,
+                description=f"[{self.in_process_runs} active] {execution.as_identifier()}",
+            )
 
     def error_execution(self, process_result: FailedProcessResult):
         with self.lock:
@@ -1016,7 +1101,6 @@ class ParallelExecutor(DefaultExecutor):
         with self.lock:
             self.in_process_runs -= 1
             super().finalize(process_result)
-            self.print_execution()
 
 
 class DryExecutor(Executor):
@@ -1159,15 +1243,17 @@ def main(
         else:
             if reporter is None:
                 reporters: list[Reporter] = [SummaryReporter()]
-                if ps.__output_csv:
-                    reporters.append(CsvReporter(Path(ps.__output_csv)))
-                if ps.__output_json:
-                    reporters.append(JsonReporter(Path(ps.__output_json)))
-                if ps.__output:
-                    reporters.append(DirReporter(Path(ps.__output).resolve()))
-                reporter = (
-                    reporters[0] if len(reporters) == 1 else MixedReporter(*reporters)
-                )
+            else:
+                reporters = [reporter]
+            if ps.__output_csv:
+                reporters.append(CsvReporter(Path(ps.__output_csv)))
+            if ps.__output_json:
+                reporters.append(JsonReporter(Path(ps.__output_json)))
+            if ps.__output:
+                reporters.append(DirReporter(Path(ps.__output).resolve()))
+            reporter = (
+                reporters[0] if len(reporters) == 1 else MixedReporter(*reporters)
+            )
 
             # Forward --compare baselines into every SummaryReporter
             if ps.__compare is not None:
