@@ -9,19 +9,14 @@ JSON outputs offline.
 from __future__ import annotations
 
 import argparse
-import dataclasses
-import importlib.util
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Sequence
 
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
-from benchr.grammar.policy import CoefficientOfVariation, FixedRuns, StoppingPolicy
 from benchr.grammar.processor import P
 from benchr.grammar.suite import Suite, suite
-from benchr.report.formatter import Compact, DefaultSummary, Formatter
+from benchr.report.formatter import DefaultSummary, Formatter
 from benchr.report.reporter import (
     Csv as CsvReporter,
     Dir as DirReporter,
@@ -31,8 +26,8 @@ from benchr.report.reporter import (
     Summary as SummaryReporter,
     console,
 )
-from benchr.report.sample import Report, Sample, report_from_json
-from benchr.report.stats import build_summary, group
+from benchr.report.sample import Report, report_from_json
+from benchr.report.stats import build_summary
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -60,6 +55,9 @@ def run(
     (--json/--csv/--dir) are *additional* Mixed sinks alongside.
     ``formatter`` overrides the default summary formatter (used for the
     terminal summary; defaults to ``DefaultSummary``).
+
+    Returns a Report containing every Sample emitted, for callers that want
+    to do follow-up analysis after the side-effecting reporters have run.
     """
     if isinstance(suites, Suite):
         suites = [suites]
@@ -98,11 +96,11 @@ def run(
     )
     runner = runner_cls(reporter=final_reporter)
     try:
-        runner.run(suites, ctx)
+        samples = runner.run(suites, ctx)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         sys.exit(1)
-    return Report()  # raw samples are accessible via reporters; here for API completeness
+    return Report(samples=list(samples))
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +140,7 @@ def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
 # ---------------------------------------------------------------------------
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="benchr", description="benchmark runner")
     sub = parser.add_subparsers(dest="cmd", required=True)
 

@@ -14,10 +14,10 @@ controls how many more measure runs to take). Both default to no-op:
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Generator, Iterable, Mapping, Sequence
+from typing import Any, Callable, Generator, Mapping, Sequence
 
 from benchr.grammar.execution import (
     Execution,
@@ -47,6 +47,9 @@ class Benchmark:
     a file-discovered benchmark). Access them as attributes on ``benchmark``:
     ``benchmark.path``, ``benchmark.size``. The ``__getattr__`` hook below
     forwards unknown attribute reads into ``data``.
+
+    Keys starting with ``__`` are reserved (currently only ``__info__``,
+    used by ``Suite.matrix`` to stamp variant labels onto Samples).
     """
 
     name: str
@@ -143,14 +146,14 @@ class Benchmark:
         run = 0
         while not state.converged():
             run += 1
-            samples = yield self._schedule(ctx, suite=suite, run=run, phase=phase)
+            samples = yield self.schedule(ctx, suite=suite, run=run, phase=phase)
             # samples is None if the Runner can't send (StopIteration on first
             # next()); treat as empty.
             state.observe(run, samples or ())
 
     # ----- execution materialization ----------------------------------
 
-    def _schedule(
+    def schedule(
         self,
         ctx: Any,
         *,
@@ -158,6 +161,11 @@ class Benchmark:
         run: int,
         phase: Phase,
     ) -> ScheduledExecution:
+        """Materialize one ScheduledExecution for ``(suite, run, phase)``.
+
+        Resolves dynamic command/cwd/env callables against ``ctx`` and stamps
+        any matrix info attached to the benchmark.
+        """
         cmd = self.command(self, ctx) if callable(self.command) else self.command
         cwd = self.cwd(self, ctx) if callable(self.cwd) else self.cwd
         env = self.env(self, ctx) if callable(self.env) else self.env

@@ -14,9 +14,8 @@ import abc
 import math
 import statistics
 from pathlib import Path
-from typing import Optional
 
-from benchr.report.sample import Report, Sample
+from benchr.report.sample import Report
 from benchr.report.stats import (
     BenchmarkGroup,
     BenchmarkId,
@@ -290,8 +289,8 @@ class Compact(Formatter):
         if not entries:
             return f"No data for metric(s) {', '.join(self._metrics)!r}"
 
-        gmr: Optional[GeoMeanRatio] = None
-        gmr_err: Optional[str] = None
+        gmr: GeoMeanRatio | None = None
+        gmr_err: str | None = None
         if self._suite and len(matched) == 1:
             target_mk = next(iter(matched))
             gmr = data.geomeans.get(self._suite, {}).get(cname, {}).get(target_mk)

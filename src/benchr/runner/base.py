@@ -22,11 +22,10 @@ import abc
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, Protocol
+from typing import Any, Protocol
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
@@ -36,7 +35,7 @@ from benchr.grammar.execution import (
     ScheduledExecution,
     SuccessfulProcessResult,
 )
-from benchr.grammar.processor import Processor, stamp
+from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
 from benchr.report.sample import Sample
 
@@ -52,9 +51,10 @@ class ReporterLike(Protocol):
 
 
 class _NoopReporter:
-    def start(self, plan): pass
-    def sample(self, sched, pr, samples): pass
-    def finalize(self): pass
+    def start(self, plan: list[Benchmark]) -> None: pass
+    def sample(self, sched: ScheduledExecution, pr: ProcessResult,
+               samples: list[Sample]) -> None: pass
+    def finalize(self) -> None: pass
 
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,13 @@ def plan(suites: list[Suite], ctx: Any) -> list[PlannedBenchmark]:
 
 
 class Runner(abc.ABC):
-    """Drives compile() coroutines, calls executor, forwards samples."""
+    """Drives compile() coroutines, calls executor, forwards samples.
+
+    ``max_runs_per_phase`` is a defensive backstop for non-converging custom
+    policies. ``max_consecutive_failures`` silently aborts a benchmark whose
+    runs keep failing — surface that fact in the report rather than retrying
+    forever. Bump it for flaky benchmarks; set high for purely-success suites.
+    """
 
     def __init__(
         self,
@@ -215,32 +221,21 @@ class Runner(abc.ABC):
                 )
 
             pr = execute(sched.execution)
-
-            assert b.processor is not None
-            if b.processor.is_success(pr):
-                consecutive_failures = 0
-                partials = list(b.processor.process(pr))
-                samples = list(stamp(partials, sched))
-            else:
-                consecutive_failures += 1
-                # On failure: still call process() — processors may emit a
-                # `failed` flag via on_failure handlers. But the policy is not
-                # advanced because we send [] back to the coroutine.
-                partials = list(b.processor.process(pr))
-                samples = list(stamp(partials, sched))
+            is_ok = b.processor.is_success(pr)
+            # On failure we still call process() so on_failure handlers can
+            # emit a `failed` flag; the policy is only advanced for successful
+            # runs (send `[]` back to the coroutine otherwise).
+            samples = list(stamp(b.processor.process(pr), sched))
+            consecutive_failures = 0 if is_ok else consecutive_failures + 1
 
             all_samples.extend(samples)
             self.reporter.sample(sched, pr, samples)
 
             if consecutive_failures >= self.max_consecutive_failures:
-                # Abort this benchmark.
                 gen.close()
                 return all_samples
 
-            send_value: list[Sample] = (
-                samples if b.processor.is_success(pr) else []
-            )
             try:
-                sched = gen.send(send_value)
+                sched = gen.send(samples if is_ok else [])
             except StopIteration:
                 return all_samples

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import abc
 import math
-import statistics
 from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Iterable
@@ -84,9 +83,8 @@ class _FixedState(PolicyState):
         # reported by the Runner but ``observe`` is called with an empty
         # iterable in that case, so they don't advance us. This means
         # ``.runs(N)`` is "N successful measurements", not "N attempts".
-        for _ in samples:
+        if any(True for _ in samples):
             self.cur += 1
-            break
 
     def converged(self) -> bool:
         return self.cur >= self.target

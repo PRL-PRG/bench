@@ -17,9 +17,8 @@ from __future__ import annotations
 import abc
 import csv
 import threading
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from rich.console import Console
 from rich.table import Table as RichTable
@@ -27,7 +26,6 @@ from rich.theme import Theme
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
-    FailedProcessResult,
     ProcessResult,
     ScheduledExecution,
     SuccessfulProcessResult,
@@ -63,7 +61,12 @@ err_console = Console(theme=BENCHR_THEME, highlight=False, stderr=True)
 
 
 class Reporter(abc.ABC):
-    """Streaming sink for per-execution results."""
+    """Streaming sink for per-execution results.
+
+    Called by the Runner as ``start(plan)`` once, ``sample(sched, pr, samples)``
+    per execution, ``finalize()`` once. ``plan`` is the flattened list of
+    Benchmarks the runner has materialized from the suites.
+    """
 
     def start(self, plan: list[Benchmark]) -> None:
         pass
@@ -271,7 +274,7 @@ class Table(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Summary (delegates to formatter; full impl lands with Phase 11)
+# Summary (delegates to a Formatter; see report/formatter.py)
 # ---------------------------------------------------------------------------
 
 
@@ -284,9 +287,9 @@ class Summary(Reporter):
 
     def __init__(
         self,
-        formatter: Optional[Any] = None,
+        formatter: Any | None = None,
         *,
-        baseline: Optional[list[Path]] = None,
+        baseline: list[Path] | None = None,
         target_console: Console | None = None,
     ) -> None:
         from benchr.report.formatter import DefaultSummary

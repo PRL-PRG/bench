@@ -24,7 +24,6 @@ from threading import Lock
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
-from benchr.grammar.execution import Phase
 from benchr.grammar.policy import FixedRuns
 from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
@@ -86,11 +85,11 @@ class Parallel(Runner):
         # Pre-materialize scheduled executions; runs are order-independent for
         # FixedRuns, so we can submit them in parallel.
         warm = [
-            b._schedule(ctx, suite=p.suite, run=i, phase="warmup")
+            b.schedule(ctx, suite=p.suite, run=i, phase="warmup")
             for i in range(1, b.warmup.n + 1)
         ]
         meas = [
-            b._schedule(ctx, suite=p.suite, run=i, phase="measure")
+            b.schedule(ctx, suite=p.suite, run=i, phase="measure")
             for i in range(1, b.measure.n + 1)
         ]
         all_sched = warm + meas

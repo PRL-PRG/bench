@@ -18,7 +18,7 @@ import argparse
 import dataclasses
 import types
 import typing
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 

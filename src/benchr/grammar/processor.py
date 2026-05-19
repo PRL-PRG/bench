@@ -1,4 +1,4 @@
-"""Processor: ProcessResult -> Iterable[Sample].
+"""Processor: ProcessResult -> Iterable[PartialSample].
 
 Processors are composable with ``|`` (pipeline — both run, samples concatenated)
 and have a ``is_success(pr)`` hook that decides whether a run is treated as a
@@ -8,7 +8,9 @@ success. Three decorator-style modifiers:
   ``.on_failure(fn)``                                  reroute failed runs
   ``.when(predicate)``                                 conditional emission
 
-Built-ins are exposed through the ``P`` namespace at the bottom of the module.
+The Runner calls ``stamp()`` to lift a Processor's PartialSamples into fully-
+identified ``Sample``s. Built-ins are exposed through the ``P`` namespace at
+the bottom of the module.
 """
 
 from __future__ import annotations
@@ -16,15 +18,12 @@ from __future__ import annotations
 import abc
 import dataclasses
 import re
-import resource
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Literal
 
 from benchr.grammar.execution import (
-    Execution,
     FailedProcessResult,
-    Phase,
     ProcessResult,
     ScheduledExecution,
     SuccessfulProcessResult,
@@ -438,15 +437,21 @@ class Fail(Processor):
 
 
 class _FloatPerLineBuilder(FloatPerLine):
-    """FloatPerLine + .last_line()/.nth(i) convenience selectors."""
+    """FloatPerLine + selectors that narrow parsing to one line of stdout.
+
+    Indices are 1-based on non-empty lines; ``-1`` is the last non-empty line.
+    """
 
     def last_line(self) -> Processor:
+        """Parse only the last non-empty line of stdout."""
         return _LineSelect(self, line=-1)
 
     def first_line(self) -> Processor:
+        """Parse only the first non-empty line of stdout."""
         return _LineSelect(self, line=1)
 
     def nth(self, i: int) -> Processor:
+        """Parse only the i-th non-empty line of stdout (1-based; negatives count from the end)."""
         return _LineSelect(self, line=i)
 
 

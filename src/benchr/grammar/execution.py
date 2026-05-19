@@ -10,10 +10,10 @@ and on the ``Sample`` emitted afterward.
 from __future__ import annotations
 
 import resource
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal, Mapping, Optional
+from typing import Literal, Mapping
 
 _EMPTY_ENV: Mapping[str, str] = MappingProxyType({})
 
@@ -35,8 +35,9 @@ class Execution:
 
 # `returncode` conventions (set on FailedProcessResult only):
 #   124 ........... timed out (coreutils `timeout(1)` convention)
-#   any other ≠ 0 . process crash / non-zero exit
-#   0 ............. unreachable (success would be SuccessfulProcessResult)
+#   any other > 0 . process crash / non-zero exit
+#   -1 ............ pre-execution failure (spawn errored before the process
+#                   actually ran — no real exit code is available)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,13 +62,17 @@ class FailedProcessResult:
 
     @staticmethod
     def empty(execution: Execution, reason: str) -> "FailedProcessResult":
+        """Pre-execution failure (e.g. command not found, OSError on spawn).
+
+        Uses ``returncode=-1`` since no real exit code was produced.
+        """
         return FailedProcessResult(
             execution=execution,
             runtime=None,
             stdout=None,
             stderr=None,
             rusage=None,
-            returncode=0,
+            returncode=-1,
             reason=reason,
         )
 

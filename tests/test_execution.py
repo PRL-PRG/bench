@@ -26,7 +26,7 @@ def test_failed_process_result_empty():
     e = Execution(command=("x",), cwd=Path("/tmp"))
     f = FailedProcessResult.empty(e, "boom")
     assert f.reason == "boom"
-    assert f.returncode == 0
+    assert f.returncode == -1
     assert f.stdout is None and f.stderr is None and f.runtime is None
 
 

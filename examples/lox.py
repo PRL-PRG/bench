@@ -16,7 +16,6 @@ Demonstrates:
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 
 from benchr import (
     Compact, Mixed, P, Path, Summary, bench, run, suite,

@@ -10,9 +10,8 @@ import math
 import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
-from benchr.report.sample import Report, Sample, report_from_json
+from benchr.report.sample import Report, report_from_json
 
 
 MetricKey = tuple[str, str]                # (metric, unit)
@@ -125,7 +124,7 @@ def scale_unit(mean: float, unit: str) -> tuple[float, str]:
 class MetricStats:
     metric: str
     unit: str
-    lower_is_better: Optional[bool]
+    lower_is_better: bool | None
     n: int
     mean: float
     median: float
@@ -145,7 +144,7 @@ class GroupStats:
 
 
 def metric_stats(values: list[float], metric: str, unit: str,
-                 lower_is_better: Optional[bool]) -> MetricStats:
+                 lower_is_better: bool | None) -> MetricStats:
     n = len(values)
     return MetricStats(
         metric=metric, unit=unit, lower_is_better=lower_is_better,
@@ -199,7 +198,7 @@ class GeoMeanRatio:
     runs_per_benchmark: int
 
 
-def metric_ratio(baseline: MetricStats, current: MetricStats) -> Optional[MetricRatio]:
+def metric_ratio(baseline: MetricStats, current: MetricStats) -> MetricRatio | None:
     if baseline.lower_is_better is None or current.lower_is_better is None:
         return None
     lib = current.lower_is_better
@@ -254,7 +253,7 @@ def geomean_with_sigma(mrs: list[MetricRatio]) -> tuple[float, float]:
 @dataclass(slots=True)
 class SummaryData:
     groups: list[GroupStats]
-    baseline: Optional[GroupedReport] = None
+    baseline: GroupedReport | None = None
     comparees: list[GroupedReport] = field(default_factory=list)
     comparee_names: list[str] = field(default_factory=list)
     ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = field(default_factory=dict)

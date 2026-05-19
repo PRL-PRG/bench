@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from benchr.grammar.benchmark import (
     Benchmark,
@@ -221,8 +221,6 @@ class Suite:
         out = list(self.benchmarks)
         for fn in self.factories:
             out.extend(fn(ctx))
-        # Validate that each has a name (some matrix expansions may have run
-        # before factories, leaving factory-produced benchmarks raw).
         return out
 
     # ----- helpers --------------------------------------------------
@@ -249,21 +247,12 @@ def suite(name: str, *benchmarks: Benchmark) -> Suite:
 
 
 def _stamp_info(b: Benchmark, extra: Mapping[str, str]) -> Benchmark:
-    """Attach (k, v) pairs that will become the ScheduledExecution.info.
+    """Attach (k, v) pairs that surface on the ScheduledExecution's ``info``.
 
-    We piggyback on a reserved key in ``data`` so the existing
-    ``Benchmark._schedule`` path stays simple. Phase 5 always stamps ``info=()``;
-    we override here by replacing the schedule function via a wrapper.
-
-    Because Benchmark is frozen, we represent matrix info by storing it under
-    a sentinel ``__info__`` key and using a thin Benchmark subclass to surface
-    it in ScheduledExecution. To avoid touching Benchmark in Phase 5, we wrap
-    the ``command`` callable so the info travels along — but that loses the
-    Sample.info tag. So instead we patch ``_schedule`` via dataclasses.replace
-    on a subclass.
+    Stored under the reserved ``__info__`` key in ``b.data``; ``Benchmark.schedule``
+    reads it back when materializing executions. Merging is by-key: later values
+    in ``extra`` override existing ones.
     """
-    # We deliberately keep info in data; runner integration in Phase 8 will
-    # read it. Sample.info gets stamped by the Runner using b.data["__info__"].
     new_data = dict(b.data) if b.data else {}
     base_info = new_data.get("__info__", ())
     merged = tuple(sorted({**dict(base_info), **dict(extra)}.items()))
