@@ -24,7 +24,6 @@ from threading import Lock
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
-from benchr.grammar.policy import FixedRuns
 from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
 from benchr.report.sample import Sample
@@ -70,27 +69,34 @@ class Parallel(Runner):
         # implementations themselves must guard.
         return self._run_benchmark(p, ctx)
 
-    # ----- fan-out path for FixedRuns benchmarks ----------------------
+    # ----- fan-out path for order-independent, bounded benchmarks -----
 
     @staticmethod
     def _fanout_eligible(b: Benchmark) -> bool:
-        return isinstance(b.warmup, FixedRuns) and isinstance(b.measure, FixedRuns)
+        # Need both: independent (runs can be reordered) AND a known total
+        # (we have to pre-materialize the execution list).
+        return all(
+            p.independent() and p.max_runs() is not None
+            for p in (b.warmup, b.measure)
+        )
 
     def _run_fanout(self, p: PlannedBenchmark, ctx: Any) -> list[Sample]:
         b = p.benchmark
         if b.processor is None:
             raise ValueError(f"Benchmark {b.name!r} has no processor")
-        assert isinstance(b.warmup, FixedRuns) and isinstance(b.measure, FixedRuns)
+        n_warm = b.warmup.max_runs()
+        n_meas = b.measure.max_runs()
+        assert n_warm is not None and n_meas is not None  # gated by _fanout_eligible
 
-        # Pre-materialize scheduled executions; runs are order-independent for
-        # FixedRuns, so we can submit them in parallel.
+        # Pre-materialize scheduled executions; the policy promised the runs
+        # are order-independent, so we can submit them in parallel.
         warm = [
             b.schedule(ctx, suite=p.suite, run=i, phase="warmup")
-            for i in range(1, b.warmup.n + 1)
+            for i in range(1, n_warm + 1)
         ]
         meas = [
             b.schedule(ctx, suite=p.suite, run=i, phase="measure")
-            for i in range(1, b.measure.n + 1)
+            for i in range(1, n_meas + 1)
         ]
         all_sched = warm + meas
 

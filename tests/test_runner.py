@@ -87,3 +87,29 @@ def test_mixed_reporter_lifecycle(tmp_path: Path):
     Sequential(reporter=sinks).run([_sleep_suite(runs=1)], ctx=None)
     assert json_path.exists() and csv_path.exists()
     assert json_path.read_text().count('"metric"') >= 2
+
+
+def test_relative_cmd_resolves_independently_of_subprocess_cwd(tmp_path: Path, monkeypatch):
+    """Regression: a relative command (e.g. ``./build/bin``) must still resolve
+    after Popen chdir's into a different cwd. Without abspath() the OS would
+    look for the binary relative to the *subprocess's* cwd and fail."""
+    bin_dir = tmp_path / "tools"
+    bin_dir.mkdir()
+    binary = bin_dir / "echo_hi"
+    binary.write_text('#!/bin/sh\necho hi\n')
+    binary.chmod(0o755)
+
+    other_dir = tmp_path / "elsewhere"
+    other_dir.mkdir()
+
+    monkeypatch.chdir(tmp_path)  # invocation cwd has tools/echo_hi, but not elsewhere/
+    s = suite("X", bench("a")
+              .with_command(["tools/echo_hi"])
+              .with_cwd(other_dir)            # subprocess runs from elsewhere/
+              .with_process(P.time())          # emits one `elapsed` sample on success
+              .runs(2))
+    samples = Sequential(max_consecutive_failures=2).run([s], ctx=None)
+    # If the relative path leaked through, every spawn would fail and we'd hit
+    # max_consecutive_failures quickly. abspath() in execute() prevents that.
+    assert len(samples) == 2
+    assert all(s.metric == "elapsed" for s in samples)

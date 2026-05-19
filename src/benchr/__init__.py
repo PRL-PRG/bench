@@ -23,7 +23,7 @@ Public surface:
         execute,                 # low-level subprocess helper
 
         # Reporters
-        Reporter, Mixed, Csv, Json, Dir, Table, Summary,
+        Reporter, Mixed, Csv, Json, Dir, Table, Summary, Progress,
         console, err_console,
 
         # Stats / Formatters
@@ -99,6 +99,7 @@ from benchr.report.reporter import (
     Dir,
     Json,
     Mixed,
+    Progress,
     Reporter,
     Summary,
     Table,
@@ -154,7 +155,7 @@ __all__ = [
     "Runner", "execute", "plan",
     "Sequential", "Parallel", "Dry",
     # Reporters
-    "Reporter", "Mixed", "Csv", "Json", "Dir", "Table", "Summary",
+    "Reporter", "Mixed", "Csv", "Json", "Dir", "Table", "Summary", "Progress",
     "console", "err_console",
     # Stats / Formatters
     "BenchmarkGroup", "BenchmarkId", "GroupedReport", "GroupStats",

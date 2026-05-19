@@ -28,6 +28,7 @@ from benchr.report.stats import (
     SummaryData,
     build_summary,
     geomean_with_sigma,
+    metric_ratio,
     scale_unit,
 )
 
@@ -57,6 +58,15 @@ def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
     return inv, inv_sigma, "worse"
 
 
+def _display_name(gs: GroupStats, single_suite: bool) -> str:
+    """Hyperfine-style identifier: bench name only when all groups share a
+    suite, otherwise ``suite/benchmark``; append ``(k=v, …)`` for variants."""
+    base = gs.benchmark if single_suite else f"{gs.suite}/{gs.benchmark}"
+    if gs.info:
+        base += " (" + ", ".join(f"{k}={v}" for k, v in gs.info) + ")"
+    return base
+
+
 class DefaultSummary(Formatter):
     """Per-benchmark stats + per-suite geomean comparison."""
 
@@ -74,6 +84,8 @@ class DefaultSummary(Formatter):
                 if i > 0:
                     lines.append("")
                 self._fmt_group(gs, lines)
+        if len(data.groups) >= 2:
+            self._fmt_ranking(data, lines)
         if data.baseline is not None:
             self._fmt_comparison(data, lines)
         return "\n".join(lines)
@@ -124,6 +136,56 @@ class DefaultSummary(Formatter):
                 )
             else:
                 lines.append(f"  {label}  [benchr.value]{mean_v:.2f}[/]")
+
+    # ----- intra-run ranking (hyperfine-style) -----------------------
+
+    def _fmt_ranking(self, data: SummaryData, lines: list[str]) -> None:
+        """Append a hyperfine-style "Summary" block ranking the benchmarks.
+
+        For each comparable metric (``lower_is_better`` is not ``None``), find
+        the best group and print one line per slower group with the slowdown
+        factor and propagated sigma.
+        """
+        # Group → MetricStats indexed by MetricKey, restricted to metrics
+        # that have a direction and survive the --metric filter.
+        per_metric: dict[MetricKey, list[GroupStats]] = {}
+        for gs in data.groups:
+            for mk, ms in gs.metrics.items():
+                if ms.lower_is_better is None or not self._include(mk):
+                    continue
+                per_metric.setdefault(mk, []).append(gs)
+
+        rankable = {mk: gs for mk, gs in per_metric.items() if len(gs) >= 2}
+        if not rankable:
+            return
+
+        single_suite = len({g.suite for g in data.groups}) == 1
+        multi_metric = len(rankable) > 1
+        for mk, groups in rankable.items():
+            is_lower = groups[0].metrics[mk].lower_is_better
+            ranked = sorted(
+                groups,
+                key=lambda g: g.metrics[mk].median,
+                reverse=not is_lower,
+            )
+            best = ranked[0]
+            word = "faster" if is_lower else "higher"
+
+            lines.append("")
+            title = f"Summary ({mk[0]})" if multi_metric else "Summary"
+            lines.append(f"[benchr.label]{title}[/]")
+            lines.append(f"  [benchr.name]'{_display_name(best, single_suite)}'[/] ran")
+            for other in ranked[1:]:
+                mr = metric_ratio(best.metrics[mk], other.metrics[mk])
+                if mr is None:
+                    continue
+                ratio, sigma, _ = _orient(mr.display_ratio, mr.sigma)
+                lines.append(
+                    f"    [benchr.value]{ratio:.2f}[/]"
+                    f" ± [benchr.success]{sigma:.2f}[/]"
+                    f" times [benchr.better]{word}[/] than"
+                    f" [benchr.name]'{_display_name(other, single_suite)}'[/]"
+                )
 
     # ----- comparison block -----------------------------------------
 

@@ -72,7 +72,9 @@ def execute(exe: Execution) -> ProcessResult:
     found = shutil.which(cmd[0])
     if found is None:
         return FailedProcessResult.empty(exe, f"Command not found: {cmd[0]}")
-    cmd[0] = found
+    # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
+    # doesn't re-resolve a relative executable against the subprocess's cwd.
+    cmd[0] = os.path.abspath(found)
 
     stdout_f = tempfile.TemporaryFile()
     stderr_f = tempfile.TemporaryFile()

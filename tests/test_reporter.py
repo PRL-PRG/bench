@@ -1,11 +1,16 @@
 """Reporter sinks (Csv, Json, Dir, Mixed)."""
 
+import io
 import json
 from pathlib import Path
 
+from rich.console import Console
+
 from benchr import (
-    Csv, Dir, Json, Mixed, P, Sequential, bench, report_from_json, suite,
+    Csv, Dir, Json, Mixed, P, Progress, Sequential, Summary, bench,
+    report_from_json, suite,
 )
+from benchr.report.reporter import BENCHR_THEME
 
 
 def _s():
@@ -66,3 +71,92 @@ def test_csv_header_includes_info_columns(tmp_path: Path):
     Sequential(reporter=Csv(out)).run([s], ctx=None)
     header = out.read_text().splitlines()[0]
     assert "compiler" in header.split(",")
+
+
+# ---------------------------------------------------------------------------
+# Summary failure diagnostics
+# ---------------------------------------------------------------------------
+
+
+def _string_console() -> tuple[Console, io.StringIO]:
+    """Rich Console wired to a StringIO; non-TTY, no ANSI markup."""
+    buf = io.StringIO()
+    c = Console(theme=BENCHR_THEME, file=buf, force_terminal=False,
+                width=200, no_color=True, highlight=False)
+    return c, buf
+
+
+def test_summary_appends_failures_block_with_diagnostic():
+    c, buf = _string_console()
+    s = suite("F", bench("bad")
+              .with_command(["sh", "-c", "echo trouble >&2; exit 7"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .runs(1))
+    rep = Summary(target_console=c)
+    Sequential(reporter=rep, max_consecutive_failures=1).run([s], ctx=None)
+    rep.finalize()
+    text = buf.getvalue()
+    assert "Failures:" in text
+    assert "F/bad" in text
+    assert "exit 7" in text
+    assert "trouble" in text  # last-line stderr excerpt
+
+
+def test_summary_failures_block_handles_spawn_failure():
+    c, buf = _string_console()
+    s = suite("F", bench("missing")
+              .with_command(["/no_such_binary_xyzzy"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .runs(1))
+    rep = Summary(target_console=c)
+    Sequential(reporter=rep, max_consecutive_failures=1).run([s], ctx=None)
+    rep.finalize()
+    text = buf.getvalue()
+    assert "spawn failed" in text
+    assert "Command not found" in text
+
+
+def test_summary_no_failures_block_when_all_succeed():
+    c, buf = _string_console()
+    s = suite("S", bench("a")
+              .with_command(["sh", "-c", "echo ok"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time())
+              .runs(1))
+    rep = Summary(target_console=c)
+    Sequential(reporter=rep).run([s], ctx=None)
+    rep.finalize()
+    assert "Failures:" not in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Progress non-TTY fallback
+# ---------------------------------------------------------------------------
+
+
+def test_progress_plain_lines_in_non_tty():
+    c, buf = _string_console()
+    s = suite("S", bench("a")
+              .with_command(["sh", "-c", "echo ok"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time())
+              .runs(3))
+    Sequential(reporter=Progress(target_console=c)).run([s], ctx=None)
+    text = buf.getvalue()
+    # One line per sample, with running count and 'ok' tag.
+    assert "[1/3]" in text and "[2/3]" in text and "[3/3]" in text
+    assert text.count(" ok") >= 3
+
+
+def test_progress_plain_marks_failures():
+    c, buf = _string_console()
+    s = suite("F", bench("bad")
+              .with_command(["sh", "-c", "exit 11"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .runs(1))
+    Sequential(reporter=Progress(target_console=c),
+               max_consecutive_failures=1).run([s], ctx=None)
+    assert "FAIL exit 11" in buf.getvalue()

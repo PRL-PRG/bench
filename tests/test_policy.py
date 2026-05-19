@@ -151,3 +151,57 @@ def test_custom_policy():
     state.observe(2, [_mk(1.0, 2)])
     state.observe(3, [_mk(2.0, 3)])
     assert state.converged()
+
+
+# ---------------------------------------------------------------------------
+# Introspection: max_runs() and independent()
+# ---------------------------------------------------------------------------
+
+
+def test_fixed_runs_introspection():
+    p = FixedRuns(10)
+    assert p.max_runs() == 10
+    assert p.independent() is True
+
+
+def test_cov_introspection():
+    p = CoefficientOfVariation("rt")
+    assert p.max_runs() is None        # unbounded
+    assert p.independent() is False    # observations are order-sensitive
+
+
+def test_custom_introspection_defaults_conservative():
+    p = Custom(state_factory=lambda: _SeenN(3))
+    assert p.max_runs() is None
+    assert p.independent() is False
+
+
+def test_and_max_runs_is_later_of_two():
+    assert (FixedRuns(3) & FixedRuns(7)).max_runs() == 7
+
+
+def test_and_max_runs_propagates_none():
+    # If either branch can run forever, the And as a whole can too.
+    assert (CoefficientOfVariation("rt") & FixedRuns(5)).max_runs() is None
+    assert (FixedRuns(5) & CoefficientOfVariation("rt")).max_runs() is None
+
+
+def test_or_max_runs_is_earlier_of_two():
+    assert (FixedRuns(3) | FixedRuns(7)).max_runs() == 3
+
+
+def test_or_max_runs_ignores_unbounded_child():
+    # `.at_most(20)` desugars to `self | FixedRuns(20)` — the cap bounds the Or.
+    assert (CoefficientOfVariation("rt") | FixedRuns(20)).max_runs() == 20
+    assert CoefficientOfVariation("rt").at_most(20).max_runs() == 20
+
+
+def test_or_max_runs_both_unbounded_is_none():
+    assert (CoefficientOfVariation("rt") | CoefficientOfVariation("rt")).max_runs() is None
+
+
+def test_combinator_independent_requires_both():
+    assert (FixedRuns(3) & FixedRuns(7)).independent() is True
+    assert (FixedRuns(3) | FixedRuns(7)).independent() is True
+    assert (FixedRuns(3) & CoefficientOfVariation("rt")).independent() is False
+    assert (FixedRuns(3) | CoefficientOfVariation("rt")).independent() is False

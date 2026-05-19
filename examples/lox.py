@@ -42,7 +42,7 @@ def _bench_root(ctx: LoxParams) -> Path:
 lox_suite = (
     suite("LoxSuite")
     .from_files(_bench_root, pattern=r"\.lox$", exclude={"zoo_batch"})
-    .with_cwd(_bench_root)
+    .with_cwd(lambda _, ctx: _bench_root(ctx))
     .with_command(lox_cmd)
     .with_timeout(20)
     .runs(10)
@@ -56,7 +56,7 @@ lox_suite = (
 zoo_suite = (
     suite("ZooBatch")
     .add(bench("zoo_batch", path=Path("zoo_batch.lox")))
-    .with_cwd(_bench_root)
+    .with_cwd(lambda _, ctx: _bench_root(ctx))
     .with_command(lambda b, ctx: [str(ctx.lox), str((_bench_root(ctx) / b.path).name)])
     .with_timeout(12)
     .runs(5)

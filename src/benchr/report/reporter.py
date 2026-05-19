@@ -9,6 +9,7 @@ Built-ins:
     Json       buffer in memory; serialize on finalize
     Dir        per-execution tree (<suite>/<bench>/<run>/{stdout,stderr,...})
     Table      buffer and print a final table
+    Progress   live spinner + bar; ``transient`` so it clears at finalize
     Summary    buffer and run a Formatter (see report/formatter.py)
 """
 
@@ -21,11 +22,19 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.progress import (
+    BarColumn,
+    Progress as RichProgress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table as RichTable
 from rich.theme import Theme
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
+    FailedProcessResult,
     ProcessResult,
     ScheduledExecution,
     SuccessfulProcessResult,
@@ -274,6 +283,108 @@ class Table(Reporter):
 
 
 # ---------------------------------------------------------------------------
+# Progress: live spinner + bar while the run is in flight
+# ---------------------------------------------------------------------------
+
+
+class Progress(Reporter):
+    """Live progress over the planned benchmarks.
+
+    On a terminal, renders a rich spinner + bar + counter + description and
+    clears itself (``transient=True``) before the Summary prints. On a
+    non-terminal sink (piped output, CI log, file redirect), falls back to
+    plain one-line-per-sample output: ``[n/total] <bench id> ok | FAIL exit N``.
+    Total is known when every benchmark's policies expose a ``max_runs()``;
+    otherwise displays ``?`` and (on terminals) draws an indeterminate bar.
+    """
+
+    def __init__(self, target_console: Console | None = None) -> None:
+        self._console = target_console or console
+        self._is_tty = self._console.is_terminal
+        self._task_id: int | None = None
+        self._failures = 0
+        self._successes = 0
+        self._total: int | None = None
+        self._lock = threading.Lock()
+        self._progress = (
+            RichProgress(
+                SpinnerColumn(),
+                TimeElapsedColumn(),
+                BarColumn(),
+                TextColumn(
+                    "([benchr.failure]{task.fields[failures]}[/]"
+                    "/[benchr.success]{task.fields[successes]}[/]"
+                    "/{task.fields[total_str]})"
+                ),
+                TextColumn("[benchr.in_process]{task.description}[/]"),
+                console=self._console,
+                transient=True,
+            )
+            if self._is_tty
+            else None
+        )
+
+    def start(self, plan: list[Benchmark]) -> None:
+        self._total = self._compute_total(plan)
+        if self._progress is not None:
+            self._progress.start()
+            self._task_id = self._progress.add_task(
+                "Running",
+                total=self._total,
+                failures=0,
+                successes=0,
+                total_str=str(self._total) if self._total is not None else "?",
+            )
+
+    def sample(self, sched: ScheduledExecution, pr: ProcessResult,
+               samples: list[Sample]) -> None:
+        with self._lock:
+            if isinstance(pr, SuccessfulProcessResult):
+                self._successes += 1
+            else:
+                self._failures += 1
+            if self._progress is not None and self._task_id is not None:
+                self._progress.update(
+                    self._task_id,
+                    description=sched.identifier(),
+                    failures=self._failures,
+                    successes=self._successes,
+                )
+                self._progress.advance(self._task_id)
+            else:
+                self._print_plain(sched, pr)
+
+    def finalize(self) -> None:
+        if self._progress is not None and self._task_id is not None:
+            self._progress.stop()
+
+    # ----- helpers ---------------------------------------------------
+
+    def _print_plain(self, sched: ScheduledExecution, pr: ProcessResult) -> None:
+        n = self._failures + self._successes
+        total_str = str(self._total) if self._total is not None else "?"
+        if isinstance(pr, SuccessfulProcessResult):
+            tag = "[benchr.success]ok[/]"
+        elif pr.returncode == 124:
+            tag = "[benchr.failure]FAIL timeout[/]"
+        elif pr.returncode == -1:
+            tag = f"[benchr.failure]FAIL spawn[/] ({pr.reason or 'unknown'})"
+        else:
+            tag = f"[benchr.failure]FAIL exit {pr.returncode}[/]"
+        self._console.print(f"[{n}/{total_str}] {sched.identifier()} {tag}")
+
+    @staticmethod
+    def _compute_total(plan: list[Benchmark]) -> int | None:
+        total = 0
+        for b in plan:
+            w, m = b.warmup.max_runs(), b.measure.max_runs()
+            if w is None or m is None:
+                return None
+            total += w + m
+        return total
+
+
+# ---------------------------------------------------------------------------
 # Summary (delegates to a Formatter; see report/formatter.py)
 # ---------------------------------------------------------------------------
 
@@ -282,7 +393,10 @@ class Summary(Reporter):
     """Buffer samples; format on finalize().
 
     Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
-    Defaults to ``DefaultSummary``.
+    Defaults to ``DefaultSummary``. After the formatter output, appends a
+    ``Failures:`` block listing every failed run (one line per failure)
+    so users can see *why* something failed without having to re-run with
+    ``--dir``.
     """
 
     def __init__(
@@ -298,11 +412,14 @@ class Summary(Reporter):
         self._formatter = formatter or DefaultSummary()
         self._baseline = baseline or []
         self._console = target_console or console
+        self._failures: list[tuple[ScheduledExecution, FailedProcessResult]] = []
         self._lock = threading.Lock()
 
     def sample(self, sched, pr, samples):
         with self._lock:
             self._report.extend(samples)
+            if isinstance(pr, FailedProcessResult):
+                self._failures.append((sched, pr))
 
     def set_baseline(self, paths: list[Path]) -> None:
         self._baseline = list(paths)
@@ -311,3 +428,31 @@ class Summary(Reporter):
         out = self._formatter(self._report, baseline=self._baseline)
         if out:
             self._console.print(out)
+        if self._failures:
+            self._console.print()
+            self._console.print("[benchr.label]Failures:[/]")
+            for sched, pr in self._failures:
+                self._console.print("  " + _failure_line(sched, pr))
+
+
+def _failure_line(sched: ScheduledExecution, pr: FailedProcessResult) -> str:
+    """Render a one-line diagnostic for a failed run."""
+    if pr.returncode == 124:
+        verdict = "[benchr.failure]timeout (exit 124)[/]"
+    elif pr.returncode == -1:
+        verdict = f"[benchr.failure]spawn failed[/]: {pr.reason or 'unknown'}"
+    else:
+        verdict = f"[benchr.failure]exit {pr.returncode}[/]"
+    return f"[benchr.failure]✗[/] {sched.identifier()} — {verdict}: {_diagnostic_excerpt(pr)}"
+
+
+def _diagnostic_excerpt(pr: FailedProcessResult, *, max_len: int = 80) -> str:
+    """Last non-empty line of stderr (else stdout); ``"(no output)"`` otherwise."""
+    for text in (pr.stderr, pr.stdout):
+        if not text:
+            continue
+        for line in reversed(text.splitlines()):
+            stripped = line.strip()
+            if stripped:
+                return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
+    return "(no output)"

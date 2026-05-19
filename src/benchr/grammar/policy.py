@@ -8,6 +8,12 @@ Configuration is frozen / hashable; mutable per-run state lives in a separate
     a.at_least(n)   == a & FixedRuns(n)
     a.at_most(n)    == a | FixedRuns(n)
 
+Each policy also exposes two static introspection methods consumers can use
+in place of ``isinstance`` checks:
+
+    .max_runs()    int | None — upper bound on permitted runs, ``None`` = ∞
+    .independent() bool       — whether runs can be reordered / parallelized
+
 ``observe(run, samples)`` is called by the Runner once per *successful* run
 (failed runs are reported but do not move the policy). Samples are the parsed
 output of one execution.
@@ -47,6 +53,23 @@ class StoppingPolicy(abc.ABC):
     def at_most(self, n: int) -> "StoppingPolicy":
         return self | FixedRuns(n)
 
+    # ----- static introspection ----------------------------------------
+    #
+    # Defaults are the conservative answers (unknown bound, order-dependent)
+    # so adding a new policy subclass is safe by default. Concrete policies
+    # and combinators override below.
+
+    def max_runs(self) -> int | None:
+        """Upper bound on the number of successful runs this policy will
+        permit; ``None`` means unbounded by this policy."""
+        return None
+
+    def independent(self) -> bool:
+        """True if convergence does not depend on observation order — i.e.
+        the runs may be reordered or executed in parallel without changing
+        whether/when the policy converges."""
+        return False
+
 
 class PolicyState(abc.ABC):
     """Mutable per-run observer."""
@@ -69,6 +92,12 @@ class FixedRuns(StoppingPolicy):
 
     def start(self) -> "_FixedState":
         return _FixedState(self.n)
+
+    def max_runs(self) -> int:
+        return self.n
+
+    def independent(self) -> bool:
+        return True
 
 
 class _FixedState(PolicyState):
@@ -176,6 +205,17 @@ class _And(StoppingPolicy):
     def start(self) -> "_PairState":
         return _PairState(self.a.start(), self.b.start(), all)
 
+    def max_runs(self) -> int | None:
+        # Stops only when both converge → worst case is the later of the two.
+        # If either child is unbounded, the And is unbounded.
+        a, b = self.a.max_runs(), self.b.max_runs()
+        if a is None or b is None:
+            return None
+        return max(a, b)
+
+    def independent(self) -> bool:
+        return self.a.independent() and self.b.independent()
+
 
 @dataclass(frozen=True, slots=True)
 class _Or(StoppingPolicy):
@@ -184,6 +224,19 @@ class _Or(StoppingPolicy):
 
     def start(self) -> "_PairState":
         return _PairState(self.a.start(), self.b.start(), any)
+
+    def max_runs(self) -> int | None:
+        # Stops as soon as either converges → at most the earlier of the two.
+        # Treat ``None`` as +∞: an unbounded child can't tighten the bound.
+        a, b = self.a.max_runs(), self.b.max_runs()
+        if a is None:
+            return b
+        if b is None:
+            return a
+        return min(a, b)
+
+    def independent(self) -> bool:
+        return self.a.independent() and self.b.independent()
 
 
 class _PairState(PolicyState):
