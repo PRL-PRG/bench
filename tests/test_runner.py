@@ -7,7 +7,7 @@ import pytest
 
 from benchr import (
     Csv, Dry, FixedRuns, Json, Mixed, P, Parallel, Sequential,
-    bench, suite,
+    bench, report_from_json, suite,
 )
 
 
@@ -38,15 +38,19 @@ def test_sequential_three_runs_yields_three_samples():
     assert [s.run for s in samples] == [1, 2, 3]
 
 
-def test_sequential_aborts_on_consecutive_failures():
+def test_sequential_aborts_on_consecutive_failures(tmp_path: Path):
     s = suite("F", bench("bad")
               .with_command(["false"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .with_process(P.time())
               .runs(10))
-    samples = Sequential(max_consecutive_failures=3).run([s], ctx=None)
-    # 3 attempts, each emitting one 'failed' sample.
-    assert sum(1 for x in samples if x.metric == "failed") == 3
+    out = tmp_path / "r.json"
+    samples = Sequential(reporter=Json(out), max_consecutive_failures=3).run([s], ctx=None)
+    assert samples == []  # failed runs emit no metrics
+    # Aborted after 3 consecutive failures (before reaching runs(10)).
+    r = report_from_json(out.read_text())
+    assert len(r.failures) == 3
+    assert all(f.returncode != 0 for f in r.failures)
 
 
 def test_parallel_runs_faster_than_sequential():

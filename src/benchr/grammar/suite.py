@@ -151,17 +151,27 @@ class Suite:
     def with_process(self, processor: Processor) -> "Suite":
         return self._map(lambda b: b.with_process(processor) if b.processor is None else b)
 
-    def with_warmup(self, p: StoppingPolicy | int) -> "Suite":
+    def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> "Suite":
+        """Propagate a warmup policy. By default fills only benchmarks still at
+        the ``FixedRuns(0)`` default; ``force=True`` overrides every benchmark
+        (used by the CLI ``--warmup`` global override)."""
         policy = _coerce_policy(p)
-        return self._map(lambda b: b.with_warmup(policy) if b.warmup == FixedRuns(0) else b)
+        return self._map(
+            lambda b: b.with_warmup(policy) if force or b.warmup == FixedRuns(0) else b
+        )
 
-    def with_measure(self, p: StoppingPolicy | int) -> "Suite":
+    def with_measure(self, p: StoppingPolicy | int, *, force: bool = False) -> "Suite":
+        """Propagate a measure policy. By default fills only benchmarks still at
+        the ``FixedRuns(1)`` default; ``force=True`` overrides every benchmark
+        (used by the CLI ``--runs`` global override)."""
         policy = _coerce_policy(p)
-        return self._map(lambda b: b.with_measure(policy) if b.measure == FixedRuns(1) else b)
+        return self._map(
+            lambda b: b.with_measure(policy) if force or b.measure == FixedRuns(1) else b
+        )
 
-    def with_runs(self, n: int) -> "Suite":
+    def with_runs(self, n: int, *, force: bool = False) -> "Suite":
         """Alias of ``with_measure(FixedRuns(n))`` — propagates to children."""
-        return self.with_measure(n)
+        return self.with_measure(n, force=force)
 
     def runs(self, n: int) -> "Suite":
         """Shorthand for ``with_runs``. Mirrors ``Benchmark.runs``."""

@@ -29,6 +29,7 @@ from benchr.report.reporter import (
 )
 from benchr.report.sample import Report, report_from_json
 from benchr.report.stats import build_summary
+from benchr.runner.base import Runner
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -67,14 +68,46 @@ def run(
     ns = parser.parse_args(argv)
     ctx = build_dataclass(params, ns) if params is not None else None
 
-    sinks: list[Reporter] = []
-    if not ns.dry and not ns.quiet:
-        sinks.append(ProgressReporter())
     summary_reporter = (
-        reporter
-        if reporter is not None
-        else SummaryReporter(formatter=formatter)
+        reporter if reporter is not None else SummaryReporter(formatter=formatter)
     )
+    final_reporter = _assemble(
+        ns, summary_reporter, with_progress=not ns.dry and not ns.quiet
+    )
+
+    # Optionally override warmup/measure across all benchmarks (unconditional:
+    # these flags mean "for every benchmark", overriding per-benchmark values).
+    if ns.runs is not None:
+        suites = [s.with_runs(int(ns.runs), force=True) for s in suites]
+    if ns.warmup is not None:
+        suites = [s.with_warmup(int(ns.warmup), force=True) for s in suites]
+
+    runner = _make_runner(ns, final_reporter)
+    try:
+        samples = runner.run(suites, ctx)
+    except KeyboardInterrupt:
+        console.print("[benchr.failure]Interrupted[/]")
+        sys.exit(1)
+    return Report(samples=list(samples))
+
+
+# ---------------------------------------------------------------------------
+# Shared reporter / runner assembly (used by both run() and `benchr bench`)
+# ---------------------------------------------------------------------------
+
+
+def _assemble(
+    ns: argparse.Namespace,
+    summary_reporter: Reporter,
+    *,
+    with_progress: bool,
+) -> Reporter:
+    """Build the live reporter: optional progress, the summary reporter, plus
+    any --json/--csv/--dir sinks, fanned out via Mixed. Wires --compare onto
+    the summary reporter when it is a SummaryReporter."""
+    sinks: list[Reporter] = []
+    if with_progress:
+        sinks.append(ProgressReporter())
     sinks.append(summary_reporter)
     if ns.json:
         sinks.append(JsonReporter(Path(ns.json)))
@@ -82,28 +115,18 @@ def run(
         sinks.append(CsvReporter(Path(ns.csv)))
     if ns.dir:
         sinks.append(DirReporter(Path(ns.dir)))
-
-    final_reporter: Reporter = sinks[0] if len(sinks) == 1 else Mixed(*sinks)
-
     if ns.compare and isinstance(summary_reporter, SummaryReporter):
         summary_reporter.set_baseline([Path(p) for p in ns.compare])
+    return sinks[0] if len(sinks) == 1 else Mixed(*sinks)
 
-    # Optionally override warmup/measure across all benchmarks.
-    if ns.runs is not None:
-        suites = [s.with_runs(int(ns.runs)) for s in suites]
-    if ns.warmup is not None:
-        suites = [s.with_warmup(int(ns.warmup)) for s in suites]
 
-    runner_cls = Dry if ns.dry else (
-        (lambda **kw: Parallel(workers=ns.jobs, **kw)) if ns.jobs > 1 else Sequential
-    )
-    runner = runner_cls(reporter=final_reporter)
-    try:
-        samples = runner.run(suites, ctx)
-    except KeyboardInterrupt:
-        console.print("[benchr.failure]Interrupted[/]")
-        sys.exit(1)
-    return Report(samples=list(samples))
+def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
+    """Pick a runner from the parsed flags: Dry > Parallel (jobs>1) > Sequential."""
+    if getattr(ns, "dry", False):
+        return Dry(reporter=reporter)
+    if ns.jobs > 1:
+        return Parallel(workers=ns.jobs, reporter=reporter)
+    return Sequential(reporter=reporter)
 
 
 # ---------------------------------------------------------------------------
@@ -246,23 +269,11 @@ def _run_bench(ns: argparse.Namespace) -> int:
         benchmarks.append(b)
     s = suite("bench", *benchmarks)
 
-    summary_reporter = SummaryReporter()
-    sinks: list[Reporter] = []
-    if not ns.quiet:
-        sinks.append(ProgressReporter())
-    sinks.append(summary_reporter)
-    if ns.json:
-        sinks.append(JsonReporter(Path(ns.json)))
-    if ns.csv:
-        sinks.append(CsvReporter(Path(ns.csv)))
-    if ns.dir:
-        sinks.append(DirReporter(Path(ns.dir)))
-    rep: Reporter = sinks[0] if len(sinks) == 1 else Mixed(*sinks)
+    metrics = {ns.metric} if ns.metric else None
+    summary_reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
+    rep = _assemble(ns, summary_reporter, with_progress=not ns.quiet)
 
-    if ns.compare:
-        summary_reporter.set_baseline([Path(p) for p in ns.compare])
-
-    runner = Parallel(workers=ns.jobs, reporter=rep) if ns.jobs > 1 else Sequential(reporter=rep)
+    runner = _make_runner(ns, rep)
     try:
         runner.run([s], ctx=None)
     except KeyboardInterrupt:

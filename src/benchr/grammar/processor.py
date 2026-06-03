@@ -1,11 +1,11 @@
-"""Processor: ProcessResult -> Iterable[PartialSample].
+"""Processor: ExecutionResult -> Iterable[PartialSample].
 
 Processors are composable with ``|`` (pipeline — both run, samples concatenated)
 and have a ``is_success(pr)`` hook that decides whether a run is treated as a
-success. Three decorator-style modifiers:
+success. Failed runs emit no metrics — the Runner records them as structured
+``FailureRecord``s instead. Decorator-style modifiers:
 
   ``.lower_is_better()``  /  ``.higher_is_better()``   tag emitted samples
-  ``.on_failure(fn)``                                  reroute failed runs
   ``.when(predicate)``                                 conditional emission
 
 The Runner calls ``stamp()`` to lift a Processor's PartialSamples into fully-
@@ -23,19 +23,19 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Literal
 
 from benchr.grammar.execution import (
-    FailedProcessResult,
-    ProcessResult,
+    FailedExecutionResult,
+    ExecutionResult,
     ScheduledExecution,
-    SuccessfulProcessResult,
+    SuccessfulExecutionResult,
 )
 from benchr.report.sample import Sample
 
 
 # ---------------------------------------------------------------------------
-# Tagging context — the Runner sets this before calling .process() so that
-# Processors can yield "bare" partial Samples without knowing the benchmark
-# identity. In practice the Runner stamps the identity onto the emitted
-# Samples; processors only need to provide (metric, value, unit, lib).
+# PartialSample + stamp: a Processor yields identity-free PartialSamples
+# (metric, value, unit, lower_is_better); the Runner calls stamp() to lift
+# them into fully-identified Samples using the ScheduledExecution's
+# (suite, benchmark, run, phase, info).
 # ---------------------------------------------------------------------------
 
 
@@ -71,7 +71,7 @@ def stamp(partials: Iterable[PartialSample], sched: ScheduledExecution) -> Itera
 
 
 class Processor(abc.ABC):
-    """ProcessResult -> Iterable[PartialSample].
+    """ExecutionResult -> Iterable[PartialSample].
 
     Override ``process``; optionally override ``is_success``. Compose with ``|``.
     """
@@ -79,11 +79,11 @@ class Processor(abc.ABC):
     # --- core hooks -----------------------------------------------------
 
     @abc.abstractmethod
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]: ...
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]: ...
 
-    def is_success(self, pr: ProcessResult) -> bool:
-        """Default: success iff the process exited 0 (no separate FailedProcessResult)."""
-        return isinstance(pr, SuccessfulProcessResult)
+    def is_success(self, pr: ExecutionResult) -> bool:
+        """Default: success iff the process exited 0 (no separate FailedExecutionResult)."""
+        return isinstance(pr, SuccessfulExecutionResult)
 
     # --- composition ----------------------------------------------------
 
@@ -96,11 +96,7 @@ class Processor(abc.ABC):
     def higher_is_better(self) -> "Processor":
         return _Direction(self, False)
 
-    def on_failure(self, handler: "Processor") -> "Processor":
-        """Use ``handler`` for failed runs; this processor for successful ones."""
-        return _OnFailure(self, handler)
-
-    def when(self, predicate: Callable[[ProcessResult], bool]) -> "Processor":
+    def when(self, predicate: Callable[[ExecutionResult], bool]) -> "Processor":
         """Run this processor only when ``predicate(pr)`` is true."""
         return _When(self, predicate)
 
@@ -122,11 +118,11 @@ class _Pipeline(Processor):
                 flat.append(p)
         self.parts = tuple(flat)
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         for p in self.parts:
             yield from p.process(pr)
 
-    def is_success(self, pr: ProcessResult) -> bool:
+    def is_success(self, pr: ExecutionResult) -> bool:
         return all(p.is_success(pr) for p in self.parts)
 
 
@@ -137,44 +133,26 @@ class _Direction(Processor):
         self.inner = inner
         self.lib = lower_is_better
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         for s in self.inner.process(pr):
             yield dataclasses.replace(s, lower_is_better=self.lib)
 
-    def is_success(self, pr: ProcessResult) -> bool:
+    def is_success(self, pr: ExecutionResult) -> bool:
         return self.inner.is_success(pr)
-
-
-class _OnFailure(Processor):
-    __slots__ = ("ok", "fail")
-
-    def __init__(self, ok: Processor, fail: Processor):
-        self.ok = ok
-        self.fail = fail
-
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if self.ok.is_success(pr):
-            yield from self.ok.process(pr)
-        else:
-            yield from self.fail.process(pr)
-
-    def is_success(self, pr: ProcessResult) -> bool:
-        # On-failure handler doesn't gate success; that's the OK branch's job.
-        return self.ok.is_success(pr)
 
 
 class _When(Processor):
     __slots__ = ("inner", "predicate")
 
-    def __init__(self, inner: Processor, predicate: Callable[[ProcessResult], bool]):
+    def __init__(self, inner: Processor, predicate: Callable[[ExecutionResult], bool]):
         self.inner = inner
         self.predicate = predicate
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         if self.predicate(pr):
             yield from self.inner.process(pr)
 
-    def is_success(self, pr: ProcessResult) -> bool:
+    def is_success(self, pr: ExecutionResult) -> bool:
         return self.inner.is_success(pr)
 
 
@@ -195,8 +173,8 @@ class FloatPerLine(Processor):
         self.unit = unit
         self.metric = metric
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedProcessResult) or pr.stdout is None:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+        if isinstance(pr, FailedExecutionResult) or pr.stdout is None:
             return
         for line in pr.stdout.split("\n"):
             line = line.strip()
@@ -233,10 +211,10 @@ class _LineSelect(Processor):
         except IndexError:
             return ""
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedProcessResult):
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+        if isinstance(pr, FailedExecutionResult):
             return
-        sub = SuccessfulProcessResult(
+        sub = SuccessfulExecutionResult(
             execution=pr.execution,
             runtime=pr.runtime,
             stdout=self._pick(pr.stdout, self.line),
@@ -245,7 +223,7 @@ class _LineSelect(Processor):
         )
         yield from self.inner.process(sub)
 
-    def is_success(self, pr: ProcessResult) -> bool:
+    def is_success(self, pr: ExecutionResult) -> bool:
         return self.inner.is_success(pr)
 
 
@@ -279,8 +257,8 @@ class Regex(Processor):
         self.unit = unit
         self.unit_group = unit_group
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedProcessResult):
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+        if isinstance(pr, FailedExecutionResult):
             return
         outs: list[str] = []
         if self.output in ("stdout", "both"):
@@ -313,8 +291,8 @@ class Rebench(Processor):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if not isinstance(pr, SuccessfulProcessResult) or pr.stdout is None:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+        if not isinstance(pr, SuccessfulExecutionResult) or pr.stdout is None:
             return
         for line in pr.stdout.split("\n"):
             m = self._re_runtime.match(line)
@@ -352,7 +330,7 @@ class RUsage(Processor):
         self.metric = metric
         self.unit = unit
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         if pr.rusage is None:
             return
         value = float(getattr(pr.rusage, self.field))
@@ -378,7 +356,7 @@ class Time(Processor):
         self.user = user
         self.system = system
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         if self.elapsed and pr.runtime is not None:
             yield PartialSample(metric="elapsed", value=pr.runtime, unit="s",
                                 lower_is_better=True)
@@ -392,7 +370,7 @@ class Time(Processor):
 
 
 class Constant(Processor):
-    """Always emit a fixed sample (useful in on_failure chains)."""
+    """Always emit a fixed sample (e.g. tag every run with a constant marker)."""
 
     __slots__ = ("metric", "value", "unit", "lib")
 
@@ -402,25 +380,9 @@ class Constant(Processor):
         self.unit = unit
         self.lib = lower_is_better
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         yield PartialSample(metric=self.metric, value=self.value, unit=self.unit,
                             lower_is_better=self.lib)
-
-
-class Fail(Processor):
-    """Emit a ``failed`` flag sample for failed runs only.
-
-    Idiomatic usage: ``processor.on_failure(Fail())`` if you want a 0/1 flag in
-    the report; the default success gate already excludes failed runs from stats.
-    """
-
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedProcessResult):
-            yield PartialSample(metric="failed", value=1.0)
-
-    def is_success(self, pr: ProcessResult) -> bool:
-        # Always "succeed" — Fail() doesn't itself flag the run as failed.
-        return True
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +394,6 @@ class Fail(Processor):
 #   P.regex("rt", r"runtime: (\d+) ms", unit="ms")
 #   P.rebench(), P.time(), P.max_rss(), P.rusage(...)
 #   P.constant("custom", 1.0)
-#   P.fail()
 # ---------------------------------------------------------------------------
 
 
@@ -496,7 +457,3 @@ class P:
     def constant(metric: str, value: float, unit: str = "",
                  lower_is_better: bool | None = None) -> Constant:
         return Constant(metric, value, unit, lower_is_better)
-
-    @staticmethod
-    def fail() -> Fail:
-        return Fail()

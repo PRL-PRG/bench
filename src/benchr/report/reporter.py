@@ -34,12 +34,17 @@ from rich.theme import Theme
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
-    FailedProcessResult,
-    ProcessResult,
+    ExecutionResult,
     ScheduledExecution,
-    SuccessfulProcessResult,
+    SuccessfulExecutionResult,
 )
-from benchr.report.sample import Report, Sample, info_keys, report_to_json
+from benchr.report.sample import (
+    FailureRecord,
+    Report,
+    Sample,
+    info_keys,
+    report_to_json,
+)
 
 
 # Centralized rich theme — change colors in one place.
@@ -84,7 +89,7 @@ class Reporter(abc.ABC):
     def sample(
         self,
         sched: ScheduledExecution,
-        pr: ProcessResult,
+        pr: ExecutionResult,
         samples: list[Sample],
     ) -> None: ...
 
@@ -174,7 +179,7 @@ class Csv(Reporter):
 
 
 class Json(Reporter):
-    """Buffer samples in memory, write a single JSON file on finalize()."""
+    """Buffer samples + failures in memory, write a single JSON file on finalize()."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -183,7 +188,7 @@ class Json(Reporter):
 
     def sample(self, sched, pr, samples):
         with self._lock:
-            self._report.extend(samples)
+            self._report.record(sched, pr, samples)
 
     def finalize(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +240,7 @@ class Dir(Reporter):
         if pr.stderr is not None:
             (run_dir / "stderr").write_text(pr.stderr)
 
-        rc = 0 if isinstance(pr, SuccessfulProcessResult) else pr.returncode
+        rc = 0 if isinstance(pr, SuccessfulExecutionResult) else pr.returncode
         (run_dir / "exitcode").write_text(f"{rc}\n")
 
         if pr.rusage is not None:
@@ -262,7 +267,7 @@ class Table(Reporter):
 
     def sample(self, sched, pr, samples):
         with self._lock:
-            self._report.extend(samples)
+            self._report.record(sched, pr, samples)
 
     def finalize(self):
         info_cols = info_keys(self._report.samples)
@@ -336,10 +341,10 @@ class Progress(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def sample(self, sched: ScheduledExecution, pr: ProcessResult,
+    def sample(self, sched: ScheduledExecution, pr: ExecutionResult,
                samples: list[Sample]) -> None:
         with self._lock:
-            if isinstance(pr, SuccessfulProcessResult):
+            if isinstance(pr, SuccessfulExecutionResult):
                 self._successes += 1
             else:
                 self._failures += 1
@@ -360,10 +365,10 @@ class Progress(Reporter):
 
     # ----- helpers ---------------------------------------------------
 
-    def _print_plain(self, sched: ScheduledExecution, pr: ProcessResult) -> None:
+    def _print_plain(self, sched: ScheduledExecution, pr: ExecutionResult) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
-        if isinstance(pr, SuccessfulProcessResult):
+        if isinstance(pr, SuccessfulExecutionResult):
             tag = "[benchr.success]ok[/]"
         elif pr.returncode == 124:
             tag = "[benchr.failure]FAIL timeout[/]"
@@ -412,14 +417,11 @@ class Summary(Reporter):
         self._formatter = formatter or DefaultSummary()
         self._baseline = baseline or []
         self._console = target_console or console
-        self._failures: list[tuple[ScheduledExecution, FailedProcessResult]] = []
         self._lock = threading.Lock()
 
     def sample(self, sched, pr, samples):
         with self._lock:
-            self._report.extend(samples)
-            if isinstance(pr, FailedProcessResult):
-                self._failures.append((sched, pr))
+            self._report.record(sched, pr, samples)
 
     def set_baseline(self, paths: list[Path]) -> None:
         self._baseline = list(paths)
@@ -428,31 +430,19 @@ class Summary(Reporter):
         out = self._formatter(self._report, baseline=self._baseline)
         if out:
             self._console.print(out)
-        if self._failures:
+        if self._report.failures:
             self._console.print()
             self._console.print("[benchr.label]Failures:[/]")
-            for sched, pr in self._failures:
-                self._console.print("  " + _failure_line(sched, pr))
+            for fr in self._report.failures:
+                self._console.print("  " + _failure_line(fr))
 
 
-def _failure_line(sched: ScheduledExecution, pr: FailedProcessResult) -> str:
+def _failure_line(fr: FailureRecord) -> str:
     """Render a one-line diagnostic for a failed run."""
-    if pr.returncode == 124:
+    if fr.returncode == 124:
         verdict = "[benchr.failure]timeout (exit 124)[/]"
-    elif pr.returncode == -1:
-        verdict = f"[benchr.failure]spawn failed[/]: {pr.reason or 'unknown'}"
+    elif fr.returncode == -1:
+        verdict = f"[benchr.failure]spawn failed[/]: {fr.reason or 'unknown'}"
     else:
-        verdict = f"[benchr.failure]exit {pr.returncode}[/]"
-    return f"[benchr.failure]✗[/] {sched.identifier()} — {verdict}: {_diagnostic_excerpt(pr)}"
-
-
-def _diagnostic_excerpt(pr: FailedProcessResult, *, max_len: int = 80) -> str:
-    """Last non-empty line of stderr (else stdout); ``"(no output)"`` otherwise."""
-    for text in (pr.stderr, pr.stdout):
-        if not text:
-            continue
-        for line in reversed(text.splitlines()):
-            stripped = line.strip()
-            if stripped:
-                return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
-    return "(no output)"
+        verdict = f"[benchr.failure]exit {fr.returncode}[/]"
+    return f"[benchr.failure]✗[/] {fr.identifier()} — {verdict}: {fr.message or '(no output)'}"

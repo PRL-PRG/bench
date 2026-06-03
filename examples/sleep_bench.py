@@ -28,7 +28,7 @@ for i, succeed in enumerate(choices([True, False], k=10), 1):
         bench(f"step_{i}")
         .with_command(cmd)
         .with_cwd(Path("/tmp"))
-        .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+        .with_process(P.time())
         .runs(2)
     )
 

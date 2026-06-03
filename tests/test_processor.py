@@ -5,7 +5,7 @@ import re
 import pytest
 
 from benchr import (
-    PartialSample, Processor, P, SuccessfulProcessResult, stamp,
+    PartialSample, Processor, P, SuccessfulExecutionResult, stamp,
 )
 
 from conftest import make_failure, make_rusage, make_sched, make_success
@@ -50,14 +50,6 @@ def test_direction_decorator():
     assert next(iter(proc.process(pr))).lower_is_better is True
     proc = P.float_per_line("s").higher_is_better()
     assert next(iter(proc.process(pr))).lower_is_better is False
-
-
-def test_on_failure_routes_correctly():
-    ok = make_success(stdout="0.5\n")
-    bad = make_failure()
-    proc = P.float_per_line("s").on_failure(P.constant("failed", 1.0))
-    assert [s.metric for s in proc.process(ok)] == ["runtime"]
-    assert [s.metric for s in proc.process(bad)] == ["failed"]
 
 
 def test_is_success_default_and_pipeline():

@@ -1,6 +1,6 @@
 """Sample, Report, and JSON round-trip."""
 
-from benchr import Report, Sample, report_from_json, report_to_json
+from benchr import FailureRecord, Report, Sample, report_from_json, report_to_json
 
 
 def _mk(**kw) -> Sample:
@@ -29,9 +29,13 @@ def test_json_round_trip():
     r.extend([
         _mk(),
         _mk(metric="max_rss", value=2048, unit="kB"),
-        _mk(metric="failed", value=1.0, unit="", lower_is_better=None),
     ])
+    r.add_failure(FailureRecord(
+        suite="S", benchmark="B", info=(("opt", "O2"),), run=3, phase="measure",
+        returncode=7, message="boom",
+    ))
     text = report_to_json(r)
     r2 = report_from_json(text)
     assert r2.samples == r.samples
     assert r2.metadata == r.metadata
+    assert r2.failures == r.failures

@@ -8,9 +8,9 @@
 # ///
 """Failure handling: mixed success / failure runs.
 
-The processor pipeline runs ``P.time()`` on success and emits a ``failed=1``
-sample on failure. Failed runs do not advance the FixedRuns policy, so
-``runs(3)`` means "three *successful* measurements."
+Failed runs emit no metrics — benchr records each as a structured failure that
+the summary lists in a ``Failures:`` block. ``.runs(N)`` counts every attempt,
+so ``broken`` runs exactly 3 times and reports 3 failures (no fake timings).
 """
 
 from benchr import P, Path, bench, run, suite
@@ -22,14 +22,14 @@ s = (
         bench("ok")
             .with_command(["sh", "-c", "sleep 0.02"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+            .with_process(P.time())
             .runs(3),
 
-        # Always fails: aborted by max_consecutive_failures (default 5):
+        # Always fails: 3 runs, 3 recorded failures (exit 7):
         bench("broken")
             .with_command(["sh", "-c", "exit 7"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+            .with_process(P.time())
             .runs(3),
     )
 )

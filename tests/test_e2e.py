@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    CoefficientOfVariation, FixedRuns, P, Sequential, bench, suite,
+    CoefficientOfVariation, FixedRuns, Json, P, Sequential, bench,
+    report_from_json, suite,
 )
 
 
@@ -33,24 +34,30 @@ def test_e2e_warmup_then_measure():
     assert phases == ["warmup", "warmup", "measure", "measure"]
 
 
-def test_e2e_command_not_found_marks_failure():
+def test_e2e_command_not_found_marks_failure(tmp_path: Path):
+    out = tmp_path / "r.json"
     s = suite("F", bench("missing")
               .with_command(["/no_such_binary_xyzzy"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .with_process(P.time())
               .runs(3))
-    samples = Sequential(max_consecutive_failures=3).run([s], ctx=None)
-    assert all(s.metric == "failed" for s in samples)
-    assert len(samples) == 3
+    samples = Sequential(reporter=Json(out)).run([s], ctx=None)
+    assert samples == []  # failed runs emit no metrics
+    r = report_from_json(out.read_text())
+    assert len(r.failures) == 3
+    assert all(f.returncode == -1 for f in r.failures)  # spawn failure
 
 
-def test_e2e_timeout_marks_failure():
+def test_e2e_timeout_marks_failure(tmp_path: Path):
+    out = tmp_path / "r.json"
     s = suite("F", bench("hang")
               .with_command(["sh", "-c", "sleep 5"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time().on_failure(P.constant("failed", 1.0)))
+              .with_process(P.time())
               .with_timeout(0.05)
               .runs(1))
-    # 1 successful run required → infinite retries until cap. Use max_consec=2.
-    samples = Sequential(max_consecutive_failures=2).run([s], ctx=None)
-    assert all(s.metric == "failed" for s in samples)
+    samples = Sequential(reporter=Json(out)).run([s], ctx=None)
+    assert samples == []
+    r = report_from_json(out.read_text())
+    assert len(r.failures) == 1
+    assert r.failures[0].returncode == 124  # timeout

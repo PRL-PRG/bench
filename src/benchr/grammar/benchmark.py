@@ -121,9 +121,9 @@ class Benchmark:
         — formatters skip them by default but they appear in JSON/CSV/dir
         outputs.
 
-        Failure handling: if a run produces *no* samples (the Runner only sends
-        samples from successful runs — see Runner.is_success), the policy is
-        not advanced.
+        Failure handling: a failed run produces no samples (the Runner only
+        runs ``process()`` on success — see Processor.is_success), but the
+        policy still observes it with an empty list, so every run counts.
         """
         if self.command is None:
             raise ValueError(f"Benchmark {self.name!r} has no command")

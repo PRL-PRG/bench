@@ -14,9 +14,9 @@ in place of ``isinstance`` checks:
     .max_runs()    int | None — upper bound on permitted runs, ``None`` = ∞
     .independent() bool       — whether runs can be reordered / parallelized
 
-``observe(run, samples)`` is called by the Runner once per *successful* run
-(failed runs are reported but do not move the policy). Samples are the parsed
-output of one execution.
+``observe(run, samples)`` is called by the Runner once per run, whether it
+succeeded or failed. ``samples`` is the parsed output of one execution — empty
+for a failed run, since failed runs emit no metrics.
 """
 
 from __future__ import annotations
@@ -60,8 +60,8 @@ class StoppingPolicy(abc.ABC):
     # and combinators override below.
 
     def max_runs(self) -> int | None:
-        """Upper bound on the number of successful runs this policy will
-        permit; ``None`` means unbounded by this policy."""
+        """Upper bound on the number of runs this policy will permit;
+        ``None`` means unbounded by this policy."""
         return None
 
     def independent(self) -> bool:
@@ -108,12 +108,10 @@ class _FixedState(PolicyState):
         self.cur = 0
 
     def observe(self, run: int, samples: Iterable[Sample]) -> None:
-        # Count only observations that produced samples. Failed runs are
-        # reported by the Runner but ``observe`` is called with an empty
-        # iterable in that case, so they don't advance us. This means
-        # ``.runs(N)`` is "N successful measurements", not "N attempts".
-        if any(True for _ in samples):
-            self.cur += 1
+        # Count every run, success or failure. ``.runs(N)`` means "N attempts",
+        # so a crashing benchmark stops after N runs instead of retrying until
+        # the consecutive-failure cap.
+        self.cur += 1
 
     def converged(self) -> bool:
         return self.cur >= self.target
@@ -148,6 +146,10 @@ class _CoVState(PolicyState):
         self.n_runs = 0
 
     def observe(self, run: int, samples: Iterable[Sample]) -> None:
+        # Counts per matching sample, not per run: assumes the processor emits
+        # at most one sample for ``cfg.metric`` per run. A processor that emits
+        # several (e.g. float_per_line over many lines) would inflate the
+        # window / min_runs counter.
         for s in samples:
             if s.metric != self.cfg.metric:
                 continue

@@ -101,10 +101,17 @@ class Parallel(Runner):
         all_sched = warm + meas
 
         out: list[Sample] = []
-        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+        # This runs inside an outer-pool worker, so cap the inner pool at the
+        # number of executions to avoid spawning idle threads (the outer pool
+        # already provides cross-benchmark parallelism).
+        inner_workers = max(1, min(self.workers, len(all_sched)))
+        with ThreadPoolExecutor(max_workers=inner_workers) as pool:
             for sched, pr in zip(all_sched, pool.map(lambda s: execute(s.execution), all_sched)):
-                partials = list(b.processor.process(pr))
-                samples = list(stamp(partials, sched))
+                # Failed runs emit no metrics; the Reporter records them from pr.
+                if b.processor.is_success(pr):
+                    samples = list(stamp(b.processor.process(pr), sched))
+                else:
+                    samples = []
                 out.extend(samples)
                 with self._lock:
                     self.reporter.sample(sched, pr, samples)

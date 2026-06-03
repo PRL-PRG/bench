@@ -16,8 +16,8 @@ import re
 from typing import Iterable
 
 from benchr import (
-    PartialSample, Path, Processor, ProcessResult, P,
-    SuccessfulProcessResult, bench, run, suite,
+    PartialSample, Path, Processor, ExecutionResult, P,
+    SuccessfulExecutionResult, bench, run, suite,
 )
 
 
@@ -29,8 +29,8 @@ class StderrFloat(Processor):
 
     _re = re.compile(r"TIME=([0-9.]+)")
 
-    def process(self, pr: ProcessResult) -> Iterable[PartialSample]:
-        if not isinstance(pr, SuccessfulProcessResult):
+    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+        if not isinstance(pr, SuccessfulExecutionResult):
             return
         m = self._re.search(pr.stderr or "")
         if m:
@@ -38,7 +38,7 @@ class StderrFloat(Processor):
                                 unit="s", lower_is_better=True)
 
     def is_success(self, pr) -> bool:
-        if not isinstance(pr, SuccessfulProcessResult):
+        if not isinstance(pr, SuccessfulExecutionResult):
             return False
         return "OK" in (pr.stdout or "")
 

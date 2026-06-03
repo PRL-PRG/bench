@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from benchr import (
-    Execution, FailedProcessResult, ScheduledExecution, SuccessfulProcessResult,
+    Execution, FailedExecutionResult, ScheduledExecution, SuccessfulExecutionResult,
 )
 
 
@@ -34,16 +34,16 @@ def make_sched(**overrides) -> ScheduledExecution:
 
 
 def make_success(stdout: str = "", stderr: str = "", runtime: float = 1.0,
-                 rusage=None, **exe_kw) -> SuccessfulProcessResult:
-    return SuccessfulProcessResult(
+                 rusage=None, **exe_kw) -> SuccessfulExecutionResult:
+    return SuccessfulExecutionResult(
         execution=make_execution(**exe_kw),
         runtime=runtime, stdout=stdout, stderr=stderr, rusage=rusage,
     )
 
 
 def make_failure(returncode: int = 1, stdout=None, stderr=None, runtime=None,
-                 rusage=None, reason=None, **exe_kw) -> FailedProcessResult:
-    return FailedProcessResult(
+                 rusage=None, reason=None, **exe_kw) -> FailedExecutionResult:
+    return FailedExecutionResult(
         execution=make_execution(**exe_kw),
         runtime=runtime, stdout=stdout, stderr=stderr, rusage=rusage,
         returncode=returncode, reason=reason,

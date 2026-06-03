@@ -4,7 +4,7 @@ Public surface:
 
     from benchr import (
         # Atoms
-        Execution, ProcessResult, SuccessfulProcessResult, FailedProcessResult,
+        Execution, ExecutionResult, SuccessfulExecutionResult, FailedExecutionResult,
         ScheduledExecution, Sample, Report,
 
         # Processors
@@ -42,13 +42,14 @@ from pathlib import Path
 # Atoms
 from benchr.grammar.execution import (
     Execution,
-    FailedProcessResult,
+    FailedExecutionResult,
     Phase,
-    ProcessResult,
+    ExecutionResult,
     ScheduledExecution,
-    SuccessfulProcessResult,
+    SuccessfulExecutionResult,
 )
 from benchr.report.sample import (
+    FailureRecord,
     Report,
     Sample,
     info_keys,
@@ -59,7 +60,6 @@ from benchr.report.sample import (
 # Processors
 from benchr.grammar.processor import (
     Constant,
-    Fail,
     FloatPerLine,
     P,
     PartialSample,
@@ -137,12 +137,12 @@ B = bench
 __all__ = [
     "Path",
     # Atoms
-    "Execution", "ProcessResult", "SuccessfulProcessResult", "FailedProcessResult",
+    "Execution", "ExecutionResult", "SuccessfulExecutionResult", "FailedExecutionResult",
     "ScheduledExecution", "Phase",
-    "Sample", "Report", "info_keys", "report_to_json", "report_from_json",
+    "Sample", "Report", "FailureRecord", "info_keys", "report_to_json", "report_from_json",
     # Processors
     "Processor", "PartialSample", "stamp", "P",
-    "FloatPerLine", "Regex", "Rebench", "RUsage", "Time", "Constant", "Fail",
+    "FloatPerLine", "Regex", "Rebench", "RUsage", "Time", "Constant",
     # Policies
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation", "Custom",

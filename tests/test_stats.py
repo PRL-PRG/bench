@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    GeoMeanRatio, MetricRatio, Report, Sample, build_summary, geomean_with_sigma,
-    group, metric_ratio, metric_stats, scale_unit,
+    FailureRecord, GeoMeanRatio, MetricRatio, Report, Sample, build_summary,
+    geomean_with_sigma, group, metric_ratio, metric_stats, scale_unit,
 )
 
 
@@ -40,15 +40,40 @@ def test_group_with_warmup_when_opted_in():
     assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
 
 
-def test_failed_meta_metric_folds_into_run_counts():
+def _fail(run: int, *, bench: str = "b", suite: str = "S") -> FailureRecord:
+    return FailureRecord(
+        suite=suite, benchmark=bench, info=(), run=run, phase="measure",
+        returncode=7, message="boom",
+    )
+
+
+def test_failures_count_into_run_counts():
     r = Report()
-    r.extend([
-        _mk("failed", 1.0, phase="measure", run=1, lower_is_better=None),
-        _mk("runtime", 1.0, phase="measure", run=2),
-    ])
+    r.extend([_mk("runtime", 1.0, phase="measure", run=2)])
+    r.add_failure(_fail(1))
     g = group(r)
     assert g.groups[0].run_counts.failures == 1
     assert g.groups[0].run_counts.successes == 1
+
+
+def test_all_failed_benchmark_still_appears():
+    r = Report()
+    r.add_failure(_fail(1))
+    r.add_failure(_fail(2))
+    g = group(r)
+    assert len(g.groups) == 1
+    assert g.groups[0].run_counts.failures == 2
+    assert g.groups[0].run_counts.successes == 0
+    assert g.groups[0].metrics == {}
+
+
+def test_group_excludes_failures_in_warmup():
+    r = Report()
+    r.add_failure(FailureRecord(
+        suite="S", benchmark="b", info=(), run=1, phase="warmup", returncode=1,
+    ))
+    g = group(r)
+    assert g.groups == []
 
 
 def test_metric_stats_basic():

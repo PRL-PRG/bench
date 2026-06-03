@@ -19,16 +19,14 @@ def _mk(value: float, run: int, *, metric: str = "rt") -> Sample:
 # ---------------------------------------------------------------------------
 
 
-def test_fixed_runs_counts_observations_not_indices():
+def test_fixed_runs_counts_every_observation():
     state = FixedRuns(3).start()
     assert not state.converged()
-    # Two empty observations: shouldn't count.
+    # Every run counts — success or failure (failed runs observe with []).
     state.observe(1, [])
-    state.observe(2, [])
+    state.observe(2, [_mk(1.0, 2)])
     assert not state.converged()
-    # Then three with samples → converges.
-    for i in range(3, 6):
-        state.observe(i, [_mk(1.0, i)])
+    state.observe(3, [])
     assert state.converged()
 
 

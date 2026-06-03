@@ -35,10 +35,17 @@ def add_dataclass_args(
     """Generate ``--<name>`` arguments from a dataclass's fields."""
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")
+    # Resolve string annotations (``from __future__ import annotations`` makes
+    # every ``f.type`` a string); fall back to the raw field types if the
+    # forward refs can't be resolved.
+    try:
+        hints = typing.get_type_hints(dc)
+    except Exception:
+        hints = {}
     for f in fields(dc):
         flag = "--" + f.name.replace("_", "-")
         kwargs: dict[str, Any] = {"dest": f.name}
-        bare_type, optional = _unwrap_optional(f.type)
+        bare_type, optional = _unwrap_optional(hints.get(f.name, f.type))
         is_bool = bare_type is bool
         if is_bool:
             kwargs["action"] = argparse.BooleanOptionalAction

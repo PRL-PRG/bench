@@ -2,11 +2,11 @@
 
 Two abstractions are split intentionally:
 
-  ``execute(sched)``  spawn one subprocess, return ProcessResult.
+  ``execute(sched)``  spawn one subprocess, return ExecutionResult.
                       Pure mechanism — no policy, no reporting.
   ``Runner``          orchestrate compile() coroutines for a list of suites.
                       The coroutine yields ScheduledExecution; Runner calls
-                      ``execute`` to get a ProcessResult; the benchmark's
+                      ``execute`` to get a ExecutionResult; the benchmark's
                       Processor turns that into Samples; the Runner stamps
                       them, forwards to the Reporter, and sends them back
                       into the coroutine via ``.send()`` so the StoppingPolicy
@@ -30,10 +30,10 @@ from typing import Any, Protocol
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
     Execution,
-    FailedProcessResult,
-    ProcessResult,
+    FailedExecutionResult,
+    ExecutionResult,
     ScheduledExecution,
-    SuccessfulProcessResult,
+    SuccessfulExecutionResult,
 )
 from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
@@ -46,24 +46,24 @@ from benchr.report.sample import Sample
 
 class ReporterLike(Protocol):
     def start(self, plan: list[Benchmark]) -> None: ...
-    def sample(self, sched: ScheduledExecution, pr: ProcessResult, samples: list[Sample]) -> None: ...
+    def sample(self, sched: ScheduledExecution, pr: ExecutionResult, samples: list[Sample]) -> None: ...
     def finalize(self) -> None: ...
 
 
 class _NoopReporter:
     def start(self, plan: list[Benchmark]) -> None: pass
-    def sample(self, sched: ScheduledExecution, pr: ProcessResult,
+    def sample(self, sched: ScheduledExecution, pr: ExecutionResult,
                samples: list[Sample]) -> None: pass
     def finalize(self) -> None: pass
 
 
 # ---------------------------------------------------------------------------
-# Subprocess execution — single Execution -> ProcessResult.
+# Subprocess execution — single Execution -> ExecutionResult.
 # ---------------------------------------------------------------------------
 
 
-def execute(exe: Execution) -> ProcessResult:
-    """Spawn one subprocess and return a ProcessResult.
+def execute(exe: Execution) -> ExecutionResult:
+    """Spawn one subprocess and return a ExecutionResult.
 
     Honors ``exe.timeout`` (returncode 124 on timeout), captures stdout/stderr,
     and includes ``rusage`` via ``os.wait4``.
@@ -71,7 +71,7 @@ def execute(exe: Execution) -> ProcessResult:
     cmd = list(exe.command)
     found = shutil.which(cmd[0])
     if found is None:
-        return FailedProcessResult.empty(exe, f"Command not found: {cmd[0]}")
+        return FailedExecutionResult.empty(exe, f"Command not found: {cmd[0]}")
     # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
     # doesn't re-resolve a relative executable against the subprocess's cwd.
     cmd[0] = os.path.abspath(found)
@@ -126,7 +126,7 @@ def execute(exe: Execution) -> ProcessResult:
         returncode = 124 if timed_out else os.waitstatus_to_exitcode(waitstatus)
 
         if returncode != 0:
-            return FailedProcessResult(
+            return FailedExecutionResult(
                 execution=exe,
                 runtime=runtime,
                 stdout=stdout,
@@ -134,7 +134,7 @@ def execute(exe: Execution) -> ProcessResult:
                 rusage=rusage,
                 returncode=returncode,
             )
-        return SuccessfulProcessResult(
+        return SuccessfulExecutionResult(
             execution=exe,
             runtime=runtime,
             stdout=stdout,
@@ -142,7 +142,7 @@ def execute(exe: Execution) -> ProcessResult:
             rusage=rusage,
         )
     except OSError as e:
-        return FailedProcessResult.empty(exe, f"spawn failed: {e}")
+        return FailedExecutionResult.empty(exe, f"spawn failed: {e}")
     finally:
         stdout_f.close()
         stderr_f.close()
@@ -224,10 +224,10 @@ class Runner(abc.ABC):
 
             pr = execute(sched.execution)
             is_ok = b.processor.is_success(pr)
-            # On failure we still call process() so on_failure handlers can
-            # emit a `failed` flag; the policy is only advanced for successful
-            # runs (send `[]` back to the coroutine otherwise).
-            samples = list(stamp(b.processor.process(pr), sched))
+            # A failed run produces no metrics — only the Reporter records it
+            # (from ``pr``). The policy still observes (sees ``[]``) so that
+            # ``.runs(N)`` counts every attempt, not just successes.
+            samples = list(stamp(b.processor.process(pr), sched)) if is_ok else []
             consecutive_failures = 0 if is_ok else consecutive_failures + 1
 
             all_samples.extend(samples)
@@ -238,6 +238,6 @@ class Runner(abc.ABC):
                 return all_samples
 
             try:
-                sched = gen.send(samples if is_ok else [])
+                sched = gen.send(samples)
             except StopIteration:
                 return all_samples

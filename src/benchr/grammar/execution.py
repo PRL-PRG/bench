@@ -30,10 +30,10 @@ class Execution:
 
 
 # ---------------------------------------------------------------------------
-# ProcessResult: the runner's verdict about what happened to one Execution.
+# ExecutionResult: the runner's verdict about what happened to one Execution.
 # ---------------------------------------------------------------------------
 
-# `returncode` conventions (set on FailedProcessResult only):
+# `returncode` conventions (set on FailedExecutionResult only):
 #   124 ........... timed out (coreutils `timeout(1)` convention)
 #   any other > 0 . process crash / non-zero exit
 #   -1 ............ pre-execution failure (spawn errored before the process
@@ -41,7 +41,7 @@ class Execution:
 
 
 @dataclass(frozen=True, slots=True)
-class SuccessfulProcessResult:
+class SuccessfulExecutionResult:
     execution: Execution
     runtime: float                            # wall-clock seconds
     stdout: str
@@ -50,7 +50,7 @@ class SuccessfulProcessResult:
 
 
 @dataclass(frozen=True, slots=True)
-class FailedProcessResult:
+class FailedExecutionResult:
     execution: Execution
     runtime: float | None
     stdout: str | None
@@ -61,12 +61,12 @@ class FailedProcessResult:
     reason: str | None = None
 
     @staticmethod
-    def empty(execution: Execution, reason: str) -> "FailedProcessResult":
+    def empty(execution: Execution, reason: str) -> "FailedExecutionResult":
         """Pre-execution failure (e.g. command not found, OSError on spawn).
 
         Uses ``returncode=-1`` since no real exit code was produced.
         """
-        return FailedProcessResult(
+        return FailedExecutionResult(
             execution=execution,
             runtime=None,
             stdout=None,
@@ -77,7 +77,7 @@ class FailedProcessResult:
         )
 
 
-ProcessResult = SuccessfulProcessResult | FailedProcessResult
+ExecutionResult = SuccessfulExecutionResult | FailedExecutionResult
 
 
 # ---------------------------------------------------------------------------

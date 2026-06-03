@@ -8,8 +8,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-pandas = ["pandas"]
-dev = ["pytest", "pandas"]
+dev = ["pytest"]
 
 [project.scripts]
 benchr = "benchr.__main__:cli"

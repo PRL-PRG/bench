@@ -19,9 +19,6 @@ VariantInfo = tuple[tuple[str, str], ...]  # canonical info tuple
 BenchmarkId = tuple[str, str, VariantInfo] # (suite, benchmark, info)
 
 
-_META_METRICS = {"failed"}
-
-
 # ---------------------------------------------------------------------------
 # Grouping
 # ---------------------------------------------------------------------------
@@ -55,8 +52,9 @@ def group(report: Report, *, name: str = "current",
           include_warmup: bool = False) -> GroupedReport:
     """Reshape a Report for stats/comparison.
 
-    Folds the ``failed`` meta-metric into ``run_counts``, collects
-    per-metric direction annotations. Warmup samples are excluded by default.
+    Counts ``report.failures`` into ``run_counts`` and collects per-metric
+    direction annotations. Warmup samples and failures are excluded by default.
+    Benchmarks that only ever failed still appear (zero successes).
     """
     order: list[BenchmarkId] = []
     metrics: dict[BenchmarkId, dict[MetricKey, list[float]]] = {}
@@ -64,36 +62,40 @@ def group(report: Report, *, name: str = "current",
     failed: dict[BenchmarkId, int] = {}
     lib: dict[MetricKey, bool] = {}
 
+    def register(bid: BenchmarkId) -> None:
+        if bid not in metrics:
+            metrics[bid] = {}
+            order.append(bid)
+
     for s in report.samples:
         if s.phase == "warmup" and not include_warmup:
             continue
         bid: BenchmarkId = (s.suite, s.benchmark, s.info)
-        if bid not in metrics:
-            metrics[bid] = {}
-            order.append(bid)
+        register(bid)
         runs.setdefault(bid, set()).add(s.run)
-
-        if s.metric == "failed" and s.value == 1:
-            failed[bid] = failed.get(bid, 0) + 1
-            continue
-        if s.metric in _META_METRICS:
-            continue
-
         mk = (s.metric, s.unit)
         if s.lower_is_better is not None:
             lib[mk] = s.lower_is_better
         metrics[bid].setdefault(mk, []).append(s.value)
 
+    for f in report.failures:
+        if f.phase == "warmup" and not include_warmup:
+            continue
+        bid = (f.suite, f.benchmark, f.info)
+        register(bid)
+        failed[bid] = failed.get(bid, 0) + 1
+
     groups: list[BenchmarkGroup] = []
     for bid in order:
         suite, bench, info = bid
-        total = len(runs[bid])
-        f = failed.get(bid, 0)
         groups.append(
             BenchmarkGroup(
                 suite=suite, benchmark=bench, info=info,
                 metrics=metrics[bid],
-                run_counts=RunCounts(failures=f, successes=total - f),
+                run_counts=RunCounts(
+                    failures=failed.get(bid, 0),
+                    successes=len(runs.get(bid, ())),
+                ),
             )
         )
     return GroupedReport(name=name, groups=groups, lower_is_better=lib)
