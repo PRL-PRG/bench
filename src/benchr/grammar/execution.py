@@ -13,7 +13,7 @@ import resource
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal, Mapping
+from typing import Callable, Literal, Mapping
 
 _EMPTY_ENV: Mapping[str, str] = MappingProxyType({})
 
@@ -30,54 +30,44 @@ class Execution:
 
 
 # ---------------------------------------------------------------------------
-# ExecutionResult: the runner's verdict about what happened to one Execution.
+# ExecutionResult: what happened when one Execution ran.
+#
+# ``execute`` records facts only — it does not judge success. The Runner asks a
+# ``SuccessFn`` (default ``default_success``; per-benchmark overridable via
+# ``Benchmark.with_success``) for a ``Verdict`` and stamps the resulting
+# ``failure`` reason onto the result. A failed run carries no metrics.
+#
+# `returncode` conventions:
+#   0 ............. clean exit
+#   124 .......... timed out (coreutils `timeout(1)` convention)
+#   any other > 0  process crash / non-zero exit
+#   -1 ........... pre-execution failure (spawn errored before the process ran —
+#                  no real exit code; ``failure`` set by ``execute``)
 # ---------------------------------------------------------------------------
 
-# `returncode` conventions (set on FailedExecutionResult only):
-#   124 ........... timed out (coreutils `timeout(1)` convention)
-#   any other > 0 . process crash / non-zero exit
-#   -1 ............ pre-execution failure (spawn errored before the process
-#                   actually ran — no real exit code is available)
-
 
 @dataclass(frozen=True, slots=True)
-class SuccessfulExecutionResult:
-    execution: Execution
-    runtime: float                            # wall-clock seconds
-    stdout: str
-    stderr: str
-    rusage: resource.struct_rusage | None
+class ExecutionResult:
+    """Outcome of running one Execution.
 
+    ``failure`` is the human-readable reason a run is treated as failed, or
+    ``None`` for a success.
+    """
 
-@dataclass(frozen=True, slots=True)
-class FailedExecutionResult:
     execution: Execution
-    runtime: float | None
-    stdout: str | None
-    stderr: str | None
-    rusage: resource.struct_rusage | None
     returncode: int
-    # Only set for pre-execution failures (command not found, OSError on spawn).
-    reason: str | None = None
+    stdout: str = ""
+    stderr: str = ""
+    runtime: float | None = None              # wall-clock seconds
+    rusage: resource.struct_rusage | None = None
+    failure: str | None = None
 
-    @staticmethod
-    def empty(execution: Execution, reason: str) -> "FailedExecutionResult":
-        """Pre-execution failure (e.g. command not found, OSError on spawn).
-
-        Uses ``returncode=-1`` since no real exit code was produced.
-        """
-        return FailedExecutionResult(
-            execution=execution,
-            runtime=None,
-            stdout=None,
-            stderr=None,
-            rusage=None,
-            returncode=-1,
-            reason=reason,
-        )
+    def is_failure(self) -> bool:
+        return self.failure is not None
 
 
-ExecutionResult = SuccessfulExecutionResult | FailedExecutionResult
+type Verdict = str | None                     # None = success; str = failure reason
+type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
 
 
 # ---------------------------------------------------------------------------

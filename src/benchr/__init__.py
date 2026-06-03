@@ -4,7 +4,7 @@ Public surface:
 
     from benchr import (
         # Atoms
-        Execution, ExecutionResult, SuccessfulExecutionResult, FailedExecutionResult,
+        Execution, ExecutionResult, Verdict,
         ScheduledExecution, Sample, Report,
 
         # Processors
@@ -20,7 +20,7 @@ Public surface:
 
         # Runners
         Sequential, Parallel, Dry,
-        execute,                 # low-level subprocess helper
+        execute, default_success,    # subprocess helper + default success policy
 
         # Reporters
         Reporter, Mixed, Csv, Json, Dir, Table, Summary, Progress,
@@ -42,11 +42,10 @@ from pathlib import Path
 # Atoms
 from benchr.grammar.execution import (
     Execution,
-    FailedExecutionResult,
     Phase,
     ExecutionResult,
     ScheduledExecution,
-    SuccessfulExecutionResult,
+    Verdict,
 )
 from benchr.report.sample import (
     FailureRecord,
@@ -88,7 +87,7 @@ from benchr.grammar.suite import Suite, benchmark_info, suite
 from benchr.grammar.context import add_dataclass_args, build_dataclass
 
 # Runners
-from benchr.runner.base import Runner, execute, plan
+from benchr.runner.base import Runner, default_success, execute, plan
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -137,7 +136,7 @@ B = bench
 __all__ = [
     "Path",
     # Atoms
-    "Execution", "ExecutionResult", "SuccessfulExecutionResult", "FailedExecutionResult",
+    "Execution", "ExecutionResult", "Verdict",
     "ScheduledExecution", "Phase",
     "Sample", "Report", "FailureRecord", "info_keys", "report_to_json", "report_from_json",
     # Processors
@@ -152,7 +151,7 @@ __all__ = [
     # Context
     "add_dataclass_args", "build_dataclass",
     # Runners
-    "Runner", "execute", "plan",
+    "Runner", "execute", "plan", "default_success",
     "Sequential", "Parallel", "Dry",
     # Reporters
     "Reporter", "Mixed", "Csv", "Json", "Dir", "Table", "Summary", "Progress",

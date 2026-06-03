@@ -19,6 +19,7 @@ Two-tier parallelism:
 
 from __future__ import annotations
 
+import dataclasses
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Any
@@ -27,7 +28,13 @@ from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
 from benchr.report.sample import Sample
-from benchr.runner.base import PlannedBenchmark, Runner, execute, plan
+from benchr.runner.base import (
+    PlannedBenchmark,
+    Runner,
+    default_success,
+    execute,
+    plan,
+)
 
 
 class Parallel(Runner):
@@ -108,7 +115,10 @@ class Parallel(Runner):
         with ThreadPoolExecutor(max_workers=inner_workers) as pool:
             for sched, pr in zip(all_sched, pool.map(lambda s: execute(s.execution), all_sched)):
                 # Failed runs emit no metrics; the Reporter records them from pr.
-                if b.processor.is_success(pr):
+                reason = (b.success or default_success)(sched.execution, pr)
+                if reason is not None and pr.failure is None:
+                    pr = dataclasses.replace(pr, failure=reason)
+                if not pr.is_failure():
                     samples = list(stamp(b.processor.process(pr), sched))
                 else:
                     samples = []

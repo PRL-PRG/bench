@@ -53,16 +53,16 @@ class Suite:
 
     # ----- producers -------------------------------------------------
 
-    def named(self, name: str) -> "Suite":
+    def named(self, name: str) -> Suite:
         return dataclasses.replace(self, name=name)
 
-    def add(self, b: Benchmark) -> "Suite":
+    def add(self, b: Benchmark) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + (b,))
 
-    def add_all(self, *bs: Benchmark) -> "Suite":
+    def add_all(self, *bs: Benchmark) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
-    def factory(self, fn: BenchFactory) -> "Suite":
+    def factory(self, fn: BenchFactory) -> Suite:
         """Register a deferred factory; ``materialize(ctx)`` will call it."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
@@ -73,7 +73,7 @@ class Suite:
         pattern: str | None = None,
         recursive: bool = True,
         exclude: set[str] | None = None,
-    ) -> "Suite":
+    ) -> Suite:
         """Discover files; each becomes a Benchmark with ``b.path`` set.
 
         ``root`` may be a callable so discovery depends on ctx (e.g. ``ctx.cwd``).
@@ -112,7 +112,7 @@ class Suite:
 
         return self.factory(factory)
 
-    def filter(self, pred: Callable[[Benchmark], bool]) -> "Suite":
+    def filter(self, pred: Callable[[Benchmark], bool]) -> Suite:
         """Keep only benchmarks for which ``pred(b)`` is truthy. Wraps any
         deferred factories so the filter also applies post-discovery.
         """
@@ -122,13 +122,13 @@ class Suite:
 
     # ----- propagating defaults --------------------------------------
 
-    def with_command(self, command: Sequence[str] | CommandFn) -> "Suite":
+    def with_command(self, command: Sequence[str] | CommandFn) -> Suite:
         return self._map(lambda b: b.with_command(command) if b.command is None else b)
 
-    def with_cwd(self, cwd: Path | PathFn) -> "Suite":
+    def with_cwd(self, cwd: Path | PathFn) -> Suite:
         return self._map(lambda b: b.with_cwd(cwd) if b.cwd is None else b)
 
-    def with_env(self, env: Mapping[str, str] | EnvFn) -> "Suite":
+    def with_env(self, env: Mapping[str, str] | EnvFn) -> Suite:
         # Envs merge — suite env first, then benchmark env wins per key.
         def merge(b: Benchmark) -> Benchmark:
             if callable(env) or callable(b.env):
@@ -145,13 +145,13 @@ class Suite:
 
         return self._map(merge)
 
-    def with_timeout(self, timeout: float) -> "Suite":
+    def with_timeout(self, timeout: float) -> Suite:
         return self._map(lambda b: b.with_timeout(timeout) if b.timeout is None else b)
 
-    def with_process(self, processor: Processor) -> "Suite":
+    def with_process(self, processor: Processor) -> Suite:
         return self._map(lambda b: b.with_process(processor) if b.processor is None else b)
 
-    def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> "Suite":
+    def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
         """Propagate a warmup policy. By default fills only benchmarks still at
         the ``FixedRuns(0)`` default; ``force=True`` overrides every benchmark
         (used by the CLI ``--warmup`` global override)."""
@@ -160,7 +160,7 @@ class Suite:
             lambda b: b.with_warmup(policy) if force or b.warmup == FixedRuns(0) else b
         )
 
-    def with_measure(self, p: StoppingPolicy | int, *, force: bool = False) -> "Suite":
+    def with_measure(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
         """Propagate a measure policy. By default fills only benchmarks still at
         the ``FixedRuns(1)`` default; ``force=True`` overrides every benchmark
         (used by the CLI ``--runs`` global override)."""
@@ -169,11 +169,11 @@ class Suite:
             lambda b: b.with_measure(policy) if force or b.measure == FixedRuns(1) else b
         )
 
-    def with_runs(self, n: int, *, force: bool = False) -> "Suite":
+    def with_runs(self, n: int, *, force: bool = False) -> Suite:
         """Alias of ``with_measure(FixedRuns(n))`` — propagates to children."""
         return self.with_measure(n, force=force)
 
-    def runs(self, n: int) -> "Suite":
+    def runs(self, n: int) -> Suite:
         """Shorthand for ``with_runs``. Mirrors ``Benchmark.runs``."""
         return self.with_runs(n)
 
@@ -187,7 +187,7 @@ class Suite:
         command: MatrixCommandFn | None = None,
         env: MatrixEnvFn | None = None,
         info: MatrixInfoFn | None = None,
-    ) -> "Suite":
+    ) -> Suite:
         """Cross each benchmark with each value, producing one variant per cell.
 
         Each variant copies the original benchmark and overrides command/env
@@ -235,7 +235,7 @@ class Suite:
 
     # ----- helpers --------------------------------------------------
 
-    def _map(self, fn: Callable[[Benchmark], Benchmark]) -> "Suite":
+    def _map(self, fn: Callable[[Benchmark], Benchmark]) -> Suite:
         new_bs = tuple(fn(b) for b in self.benchmarks)
         new_factories = tuple(_wrap_map(f, fn) for f in self.factories)
         return dataclasses.replace(self, benchmarks=new_bs, factories=new_factories)

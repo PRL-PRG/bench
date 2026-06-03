@@ -36,7 +36,6 @@ from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
     ExecutionResult,
     ScheduledExecution,
-    SuccessfulExecutionResult,
 )
 from benchr.report.sample import (
     FailureRecord,
@@ -235,13 +234,9 @@ class Dir(Reporter):
         lines.extend(f"info[{k}]={v}" for k, v in sched.info)
         (run_dir / "seq").write_text("\n".join(lines) + "\n")
 
-        if pr.stdout is not None:
-            (run_dir / "stdout").write_text(pr.stdout)
-        if pr.stderr is not None:
-            (run_dir / "stderr").write_text(pr.stderr)
-
-        rc = 0 if isinstance(pr, SuccessfulExecutionResult) else pr.returncode
-        (run_dir / "exitcode").write_text(f"{rc}\n")
+        (run_dir / "stdout").write_text(pr.stdout)
+        (run_dir / "stderr").write_text(pr.stderr)
+        (run_dir / "exitcode").write_text(f"{pr.returncode}\n")
 
         if pr.rusage is not None:
             ru_lines = [
@@ -344,7 +339,7 @@ class Progress(Reporter):
     def sample(self, sched: ScheduledExecution, pr: ExecutionResult,
                samples: list[Sample]) -> None:
         with self._lock:
-            if isinstance(pr, SuccessfulExecutionResult):
+            if not pr.is_failure():
                 self._successes += 1
             else:
                 self._failures += 1
@@ -368,12 +363,12 @@ class Progress(Reporter):
     def _print_plain(self, sched: ScheduledExecution, pr: ExecutionResult) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
-        if isinstance(pr, SuccessfulExecutionResult):
+        if not pr.is_failure():
             tag = "[benchr.success]ok[/]"
         elif pr.returncode == 124:
             tag = "[benchr.failure]FAIL timeout[/]"
         elif pr.returncode == -1:
-            tag = f"[benchr.failure]FAIL spawn[/] ({pr.reason or 'unknown'})"
+            tag = f"[benchr.failure]FAIL spawn[/] ({pr.failure or 'unknown'})"
         else:
             tag = f"[benchr.failure]FAIL exit {pr.returncode}[/]"
         self._console.print(f"[{n}/{total_str}] {sched.identifier()} {tag}")

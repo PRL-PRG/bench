@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    Execution, FailedExecutionResult, ScheduledExecution, SuccessfulExecutionResult,
+    Execution, ExecutionResult, ScheduledExecution,
 )
 
 
@@ -22,12 +22,20 @@ def test_execution_defaults():
     assert e.stdin is None
 
 
-def test_failed_process_result_empty():
+def test_execution_result_failure():
     e = Execution(command=("x",), cwd=Path("/tmp"))
-    f = FailedExecutionResult.empty(e, "boom")
-    assert f.reason == "boom"
+    f = ExecutionResult(execution=e, returncode=-1, failure="boom")
+    assert f.is_failure()
+    assert f.failure == "boom"
     assert f.returncode == -1
-    assert f.stdout is None and f.stderr is None and f.runtime is None
+    assert f.stdout == "" and f.stderr == "" and f.runtime is None
+
+
+def test_execution_result_success_defaults():
+    e = Execution(command=("x",), cwd=Path("/tmp"))
+    ok = ExecutionResult(execution=e, returncode=0, stdout="1\n", runtime=1.0)
+    assert not ok.is_failure()
+    assert ok.failure is None
 
 
 def test_scheduled_execution_identifier():

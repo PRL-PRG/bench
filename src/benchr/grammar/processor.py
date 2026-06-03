@@ -1,9 +1,10 @@
 """Processor: ExecutionResult -> Iterable[PartialSample].
 
-Processors are composable with ``|`` (pipeline — both run, samples concatenated)
-and have a ``is_success(pr)`` hook that decides whether a run is treated as a
-success. Failed runs emit no metrics — the Runner records them as structured
-``FailureRecord``s instead. Decorator-style modifiers:
+Processors are composable with ``|`` (pipeline — both run, samples concatenated).
+A Processor only parses metrics; whether a run *succeeded* is decided by the
+Runner (see ``default_success`` / ``Benchmark.with_success``). Failed runs emit
+no metrics — the Runner records them as structured ``FailureRecord``s instead.
+Decorator-style modifiers:
 
   ``.lower_is_better()``  /  ``.higher_is_better()``   tag emitted samples
   ``.when(predicate)``                                 conditional emission
@@ -23,10 +24,8 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Iterator, Literal
 
 from benchr.grammar.execution import (
-    FailedExecutionResult,
     ExecutionResult,
     ScheduledExecution,
-    SuccessfulExecutionResult,
 )
 from benchr.report.sample import Sample
 
@@ -73,7 +72,7 @@ def stamp(partials: Iterable[PartialSample], sched: ScheduledExecution) -> Itera
 class Processor(abc.ABC):
     """ExecutionResult -> Iterable[PartialSample].
 
-    Override ``process``; optionally override ``is_success``. Compose with ``|``.
+    Override ``process``. Compose with ``|``.
     """
 
     # --- core hooks -----------------------------------------------------
@@ -81,22 +80,18 @@ class Processor(abc.ABC):
     @abc.abstractmethod
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]: ...
 
-    def is_success(self, pr: ExecutionResult) -> bool:
-        """Default: success iff the process exited 0 (no separate FailedExecutionResult)."""
-        return isinstance(pr, SuccessfulExecutionResult)
-
     # --- composition ----------------------------------------------------
 
-    def __or__(self, other: "Processor") -> "Processor":
+    def __or__(self, other: Processor) -> Processor:
         return _Pipeline(self, other)
 
-    def lower_is_better(self) -> "Processor":
+    def lower_is_better(self) -> Processor:
         return _Direction(self, True)
 
-    def higher_is_better(self) -> "Processor":
+    def higher_is_better(self) -> Processor:
         return _Direction(self, False)
 
-    def when(self, predicate: Callable[[ExecutionResult], bool]) -> "Processor":
+    def when(self, predicate: Callable[[ExecutionResult], bool]) -> Processor:
         """Run this processor only when ``predicate(pr)`` is true."""
         return _When(self, predicate)
 
@@ -122,9 +117,6 @@ class _Pipeline(Processor):
         for p in self.parts:
             yield from p.process(pr)
 
-    def is_success(self, pr: ExecutionResult) -> bool:
-        return all(p.is_success(pr) for p in self.parts)
-
 
 class _Direction(Processor):
     __slots__ = ("inner", "lib")
@@ -136,9 +128,6 @@ class _Direction(Processor):
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         for s in self.inner.process(pr):
             yield dataclasses.replace(s, lower_is_better=self.lib)
-
-    def is_success(self, pr: ExecutionResult) -> bool:
-        return self.inner.is_success(pr)
 
 
 class _When(Processor):
@@ -152,9 +141,6 @@ class _When(Processor):
         if self.predicate(pr):
             yield from self.inner.process(pr)
 
-    def is_success(self, pr: ExecutionResult) -> bool:
-        return self.inner.is_success(pr)
-
 
 # ---------------------------------------------------------------------------
 # Built-in processors
@@ -164,7 +150,7 @@ class _When(Processor):
 class FloatPerLine(Processor):
     """Parse each non-empty line of stdout as a float, emit one sample per line.
 
-    On a failed run, emits nothing (the default success gate handles the rest).
+    On a failed run, emits nothing.
     """
 
     __slots__ = ("unit", "metric")
@@ -174,7 +160,7 @@ class FloatPerLine(Processor):
         self.metric = metric
 
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedExecutionResult) or pr.stdout is None:
+        if pr.is_failure() or not pr.stdout:
             return
         for line in pr.stdout.split("\n"):
             line = line.strip()
@@ -184,6 +170,21 @@ class FloatPerLine(Processor):
                 yield PartialSample(metric=self.metric, value=float(line), unit=self.unit)
             except ValueError:
                 continue
+
+    # Selectors narrow parsing to one line of stdout. Indices are 1-based on
+    # non-empty lines; ``-1`` is the last non-empty line.
+
+    def last_line(self) -> Processor:
+        """Parse only the last non-empty line of stdout."""
+        return _LineSelect(self, line=-1)
+
+    def first_line(self) -> Processor:
+        """Parse only the first non-empty line of stdout."""
+        return _LineSelect(self, line=1)
+
+    def nth(self, i: int) -> Processor:
+        """Parse only the i-th non-empty line of stdout (1-based; negatives count from the end)."""
+        return _LineSelect(self, line=i)
 
 
 class _LineSelect(Processor):
@@ -212,19 +213,14 @@ class _LineSelect(Processor):
             return ""
 
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedExecutionResult):
+        if pr.is_failure():
             return
-        sub = SuccessfulExecutionResult(
-            execution=pr.execution,
-            runtime=pr.runtime,
+        sub = dataclasses.replace(
+            pr,
             stdout=self._pick(pr.stdout, self.line),
             stderr=self._pick(pr.stderr, self.line),
-            rusage=pr.rusage,
         )
         yield from self.inner.process(sub)
-
-    def is_success(self, pr: ExecutionResult) -> bool:
-        return self.inner.is_success(pr)
 
 
 class Regex(Processor):
@@ -258,7 +254,7 @@ class Regex(Processor):
         self.unit_group = unit_group
 
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if isinstance(pr, FailedExecutionResult):
+        if pr.is_failure():
             return
         outs: list[str] = []
         if self.output in ("stdout", "both"):
@@ -292,7 +288,7 @@ class Rebench(Processor):
     )
 
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if not isinstance(pr, SuccessfulExecutionResult) or pr.stdout is None:
+        if pr.is_failure() or not pr.stdout:
             return
         for line in pr.stdout.split("\n"):
             m = self._re_runtime.match(line)
@@ -397,31 +393,12 @@ class Constant(Processor):
 # ---------------------------------------------------------------------------
 
 
-class _FloatPerLineBuilder(FloatPerLine):
-    """FloatPerLine + selectors that narrow parsing to one line of stdout.
-
-    Indices are 1-based on non-empty lines; ``-1`` is the last non-empty line.
-    """
-
-    def last_line(self) -> Processor:
-        """Parse only the last non-empty line of stdout."""
-        return _LineSelect(self, line=-1)
-
-    def first_line(self) -> Processor:
-        """Parse only the first non-empty line of stdout."""
-        return _LineSelect(self, line=1)
-
-    def nth(self, i: int) -> Processor:
-        """Parse only the i-th non-empty line of stdout (1-based; negatives count from the end)."""
-        return _LineSelect(self, line=i)
-
-
 class P:
     """Namespace of built-in processors. Use as ``P.time()``, ``P.regex(...)``."""
 
     @staticmethod
-    def float_per_line(unit: str = "s", metric: str = "runtime") -> _FloatPerLineBuilder:
-        return _FloatPerLineBuilder(unit=unit, metric=metric)
+    def float_per_line(unit: str = "s", metric: str = "runtime") -> FloatPerLine:
+        return FloatPerLine(unit=unit, metric=metric)
 
     @staticmethod
     def regex(

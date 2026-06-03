@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from benchr import (
-    Execution, FailedExecutionResult, ScheduledExecution, SuccessfulExecutionResult,
+    Execution, ExecutionResult, ScheduledExecution,
 )
 
 
@@ -34,19 +34,21 @@ def make_sched(**overrides) -> ScheduledExecution:
 
 
 def make_success(stdout: str = "", stderr: str = "", runtime: float = 1.0,
-                 rusage=None, **exe_kw) -> SuccessfulExecutionResult:
-    return SuccessfulExecutionResult(
+                 rusage=None, **exe_kw) -> ExecutionResult:
+    return ExecutionResult(
         execution=make_execution(**exe_kw),
-        runtime=runtime, stdout=stdout, stderr=stderr, rusage=rusage,
+        returncode=0, stdout=stdout, stderr=stderr, runtime=runtime, rusage=rusage,
     )
 
 
-def make_failure(returncode: int = 1, stdout=None, stderr=None, runtime=None,
-                 rusage=None, reason=None, **exe_kw) -> FailedExecutionResult:
-    return FailedExecutionResult(
+def make_failure(returncode: int = 1, stdout: str = "", stderr: str = "",
+                 runtime=None, rusage=None, failure: str | None = None,
+                 **exe_kw) -> ExecutionResult:
+    return ExecutionResult(
         execution=make_execution(**exe_kw),
-        runtime=runtime, stdout=stdout, stderr=stderr, rusage=rusage,
-        returncode=returncode, reason=reason,
+        returncode=returncode, stdout=stdout, stderr=stderr,
+        runtime=runtime, rusage=rusage,
+        failure=failure if failure is not None else f"exit code {returncode}",
     )
 
 

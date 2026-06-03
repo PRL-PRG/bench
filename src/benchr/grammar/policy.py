@@ -39,18 +39,18 @@ class StoppingPolicy(abc.ABC):
     """Immutable policy configuration. Use ``.start()`` to get an observer."""
 
     @abc.abstractmethod
-    def start(self) -> "PolicyState": ...
+    def start(self) -> PolicyState: ...
 
-    def __and__(self, other: "StoppingPolicy") -> "StoppingPolicy":
+    def __and__(self, other: StoppingPolicy) -> StoppingPolicy:
         return _And(self, other)
 
-    def __or__(self, other: "StoppingPolicy") -> "StoppingPolicy":
+    def __or__(self, other: StoppingPolicy) -> StoppingPolicy:
         return _Or(self, other)
 
-    def at_least(self, n: int) -> "StoppingPolicy":
+    def at_least(self, n: int) -> StoppingPolicy:
         return self & FixedRuns(n)
 
-    def at_most(self, n: int) -> "StoppingPolicy":
+    def at_most(self, n: int) -> StoppingPolicy:
         return self | FixedRuns(n)
 
     # ----- static introspection ----------------------------------------
@@ -90,7 +90,7 @@ class PolicyState(abc.ABC):
 class FixedRuns(StoppingPolicy):
     n: int
 
-    def start(self) -> "_FixedState":
+    def start(self) -> _FixedState:
         return _FixedState(self.n)
 
     def max_runs(self) -> int:
@@ -129,7 +129,7 @@ class CoefficientOfVariation(StoppingPolicy):
     window: int = 5
     min_runs: int = 10
 
-    def start(self) -> "_CoVState":
+    def start(self) -> _CoVState:
         return _CoVState(self)
 
 
@@ -204,7 +204,7 @@ class _And(StoppingPolicy):
     a: StoppingPolicy
     b: StoppingPolicy
 
-    def start(self) -> "_PairState":
+    def start(self) -> _PairState:
         return _PairState(self.a.start(), self.b.start(), all)
 
     def max_runs(self) -> int | None:
@@ -224,7 +224,7 @@ class _Or(StoppingPolicy):
     a: StoppingPolicy
     b: StoppingPolicy
 
-    def start(self) -> "_PairState":
+    def start(self) -> _PairState:
         return _PairState(self.a.start(), self.b.start(), any)
 
     def max_runs(self) -> int | None:

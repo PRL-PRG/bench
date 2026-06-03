@@ -19,6 +19,7 @@ safety net against custom policies that never converge.
 from __future__ import annotations
 
 import abc
+import dataclasses
 import os
 import shutil
 import subprocess
@@ -30,10 +31,9 @@ from typing import Any, Protocol
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
     Execution,
-    FailedExecutionResult,
     ExecutionResult,
     ScheduledExecution,
-    SuccessfulExecutionResult,
+    Verdict,
 )
 from benchr.grammar.processor import stamp
 from benchr.grammar.suite import Suite
@@ -71,7 +71,8 @@ def execute(exe: Execution) -> ExecutionResult:
     cmd = list(exe.command)
     found = shutil.which(cmd[0])
     if found is None:
-        return FailedExecutionResult.empty(exe, f"Command not found: {cmd[0]}")
+        return ExecutionResult(execution=exe, returncode=-1,
+                               failure=f"Command not found: {cmd[0]}")
     # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
     # doesn't re-resolve a relative executable against the subprocess's cwd.
     cmd[0] = os.path.abspath(found)
@@ -125,27 +126,33 @@ def execute(exe: Execution) -> ExecutionResult:
 
         returncode = 124 if timed_out else os.waitstatus_to_exitcode(waitstatus)
 
-        if returncode != 0:
-            return FailedExecutionResult(
-                execution=exe,
-                runtime=runtime,
-                stdout=stdout,
-                stderr=stderr,
-                rusage=rusage,
-                returncode=returncode,
-            )
-        return SuccessfulExecutionResult(
+        # execute() records facts only; judging success is the Runner's job
+        # (see default_success / Benchmark.with_success).
+        return ExecutionResult(
             execution=exe,
-            runtime=runtime,
+            returncode=returncode,
             stdout=stdout,
             stderr=stderr,
+            runtime=runtime,
             rusage=rusage,
         )
     except OSError as e:
-        return FailedExecutionResult.empty(exe, f"spawn failed: {e}")
+        return ExecutionResult(execution=exe, returncode=-1,
+                               failure=f"spawn failed: {e}")
     finally:
         stdout_f.close()
         stderr_f.close()
+
+
+def default_success(execution: Execution, pr: ExecutionResult) -> Verdict:
+    """Default success policy: clean exit passes, anything else fails."""
+    if pr.failure is not None:        # spawn failure already judged by execute()
+        return pr.failure
+    if pr.returncode == 124:
+        return "timeout"
+    if pr.returncode != 0:
+        return f"exit code {pr.returncode}"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -223,7 +230,10 @@ class Runner(abc.ABC):
                 )
 
             pr = execute(sched.execution)
-            is_ok = b.processor.is_success(pr)
+            reason = (b.success or default_success)(sched.execution, pr)
+            if reason is not None and pr.failure is None:
+                pr = dataclasses.replace(pr, failure=reason)
+            is_ok = not pr.is_failure()
             # A failed run produces no metrics — only the Reporter records it
             # (from ``pr``). The policy still observes (sees ``[]``) so that
             # ``.runs(N)`` counts every attempt, not just successes.

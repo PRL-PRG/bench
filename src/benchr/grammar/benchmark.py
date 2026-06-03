@@ -23,6 +23,7 @@ from benchr.grammar.execution import (
     Execution,
     Phase,
     ScheduledExecution,
+    SuccessFn,
 )
 from benchr.grammar.policy import FixedRuns, StoppingPolicy
 from benchr.grammar.processor import Processor
@@ -31,9 +32,9 @@ from benchr.report.sample import Sample
 
 # A user-supplied command builder. Receives the benchmark and the ctx (the
 # typed RunContext dataclass). Returns a list[str].
-CommandFn = Callable[["Benchmark", Any], Sequence[str]]
-PathFn = Callable[["Benchmark", Any], Path]
-EnvFn = Callable[["Benchmark", Any], Mapping[str, str]]
+type CommandFn = Callable[[Benchmark, Any], Sequence[str]]
+type PathFn = Callable[[Benchmark, Any], Path]
+type EnvFn = Callable[[Benchmark, Any], Mapping[str, str]]
 
 
 _EMPTY_ENV: Mapping[str, str] = MappingProxyType({})
@@ -62,6 +63,10 @@ class Benchmark:
 
     processor: Processor | None = None
 
+    # Optional success policy: returns a failure reason (str) or None for
+    # success. Defaults to the Runner's ``default_success`` when unset.
+    success: SuccessFn | None = None
+
     warmup: StoppingPolicy = FixedRuns(0)
     measure: StoppingPolicy = FixedRuns(1)
 
@@ -80,28 +85,32 @@ class Benchmark:
 
     # ----- with_* methods ---------------------------------------------
 
-    def with_command(self, command: Sequence[str] | CommandFn) -> "Benchmark":
+    def with_command(self, command: Sequence[str] | CommandFn) -> Benchmark:
         return dataclasses.replace(self, command=command)
 
-    def with_cwd(self, cwd: Path | PathFn) -> "Benchmark":
+    def with_cwd(self, cwd: Path | PathFn) -> Benchmark:
         return dataclasses.replace(self, cwd=cwd)
 
-    def with_env(self, env: Mapping[str, str] | EnvFn) -> "Benchmark":
+    def with_env(self, env: Mapping[str, str] | EnvFn) -> Benchmark:
         return dataclasses.replace(self, env=env)
 
-    def with_timeout(self, timeout: float) -> "Benchmark":
+    def with_timeout(self, timeout: float) -> Benchmark:
         return dataclasses.replace(self, timeout=timeout)
 
-    def with_process(self, processor: Processor) -> "Benchmark":
+    def with_process(self, processor: Processor) -> Benchmark:
         return dataclasses.replace(self, processor=processor)
 
-    def with_warmup(self, p: StoppingPolicy | int) -> "Benchmark":
+    def with_success(self, fn: SuccessFn) -> Benchmark:
+        """Override the success policy (returns a failure reason, or None)."""
+        return dataclasses.replace(self, success=fn)
+
+    def with_warmup(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, warmup=_coerce_policy(p))
 
-    def with_measure(self, p: StoppingPolicy | int) -> "Benchmark":
+    def with_measure(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, measure=_coerce_policy(p))
 
-    def runs(self, n: int) -> "Benchmark":
+    def runs(self, n: int) -> Benchmark:
         """Sugar for ``.with_measure(FixedRuns(n))``."""
         return self.with_measure(FixedRuns(n))
 
@@ -121,9 +130,10 @@ class Benchmark:
         — formatters skip them by default but they appear in JSON/CSV/dir
         outputs.
 
-        Failure handling: a failed run produces no samples (the Runner only
-        runs ``process()`` on success — see Processor.is_success), but the
-        policy still observes it with an empty list, so every run counts.
+        Failure handling: a failed run produces no samples (the Runner judges
+        success via ``default_success`` / ``with_success`` and skips
+        ``process()`` on failure), but the policy still observes it with an
+        empty list, so every run counts.
         """
         if self.command is None:
             raise ValueError(f"Benchmark {self.name!r} has no command")

@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from benchr.grammar.execution import (
-    FailedExecutionResult,
     Phase,
     ExecutionResult,
     ScheduledExecution,
@@ -63,9 +62,10 @@ class FailureRecord:
     structurally lets summaries, JSON and stats report *which* runs failed and
     *why* without a magic ``failed`` metric polluting real measurements.
 
-    ``returncode`` follows the FailedExecutionResult convention: ``124`` = timeout,
-    ``-1`` = pre-execution failure (``reason`` set), any other ``> 0`` = exit code.
-    ``message`` is the last non-empty line of stderr/stdout.
+    ``returncode`` follows the ExecutionResult convention: ``124`` = timeout,
+    ``-1`` = pre-execution failure, any other ``> 0`` = exit code. ``reason`` is
+    the failure verdict string; ``message`` is the last non-empty line of
+    stderr/stdout.
     """
 
     suite: str
@@ -86,8 +86,8 @@ class FailureRecord:
 
     @staticmethod
     def from_result(
-        sched: ScheduledExecution, pr: FailedExecutionResult
-    ) -> "FailureRecord":
+        sched: ScheduledExecution, pr: ExecutionResult
+    ) -> FailureRecord:
         return FailureRecord(
             suite=sched.suite,
             benchmark=sched.benchmark,
@@ -95,12 +95,12 @@ class FailureRecord:
             run=sched.run,
             phase=sched.phase,
             returncode=pr.returncode,
-            reason=pr.reason,
+            reason=pr.failure,
             message=_diagnostic_excerpt(pr),
         )
 
 
-def _diagnostic_excerpt(pr: FailedExecutionResult, *, max_len: int = 80) -> str:
+def _diagnostic_excerpt(pr: ExecutionResult, *, max_len: int = 80) -> str:
     """Last non-empty line of stderr (else stdout); ``"(no output)"`` otherwise."""
     for text in (pr.stderr, pr.stdout):
         if not text:
@@ -140,7 +140,7 @@ class Report:
     ) -> None:
         """Ingest one execution: keep its samples, log a FailureRecord if it failed."""
         self.samples.extend(samples)
-        if isinstance(pr, FailedExecutionResult):
+        if pr.is_failure():
             self.failures.append(FailureRecord.from_result(sched, pr))
 
 
