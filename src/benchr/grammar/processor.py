@@ -148,79 +148,51 @@ class _When(Processor):
 
 
 class FloatPerLine(Processor):
-    """Parse each non-empty line of stdout as a float, emit one sample per line.
+    """Parse non-empty lines of stdout as floats, emit one sample per line.
 
-    On a failed run, emits nothing.
+    ``line`` selects a single 1-based non-empty line (negative counts from the
+    end); ``None`` (the default) parses every non-empty line. A failed run, or a
+    ``line`` index out of range, emits nothing.
     """
 
-    __slots__ = ("unit", "metric")
+    __slots__ = ("unit", "metric", "line")
 
-    def __init__(self, unit: str = "s", metric: str = "runtime"):
+    def __init__(self, unit: str = "s", metric: str = "runtime", line: int | None = None):
+        if line == 0:
+            raise ValueError("line must be non-zero")
         self.unit = unit
         self.metric = metric
+        self.line = line
 
     def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
         if pr.is_failure() or not pr.stdout:
             return
-        for line in pr.stdout.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
+        lines = [s for s in (ln.strip() for ln in pr.stdout.split("\n")) if s]
+        if self.line is not None:
+            idx = self.line - 1 if self.line > 0 else self.line
+            try:
+                lines = [lines[idx]]
+            except IndexError:
+                return
+        for line in lines:
             try:
                 yield PartialSample(metric=self.metric, value=float(line), unit=self.unit)
             except ValueError:
                 continue
 
-    # Selectors narrow parsing to one line of stdout. Indices are 1-based on
-    # non-empty lines; ``-1`` is the last non-empty line.
+    # Selectors return a reconfigured FloatPerLine that parses one line.
 
-    def last_line(self) -> Processor:
+    def last_line(self) -> "FloatPerLine":
         """Parse only the last non-empty line of stdout."""
-        return _LineSelect(self, line=-1)
+        return FloatPerLine(self.unit, self.metric, line=-1)
 
-    def first_line(self) -> Processor:
+    def first_line(self) -> "FloatPerLine":
         """Parse only the first non-empty line of stdout."""
-        return _LineSelect(self, line=1)
+        return FloatPerLine(self.unit, self.metric, line=1)
 
-    def nth(self, i: int) -> Processor:
+    def nth(self, i: int) -> "FloatPerLine":
         """Parse only the i-th non-empty line of stdout (1-based; negatives count from the end)."""
-        return _LineSelect(self, line=i)
-
-
-class _LineSelect(Processor):
-    """Run an inner Processor against one line of stdout/stderr.
-
-    1-based positive indices (1 = first non-empty line), negative from the end.
-    """
-
-    __slots__ = ("inner", "line")
-
-    def __init__(self, inner: Processor, line: int):
-        if line == 0:
-            raise ValueError("line must be non-zero")
-        self.inner = inner
-        self.line = line
-
-    @staticmethod
-    def _pick(text: str | None, line: int) -> str:
-        if not text:
-            return ""
-        lines = [l for l in text.split("\n") if l.strip()]
-        idx = line - 1 if line > 0 else line
-        try:
-            return lines[idx]
-        except IndexError:
-            return ""
-
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if pr.is_failure():
-            return
-        sub = dataclasses.replace(
-            pr,
-            stdout=self._pick(pr.stdout, self.line),
-            stderr=self._pick(pr.stderr, self.line),
-        )
-        yield from self.inner.process(sub)
+        return FloatPerLine(self.unit, self.metric, line=i)
 
 
 class Regex(Processor):
@@ -385,7 +357,7 @@ class Constant(Processor):
 # `P` namespace — short builder names for users.
 #
 #   P.float_per_line("s")                      → FloatPerLine
-#   P.float_per_line("s").last_line()          → _LineSelect(...)
+#   P.float_per_line("s").last_line()          → FloatPerLine(line=-1)
 #   P.float_per_line("iter", "throughput").nth(2)
 #   P.regex("rt", r"runtime: (\d+) ms", unit="ms")
 #   P.rebench(), P.time(), P.max_rss(), P.rusage(...)
