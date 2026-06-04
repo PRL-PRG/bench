@@ -6,41 +6,46 @@
 # [tool.uv.sources]
 # benchr = { path = "..", editable = true }
 # ///
-"""Writing a custom Processor.
+"""Writing a custom Processor and a custom success policy.
 
 A real benchmark prints a fixed string to stdout and a metric to stderr.
-Success means the fixed string appeared; the metric is parsed from a regex.
+The Processor parses the metric; the success policy (``.with_success``)
+decides whether a run counts as successful. The Runner only calls
+``process`` on a run it judged successful, so the Processor never has to
+re-check the exit status.
 """
 
 import re
 from typing import Iterable
 
 from benchr import (
-    PartialSample, Path, Processor, ExecutionResult, P,
-    SuccessfulExecutionResult, bench, run, suite,
+    PartialSample, Path, Processor, Execution, ExecutionResult, P,
+    bench, run, suite,
 )
 
 
 class StderrFloat(Processor):
-    """Custom Processor: read 'TIME=<float>' from stderr.
-
-    Success criterion: stdout contains 'OK' AND the process exited zero.
-    """
+    """Custom Processor: read 'TIME=<float>' from stderr."""
 
     _re = re.compile(r"TIME=([0-9.]+)")
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if not isinstance(pr, SuccessfulExecutionResult):
-            return
-        m = self._re.search(pr.stderr or "")
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        m = self._re.search(result.stderr or "")
         if m:
             yield PartialSample(metric="custom_time", value=float(m.group(1)),
                                 unit="s", lower_is_better=True)
 
-    def is_success(self, pr) -> bool:
-        if not isinstance(pr, SuccessfulExecutionResult):
-            return False
-        return "OK" in (pr.stdout or "")
+
+def succeeded(execution: Execution, pr: ExecutionResult) -> str | None:
+    """Success policy: exit zero AND stdout contains 'OK'.
+
+    Returns ``None`` on success, or a failure reason string otherwise.
+    """
+    if pr.returncode != 0:
+        return f"exit code {pr.returncode}"
+    if "OK" not in (pr.stdout or ""):
+        return "missing OK marker"
+    return None
 
 
 s = (
@@ -48,7 +53,8 @@ s = (
         bench("with_stderr")
             .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
             .with_cwd(Path("/tmp"))
-            .with_process(StderrFloat() | P.time())
+            .with_process(StderrFloat(), P.time())
+            .with_success(succeeded)
             .runs(3)
     )
 )

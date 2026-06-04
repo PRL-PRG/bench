@@ -81,6 +81,12 @@ def test_cov_ignores_unrelated_metrics():
     assert not state.converged()
 
 
+def test_cov_raises_on_multiple_matching_samples():
+    state = CoefficientOfVariation("rt", window=2, min_runs=2).start()
+    with pytest.raises(ValueError, match="at most one"):
+        state.observe(1, [_mk(1.0, 1), _mk(2.0, 1)])
+
+
 # ---------------------------------------------------------------------------
 # Combinators
 # ---------------------------------------------------------------------------

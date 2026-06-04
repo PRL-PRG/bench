@@ -1,10 +1,12 @@
 """Sample, Report, and JSON round-trip."""
 
-from benchr import FailureRecord, Report, Sample, report_from_json, report_to_json
+from typing import Any
+
+from benchr import RunRecord, Report, Sample, report_from_json, report_to_json
 
 
-def _mk(**kw) -> Sample:
-    base = dict(
+def _mk(**kw: Any) -> Sample:
+    base: dict[str, Any] = dict(
         suite="S", benchmark="B", info=(), run=1, phase="measure",
         metric="runtime", value=1.5, unit="s", lower_is_better=True,
     )
@@ -30,12 +32,13 @@ def test_json_round_trip():
         _mk(),
         _mk(metric="max_rss", value=2048, unit="kB"),
     ])
-    r.add_failure(FailureRecord(
+    r.add_run(RunRecord(
         suite="S", benchmark="B", info=(("opt", "O2"),), run=3, phase="measure",
-        returncode=7, message="boom",
+        command=("./bench", "--opt"), returncode=7, failure="exit 7", message="boom",
     ))
     text = report_to_json(r)
     r2 = report_from_json(text)
     assert r2.samples == r.samples
     assert r2.metadata == r.metadata
+    assert r2.runs == r.runs
     assert r2.failures == r.failures

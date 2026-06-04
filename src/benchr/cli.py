@@ -58,7 +58,8 @@ def run(
     ``formatter`` overrides the default summary formatter (used for the
     terminal summary; defaults to ``DefaultSummary``).
 
-    Returns a Report containing every Sample emitted, for callers that want
+    Returns the Report the runner accumulated — every Sample plus a RunRecord
+    per execution (so ``report.failures`` is populated) — for callers that want
     to do follow-up analysis after the side-effecting reporters have run.
     """
     if isinstance(suites, Suite):
@@ -84,11 +85,10 @@ def run(
 
     runner = _make_runner(ns, final_reporter)
     try:
-        samples = runner.run(suites, ctx)
+        return runner.run(suites, ctx)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         sys.exit(1)
-    return Report(samples=list(samples))
 
 
 # ---------------------------------------------------------------------------
@@ -121,12 +121,12 @@ def _assemble(
 
 
 def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
-    """Pick a runner from the parsed flags: Dry > Parallel (jobs>1) > Sequential."""
+    verbose = getattr(ns, "verbose", False)
     if getattr(ns, "dry", False):
-        return Dry(reporter=reporter)
+        return Dry(verbose=verbose)  # prints the plan only; ignores reporters / sinks
     if ns.jobs > 1:
-        return Parallel(workers=ns.jobs, reporter=reporter)
-    return Sequential(reporter=reporter)
+        return Parallel(workers=ns.jobs, reporter=reporter, verbose=verbose)
+    return Sequential(reporter=reporter, verbose=verbose)
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +160,9 @@ def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
                    help="Suppress the live progress reporter (summary still prints).")
     g.add_argument("--dry", action="store_true",
                    help="Print the planned executions and exit without running anything.")
+    g.add_argument("--verbose", "-v", action="store_true",
+                   help="Echo each benchmark's full command / cwd / env / run plan "
+                        "before running it (and the only output under --dry -v).")
     g.add_argument("--json", type=str, default=None, metavar="FILE",
                    help="Write a JSON report of every sample to FILE.")
     g.add_argument("--csv", type=str, default=None, metavar="FILE",
@@ -235,6 +238,11 @@ def _bench_subparser(p: argparse.ArgumentParser) -> None:
                    help="Run up to N benchmarks in parallel (default: 1, sequential).")
     p.add_argument("--quiet", "-q", action="store_true",
                    help="Suppress the live progress reporter (summary still prints).")
+    p.add_argument("--dry", action="store_true",
+                   help="Print the planned executions and exit without running anything.")
+    p.add_argument("--verbose", "-v", action="store_true",
+                   help="Echo each benchmark's full command / cwd / env / run plan "
+                        "before running it (and the only output under --dry -v).")
     p.add_argument("--json", type=str, default=None, metavar="FILE",
                    help="Write a JSON report of every sample to FILE.")
     p.add_argument("--csv", type=str, default=None, metavar="FILE",
@@ -271,7 +279,7 @@ def _run_bench(ns: argparse.Namespace) -> int:
 
     metrics = {ns.metric} if ns.metric else None
     summary_reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
-    rep = _assemble(ns, summary_reporter, with_progress=not ns.quiet)
+    rep = _assemble(ns, summary_reporter, with_progress=not ns.dry and not ns.quiet)
 
     runner = _make_runner(ns, rep)
     try:

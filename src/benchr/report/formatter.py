@@ -15,6 +15,7 @@ import math
 import statistics
 from pathlib import Path
 
+from benchr.grammar.execution import format_variant
 from benchr.report.sample import Report
 from benchr.report.stats import (
     BenchmarkGroup,
@@ -27,6 +28,7 @@ from benchr.report.stats import (
     RunCounts,
     SummaryData,
     build_summary,
+    geomean,
     geomean_with_sigma,
     metric_ratio,
     scale_unit,
@@ -50,7 +52,6 @@ class Formatter(abc.ABC):
 
 
 def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
-    """Express any oriented ratio as ratio ≥ 1 plus better/worse word."""
     if display_ratio >= 1:
         return display_ratio, sigma, "better"
     inv = 1.0 / display_ratio
@@ -58,13 +59,15 @@ def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
     return inv, inv_sigma, "worse"
 
 
+def _count_markup(rc: RunCounts) -> tuple[str, str]:
+    f_s = f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
+    s_s = f"[benchr.success]{rc.successes}[/]"
+    return f_s, s_s
+
+
 def _display_name(gs: GroupStats, single_suite: bool) -> str:
-    """Hyperfine-style identifier: bench name only when all groups share a
-    suite, otherwise ``suite/benchmark``; append ``(k=v, …)`` for variants."""
     base = gs.benchmark if single_suite else f"{gs.suite}/{gs.benchmark}"
-    if gs.info:
-        base += " (" + ", ".join(f"{k}={v}" for k, v in gs.info) + ")"
-    return base
+    return base + format_variant(gs.info)
 
 
 class DefaultSummary(Formatter):
@@ -93,15 +96,12 @@ class DefaultSummary(Formatter):
     # ----- group block ----------------------------------------------
 
     def _fmt_group(self, gs: GroupStats, lines: list[str]) -> None:
-        name = f"{gs.suite}/{gs.benchmark}"
-        if gs.info:
-            name += " (" + ", ".join(f"{k}={v}" for k, v in gs.info) + ")"
+        name = f"{gs.suite}/{gs.benchmark}{format_variant(gs.info)}"
 
         rc = gs.run_counts
         total = rc.failures + rc.successes
         word = "run" if total <= 1 else "runs"
-        f_s = f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
-        s_s = f"[benchr.success]{rc.successes}[/]"
+        f_s, s_s = _count_markup(rc)
         lines.append(f"[benchr.label]{name}:[/] {f_s}/{s_s} {word}")
 
         if not gs.metrics:
@@ -217,9 +217,7 @@ class DefaultSummary(Formatter):
                 lines.append("")
             first = False
 
-            name = f"{bl_g.suite}/{bl_g.benchmark}"
-            if bl_g.info:
-                name += " (" + ", ".join(f"{k}={v}" for k, v in bl_g.info) + ")"
+            name = f"{bl_g.suite}/{bl_g.benchmark}{format_variant(bl_g.info)}"
             lines.append(f"[benchr.label]{name}:[/]")
             lines.append("  runs:")
             lines.append(f"    {self._fmt_runs(baseline.name, bl_g.run_counts)}")
@@ -280,8 +278,7 @@ class DefaultSummary(Formatter):
 
     @staticmethod
     def _fmt_runs(name: str, rc: RunCounts) -> str:
-        f_s = f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
-        s_s = f"[benchr.success]{rc.successes}[/]"
+        f_s, s_s = _count_markup(rc)
         return f"{name}: {f_s} failed / {s_s} succeeded"
 
     @staticmethod
@@ -442,8 +439,7 @@ class Compact(Formatter):
                 else:
                     out.append(f"{name}: {mean_v:.{p}f} {scaled}")
             if len(entries) > 1 and all(ms.mean > 0 for _, ms in entries):
-                log_means = [math.log(ms.mean) for _, ms in entries]
-                geo = math.exp(statistics.mean(log_means)) * sc
+                geo = geomean([ms.mean for _, ms in entries]) * sc
                 if n >= 2:
                     rel_sq = [(ms.stdev / ms.mean) ** 2 for _, ms in entries]
                     sigma = math.sqrt(sum(rel_sq)) / len(entries)

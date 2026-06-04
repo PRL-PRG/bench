@@ -117,7 +117,7 @@ class Suite:
         deferred factories so the filter also applies post-discovery.
         """
         kept = tuple(b for b in self.benchmarks if pred(b))
-        new_factories = tuple(_wrap_filter(fn, pred) for fn in self.factories)
+        new_factories = tuple(Suite._wrap_filter(fn, pred) for fn in self.factories)
         return dataclasses.replace(self, benchmarks=kept, factories=new_factories)
 
     # ----- propagating defaults --------------------------------------
@@ -148,8 +148,8 @@ class Suite:
     def with_timeout(self, timeout: float) -> Suite:
         return self._map(lambda b: b.with_timeout(timeout) if b.timeout is None else b)
 
-    def with_process(self, processor: Processor) -> Suite:
-        return self._map(lambda b: b.with_process(processor) if b.processor is None else b)
+    def with_process(self, *processors: Processor) -> Suite:
+        return self._map(lambda b: b.with_process(*processors) if not b.processors else b)
 
     def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
         """Propagate a warmup policy. By default fills only benchmarks still at
@@ -212,16 +212,16 @@ class Suite:
                     variant = variant.with_env(merged)
                 if info is not None:
                     extra = dict(info(v))
-                    variant = _stamp_info(variant, extra)
+                    variant = Suite._stamp_info(variant, extra)
                 else:
-                    variant = _stamp_info(variant, {name: str(v)})
+                    variant = Suite._stamp_info(variant, {name: str(v)})
                 variants.append(variant)
             return variants
 
         new_bs: list[Benchmark] = []
         for b in self.benchmarks:
             new_bs.extend(expand(b))
-        new_factories = tuple(_wrap_expand(fn, expand) for fn in self.factories)
+        new_factories = tuple(Suite._wrap_expand(fn, expand) for fn in self.factories)
         return dataclasses.replace(self, benchmarks=tuple(new_bs), factories=new_factories)
 
     # ----- materialization ------------------------------------------
@@ -237,8 +237,52 @@ class Suite:
 
     def _map(self, fn: Callable[[Benchmark], Benchmark]) -> Suite:
         new_bs = tuple(fn(b) for b in self.benchmarks)
-        new_factories = tuple(_wrap_map(f, fn) for f in self.factories)
+        new_factories = tuple(Suite._wrap_map(f, fn) for f in self.factories)
         return dataclasses.replace(self, benchmarks=new_bs, factories=new_factories)
+
+    @staticmethod
+    def _stamp_info(b: Benchmark, extra: Mapping[str, str]) -> Benchmark:
+        """Attach (k, v) pairs that surface on the ScheduledExecution's ``info``.
+
+        Stored under the reserved ``__info__`` key in ``b.data``; ``Benchmark.schedule``
+        reads it back when materializing executions. Merging is by-key: later values
+        in ``extra`` override existing ones.
+        """
+        new_data = dict(b.data) if b.data else {}
+        base_info = new_data.get("__info__", ())
+        merged = tuple(sorted({**dict(base_info), **dict(extra)}.items()))
+        new_data["__info__"] = merged
+        return dataclasses.replace(b, data=new_data)
+
+    @staticmethod
+    def _wrap_map(
+        factory: BenchFactory, fn: Callable[[Benchmark], Benchmark]
+    ) -> BenchFactory:
+        def wrapped(ctx: Any) -> list[Benchmark]:
+            return [fn(b) for b in factory(ctx)]
+
+        return wrapped
+
+    @staticmethod
+    def _wrap_filter(
+        factory: BenchFactory, pred: Callable[[Benchmark], bool]
+    ) -> BenchFactory:
+        def wrapped(ctx: Any) -> list[Benchmark]:
+            return [b for b in factory(ctx) if pred(b)]
+
+        return wrapped
+
+    @staticmethod
+    def _wrap_expand(
+        factory: BenchFactory, expand: Callable[[Benchmark], list[Benchmark]]
+    ) -> BenchFactory:
+        def wrapped(ctx: Any) -> list[Benchmark]:
+            out: list[Benchmark] = []
+            for b in factory(ctx):
+                out.extend(expand(b))
+            return out
+
+        return wrapped
 
 
 # ---------------------------------------------------------------------------
@@ -249,59 +293,3 @@ class Suite:
 def suite(name: str, *benchmarks: Benchmark) -> Suite:
     """Concise constructor: ``suite("LoxSuite", b1, b2, ...)``."""
     return Suite(name=name, benchmarks=tuple(benchmarks))
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
-def _stamp_info(b: Benchmark, extra: Mapping[str, str]) -> Benchmark:
-    """Attach (k, v) pairs that surface on the ScheduledExecution's ``info``.
-
-    Stored under the reserved ``__info__`` key in ``b.data``; ``Benchmark.schedule``
-    reads it back when materializing executions. Merging is by-key: later values
-    in ``extra`` override existing ones.
-    """
-    new_data = dict(b.data) if b.data else {}
-    base_info = new_data.get("__info__", ())
-    merged = tuple(sorted({**dict(base_info), **dict(extra)}.items()))
-    new_data["__info__"] = merged
-    return dataclasses.replace(b, data=new_data)
-
-
-def benchmark_info(b: Benchmark) -> tuple[tuple[str, str], ...]:
-    """Read the matrix info attached to a benchmark (empty tuple if none)."""
-    if b.data and "__info__" in b.data:
-        return tuple(b.data["__info__"])
-    return ()
-
-
-def _wrap_map(
-    factory: BenchFactory, fn: Callable[[Benchmark], Benchmark]
-) -> BenchFactory:
-    def wrapped(ctx: Any) -> list[Benchmark]:
-        return [fn(b) for b in factory(ctx)]
-
-    return wrapped
-
-
-def _wrap_filter(
-    factory: BenchFactory, pred: Callable[[Benchmark], bool]
-) -> BenchFactory:
-    def wrapped(ctx: Any) -> list[Benchmark]:
-        return [b for b in factory(ctx) if pred(b)]
-
-    return wrapped
-
-
-def _wrap_expand(
-    factory: BenchFactory, expand: Callable[[Benchmark], list[Benchmark]]
-) -> BenchFactory:
-    def wrapped(ctx: Any) -> list[Benchmark]:
-        out: list[Benchmark] = []
-        for b in factory(ctx):
-            out.extend(expand(b))
-        return out
-
-    return wrapped

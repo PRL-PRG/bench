@@ -4,7 +4,7 @@
 # dependencies = ["benchr"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# benchr = { path = "../..", editable = true }
 # ///
 """Multi-suite R benchmark configuration.
 

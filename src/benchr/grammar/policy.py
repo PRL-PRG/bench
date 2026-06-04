@@ -146,20 +146,25 @@ class _CoVState(PolicyState):
         self.n_runs = 0
 
     def observe(self, run: int, samples: Iterable[Sample]) -> None:
-        # Counts per matching sample, not per run: assumes the processor emits
-        # at most one sample for ``cfg.metric`` per run. A processor that emits
-        # several (e.g. float_per_line over many lines) would inflate the
-        # window / min_runs counter.
-        for s in samples:
-            if s.metric != self.cfg.metric:
-                continue
+        # CoV tracks one scalar per run. More than one matching sample is
+        # ambiguous (which one is "the" metric?) and would inflate the
+        # window / min_runs counters, so reject it loudly.
+        matching = [s.value for s in samples if s.metric == self.cfg.metric]
+        if len(matching) > 1:
+            raise ValueError(
+                f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
+                f"{len(matching)} samples in run {run}; it expects at most one "
+                f"per run. Restrict the processor to a single line (e.g. "
+                f".last_line()) or watch a different metric."
+            )
+        for value in matching:  # 0 or 1
             if len(self.window) == self.window.maxlen:
                 old = self.window[0]
                 self.sum -= old
                 self.sumsq -= old * old
-            self.window.append(s.value)
-            self.sum += s.value
-            self.sumsq += s.value * s.value
+            self.window.append(value)
+            self.sum += value
+            self.sumsq += value * value
             self.n_runs += 1
 
     def converged(self) -> bool:

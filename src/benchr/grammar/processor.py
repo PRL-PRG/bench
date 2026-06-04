@@ -1,10 +1,11 @@
 """Processor: ExecutionResult -> Iterable[PartialSample].
 
-Processors are composable with ``|`` (pipeline — both run, samples concatenated).
-A Processor only parses metrics; whether a run *succeeded* is decided by the
-Runner (see ``default_success`` / ``Benchmark.with_success``). Failed runs emit
-no metrics — the Runner records them as structured ``FailureRecord``s instead.
-Decorator-style modifiers:
+A Processor parses one metric kind (or a few, like ``Time``). Attach several to
+a Benchmark with ``with_process(p1, p2, ...)``; the Runner runs each over the
+result and concatenates their PartialSamples (see ``process_all``). Whether a run
+*succeeded* is decided by the Runner (see ``default_success`` /
+``Benchmark.with_success``). Failed runs emit no metrics — the Runner records
+every run as a structured ``RunRecord`` instead. Decorator-style modifiers:
 
   ``.lower_is_better()``  /  ``.higher_is_better()``   tag emitted samples
   ``.when(predicate)``                                 conditional emission
@@ -48,6 +49,14 @@ class PartialSample:
     lower_is_better: bool | None = None
 
 
+def process_all(
+    processors: Iterable[Processor], result: ExecutionResult
+) -> Iterator[PartialSample]:
+    """Run each processor over one result, concatenating their PartialSamples."""
+    for proc in processors:
+        yield from proc.process(result)
+
+
 def stamp(partials: Iterable[PartialSample], sched: ScheduledExecution) -> Iterator[Sample]:
     """Lift PartialSamples to fully-identified Samples."""
     for p in partials:
@@ -72,18 +81,17 @@ def stamp(partials: Iterable[PartialSample], sched: ScheduledExecution) -> Itera
 class Processor(abc.ABC):
     """ExecutionResult -> Iterable[PartialSample].
 
-    Override ``process``. Compose with ``|``.
+    Override ``process``. Attach several to a Benchmark with
+    ``.with_process(p1, p2, ...)``; the Runner runs each over a result and
+    concatenates their samples (see ``process_all``).
     """
 
     # --- core hooks -----------------------------------------------------
 
     @abc.abstractmethod
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]: ...
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]: ...
 
-    # --- composition ----------------------------------------------------
-
-    def __or__(self, other: Processor) -> Processor:
-        return _Pipeline(self, other)
+    # --- modifiers ------------------------------------------------------
 
     def lower_is_better(self) -> Processor:
         return _Direction(self, True)
@@ -92,42 +100,25 @@ class Processor(abc.ABC):
         return _Direction(self, False)
 
     def when(self, predicate: Callable[[ExecutionResult], bool]) -> Processor:
-        """Run this processor only when ``predicate(pr)`` is true."""
+        """Run this processor only when ``predicate(result)`` is true."""
         return _When(self, predicate)
 
 
 # ---------------------------------------------------------------------------
-# Combinator implementations
+# Modifier implementations
 # ---------------------------------------------------------------------------
 
 
-class _Pipeline(Processor):
-    __slots__ = ("parts",)
-
-    def __init__(self, *parts: Processor):
-        flat: list[Processor] = []
-        for p in parts:
-            if isinstance(p, _Pipeline):
-                flat.extend(p.parts)
-            else:
-                flat.append(p)
-        self.parts = tuple(flat)
-
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        for p in self.parts:
-            yield from p.process(pr)
-
-
 class _Direction(Processor):
-    __slots__ = ("inner", "lib")
+    __slots__ = ("inner", "lower")
 
     def __init__(self, inner: Processor, lower_is_better: bool):
         self.inner = inner
-        self.lib = lower_is_better
+        self.lower = lower_is_better
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        for s in self.inner.process(pr):
-            yield dataclasses.replace(s, lower_is_better=self.lib)
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        for s in self.inner.process(result):
+            yield dataclasses.replace(s, lower_is_better=self.lower)
 
 
 class _When(Processor):
@@ -137,9 +128,9 @@ class _When(Processor):
         self.inner = inner
         self.predicate = predicate
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if self.predicate(pr):
-            yield from self.inner.process(pr)
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if self.predicate(result):
+            yield from self.inner.process(result)
 
 
 # ---------------------------------------------------------------------------
@@ -164,10 +155,10 @@ class FloatPerLine(Processor):
         self.metric = metric
         self.line = line
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if pr.is_failure() or not pr.stdout:
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if result.is_failure() or not result.stdout:
             return
-        lines = [s for s in (ln.strip() for ln in pr.stdout.split("\n")) if s]
+        lines = [s for s in (ln.strip() for ln in result.stdout.split("\n")) if s]
         if self.line is not None:
             idx = self.line - 1 if self.line > 0 else self.line
             try:
@@ -225,14 +216,14 @@ class Regex(Processor):
         self.unit = unit
         self.unit_group = unit_group
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if pr.is_failure():
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if result.is_failure():
             return
         outs: list[str] = []
         if self.output in ("stdout", "both"):
-            outs.append(pr.stdout or "")
+            outs.append(result.stdout or "")
         if self.output in ("stderr", "both"):
-            outs.append(pr.stderr or "")
+            outs.append(result.stderr or "")
         for text in outs:
             for m in self.regex.finditer(text):
                 value = self.transform(m.group(self.match_group))
@@ -259,10 +250,10 @@ class Rebench(Processor):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if pr.is_failure() or not pr.stdout:
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if result.is_failure() or not result.stdout:
             return
-        for line in pr.stdout.split("\n"):
+        for line in result.stdout.split("\n"):
             m = self._re_runtime.match(line)
             if m is not None:
                 criterion = m.group(2)
@@ -298,18 +289,14 @@ class RUsage(Processor):
         self.metric = metric
         self.unit = unit
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if pr.rusage is None:
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if result.rusage is None:
             return
-        value = float(getattr(pr.rusage, self.field))
+        value = float(getattr(result.rusage, self.field))
         # macOS reports ru_maxrss in bytes, not kB.
         if sys.platform == "darwin" and self.field == "ru_maxrss":
             value /= 1024.0
         yield PartialSample(metric=self.metric, value=value, unit=self.unit)
-
-
-def _max_rss() -> Processor:
-    return RUsage("ru_maxrss", "max_rss", "kB").lower_is_better()
 
 
 class Time(Processor):
@@ -324,33 +311,33 @@ class Time(Processor):
         self.user = user
         self.system = system
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
-        if self.elapsed and pr.runtime is not None:
-            yield PartialSample(metric="elapsed", value=pr.runtime, unit="s",
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
+        if self.elapsed and result.runtime is not None:
+            yield PartialSample(metric="elapsed", value=result.runtime, unit="s",
                                 lower_is_better=True)
-        if pr.rusage is not None:
+        if result.rusage is not None:
             if self.user:
-                yield PartialSample(metric="user", value=pr.rusage.ru_utime,
+                yield PartialSample(metric="user", value=result.rusage.ru_utime,
                                     unit="s", lower_is_better=True)
             if self.system:
-                yield PartialSample(metric="system", value=pr.rusage.ru_stime,
+                yield PartialSample(metric="system", value=result.rusage.ru_stime,
                                     unit="s", lower_is_better=True)
 
 
 class Constant(Processor):
     """Always emit a fixed sample (e.g. tag every run with a constant marker)."""
 
-    __slots__ = ("metric", "value", "unit", "lib")
+    __slots__ = ("metric", "value", "unit", "lower")
 
     def __init__(self, metric: str, value: float, unit: str = "", lower_is_better: bool | None = None):
         self.metric = metric
         self.value = value
         self.unit = unit
-        self.lib = lower_is_better
+        self.lower = lower_is_better
 
-    def process(self, pr: ExecutionResult) -> Iterable[PartialSample]:
+    def process(self, result: ExecutionResult) -> Iterable[PartialSample]:
         yield PartialSample(metric=self.metric, value=self.value, unit=self.unit,
-                            lower_is_better=self.lib)
+                            lower_is_better=self.lower)
 
 
 # ---------------------------------------------------------------------------
@@ -396,11 +383,12 @@ class P:
 
     @staticmethod
     def max_rss() -> Processor:
-        return _max_rss()
+        return RUsage("ru_maxrss", "max_rss", "kB").lower_is_better()
 
     @staticmethod
     def time(elapsed: bool = True, user: bool = False, system: bool = False) -> Processor:
-        return Time(elapsed=elapsed, user=user, system=system).lower_is_better()
+        # Time already tags its samples lower_is_better=True.
+        return Time(elapsed=elapsed, user=user, system=system)
 
     @staticmethod
     def constant(metric: str, value: float, unit: str = "",

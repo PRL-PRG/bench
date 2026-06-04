@@ -1,13 +1,13 @@
 """Streaming reporter sinks.
 
 A ``Reporter`` is called by the Runner three times: ``start(plan)`` once,
-``sample(sched, pr, samples)`` per execution, ``finalize()`` once at the end.
+``sample(sched, result, samples)`` per execution, ``finalize()`` once at the end.
 
 Built-ins:
     Mixed      fan-out to multiple reporters
     Csv        stream rows to a CSV file
     Json       buffer in memory; serialize on finalize
-    Dir        per-execution tree (<suite>/<bench>/<run>/{stdout,stderr,...})
+    Dir        per-execution tree (<suite>/<bench>/<phase>/<run>/{stdout,stderr,...})
     Table      buffer and print a final table
     Progress   live spinner + bar; ``transient`` so it clears at finalize
     Summary    buffer and run a Formatter (see report/formatter.py)
@@ -19,13 +19,14 @@ import abc
 import csv
 import threading
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from rich.console import Console
 from rich.progress import (
     BarColumn,
     Progress as RichProgress,
     SpinnerColumn,
+    TaskID,
     TextColumn,
     TimeElapsedColumn,
 )
@@ -38,7 +39,7 @@ from benchr.grammar.execution import (
     ScheduledExecution,
 )
 from benchr.report.sample import (
-    FailureRecord,
+    RunRecord,
     Report,
     Sample,
     info_keys,
@@ -76,7 +77,7 @@ err_console = Console(theme=BENCHR_THEME, highlight=False, stderr=True)
 class Reporter(abc.ABC):
     """Streaming sink for per-execution results.
 
-    Called by the Runner as ``start(plan)`` once, ``sample(sched, pr, samples)``
+    Called by the Runner as ``start(plan)`` once, ``sample(sched, result, samples)``
     per execution, ``finalize()`` once. ``plan`` is the flattened list of
     Benchmarks the runner has materialized from the suites.
     """
@@ -88,12 +89,26 @@ class Reporter(abc.ABC):
     def sample(
         self,
         sched: ScheduledExecution,
-        pr: ExecutionResult,
+        result: ExecutionResult,
         samples: list[Sample],
     ) -> None: ...
 
     def finalize(self) -> None:
         pass
+
+
+class _BufferingReporter(Reporter):
+    """Base for reporters that accumulate a Report in memory and render it at
+    ``finalize()``. Subclasses get a thread-safe ``sample`` for free and
+    override ``finalize`` to emit ``self._report``."""
+
+    def __init__(self) -> None:
+        self._report = Report()
+        self._lock = threading.Lock()
+
+    def sample(self, sched, result, samples):
+        with self._lock:
+            self._report.record(sched, result, samples)
 
 
 class Mixed(Reporter):
@@ -106,9 +121,9 @@ class Mixed(Reporter):
         for r in self.reporters:
             r.start(plan)
 
-    def sample(self, sched, pr, samples):
+    def sample(self, sched, result, samples):
         for r in self.reporters:
-            r.sample(sched, pr, samples)
+            r.sample(sched, result, samples)
 
     def finalize(self):
         for r in self.reporters:
@@ -124,13 +139,19 @@ class Csv(Reporter):
     """Stream rows to a CSV file. Header is fixed on the first non-empty sample.
 
     Schema: suite, benchmark, run, phase, <info_cols...>, metric, value, unit,
-    lower_is_better. Info columns come from the first sample's info keys.
+    lower_is_better. Info columns are fixed from the *first* sample's info keys;
+    in a heterogeneous run (e.g. a matrix variant alongside a plain benchmark)
+    info keys absent from the first sample are silently dropped — use ``--json``
+    for complete fidelity.
+
+    Note: one row per *Sample*, so failed runs (which emit no samples) do not
+    appear here — use ``--json`` / ``--dir`` to capture failures.
     """
 
     def __init__(self, path: Path, *, delimiter: str = ",") -> None:
         self.path = path
         self.delimiter = delimiter
-        self._file = None
+        self._file: IO[str] | None = None
         self._writer: csv.DictWriter | None = None
         self._info_cols: list[str] | None = None
         self._lock = threading.Lock()
@@ -141,8 +162,8 @@ class Csv(Reporter):
         self._writer = None
         self._info_cols = None
 
-    def sample(self, sched, pr, samples):
-        if not samples:
+    def sample(self, sched, result, samples):
+        if not samples or self._file is None:
             return
         with self._lock:
             if self._writer is None:
@@ -177,17 +198,12 @@ class Csv(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class Json(Reporter):
-    """Buffer samples + failures in memory, write a single JSON file on finalize()."""
+class Json(_BufferingReporter):
+    """Buffer samples + runs in memory, write a single JSON file on finalize()."""
 
     def __init__(self, path: Path) -> None:
+        super().__init__()
         self.path = path
-        self._report = Report()
-        self._lock = threading.Lock()
-
-    def sample(self, sched, pr, samples):
-        with self._lock:
-            self._report.record(sched, pr, samples)
 
     def finalize(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,11 +216,10 @@ class Json(Reporter):
 
 
 class Dir(Reporter):
-    """Per-execution tree at ``<out>/<suite>/<bench>/<run>/``.
+    """Per-execution tree at ``<out>/<suite>/<bench>/<phase>/<run>/``.
 
     Files: stdout, stderr, exitcode, rusage, seq (cwd + cmd + info + phase).
-    Run numbers are deterministic per (suite, benchmark) based on submission
-    order (pre-numbered in start()).
+    Run numbers count up per (suite, benchmark, phase) in execution order.
     """
 
     def __init__(self, root: Path) -> None:
@@ -216,7 +231,7 @@ class Dir(Reporter):
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def sample(self, sched, pr, samples):
+    def sample(self, sched, result, samples):
         key = (sched.suite, sched.benchmark, sched.phase)
         with self._lock:
             self._counters[key] = self._counters.get(key, 0) + 1
@@ -234,14 +249,14 @@ class Dir(Reporter):
         lines.extend(f"info[{k}]={v}" for k, v in sched.info)
         (run_dir / "seq").write_text("\n".join(lines) + "\n")
 
-        (run_dir / "stdout").write_text(pr.stdout)
-        (run_dir / "stderr").write_text(pr.stderr)
-        (run_dir / "exitcode").write_text(f"{pr.returncode}\n")
+        (run_dir / "stdout").write_text(result.stdout)
+        (run_dir / "stderr").write_text(result.stderr)
+        (run_dir / "exitcode").write_text(f"{result.returncode}\n")
 
-        if pr.rusage is not None:
+        if result.rusage is not None:
             ru_lines = [
-                f"{f}={getattr(pr.rusage, f)}"
-                for f in dir(pr.rusage)
+                f"{f}={getattr(result.rusage, f)}"
+                for f in dir(result.rusage)
                 if f.startswith("ru_")
             ]
             (run_dir / "rusage").write_text("\n".join(ru_lines) + "\n")
@@ -252,17 +267,12 @@ class Dir(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class Table(Reporter):
+class Table(_BufferingReporter):
     """Buffer all samples; print a rich Table on finalize()."""
 
     def __init__(self, target_console: Console | None = None) -> None:
-        self._report = Report()
+        super().__init__()
         self._console = target_console or console
-        self._lock = threading.Lock()
-
-    def sample(self, sched, pr, samples):
-        with self._lock:
-            self._report.record(sched, pr, samples)
 
     def finalize(self):
         info_cols = info_keys(self._report.samples)
@@ -301,7 +311,7 @@ class Progress(Reporter):
     def __init__(self, target_console: Console | None = None) -> None:
         self._console = target_console or console
         self._is_tty = self._console.is_terminal
-        self._task_id: int | None = None
+        self._task_id: TaskID | None = None
         self._failures = 0
         self._successes = 0
         self._total: int | None = None
@@ -336,10 +346,10 @@ class Progress(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def sample(self, sched: ScheduledExecution, pr: ExecutionResult,
+    def sample(self, sched: ScheduledExecution, result: ExecutionResult,
                samples: list[Sample]) -> None:
         with self._lock:
-            if not pr.is_failure():
+            if not result.is_failure():
                 self._successes += 1
             else:
                 self._failures += 1
@@ -352,7 +362,7 @@ class Progress(Reporter):
                 )
                 self._progress.advance(self._task_id)
             else:
-                self._print_plain(sched, pr)
+                self._print_plain(sched, result)
 
     def finalize(self) -> None:
         if self._progress is not None and self._task_id is not None:
@@ -360,17 +370,17 @@ class Progress(Reporter):
 
     # ----- helpers ---------------------------------------------------
 
-    def _print_plain(self, sched: ScheduledExecution, pr: ExecutionResult) -> None:
+    def _print_plain(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
-        if not pr.is_failure():
+        if not result.is_failure():
             tag = "[benchr.success]ok[/]"
-        elif pr.returncode == 124:
+        elif result.returncode == 124:
             tag = "[benchr.failure]FAIL timeout[/]"
-        elif pr.returncode == -1:
-            tag = f"[benchr.failure]FAIL spawn[/] ({pr.failure or 'unknown'})"
+        elif result.returncode == -1:
+            tag = f"[benchr.failure]FAIL spawn[/] ({result.failure or 'unknown'})"
         else:
-            tag = f"[benchr.failure]FAIL exit {pr.returncode}[/]"
+            tag = f"[benchr.failure]FAIL exit {result.returncode}[/]"
         self._console.print(f"[{n}/{total_str}] {sched.identifier()} {tag}")
 
     @staticmethod
@@ -389,7 +399,7 @@ class Progress(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class Summary(Reporter):
+class Summary(_BufferingReporter):
     """Buffer samples; format on finalize().
 
     Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
@@ -408,15 +418,10 @@ class Summary(Reporter):
     ) -> None:
         from benchr.report.formatter import DefaultSummary
 
-        self._report = Report()
+        super().__init__()
         self._formatter = formatter or DefaultSummary()
         self._baseline = baseline or []
         self._console = target_console or console
-        self._lock = threading.Lock()
-
-    def sample(self, sched, pr, samples):
-        with self._lock:
-            self._report.record(sched, pr, samples)
 
     def set_baseline(self, paths: list[Path]) -> None:
         self._baseline = list(paths)
@@ -428,16 +433,15 @@ class Summary(Reporter):
         if self._report.failures:
             self._console.print()
             self._console.print("[benchr.label]Failures:[/]")
-            for fr in self._report.failures:
-                self._console.print("  " + _failure_line(fr))
+            for run in self._report.failures:
+                self._console.print("  " + _failure_line(run))
 
 
-def _failure_line(fr: FailureRecord) -> str:
-    """Render a one-line diagnostic for a failed run."""
-    if fr.returncode == 124:
+def _failure_line(run: RunRecord) -> str:
+    if run.returncode == 124:
         verdict = "[benchr.failure]timeout (exit 124)[/]"
-    elif fr.returncode == -1:
-        verdict = f"[benchr.failure]spawn failed[/]: {fr.reason or 'unknown'}"
+    elif run.returncode == -1:
+        verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
     else:
-        verdict = f"[benchr.failure]exit {fr.returncode}[/]"
-    return f"[benchr.failure]✗[/] {fr.identifier()} — {verdict}: {fr.message or '(no output)'}"
+        verdict = f"[benchr.failure]exit {run.returncode}[/]"
+    return f"[benchr.failure]✗[/] {run.identifier()} — {verdict}: {run.message or '(no output)'}"

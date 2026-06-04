@@ -33,9 +33,12 @@ def test_with_command_propagates_when_unset():
 
 
 def test_with_env_merges():
+    from collections.abc import Mapping
+
     a = _b("a").with_env({"X": "1", "Y": "from_b"})
     s = suite("S", a).with_env({"Y": "from_s", "Z": "1"})
     env = s.benchmarks[0].env
+    assert isinstance(env, Mapping)
     # benchmark wins for Y
     assert env["X"] == "1" and env["Y"] == "from_b" and env["Z"] == "1"
 

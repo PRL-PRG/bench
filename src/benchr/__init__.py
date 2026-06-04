@@ -48,7 +48,7 @@ from benchr.grammar.execution import (
     Verdict,
 )
 from benchr.report.sample import (
-    FailureRecord,
+    RunRecord,
     Report,
     Sample,
     info_keys,
@@ -67,6 +67,7 @@ from benchr.grammar.processor import (
     Regex,
     Rebench,
     Time,
+    process_all,
     stamp,
 )
 
@@ -80,8 +81,8 @@ from benchr.grammar.policy import (
 )
 
 # Benchmark / Suite
-from benchr.grammar.benchmark import Benchmark, bench
-from benchr.grammar.suite import Suite, benchmark_info, suite
+from benchr.grammar.benchmark import Benchmark, bench, benchmark_info
+from benchr.grammar.suite import Suite, suite
 
 # Context
 from benchr.grammar.context import add_dataclass_args, build_dataclass
@@ -138,9 +139,9 @@ __all__ = [
     # Atoms
     "Execution", "ExecutionResult", "Verdict",
     "ScheduledExecution", "Phase",
-    "Sample", "Report", "FailureRecord", "info_keys", "report_to_json", "report_from_json",
+    "Sample", "Report", "RunRecord", "info_keys", "report_to_json", "report_from_json",
     # Processors
-    "Processor", "PartialSample", "stamp", "P",
+    "Processor", "PartialSample", "stamp", "process_all", "P",
     "FloatPerLine", "Regex", "Rebench", "RUsage", "Time", "Constant",
     # Policies
     "StoppingPolicy", "PolicyState",

@@ -5,7 +5,7 @@ import re
 import pytest
 
 from benchr import (
-    PartialSample, Processor, P, stamp,
+    PartialSample, Processor, P, process_all, stamp,
 )
 
 from conftest import make_failure, make_rusage, make_sched, make_success
@@ -36,10 +36,9 @@ def test_line_select_last_and_nth():
     assert list(P.float_per_line("s").first_line().process(pr))[0].value == 1
 
 
-def test_pipeline_concatenates():
+def test_process_all_concatenates():
     pr = make_success(stdout="1\n", runtime=0.5)
-    proc = P.float_per_line("s") | P.time()
-    samples = list(proc.process(pr))
+    samples = list(process_all([P.float_per_line("s"), P.time()], pr))
     metrics = {s.metric for s in samples}
     assert "runtime" in metrics and "elapsed" in metrics
 

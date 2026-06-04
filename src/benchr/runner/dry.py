@@ -1,18 +1,29 @@
-"""Dry runner: advances each Benchmark.compile() once to print what would run."""
+"""Dry runner: advances each Benchmark.compile() once to print what would run.
+
+Prints the plan straight to stdout and ignores any reporter / output sink
+(``--json`` / ``--csv`` / ``--dir`` have no effect under ``--dry``). Without
+``verbose`` it prints one compact ``suite/benchmark (variant): command`` line
+per execution; with ``verbose`` it prints the full per-execution block (the
+same one ``--verbose`` echoes for the real runners).
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from benchr.grammar.execution import format_variant
 from benchr.grammar.suite import Suite
-from benchr.report.sample import Sample
-from benchr.runner.base import Runner, plan
+from benchr.report.sample import Report
+from benchr.runner.base import Runner, format_scheduled, plan
 
 
 class Dry(Runner):
     """Print one Execution per Benchmark; do not subprocess."""
 
-    def run(self, suites: list[Suite], ctx: Any) -> list[Sample]:
+    def __init__(self, verbose: bool = False) -> None:
+        super().__init__(verbose=verbose)
+
+    def run(self, suites: list[Suite], ctx: Any) -> Report:
         planned = plan(suites, ctx)
         for p in planned:
             try:
@@ -21,18 +32,10 @@ class Dry(Runner):
                 gen.close()
             except StopIteration:
                 continue
-            self._print(sched)
-        return []
-
-    @staticmethod
-    def _print(sched) -> None:
-        e = sched.execution
-        print(f"{sched.suite}/{sched.benchmark}: {' '.join(e.command)}")
-        print(f"  cwd:     {e.cwd}")
-        if e.env:
-            print(f"  env:     {{{', '.join(f'{k}={v}' for k, v in e.env.items())}}}")
-        if e.timeout is not None:
-            print(f"  timeout: {e.timeout}s")
-        if sched.info:
-            print(f"  info:    {dict(sched.info)}")
-        print()
+            if self.verbose:
+                print(format_scheduled(sched, p.benchmark))
+            else:
+                e = sched.execution
+                ident = f"{sched.suite}/{sched.benchmark}{format_variant(sched.info)}"
+                print(f"{ident}: {' '.join(e.command)}")
+        return Report()

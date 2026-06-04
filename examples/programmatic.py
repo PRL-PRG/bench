@@ -28,8 +28,8 @@ s = (
 
 
 if __name__ == "__main__":
-    samples = Sequential().run([s], ctx=None)
-    print(f"Got {len(samples)} samples.")
-    for sample in samples:
+    report = Sequential().run([s], ctx=None)
+    print(f"Got {len(report.samples)} samples, {len(report.failures)} failures.")
+    for sample in report.samples:
         print(f"  {sample.benchmark}#{sample.run}/{sample.phase}: "
               f"{sample.metric}={sample.value:.4f}{sample.unit}")

@@ -2,15 +2,16 @@
 
 Two abstractions are split intentionally:
 
-  ``execute(sched)``  spawn one subprocess, return ExecutionResult.
+  ``execute(sched)``  spawn one subprocess, return an ExecutionResult.
                       Pure mechanism — no policy, no reporting.
   ``Runner``          orchestrate compile() coroutines for a list of suites.
                       The coroutine yields ScheduledExecution; Runner calls
-                      ``execute`` to get a ExecutionResult; the benchmark's
+                      ``execute`` to get an ExecutionResult; the benchmark's
                       Processor turns that into Samples; the Runner stamps
                       them, forwards to the Reporter, and sends them back
                       into the coroutine via ``.send()`` so the StoppingPolicy
-                      can observe.
+                      can observe. ``run()`` returns the accumulated ``Report``
+                      (every Sample plus a RunRecord per execution).
 
 The default Runner has a configurable global cap (``max_runs_per_phase``) as a
 safety net against custom policies that never converge.
@@ -24,6 +25,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -34,10 +36,12 @@ from benchr.grammar.execution import (
     ExecutionResult,
     ScheduledExecution,
     Verdict,
+    format_variant,
 )
-from benchr.grammar.processor import stamp
+from benchr.grammar.policy import StoppingPolicy
+from benchr.grammar.processor import process_all, stamp
 from benchr.grammar.suite import Suite
-from benchr.report.sample import Sample
+from benchr.report.sample import Report, Sample
 
 
 # Reporter is a forward reference to avoid a circular import; we describe its
@@ -46,13 +50,13 @@ from benchr.report.sample import Sample
 
 class ReporterLike(Protocol):
     def start(self, plan: list[Benchmark]) -> None: ...
-    def sample(self, sched: ScheduledExecution, pr: ExecutionResult, samples: list[Sample]) -> None: ...
+    def sample(self, sched: ScheduledExecution, result: ExecutionResult, samples: list[Sample]) -> None: ...
     def finalize(self) -> None: ...
 
 
 class _NoopReporter:
     def start(self, plan: list[Benchmark]) -> None: pass
-    def sample(self, sched: ScheduledExecution, pr: ExecutionResult,
+    def sample(self, sched: ScheduledExecution, result: ExecutionResult,
                samples: list[Sample]) -> None: pass
     def finalize(self) -> None: pass
 
@@ -89,7 +93,7 @@ def execute(exe: Execution) -> ExecutionResult:
             stderr=stderr_f,
             shell=False,
         )
-        if exe.stdin:
+        if exe.stdin and proc.stdin is not None:
             try:
                 proc.stdin.write(exe.stdin)
                 proc.stdin.close()
@@ -97,26 +101,22 @@ def execute(exe: Execution) -> ExecutionResult:
                 pass
 
         starttime = time.monotonic()
-        rusage = None
-        waitstatus = None
-        timed_out = False
-
+        # A Timer kills the process on timeout while the main thread blocks on
+        # ``wait4(pid, 0)`` — so ``runtime`` reflects the exact moment the
+        # process exited (no busy-wait poll granularity inflating timed runs).
+        killed = threading.Event()
+        timer: threading.Timer | None = None
         if exe.timeout is not None:
-            stoptime = starttime + exe.timeout
-            while True:
-                pid, waitstatus, rusage = os.wait4(proc.pid, os.WNOHANG)
-                if pid == proc.pid:
-                    break
-                if time.monotonic() >= stoptime:
-                    timed_out = True
-                    proc.kill()
-                    break
-                time.sleep(0.01)
+            def _kill() -> None:
+                killed.set()
+                proc.kill()
+            timer = threading.Timer(exe.timeout, _kill)
+            timer.start()
 
-        if waitstatus is None or timed_out:
-            _, waitstatus, rusage = os.wait4(proc.pid, 0)
-
+        _, waitstatus, rusage = os.wait4(proc.pid, 0)
         endtime = time.monotonic()
+        if timer is not None:
+            timer.cancel()
         runtime = endtime - starttime
 
         stdout_f.seek(0)
@@ -124,7 +124,7 @@ def execute(exe: Execution) -> ExecutionResult:
         stdout = stdout_f.read().decode(errors="replace")
         stderr = stderr_f.read().decode(errors="replace")
 
-        returncode = 124 if timed_out else os.waitstatus_to_exitcode(waitstatus)
+        returncode = 124 if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
 
         # execute() records facts only; judging success is the Runner's job
         # (see default_success / Benchmark.with_success).
@@ -144,15 +144,39 @@ def execute(exe: Execution) -> ExecutionResult:
         stderr_f.close()
 
 
-def default_success(execution: Execution, pr: ExecutionResult) -> Verdict:
+def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
     """Default success policy: clean exit passes, anything else fails."""
-    if pr.failure is not None:        # spawn failure already judged by execute()
-        return pr.failure
-    if pr.returncode == 124:
+    if result.failure is not None:        # spawn failure already judged by execute()
+        return result.failure
+    if result.returncode == 124:
         return "timeout"
-    if pr.returncode != 0:
-        return f"exit code {pr.returncode}"
+    if result.returncode != 0:
+        return f"exit code {result.returncode}"
     return None
+
+
+def judge(
+    b: Benchmark, sched: ScheduledExecution, result: ExecutionResult
+) -> tuple[ExecutionResult, list[Sample]]:
+    """Apply the success policy to an already-run result, then parse samples.
+
+    Asks the benchmark's ``success`` policy (or ``default_success``) for a
+    verdict and stamps the reason onto ``result.failure``. On success runs the
+    processors and stamps benchmark identity onto the samples; on failure
+    returns no samples — a failed run never produces metrics.
+    """
+    reason = (b.success or default_success)(sched.execution, result)
+    if reason is not None and result.failure is None:
+        result = dataclasses.replace(result, failure=reason)
+    samples = list(stamp(process_all(b.processors, result), sched)) if not result.is_failure() else []
+    return result, samples
+
+
+def evaluate(
+    b: Benchmark, sched: ScheduledExecution
+) -> tuple[ExecutionResult, list[Sample]]:
+    """Spawn one ScheduledExecution and judge+parse it (see ``judge``)."""
+    return judge(b, sched, execute(sched.execution))
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +202,41 @@ def plan(suites: list[Suite], ctx: Any) -> list[PlannedBenchmark]:
 
 
 # ---------------------------------------------------------------------------
+# Plan rendering (shared by Dry and the --verbose echo)
+# ---------------------------------------------------------------------------
+
+
+def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
+    """Render the full per-execution detail block printed by ``--verbose``.
+
+    A header line plus indented command / cwd / env / timeout / run-plan / info
+    fields. The run-plan is derived from the benchmark's warmup and measure
+    policies. Shared by every runner's ``--verbose`` echo and by ``--dry -v``.
+    """
+    # "unbounded" for convergence policies (CoV etc.) whose max_runs() is None.
+    def _label(p: StoppingPolicy) -> str:
+        n = p.max_runs()
+        return "unbounded" if n is None else str(n)
+
+    e = sched.execution
+    ident = f"{sched.suite}/{sched.benchmark}{format_variant(sched.info)}"
+
+    measure = f"measure x{_label(benchmark.measure)}"
+    warmup_n = _label(benchmark.warmup)
+    plan_str = measure if warmup_n == "0" else f"warmup x{warmup_n}, {measure}"
+
+    lines = [ident, f"  command: {' '.join(e.command)}", f"  cwd:     {e.cwd}"]
+    if e.env:
+        lines.append(f"  env:     {{{', '.join(f'{k}={v}' for k, v in e.env.items())}}}")
+    if e.timeout is not None:
+        lines.append(f"  timeout: {e.timeout}s")
+    lines.append(f"  plan:    {plan_str}")
+    if sched.info:
+        lines.append(f"  info:    {dict(sched.info)}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Runner base
 # ---------------------------------------------------------------------------
 
@@ -197,21 +256,36 @@ class Runner(abc.ABC):
         *,
         max_runs_per_phase: int = 10_000,
         max_consecutive_failures: int = 5,
+        verbose: bool = False,
     ) -> None:
         self.reporter = reporter or _NoopReporter()
         self.max_runs_per_phase = max_runs_per_phase
         self.max_consecutive_failures = max_consecutive_failures
+        self.verbose = verbose
+        # Guards the shared Report when workers record concurrently (Parallel).
+        self._report_lock = threading.Lock()
 
     @abc.abstractmethod
-    def run(self, suites: list[Suite], ctx: Any) -> list[Sample]: ...
+    def run(self, suites: list[Suite], ctx: Any) -> Report: ...
 
     # ----- shared pump --------------------------------------------------
 
-    def _run_benchmark(self, planned: PlannedBenchmark, ctx: Any) -> list[Sample]:
+    def _record(
+        self,
+        report: Report,
+        sched: ScheduledExecution,
+        result: ExecutionResult,
+        samples: list[Sample],
+    ) -> None:
+        with self._report_lock:
+            report.record(sched, result, samples)
+        # Reporters guard their own state; no need to hold the report lock.
+        self.reporter.sample(sched, result, samples)
+
+    def _run_benchmark(
+        self, planned: PlannedBenchmark, ctx: Any, report: Report
+    ) -> None:
         b = planned.benchmark
-        if b.processor is None:
-            raise ValueError(f"Benchmark {b.name!r} has no processor")
-        all_samples: list[Sample] = []
         consecutive_failures = 0
         guard = 0
 
@@ -219,7 +293,12 @@ class Runner(abc.ABC):
         try:
             sched = next(gen)
         except StopIteration:
-            return all_samples
+            return
+
+        if self.verbose:
+            # One block per benchmark; lock so Parallel workers don't interleave.
+            with self._report_lock:
+                print(format_scheduled(sched, b))
 
         while True:
             guard += 1
@@ -229,25 +308,18 @@ class Runner(abc.ABC):
                     f"({self.max_runs_per_phase}); did you forget .at_most(N)?"
                 )
 
-            pr = execute(sched.execution)
-            reason = (b.success or default_success)(sched.execution, pr)
-            if reason is not None and pr.failure is None:
-                pr = dataclasses.replace(pr, failure=reason)
-            is_ok = not pr.is_failure()
-            # A failed run produces no metrics — only the Reporter records it
-            # (from ``pr``). The policy still observes (sees ``[]``) so that
-            # ``.runs(N)`` counts every attempt, not just successes.
-            samples = list(stamp(b.processor.process(pr), sched)) if is_ok else []
-            consecutive_failures = 0 if is_ok else consecutive_failures + 1
-
-            all_samples.extend(samples)
-            self.reporter.sample(sched, pr, samples)
+            # A failed run produces no metrics, only a RunRecord. The policy
+            # still observes (sees ``[]``) so that ``.runs(N)`` counts every
+            # attempt, not just successes.
+            result, samples = evaluate(b, sched)
+            consecutive_failures = 0 if not result.is_failure() else consecutive_failures + 1
+            self._record(report, sched, result, samples)
 
             if consecutive_failures >= self.max_consecutive_failures:
                 gen.close()
-                return all_samples
+                return
 
             try:
                 sched = gen.send(samples)
             except StopIteration:
-                return all_samples
+                return

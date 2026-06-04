@@ -4,12 +4,12 @@ import re
 from pathlib import Path
 
 from benchr import (
-    Compact, DefaultSummary, Report, Sample, report_to_json,
+    Compact, DefaultSummary, Phase, Report, RunRecord, Sample, report_to_json,
 )
 
 
 def _mk(metric: str, value: float, *, run: int = 1, bench: str = "b",
-        suite: str = "S", phase: str = "measure", unit: str = "s",
+        suite: str = "S", phase: Phase = "measure", unit: str = "s",
         lower_is_better: bool | None = True) -> Sample:
     return Sample(
         suite=suite, benchmark=bench, info=(), run=run, phase=phase,
@@ -17,9 +17,18 @@ def _mk(metric: str, value: float, *, run: int = 1, bench: str = "b",
     )
 
 
+def _ok(run: int = 1, *, bench: str = "b", suite: str = "S") -> RunRecord:
+    return RunRecord(
+        suite=suite, benchmark=bench, info=(), run=run, phase="measure",
+        command=("x",), returncode=0,
+    )
+
+
 def test_default_summary_no_baseline():
     r = Report()
     r.extend([_mk("runtime", 0.5, run=i) for i in range(1, 4)])
+    for i in range(1, 4):
+        r.add_run(_ok(i))
     out = DefaultSummary()(r)
     assert "S/b" in out
     # Rich markup may split the literal "0/3 runs" — just check the digits + word.

@@ -4,7 +4,7 @@
 # dependencies = ["benchr"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# benchr = { path = "../..", editable = true }
 # ///
 """Lox: two suites sharing a base; per-suite formatter.
 
@@ -47,9 +47,9 @@ lox_suite = (
     .with_timeout(20)
     .runs(10)
     .with_process(
-        P.float_per_line("s").last_line().lower_is_better()
-        | P.max_rss()
-        | P.time(user=True, system=True)
+        P.float_per_line("s").last_line().lower_is_better(),
+        P.max_rss(),
+        P.time(user=True, system=True),
     )
 )
 

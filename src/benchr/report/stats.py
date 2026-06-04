@@ -52,13 +52,13 @@ def group(report: Report, *, name: str = "current",
           include_warmup: bool = False) -> GroupedReport:
     """Reshape a Report for stats/comparison.
 
-    Counts ``report.failures`` into ``run_counts`` and collects per-metric
-    direction annotations. Warmup samples and failures are excluded by default.
+    Counts ``report.runs`` into ``run_counts`` and collects per-metric
+    direction annotations. Warmup samples and runs are excluded by default.
     Benchmarks that only ever failed still appear (zero successes).
     """
     order: list[BenchmarkId] = []
     metrics: dict[BenchmarkId, dict[MetricKey, list[float]]] = {}
-    runs: dict[BenchmarkId, set[int]] = {}
+    succeeded: dict[BenchmarkId, int] = {}
     failed: dict[BenchmarkId, int] = {}
     lib: dict[MetricKey, bool] = {}
 
@@ -72,18 +72,20 @@ def group(report: Report, *, name: str = "current",
             continue
         bid: BenchmarkId = (s.suite, s.benchmark, s.info)
         register(bid)
-        runs.setdefault(bid, set()).add(s.run)
         mk = (s.metric, s.unit)
         if s.lower_is_better is not None:
             lib[mk] = s.lower_is_better
         metrics[bid].setdefault(mk, []).append(s.value)
 
-    for f in report.failures:
-        if f.phase == "warmup" and not include_warmup:
+    for r in report.runs:
+        if r.phase == "warmup" and not include_warmup:
             continue
-        bid = (f.suite, f.benchmark, f.info)
+        bid = (r.suite, r.benchmark, r.info)
         register(bid)
-        failed[bid] = failed.get(bid, 0) + 1
+        if r.is_failure():
+            failed[bid] = failed.get(bid, 0) + 1
+        else:
+            succeeded[bid] = succeeded.get(bid, 0) + 1
 
     groups: list[BenchmarkGroup] = []
     for bid in order:
@@ -94,7 +96,7 @@ def group(report: Report, *, name: str = "current",
                 metrics=metrics[bid],
                 run_counts=RunCounts(
                     failures=failed.get(bid, 0),
-                    successes=len(runs.get(bid, ())),
+                    successes=succeeded.get(bid, 0),
                 ),
             )
         )
@@ -231,10 +233,15 @@ def metric_ratio(baseline: MetricStats, current: MetricStats) -> MetricRatio | N
     )
 
 
+def geomean(xs: list[float]) -> float:
+    """Geometric mean of positive values."""
+    return math.exp(statistics.mean(math.log(x) for x in xs))
+
+
 def geomean_with_sigma(mrs: list[MetricRatio]) -> tuple[float, float]:
     """Geometric mean of display_ratio with propagated error."""
     N = len(mrs)
-    geo = math.exp(statistics.mean(math.log(mr.display_ratio) for mr in mrs))
+    geo = geomean([mr.display_ratio for mr in mrs])
     rel_errs_sq: list[float] = []
     for mr in mrs:
         r = 0.0
@@ -263,7 +270,6 @@ class SummaryData:
 
 
 def _all_ratios(baseline: GroupedReport, comparee: GroupedReport):
-    """Per (BenchmarkId, MetricKey) ratios for one comparee vs the baseline."""
     lib: dict[MetricKey, bool] = {}
     lib.update(baseline.lower_is_better)
     lib.update(comparee.lower_is_better)
@@ -371,7 +377,6 @@ def build_summary(
 
 
 def _unique_names(paths: list[Path]) -> list[str]:
-    """Pick short, unique display names from a list of file paths."""
     if not paths:
         return []
     if len(paths) == 1:

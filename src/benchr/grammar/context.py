@@ -93,10 +93,6 @@ def build_dataclass(dc: type, namespace: argparse.Namespace) -> Any:
 
 
 def _unwrap_optional(t: Any) -> tuple[Any, bool]:
-    """Return (inner_type, is_optional). Handles ``T | None`` and ``Optional[T]``.
-
-    Also resolves PEP 604 unions of just ``T | None``.
-    """
     # Resolve string annotations if needed (from __future__ import annotations).
     if isinstance(t, str):
         return t, False  # ambiguous; argparse will treat as str
@@ -110,7 +106,6 @@ def _unwrap_optional(t: Any) -> tuple[Any, bool]:
 
 
 def _coerce_type(t: Any) -> Any:
-    """Return a callable that argparse can use as ``type=``."""
     # Path is the only one not directly a callable that yields the right value
     # from a string — Path(str) does, so it's fine.
     if t is Path:

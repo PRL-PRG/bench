@@ -61,7 +61,7 @@ class Benchmark:
     env: Mapping[str, str] | EnvFn = _EMPTY_ENV
     timeout: float | None = None
 
-    processor: Processor | None = None
+    processors: tuple[Processor, ...] = ()
 
     # Optional success policy: returns a failure reason (str) or None for
     # success. Defaults to the Runner's ``default_success`` when unset.
@@ -97,8 +97,10 @@ class Benchmark:
     def with_timeout(self, timeout: float) -> Benchmark:
         return dataclasses.replace(self, timeout=timeout)
 
-    def with_process(self, processor: Processor) -> Benchmark:
-        return dataclasses.replace(self, processor=processor)
+    def with_process(self, *processors: Processor) -> Benchmark:
+        """Attach processors, replacing any already set — pass them all in one
+        call (``with_process(p1, p2, …)``); calling again does not append."""
+        return dataclasses.replace(self, processors=processors)
 
     def with_success(self, fn: SuccessFn) -> Benchmark:
         """Override the success policy (returns a failure reason, or None)."""
@@ -139,7 +141,7 @@ class Benchmark:
             raise ValueError(f"Benchmark {self.name!r} has no command")
         if self.cwd is None:
             raise ValueError(f"Benchmark {self.name!r} has no cwd")
-        if self.processor is None:
+        if not self.processors:
             raise ValueError(f"Benchmark {self.name!r} has no processor")
 
         yield from self._phase(ctx, suite, self.warmup, phase="warmup")
@@ -177,13 +179,13 @@ class Benchmark:
         any matrix info attached to the benchmark.
         """
         cmd = self.command(self, ctx) if callable(self.command) else self.command
+        if cmd is None:
+            raise ValueError(f"Benchmark {self.name!r} has no command")
         cwd = self.cwd(self, ctx) if callable(self.cwd) else self.cwd
+        if cwd is None:
+            raise ValueError(f"Benchmark {self.name!r} has no cwd")
         env = self.env(self, ctx) if callable(self.env) else self.env
-        # Variant labels are attached by Suite.matrix under the reserved
-        # ``__info__`` key in ``data``.
-        info: tuple[tuple[str, str], ...] = ()
-        if self.data and "__info__" in self.data:
-            info = tuple(self.data["__info__"])
+        info = self.info()
         return ScheduledExecution(
             execution=Execution(
                 command=tuple(cmd),
@@ -197,6 +199,21 @@ class Benchmark:
             run=run,
             phase=phase,
         )
+
+    def info(self) -> tuple[tuple[str, str], ...]:
+        """Matrix variant labels attached by ``Suite.matrix`` (empty tuple if none).
+
+        Stored under the reserved ``__info__`` key in ``self.data`` and surfaced
+        on each ScheduledExecution's ``info`` field.
+        """
+        if self.data and "__info__" in self.data:
+            return tuple(self.data["__info__"])
+        return ()
+
+
+def benchmark_info(b: Benchmark) -> tuple[tuple[str, str], ...]:
+    """Module-level alias for ``Benchmark.info`` (kept for public API stability)."""
+    return b.info()
 
 
 def _coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:

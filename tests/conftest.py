@@ -2,14 +2,15 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from benchr import (
     Execution, ExecutionResult, ScheduledExecution,
 )
 
 
-def make_execution(**overrides) -> Execution:
-    defaults = dict(
+def make_execution(**overrides: Any) -> Execution:
+    defaults: dict[str, Any] = dict(
         command=("echo", "hi"),
         cwd=Path("/tmp"),
         env={},
@@ -20,8 +21,8 @@ def make_execution(**overrides) -> Execution:
     return Execution(**defaults)
 
 
-def make_sched(**overrides) -> ScheduledExecution:
-    defaults = dict(
+def make_sched(**overrides: Any) -> ScheduledExecution:
+    defaults: dict[str, Any] = dict(
         execution=make_execution(),
         suite="S",
         benchmark="B",

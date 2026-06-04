@@ -4,7 +4,7 @@
 # dependencies = ["benchr"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# benchr = { path = "../..", editable = true }
 # ///
 """RCP: programmatic suite construction.
 
@@ -27,7 +27,7 @@ class RcpParams:
     R_HOME: Path                          # R installation root
     output: Path = P_Path(tempfile.gettempdir()) / "rcp"
     path_filter: str = ""
-    runs: int = 1
+    iterations: int = 1                   # harness --runs (avoids benchr's reserved --runs)
 
 
 def _cmd(b, ctx: RcpParams):
@@ -38,7 +38,7 @@ def _cmd(b, ctx: RcpParams):
         "-f", str(harness_bin),
         "--args",
         "--output-dir", str(ctx.output),
-        "--runs", str(ctx.runs),
+        "--runs", str(ctx.iterations),
         "--rcp",
         str(b.path.with_suffix("")),
     ]
@@ -53,7 +53,7 @@ rcp_suite = (
     .from_files(_bench_root, pattern=r"\.R$")
     .with_cwd(P_Path.cwd())
     .with_command(_cmd)
-    .with_process(P.rebench() | P.max_rss())
+    .with_process(P.rebench(), P.max_rss())
 )
 
 

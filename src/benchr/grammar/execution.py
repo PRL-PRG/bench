@@ -78,6 +78,24 @@ type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
 Phase = Literal["warmup", "measure"]
 
 
+def format_variant(info: tuple[tuple[str, str], ...]) -> str:
+    """`` (k=v, …)`` suffix identifying a matrix variant; ``""`` if no info."""
+    if not info:
+        return ""
+    return " (" + ", ".join(f"{k}={v}" for k, v in info) + ")"
+
+
+def format_identifier(
+    suite: str,
+    benchmark: str,
+    info: tuple[tuple[str, str], ...],
+    run: int,
+    phase: Phase,
+) -> str:
+    """Canonical run label: ``suite/benchmark (k=v, …) #run [phase]``."""
+    return f"{suite}/{benchmark}{format_variant(info)} #{run} [{phase}]"
+
+
 @dataclass(frozen=True, slots=True)
 class ScheduledExecution:
     """An Execution plus the (suite, benchmark, run, phase, info) tag."""
@@ -90,8 +108,5 @@ class ScheduledExecution:
     phase: Phase = "measure"
 
     def identifier(self) -> str:
-        out = f"{self.suite}/{self.benchmark}"
-        if self.info:
-            out += " (" + ", ".join(f"{k}={v}" for k, v in self.info) + ")"
-        out += f" #{self.run} [{self.phase}]"
-        return out
+        return format_identifier(self.suite, self.benchmark, self.info,
+                                 self.run, self.phase)

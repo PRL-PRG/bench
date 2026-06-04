@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    FailureRecord, GeoMeanRatio, MetricRatio, Report, Sample, build_summary,
+    RunRecord, GeoMeanRatio, MetricRatio, Phase, Report, Sample, build_summary,
     geomean_with_sigma, group, metric_ratio, metric_stats, scale_unit,
 )
 
 
-def _mk(metric: str, value: float, *, phase: str = "measure", run: int = 1,
+def _mk(metric: str, value: float, *, phase: Phase = "measure", run: int = 1,
         bench: str = "b", suite: str = "S",
         lower_is_better: bool | None = True, unit: str = "s") -> Sample:
     return Sample(
@@ -40,17 +40,24 @@ def test_group_with_warmup_when_opted_in():
     assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
 
 
-def _fail(run: int, *, bench: str = "b", suite: str = "S") -> FailureRecord:
-    return FailureRecord(
-        suite=suite, benchmark=bench, info=(), run=run, phase="measure",
-        returncode=7, message="boom",
+def _run(run: int, *, returncode: int = 0, failure: str | None = None,
+         phase: Phase = "measure", bench: str = "b", suite: str = "S") -> RunRecord:
+    return RunRecord(
+        suite=suite, benchmark=bench, info=(), run=run, phase=phase,
+        command=("x",), returncode=returncode, failure=failure,
+        message="boom" if failure else "",
     )
+
+
+def _fail(run: int, **kw) -> RunRecord:
+    return _run(run, returncode=7, failure="boom", **kw)
 
 
 def test_failures_count_into_run_counts():
     r = Report()
     r.extend([_mk("runtime", 1.0, phase="measure", run=2)])
-    r.add_failure(_fail(1))
+    r.add_run(_run(2))
+    r.add_run(_fail(1))
     g = group(r)
     assert g.groups[0].run_counts.failures == 1
     assert g.groups[0].run_counts.successes == 1
@@ -58,8 +65,8 @@ def test_failures_count_into_run_counts():
 
 def test_all_failed_benchmark_still_appears():
     r = Report()
-    r.add_failure(_fail(1))
-    r.add_failure(_fail(2))
+    r.add_run(_fail(1))
+    r.add_run(_fail(2))
     g = group(r)
     assert len(g.groups) == 1
     assert g.groups[0].run_counts.failures == 2
@@ -69,9 +76,7 @@ def test_all_failed_benchmark_still_appears():
 
 def test_group_excludes_failures_in_warmup():
     r = Report()
-    r.add_failure(FailureRecord(
-        suite="S", benchmark="b", info=(), run=1, phase="warmup", returncode=1,
-    ))
+    r.add_run(_run(1, returncode=1, failure="x", phase="warmup"))
     g = group(r)
     assert g.groups == []
 
@@ -129,6 +134,7 @@ def test_geomean_with_sigma():
     cur2 = metric_stats([2.0], "rt", "s", True)
     r1 = metric_ratio(bl1, cur1)
     r2 = metric_ratio(bl2, cur2)
+    assert r1 is not None and r2 is not None
     geo, _ = geomean_with_sigma([r1, r2])
     # speedup 2× × 0.5× → geomean 1.0
     assert abs(geo - 1.0) < 1e-9
