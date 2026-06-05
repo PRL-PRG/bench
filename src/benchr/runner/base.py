@@ -36,7 +36,6 @@ from benchr.grammar.execution import (
     ExecutionResult,
     ScheduledExecution,
     Verdict,
-    format_variant,
 )
 from benchr.grammar.policy import StoppingPolicy
 from benchr.grammar.processor import process_all, stamp
@@ -206,12 +205,20 @@ def plan(suites: list[Suite], ctx: Any) -> list[PlannedBenchmark]:
 # ---------------------------------------------------------------------------
 
 
-def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
+def format_scheduled(
+    sched: ScheduledExecution,
+    benchmark: Benchmark,
+    *,
+    include_plan: bool = True,
+) -> str:
     """Render the full per-execution detail block printed by ``--verbose``.
 
-    A header line plus indented command / cwd / env / timeout / run-plan / info
-    fields. The run-plan is derived from the benchmark's warmup and measure
-    policies. Shared by every runner's ``--verbose`` echo and by ``--dry -v``.
+    A header line plus indented command / cwd / env / timeout / stdin /
+    processors / success / run-plan / info fields. The run-plan is derived
+    from the benchmark's warmup and measure policies; pass
+    ``include_plan=False`` when the caller already enumerates every
+    scheduled execution (the phase tag is in the header — no need to also
+    summarize totals on every block).
     """
     # "unbounded" for convergence policies (CoV etc.) whose max_runs() is None.
     def _label(p: StoppingPolicy) -> str:
@@ -219,20 +226,26 @@ def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
         return "unbounded" if n is None else str(n)
 
     e = sched.execution
-    ident = f"{sched.suite}/{sched.benchmark}{format_variant(sched.info)}"
+    ident = sched.identifier()
 
-    measure = f"measure x{_label(benchmark.measure)}"
-    warmup_n = _label(benchmark.warmup)
-    plan_str = measure if warmup_n == "0" else f"warmup x{warmup_n}, {measure}"
-
-    lines = [ident, f"  command: {' '.join(e.command)}", f"  cwd:     {e.cwd}"]
-    if e.env:
-        lines.append(f"  env:     {{{', '.join(f'{k}={v}' for k, v in e.env.items())}}}")
+    lines = [ident, f"  command:    {' '.join(e.command)}", f"  cwd:        {e.cwd}"]
+    env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
+    lines.append(f"  env:        {{{env_str}}}")
     if e.timeout is not None:
-        lines.append(f"  timeout: {e.timeout}s")
-    lines.append(f"  plan:    {plan_str}")
+        lines.append(f"  timeout:    {e.timeout}s")
+    if e.stdin is not None:
+        lines.append(f"  stdin:      {len(e.stdin)} bytes")
+    procs = ", ".join(type(p).__name__ for p in benchmark.processors) or "<none>"
+    lines.append(f"  processors: {procs}")
+    if benchmark.success is not None:
+        lines.append(f"  success:    {benchmark.success.__name__}")
+    if include_plan:
+        measure = f"measure x{_label(benchmark.measure)}"
+        warmup_n = _label(benchmark.warmup)
+        plan_str = measure if warmup_n == "0" else f"warmup x{warmup_n}, {measure}"
+        lines.append(f"  plan:       {plan_str}")
     if sched.info:
-        lines.append(f"  info:    {dict(sched.info)}")
+        lines.append(f"  info:       {dict(sched.info)}")
     return "\n".join(lines)
 
 
@@ -289,6 +302,14 @@ class Runner(abc.ABC):
         consecutive_failures = 0
         guard = 0
 
+        # Bounded policies (e.g. FixedRuns) ARE the user contract: ``runs(N)``
+        # means N attempts, success or failure. The consecutive-failure cap
+        # only protects unbounded policies (CoV etc.) from spinning forever.
+        bounded = (
+            b.warmup.max_runs() is not None and b.measure.max_runs() is not None
+        )
+        failure_cap = None if bounded else self.max_consecutive_failures
+
         gen = b.compile(ctx, suite=planned.suite)
         try:
             sched = next(gen)
@@ -315,7 +336,7 @@ class Runner(abc.ABC):
             consecutive_failures = 0 if not result.is_failure() else consecutive_failures + 1
             self._record(report, sched, result, samples)
 
-            if consecutive_failures >= self.max_consecutive_failures:
+            if failure_cap is not None and consecutive_failures >= failure_cap:
                 gen.close()
                 return
 

@@ -38,7 +38,10 @@ def test_sequential_three_runs_yields_three_samples():
     assert [s.run for s in samples] == [1, 2, 3]
 
 
-def test_sequential_aborts_on_consecutive_failures(tmp_path: Path):
+def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path: Path):
+    # Bounded policy (FixedRuns) IS the contract: a crashing benchmark must
+    # still complete N attempts. The consecutive-failure cap exists only as a
+    # backstop for unbounded policies.
     s = suite("F", bench("bad")
               .with_command(["false"])
               .with_cwd(Path("/tmp"))
@@ -47,7 +50,21 @@ def test_sequential_aborts_on_consecutive_failures(tmp_path: Path):
     out = tmp_path / "r.json"
     samples = Sequential(reporter=Json(out), max_consecutive_failures=3).run([s], ctx=None).samples
     assert samples == []  # failed runs emit no metrics
-    # Aborted after 3 consecutive failures (before reaching runs(10)).
+    r = report_from_json(out.read_text())
+    assert len(r.failures) == 10
+    assert all(f.returncode != 0 for f in r.failures)
+
+
+def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Path):
+    from benchr import CoefficientOfVariation
+    s = suite("F", bench("bad")
+              .with_command(["false"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time())
+              .with_measure(CoefficientOfVariation("elapsed")))  # unbounded
+    out = tmp_path / "r.json"
+    samples = Sequential(reporter=Json(out), max_consecutive_failures=3).run([s], ctx=None).samples
+    assert samples == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
     assert all(f.returncode != 0 for f in r.failures)
@@ -73,7 +90,7 @@ def test_parallel_fanout_eligible_only_for_fixed_runs():
     assert not P_._fanout_eligible(cov_b)
 
 
-def test_dry_runs_once_per_benchmark_no_subprocess():
+def test_dry_no_subprocess():
     # Use a non-existent command — Dry must not spawn anything.
     s = suite("X", bench("a")
               .with_command(["/nonexistent_binary_xyz"])
@@ -84,7 +101,7 @@ def test_dry_runs_once_per_benchmark_no_subprocess():
     assert out == []
 
 
-def test_dry_compact_prints_command_only(capsys):
+def test_dry_compact_prints_one_line_per_execution(capsys):
     s = suite("X", bench("a")
               .with_command(["/bin/echo", "hi"])
               .with_cwd(Path("/tmp"))
@@ -92,11 +109,46 @@ def test_dry_compact_prints_command_only(capsys):
               .runs(5))
     Dry().run([s], ctx=None)
     out = capsys.readouterr().out
-    assert "X/a: /bin/echo hi" in out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 5
+    for i, ln in enumerate(lines, start=1):
+        assert ln == f"X/a #{i} [measure]: /bin/echo hi"
     assert "cwd:" not in out and "plan:" not in out
 
 
-def test_dry_verbose_prints_full_block(capsys):
+def test_dry_compact_enumerates_warmup_and_measure(capsys):
+    s = suite("X", bench("a")
+              .with_command(["/bin/echo", "hi"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time())
+              .with_warmup(2)
+              .runs(3))
+    Dry().run([s], ctx=None)
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 5
+    assert lines[0] == "X/a #1 [warmup]: /bin/echo hi"
+    assert lines[1] == "X/a #2 [warmup]: /bin/echo hi"
+    assert lines[2] == "X/a #1 [measure]: /bin/echo hi"
+    assert lines[3] == "X/a #2 [measure]: /bin/echo hi"
+    assert lines[4] == "X/a #3 [measure]: /bin/echo hi"
+
+
+def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
+    from benchr import CoefficientOfVariation
+    s = suite("X", bench("a")
+              .with_command(["/bin/echo", "hi"])
+              .with_cwd(Path("/tmp"))
+              .with_process(P.time())
+              .with_measure(CoefficientOfVariation("elapsed")))
+    Dry().run([s], ctx=None)
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert "[unbounded]" in lines[0]
+
+
+def test_dry_verbose_prints_full_block_per_execution(capsys):
     s = suite("X", bench("a")
               .with_command(["/bin/echo", "hi"])
               .with_cwd(Path("/tmp"))
@@ -104,15 +156,20 @@ def test_dry_verbose_prints_full_block(capsys):
               .runs(5))
     Dry(verbose=True).run([s], ctx=None)
     out = capsys.readouterr().out
-    assert "command: /bin/echo hi" in out
+    assert "command:    /bin/echo hi" in out
     assert "cwd:" in out
-    assert "plan:    measure x5" in out
+    assert "processors: Time" in out
+    # Dry enumerates per execution — no per-block plan summary.
+    assert "plan:" not in out
+    assert out.count("command:    /bin/echo hi") == 5
+    assert out.count("X/a #1 [measure]") == 1
+    assert out.count("X/a #5 [measure]") == 1
 
 
 def test_sequential_verbose_echoes_block_and_still_runs(capsys):
     report = Sequential(verbose=True).run([_sleep_suite(runs=2)], ctx=None)
     out = capsys.readouterr().out
-    assert "command:" in out and "plan:    measure x2" in out
+    assert "command:" in out and "plan:       measure x2" in out
     # Verbose is an echo only — the benchmarks still execute.
     assert len(report.samples) == 4
 
