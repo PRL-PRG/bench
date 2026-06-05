@@ -7,17 +7,17 @@ from benchr import RunRecord, Report, Sample, report_from_json, report_to_json
 
 def _mk(**kw: Any) -> Sample:
     base: dict[str, Any] = dict(
-        suite="S", benchmark="B", info=(), run=1, phase="measure",
+        suite="S", benchmark="B", variant=(), run=1, phase="measure",
         metric="runtime", value=1.5, unit="s", lower_is_better=True,
     )
     base.update(kw)
     return Sample(**base)
 
 
-def test_info_keys_orders_first_seen():
+def test_variant_keys_orders_first_seen():
     r = Report()
-    r.extend([_mk(info=(("a", "1"),)), _mk(info=(("b", "2"),)), _mk(info=(("a", "3"),))])
-    assert r.info_keys() == ["a", "b"]
+    r.extend([_mk(variant=(("a", "1"),)), _mk(variant=(("b", "2"),)), _mk(variant=(("a", "3"),))])
+    assert r.variant_keys() == ["a", "b"]
 
 
 def test_metrics_distinct():
@@ -33,7 +33,7 @@ def test_json_round_trip():
         _mk(metric="max_rss", value=2048, unit="kB"),
     ])
     r.add_run(RunRecord(
-        suite="S", benchmark="B", info=(("opt", "O2"),), run=3, phase="measure",
+        suite="S", benchmark="B", variant=(("opt", "O2"),), run=3, phase="measure",
         command=("./bench", "--opt"), returncode=7, failure="exit 7", message="boom",
     ))
     text = report_to_json(r)

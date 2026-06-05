@@ -260,22 +260,20 @@ def _bench_subparser(p: argparse.ArgumentParser) -> None:
 def _run_bench(ns: argparse.Namespace) -> int:
     import shlex
 
-    benchmarks = []
-    for cmd in ns.commands:
-        argv = shlex.split(cmd)
-        b = (
-            bench(cmd)
-            .with_command(argv)
-            .with_cwd(Path.cwd())
-            .with_process(P.time())
-        )
-        if ns.timeout is not None:
-            b = b.with_timeout(ns.timeout)
-        if ns.warmup > 0:
-            b = b.with_warmup(ns.warmup)
-        b = b.runs(ns.runs)
-        benchmarks.append(b)
-    s = suite("bench", *benchmarks)
+    argvs = [tuple(shlex.split(cmd)) for cmd in ns.commands]
+    b = (
+        bench("bench")
+        .with_matrix(command=argvs)
+        .with_label(lambda bb: " ".join(bb.data["command"]))
+        .with_cwd(Path.cwd())
+        .with_process(P.time())
+        .runs(ns.runs)
+    )
+    if ns.timeout is not None:
+        b = b.with_timeout(ns.timeout)
+    if ns.warmup > 0:
+        b = b.with_warmup(ns.warmup)
+    s = suite("bench", b)
 
     metrics = {ns.metric} if ns.metric else None
     summary_reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
@@ -315,10 +313,9 @@ def _run_compare(ns: argparse.Namespace) -> int:
         if out:
             console.print(out)
         return 0
-    # First file is the baseline; rest are comparees.
-    baseline = files[0]
-    # We summarize the *last* file ("current") against the baseline, plus all
-    # intermediates as additional comparees.
+    # First file is the baseline; rest are comparees. Summarize the *last*
+    # file ("current") against the baseline, plus all intermediates as
+    # additional comparees.
     current = report_from_json(files[-1].read_text())
     data = build_summary(current, files[:-1])
     out = DefaultSummary(metrics=metrics).format(data)

@@ -35,7 +35,7 @@ from benchr.report.sample import Sample
 # PartialSample + stamp: a Processor yields identity-free PartialSamples
 # (metric, value, unit, lower_is_better); the Runner calls stamp() to lift
 # them into fully-identified Samples using the ScheduledExecution's
-# (suite, benchmark, run, phase, info).
+# (suite, benchmark, run, phase, variant).
 # ---------------------------------------------------------------------------
 
 
@@ -63,7 +63,8 @@ def stamp(partials: Iterable[PartialSample], sched: ScheduledExecution) -> Itera
         yield Sample(
             suite=sched.suite,
             benchmark=sched.benchmark,
-            info=sched.info,
+            variant=sched.variant,
+            variant_label=sched.variant_label,
             run=sched.run,
             phase=sched.phase,
             metric=p.metric,

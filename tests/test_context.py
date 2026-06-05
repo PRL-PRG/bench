@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from benchr import add_dataclass_args, build_dataclass
+from benchr.grammar.context import add_dataclass_args, build_dataclass
 
 
 @dataclass

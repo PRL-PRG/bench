@@ -2,11 +2,10 @@
 
 from pathlib import Path
 
-import pytest
-
-from benchr import (
-    RunRecord, GeoMeanRatio, MetricRatio, Phase, Report, Sample, build_summary,
-    geomean_with_sigma, group, metric_ratio, metric_stats, scale_unit,
+from benchr import RunRecord, Phase, Report, Sample
+from benchr.report.stats import (
+    build_summary, geomean_with_sigma, group,
+    metric_ratio, metric_stats, scale_unit,
 )
 
 
@@ -14,7 +13,7 @@ def _mk(metric: str, value: float, *, phase: Phase = "measure", run: int = 1,
         bench: str = "b", suite: str = "S",
         lower_is_better: bool | None = True, unit: str = "s") -> Sample:
     return Sample(
-        suite=suite, benchmark=bench, info=(), run=run, phase=phase,
+        suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
         metric=metric, value=value, unit=unit, lower_is_better=lower_is_better,
     )
 
@@ -43,7 +42,7 @@ def test_group_with_warmup_when_opted_in():
 def _run(run: int, *, returncode: int = 0, failure: str | None = None,
          phase: Phase = "measure", bench: str = "b", suite: str = "S") -> RunRecord:
     return RunRecord(
-        suite=suite, benchmark=bench, info=(), run=run, phase=phase,
+        suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
         command=("x",), returncode=returncode, failure=failure,
         message="boom" if failure else "",
     )

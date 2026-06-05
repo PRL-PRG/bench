@@ -65,9 +65,35 @@ def _count_markup(rc: RunCounts) -> tuple[str, str]:
     return f_s, s_s
 
 
+def _variant_suffix(gs: GroupStats) -> str:
+    """Render the variant portion of a display name.
+
+    Prefers the explicit ``variant_label`` (set via ``Benchmark.with_label``);
+    falls back to ``" (k=v, …)"`` for unlabeled axes.
+    """
+    if gs.variant_label:
+        return f"/{gs.variant_label}"
+    return format_variant(gs.variant)
+
+
+def _group_label(gs: GroupStats) -> str:
+    """`suite/benchmark`, collapsing the stutter when both names match."""
+    if gs.suite == gs.benchmark:
+        return gs.benchmark
+    return f"{gs.suite}/{gs.benchmark}"
+
+
 def _display_name(gs: GroupStats, single_suite: bool) -> str:
-    base = gs.benchmark if single_suite else f"{gs.suite}/{gs.benchmark}"
-    return base + format_variant(gs.info)
+    base = gs.benchmark if single_suite else _group_label(gs)
+    return base + _variant_suffix(gs)
+
+
+def _variant_name(gs: GroupStats) -> str:
+    """Render only the variant identifier (no benchmark/suite prefix)."""
+    if gs.variant_label:
+        return gs.variant_label
+    formatted = format_variant(gs.variant)
+    return formatted.strip(" ()") if formatted else gs.benchmark
 
 
 class DefaultSummary(Formatter):
@@ -87,8 +113,7 @@ class DefaultSummary(Formatter):
                 if i > 0:
                     lines.append("")
                 self._fmt_group(gs, lines)
-        if len(data.groups) >= 2:
-            self._fmt_ranking(data, lines)
+        self._fmt_ranking(data, lines)
         if data.baseline is not None:
             self._fmt_comparison(data, lines)
         return "\n".join(lines)
@@ -96,7 +121,7 @@ class DefaultSummary(Formatter):
     # ----- group block ----------------------------------------------
 
     def _fmt_group(self, gs: GroupStats, lines: list[str]) -> None:
-        name = f"{gs.suite}/{gs.benchmark}{format_variant(gs.info)}"
+        name = f"{_group_label(gs)}{_variant_suffix(gs)}"
 
         rc = gs.run_counts
         total = rc.failures + rc.successes
@@ -116,7 +141,10 @@ class DefaultSummary(Formatter):
 
         multi = total > 1
         suffix = " (mean ± σ):" if multi else ":"
-        labels = {mk: f"{mk[0]} [{scaled[mk][1]}]{suffix}" for mk in scaled}
+        labels = {
+            mk: f"{mk[0]}{f' [{u}]' if (u := scaled[mk][1]) else ''}{suffix}"
+            for mk in scaled
+        }
         max_w = max(len(l) for l in labels.values())
 
         for mk, (scale, _) in scaled.items():
@@ -137,55 +165,76 @@ class DefaultSummary(Formatter):
             else:
                 lines.append(f"  {label}  [benchr.value]{mean_v:.2f}[/]")
 
-    # ----- intra-run ranking (hyperfine-style) -----------------------
+    # ----- intra-benchmark ranking (hyperfine-style) -----------------
 
     def _fmt_ranking(self, data: SummaryData, lines: list[str]) -> None:
-        """Append a hyperfine-style "Summary" block ranking the benchmarks.
+        """Append "Summary" blocks ranking the variants WITHIN each benchmark.
 
-        For each comparable metric (``lower_is_better`` is not ``None``), find
-        the best group and print one line per slower group with the slowdown
-        factor and propagated sigma.
+        Comparison is meaningful only between variants of the same workload —
+        we never rank `fast/a` against `slow/y`. For each `(suite, benchmark)`
+        partition with ≥ 2 variants and each rankable metric, emit one block:
+        best variant, then one line per slower variant with the factor and
+        propagated sigma.
         """
-        # Group → MetricStats indexed by MetricKey, restricted to metrics
-        # that have a direction and survive the --metric filter.
-        per_metric: dict[MetricKey, list[GroupStats]] = {}
+        # Partition groups by (suite, benchmark). Preserve insertion order so
+        # the Summary blocks follow the order of the per-group stats blocks.
+        partitions: dict[tuple[str, str], list[GroupStats]] = {}
         for gs in data.groups:
-            for mk, ms in gs.metrics.items():
-                if ms.lower_is_better is None or not self._include(mk):
-                    continue
-                per_metric.setdefault(mk, []).append(gs)
+            partitions.setdefault((gs.suite, gs.benchmark), []).append(gs)
 
-        rankable = {mk: gs for mk, gs in per_metric.items() if len(gs) >= 2}
-        if not rankable:
+        rankable_partitions = [
+            (key, groups) for key, groups in partitions.items() if len(groups) >= 2
+        ]
+        if not rankable_partitions:
             return
 
-        single_suite = len({g.suite for g in data.groups}) == 1
-        multi_metric = len(rankable) > 1
-        for mk, groups in rankable.items():
-            is_lower = groups[0].metrics[mk].lower_is_better
-            ranked = sorted(
-                groups,
-                key=lambda g: g.metrics[mk].median,
-                reverse=not is_lower,
-            )
-            best = ranked[0]
-            word = "faster" if is_lower else "higher"
+        multi_partition = len(rankable_partitions) > 1
+        for (suite, bench), groups in rankable_partitions:
+            # Collect rankable metrics for this partition.
+            per_metric: dict[MetricKey, list[GroupStats]] = {}
+            for gs in groups:
+                for mk, ms in gs.metrics.items():
+                    if ms.lower_is_better is None or not self._include(mk):
+                        continue
+                    per_metric.setdefault(mk, []).append(gs)
+            rankable = {mk: gs for mk, gs in per_metric.items() if len(gs) >= 2}
+            if not rankable:
+                continue
 
-            lines.append("")
-            title = f"Summary ({mk[0]})" if multi_metric else "Summary"
-            lines.append(f"[benchr.label]{title}[/]")
-            lines.append(f"  [benchr.name]'{_display_name(best, single_suite)}'[/] ran")
-            for other in ranked[1:]:
-                mr = metric_ratio(best.metrics[mk], other.metrics[mk])
-                if mr is None:
-                    continue
-                ratio, sigma, _ = _orient(mr.display_ratio, mr.sigma)
-                lines.append(
-                    f"    [benchr.value]{ratio:.2f}[/]"
-                    f" ± [benchr.success]{sigma:.2f}[/]"
-                    f" times [benchr.better]{word}[/] than"
-                    f" [benchr.name]'{_display_name(other, single_suite)}'[/]"
+            multi_metric = len(rankable) > 1
+            for mk, gs_list in rankable.items():
+                is_lower = gs_list[0].metrics[mk].lower_is_better
+                ranked = sorted(
+                    gs_list,
+                    key=lambda g: g.metrics[mk].median,
+                    reverse=not is_lower,
                 )
+                best = ranked[0]
+                word = "faster" if is_lower else "higher"
+
+                lines.append("")
+                if multi_partition or multi_metric:
+                    bits: list[str] = []
+                    if multi_partition:
+                        bits.append(f"{suite}/{bench}")
+                    if multi_metric:
+                        bits.append(mk[0])
+                    title = "Summary — " + " ".join(f"({b})" for b in bits) if len(bits) > 1 else f"Summary — {bits[0]}"
+                else:
+                    title = "Summary"
+                lines.append(f"[benchr.label]{title}[/]")
+                lines.append(f"  [benchr.name]'{_variant_name(best)}'[/] ran")
+                for other in ranked[1:]:
+                    mr = metric_ratio(best.metrics[mk], other.metrics[mk])
+                    if mr is None:
+                        continue
+                    ratio, sigma, _ = _orient(mr.display_ratio, mr.sigma)
+                    lines.append(
+                        f"    [benchr.value]{ratio:.2f}[/]"
+                        f" ± [benchr.success]{sigma:.2f}[/]"
+                        f" times [benchr.better]{word}[/] than"
+                        f" [benchr.name]'{_variant_name(other)}'[/]"
+                    )
 
     # ----- comparison block -----------------------------------------
 
@@ -198,14 +247,14 @@ class DefaultSummary(Formatter):
             all_lib.update(c.lower_is_better)
 
         comp_idx: dict[str, dict[BenchmarkId, BenchmarkGroup]] = {
-            cn: {(g.suite, g.benchmark, g.info): g for g in c.groups}
+            cn: {(g.suite, g.benchmark, g.variant): g for g in c.groups}
             for c, cn in zip(data.comparees, data.comparee_names)
         }
 
         lines.append("")
         first = True
         for bl_g in baseline.groups:
-            bid: BenchmarkId = (bl_g.suite, bl_g.benchmark, bl_g.info)
+            bid: BenchmarkId = (bl_g.suite, bl_g.benchmark, bl_g.variant)
             present = [
                 (cn, comp_idx[cn][bid])
                 for cn in data.comparee_names
@@ -217,7 +266,7 @@ class DefaultSummary(Formatter):
                 lines.append("")
             first = False
 
-            name = f"{bl_g.suite}/{bl_g.benchmark}{format_variant(bl_g.info)}"
+            name = f"{_group_label(bl_g)}{_variant_suffix(bl_g)}"
             lines.append(f"[benchr.label]{name}:[/]")
             lines.append("  runs:")
             lines.append(f"    {self._fmt_runs(baseline.name, bl_g.run_counts)}")
@@ -252,9 +301,9 @@ class DefaultSummary(Formatter):
             lines.append("    runs:")
             lines.append(f"      {self._fmt_runs(baseline.name, self._sum(suite_groups))}")
             for c, cn in zip(data.comparees, data.comparee_names):
-                idx = {(g.suite, g.benchmark, g.info): g for g in c.groups}
-                matched = [idx[(g.suite, g.benchmark, g.info)] for g in suite_groups
-                           if (g.suite, g.benchmark, g.info) in idx]
+                idx = {(g.suite, g.benchmark, g.variant): g for g in c.groups}
+                matched = [idx[(g.suite, g.benchmark, g.variant)] for g in suite_groups
+                           if (g.suite, g.benchmark, g.variant) in idx]
                 lines.append(f"      {self._fmt_runs(cn, self._sum(matched))}")
 
             metric_keys: list[MetricKey] = []
@@ -315,10 +364,12 @@ class Compact(Formatter):
                  baseline_name: str | None = None,
                  precision: int = 2) -> None:
         self._metrics = [metric] if isinstance(metric, str) else list(metric)
-        self._metrics_set = set(self._metrics)
         self._suite = suite
         self._baseline_name = baseline_name
         self._precision = precision
+
+    def _match(self, mk: MetricKey) -> bool:
+        return mk[0] in self._metrics
 
     def format(self, data: SummaryData) -> str:
         if data.baseline is not None:
@@ -341,7 +392,7 @@ class Compact(Formatter):
             if self._suite is not None and bid[0] != self._suite:
                 continue
             for mk, mr in m.items():
-                if mk[0] in self._metrics_set:
+                if self._match(mk):
                     entries.append((bid[1], mr))
                     matched.add(mk)
                     break
@@ -390,14 +441,14 @@ class Compact(Formatter):
     def _infer_run_count(data: SummaryData, cname: str, bench_ratios, matched) -> int:
         runs: set[int] = set()
         for gs in data.groups:
-            bid: BenchmarkId = (gs.suite, gs.benchmark, gs.info)
+            bid: BenchmarkId = (gs.suite, gs.benchmark, gs.variant)
             if bid in bench_ratios and any(mk in bench_ratios[bid] for mk in matched):
                 runs.add(gs.run_counts.successes)
         if not runs:
             idx = data.comparee_names.index(cname)
             comp = data.comparees[idx]
             for g in comp.groups:
-                bid = (g.suite, g.benchmark, g.info)
+                bid = (g.suite, g.benchmark, g.variant)
                 if bid in bench_ratios and any(mk in bench_ratios[bid] for mk in matched):
                     runs.add(g.run_counts.successes)
         return runs.pop() if len(runs) == 1 else 0
@@ -410,7 +461,7 @@ class Compact(Formatter):
             if self._suite is not None and gs.suite != self._suite:
                 continue
             for mk, ms in gs.metrics.items():
-                if mk[0] in self._metrics_set:
+                if self._match(mk):
                     by_metric.setdefault(mk[0], []).append((gs.benchmark, ms))
                     break
         if not by_metric:

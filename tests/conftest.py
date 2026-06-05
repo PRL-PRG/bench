@@ -26,7 +26,7 @@ def make_sched(**overrides: Any) -> ScheduledExecution:
         execution=make_execution(),
         suite="S",
         benchmark="B",
-        info=(),
+        variant=(),
         run=1,
         phase="measure",
     )

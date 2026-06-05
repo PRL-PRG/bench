@@ -1,13 +1,8 @@
 """Suite: propagation, matrix, from_files, filter, materialize."""
 
-import tempfile
 from pathlib import Path
 
-import pytest
-
-from benchr import (
-    Benchmark, FixedRuns, P, bench, benchmark_info, suite,
-)
+from benchr import FixedRuns, P, bench, suite
 
 
 def _b(name: str):
@@ -85,33 +80,80 @@ def test_from_files_callable_root(tmp_path: Path):
     assert names == ["p"]
 
 
-def test_matrix_expands_and_stamps_info():
+def test_with_matrix_expands_and_stamps_variant():
     s = (
-        suite("M", _b("compute"))
+        suite("M", _b("compute")
+              .with_command(lambda b, ctx: ["x", "-" + b.opt])
+              .with_matrix(opt=["O0", "O2"]))
         .with_cwd(Path("/tmp")).with_process(P.time())
-        .matrix("opt", ["O0", "O2"], command=lambda b, ctx, v: ["x", "-" + v])
     )
-    benchmarks = list(s.benchmarks)
+    benchmarks = list(s.materialize(ctx=None))
     assert len(benchmarks) == 2
-    assert all(b.opt in {"O0", "O2"} for b in benchmarks)
-    # Compile and check info is stamped.
+    assert sorted(b.opt for b in benchmarks) == ["O0", "O2"]
+    # Compile and check variant is stamped.
     g = benchmarks[0].compile(ctx=None, suite="M")
     sched = next(g)
     g.close()
-    assert sched.info == (("opt", "O0"),)
+    assert sched.variant == (("opt", "O0"),)
 
 
-def test_matrix_info_callback_overrides_default():
+def test_suite_with_matrix_applies_to_all_benchmarks():
     s = (
-        suite("M", _b("c"))
+        suite("M",
+              _b("a").with_command(lambda b, ctx: ["x", b.vm]),
+              _b("b").with_command(lambda b, ctx: ["y", b.vm]))
+        .with_matrix(vm=["v8", "jsc"])
         .with_cwd(Path("/tmp")).with_process(P.time())
-        .matrix(
-            "axis", [("gcc", "O2")],
-            command=lambda b, ctx, v: ["x"],
-            info=lambda v: {"compiler": v[0], "opt": v[1]},
-        )
     )
-    g = s.benchmarks[0].compile(ctx=None, suite="M")
-    sched = next(g)
-    g.close()
-    assert dict(sched.info) == {"compiler": "gcc", "opt": "O2"}
+    bs = list(s.materialize(ctx=None))
+    names_vms = sorted((b.name, b.vm) for b in bs)
+    assert names_vms == [("a", "jsc"), ("a", "v8"), ("b", "jsc"), ("b", "v8")]
+
+
+def test_with_skip_kwargs_drops_variant():
+    s = (
+        suite("M", _b("c")
+              .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
+              .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+              .with_skip(vm="v8", size=500))
+        .with_cwd(Path("/tmp")).with_process(P.time())
+    )
+    bs = list(s.materialize(ctx=None))
+    assert len(bs) == 3
+    assert ("v8", 500) not in {(b.vm, b.size) for b in bs}
+
+
+def test_with_skip_predicate_drops_variant():
+    s = (
+        suite("M", _b("c")
+              .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
+              .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+              .with_skip(lambda b: b.vm != "jsc"))
+        .with_cwd(Path("/tmp")).with_process(P.time())
+    )
+    bs = list(s.materialize(ctx=None))
+    assert all(b.vm == "jsc" for b in bs)
+    assert sorted(b.size for b in bs) == [100, 500]
+
+
+def test_with_label_overrides_default():
+    s = (
+        suite("M", _b("c")
+              .with_command(lambda b, ctx: ["true"])
+              .with_matrix(arg=["one", "two"])
+              .with_label(lambda b: f"<{b.arg}>"))
+        .with_cwd(Path("/tmp")).with_process(P.time())
+    )
+    bs = list(s.materialize(ctx=None))
+    assert sorted(b.variant_label() for b in bs) == ["<one>", "<two>"]
+
+
+def test_command_axis_default_builder():
+    """When axis name is `command` and no with_command set, axis value becomes cmd."""
+    s = (
+        suite("M", _b("c").with_matrix(command=[["echo", "a"], ["echo", "b"]]))
+        .with_cwd(Path("/tmp")).with_process(P.time())
+    )
+    bs = list(s.materialize(ctx=None))
+    scheds = [b.schedule(ctx=None, suite="M", run=1, phase="measure") for b in bs]
+    assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]

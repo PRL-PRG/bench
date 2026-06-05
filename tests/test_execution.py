@@ -42,7 +42,7 @@ def test_scheduled_execution_identifier():
     sched = ScheduledExecution(
         execution=Execution(command=("x",), cwd=Path("/tmp")),
         suite="S", benchmark="B",
-        info=(("opt", "O2"), ("cc", "gcc")),
+        variant=(("opt", "O2"), ("cc", "gcc")),
         run=3, phase="warmup",
     )
     s = sched.identifier()

@@ -19,7 +19,7 @@ def _pump(b, fake_value=1.0):
         while True:
             out.append(sched)
             s = Sample(
-                suite="S", benchmark=b.name, info=sched.info, run=sched.run,
+                suite="S", benchmark=b.name, variant=sched.variant, run=sched.run,
                 phase=sched.phase, metric="runtime", value=fake_value,
                 unit="s", lower_is_better=True,
             )

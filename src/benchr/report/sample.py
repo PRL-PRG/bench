@@ -25,9 +25,11 @@ from benchr.grammar.execution import (
 class Sample:
     """One parsed measurement.
 
-    ``info`` is a canonical (sorted) tuple of (key, value) pairs that identify
-    a benchmark variant — e.g. ``(("compiler", "gcc"), ("opt", "O2"))`` for a
-    matrix cell. The tuple form is hashable so Samples group cleanly.
+    ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
+    identifying the matrix cell — e.g. ``(("compiler", "gcc"), ("opt", "O2"))``.
+    The tuple form is hashable so Samples group cleanly.
+    ``variant_label`` is the human-readable label for that cell (from
+    ``Benchmark.label_fn``, or ``format_variant(variant)`` by default).
 
     ``phase`` is ``"warmup"`` or ``"measure"``. Stats default to excluding
     warmup; raw outputs (JSON, CSV, dir) always include both.
@@ -38,20 +40,21 @@ class Sample:
 
     suite: str
     benchmark: str
-    info: tuple[tuple[str, str], ...]
+    variant: tuple[tuple[str, str], ...]
     run: int
     phase: Phase
     metric: str
     value: float
     unit: str = ""
     lower_is_better: bool | None = None
+    variant_label: str = ""
 
 
-def info_keys(samples: Iterable[Sample]) -> list[str]:
-    """Stable list of info-column names across a stream of samples."""
+def variant_keys(samples: Iterable[Sample]) -> list[str]:
+    """Stable list of variant-axis names across a stream of samples."""
     seen: dict[str, None] = {}
     for s in samples:
-        for k, _ in s.info:
+        for k, _ in s.variant:
             seen.setdefault(k, None)
     return list(seen)
 
@@ -60,7 +63,7 @@ def info_keys(samples: Iterable[Sample]) -> list[str]:
 class RunRecord:
     """The context of one execution: identity + command + outcome, no metric.
 
-    Samples join to a RunRecord by the shared (suite, benchmark, info, run,
+    Samples join to a RunRecord by the shared (suite, benchmark, variant, run,
     phase) key. A *failed* run is a RunRecord with ``failure is not None`` and
     no associated Samples. Recording every execution structurally lets
     summaries, JSON and stats report *which* runs ran, *what* command, and *why*
@@ -74,7 +77,7 @@ class RunRecord:
 
     suite: str
     benchmark: str
-    info: tuple[tuple[str, str], ...]
+    variant: tuple[tuple[str, str], ...]
     run: int
     phase: Phase
     command: tuple[str, ...]
@@ -82,13 +85,15 @@ class RunRecord:
     runtime: float | None = None
     failure: str | None = None
     message: str = ""
+    variant_label: str = ""
 
     def is_failure(self) -> bool:
         return self.failure is not None
 
     def identifier(self) -> str:
-        return format_identifier(self.suite, self.benchmark, self.info,
-                                 self.run, self.phase)
+        return format_identifier(self.suite, self.benchmark, self.variant,
+                                 self.run, self.phase,
+                                 variant_label=self.variant_label)
 
     @staticmethod
     def from_result(
@@ -97,7 +102,8 @@ class RunRecord:
         return RunRecord(
             suite=sched.suite,
             benchmark=sched.benchmark,
-            info=sched.info,
+            variant=sched.variant,
+            variant_label=sched.variant_label,
             run=sched.run,
             phase=sched.phase,
             command=sched.execution.command,
@@ -134,8 +140,8 @@ class Report:
     def metrics(self) -> list[str]:
         return list({s.metric: None for s in self.samples})
 
-    def info_keys(self) -> list[str]:
-        return info_keys(self.samples)
+    def variant_keys(self) -> list[str]:
+        return variant_keys(self.samples)
 
     def extend(self, samples: Iterable[Sample]) -> None:
         self.samples.extend(samples)
@@ -174,7 +180,8 @@ def _to_dict(report: Report) -> dict[str, Any]:
             {
                 "suite": s.suite,
                 "benchmark": s.benchmark,
-                "info": list(s.info),
+                "variant": list(s.variant),
+                **({"variant_label": s.variant_label} if s.variant_label else {}),
                 "run": s.run,
                 "phase": s.phase,
                 "metric": s.metric,
@@ -192,7 +199,8 @@ def _to_dict(report: Report) -> dict[str, Any]:
             {
                 "suite": r.suite,
                 "benchmark": r.benchmark,
-                "info": list(r.info),
+                "variant": list(r.variant),
+                **({"variant_label": r.variant_label} if r.variant_label else {}),
                 "run": r.run,
                 "phase": r.phase,
                 "command": list(r.command),
@@ -209,12 +217,13 @@ def _to_dict(report: Report) -> dict[str, Any]:
 def _from_dict(d: dict[str, Any]) -> Report:
     samples: list[Sample] = []
     for sd in d.get("samples", []):
-        info = tuple((k, v) for k, v in sd.get("info", []))
+        variant = tuple((k, v) for k, v in sd.get("variant", []))
         samples.append(
             Sample(
                 suite=sd["suite"],
                 benchmark=sd["benchmark"],
-                info=info,
+                variant=variant,
+                variant_label=sd.get("variant_label", ""),
                 run=sd["run"],
                 phase=sd.get("phase", "measure"),
                 metric=sd["metric"],
@@ -225,12 +234,13 @@ def _from_dict(d: dict[str, Any]) -> Report:
         )
     runs: list[RunRecord] = []
     for rd in d.get("runs", []):
-        info = tuple((k, v) for k, v in rd.get("info", []))
+        variant = tuple((k, v) for k, v in rd.get("variant", []))
         runs.append(
             RunRecord(
                 suite=rd["suite"],
                 benchmark=rd["benchmark"],
-                info=info,
+                variant=variant,
+                variant_label=rd.get("variant_label", ""),
                 run=rd["run"],
                 phase=rd.get("phase", "measure"),
                 command=tuple(rd.get("command", ())),

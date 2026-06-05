@@ -2,10 +2,8 @@
 
 from pathlib import Path
 
-import pytest
-
 from benchr import (
-    CoefficientOfVariation, FixedRuns, Json, P, Sequential, bench,
+    Json, P, Sequential, bench,
     report_from_json, suite,
 )
 

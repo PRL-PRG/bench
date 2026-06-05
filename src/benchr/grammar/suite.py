@@ -5,11 +5,17 @@ whose member benchmarks have had the same ``.with_*`` applied — but only
 *where the benchmark's value is still unset*, so per-benchmark overrides win
 over suite defaults.
 
-Other producers:
+The matrix algebra:
+  - ``Suite.with_matrix(**axes)`` attaches axes that propagate into every
+    contained benchmark at materialize-time;
+  - ``Suite.with_skip(...)`` likewise propagates skip rules.
+
+Producers:
   ``.add(b)``                        append a Benchmark
   ``.add_all(*bs)``                  append many
   ``.from_files(path, pattern=...)`` discover files and turn each into a Benchmark
-  ``.matrix(name, values, ...)``     cross every benchmark with every value
+  ``.with_matrix(**axes)``           add matrix axes to every contained benchmark
+  ``.with_skip(...)``                add skip rules to every contained benchmark
   ``.filter(pred)``                  keep matching benchmarks
   ``.named(new_name)``               rename
 """
@@ -27,6 +33,7 @@ from benchr.grammar.benchmark import (
     CommandFn,
     EnvFn,
     PathFn,
+    SkipFn,
     _coerce_policy,
     bench,
 )
@@ -38,9 +45,6 @@ from benchr.grammar.processor import Processor
 # Suite.from_files defers discovery to this hook so e.g. paths can depend on
 # ctx.cwd. The Runner / CLI flattens these into concrete benchmarks at run time.
 BenchFactory = Callable[[Any], list[Benchmark]]
-MatrixCommandFn = Callable[[Benchmark, Any, Any], Sequence[str]]  # (bench, ctx, value)
-MatrixEnvFn = Callable[[Benchmark, Any, Any], Mapping[str, str]]
-MatrixInfoFn = Callable[[Any], Mapping[str, str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,60 +181,48 @@ class Suite:
         """Shorthand for ``with_runs``. Mirrors ``Benchmark.runs``."""
         return self.with_runs(n)
 
-    # ----- matrix ----------------------------------------------------
+    # ----- matrix / skip ---------------------------------------------
 
-    def matrix(
-        self,
-        name: str,
-        values: Sequence[Any],
-        *,
-        command: MatrixCommandFn | None = None,
-        env: MatrixEnvFn | None = None,
-        info: MatrixInfoFn | None = None,
-    ) -> Suite:
-        """Cross each benchmark with each value, producing one variant per cell.
+    def with_matrix(self, **axes: Sequence[Any]) -> Suite:
+        """Add one matrix axis per kwarg to every contained benchmark.
 
-        Each variant copies the original benchmark and overrides command/env
-        for the value. The matrix axis is recorded in ``data`` (so callbacks
-        can read ``b.<axis_name>``) and stamped into the ScheduledExecution's
-        ``info``.
+        Each contained benchmark gets the axes appended to its own ``axes``
+        list (so per-benchmark axes still compose with suite-level ones).
+        See ``Benchmark.with_matrix``.
         """
-        def expand(b: Benchmark) -> list[Benchmark]:
-            variants: list[Benchmark] = []
-            for v in values:
-                new_data = dict(b.data) if b.data else {}
-                new_data[name] = v
-                variant = dataclasses.replace(b, data=new_data)
-                if command is not None:
-                    variant = variant.with_command(lambda bb, ctx, _v=v, _fn=command: _fn(bb, ctx, _v))
-                if env is not None:
-                    old_env = variant.env
-                    def merged(bb, ctx, _v=v, _fn=env, _old=old_env):
-                        new_env = _fn(bb, ctx, _v)
-                        prev = _old(bb, ctx) if callable(_old) else _old
-                        return {**prev, **new_env}
-                    variant = variant.with_env(merged)
-                if info is not None:
-                    extra = dict(info(v))
-                    variant = Suite._stamp_info(variant, extra)
-                else:
-                    variant = Suite._stamp_info(variant, {name: str(v)})
-                variants.append(variant)
-            return variants
+        if not axes:
+            return self
+        return self._map(lambda b: b.with_matrix(**axes))
 
-        new_bs: list[Benchmark] = []
-        for b in self.benchmarks:
-            new_bs.extend(expand(b))
-        new_factories = tuple(Suite._wrap_expand(fn, expand) for fn in self.factories)
-        return dataclasses.replace(self, benchmarks=tuple(new_bs), factories=new_factories)
+    def with_skip(
+        self,
+        predicate: SkipFn | None = None,
+        /,
+        **kwargs: Any,
+    ) -> Suite:
+        """Drop variants matching the rule, applied to every contained benchmark.
+
+        Same shape as ``Benchmark.with_skip``: kwargs are AND-matched against
+        axis values, optional ``predicate(bench) -> bool`` for complex cases.
+        """
+        if predicate is None and not kwargs:
+            return self
+        return self._map(lambda b: b.with_skip(predicate, **kwargs))
 
     # ----- materialization ------------------------------------------
 
     def materialize(self, ctx: Any) -> list[Benchmark]:
-        """Return the concrete benchmark list, calling deferred factories."""
-        out = list(self.benchmarks)
+        """Return the concrete (post-expansion) benchmark list.
+
+        Calls deferred factories, then expands each benchmark's matrix axes
+        into one concrete Benchmark per surviving variant.
+        """
+        out: list[Benchmark] = []
+        for b in self.benchmarks:
+            out.extend(b.expand())
         for fn in self.factories:
-            out.extend(fn(ctx))
+            for b in fn(ctx):
+                out.extend(b.expand())
         return out
 
     # ----- helpers --------------------------------------------------
@@ -239,20 +231,6 @@ class Suite:
         new_bs = tuple(fn(b) for b in self.benchmarks)
         new_factories = tuple(Suite._wrap_map(f, fn) for f in self.factories)
         return dataclasses.replace(self, benchmarks=new_bs, factories=new_factories)
-
-    @staticmethod
-    def _stamp_info(b: Benchmark, extra: Mapping[str, str]) -> Benchmark:
-        """Attach (k, v) pairs that surface on the ScheduledExecution's ``info``.
-
-        Stored under the reserved ``__info__`` key in ``b.data``; ``Benchmark.schedule``
-        reads it back when materializing executions. Merging is by-key: later values
-        in ``extra`` override existing ones.
-        """
-        new_data = dict(b.data) if b.data else {}
-        base_info = new_data.get("__info__", ())
-        merged = tuple(sorted({**dict(base_info), **dict(extra)}.items()))
-        new_data["__info__"] = merged
-        return dataclasses.replace(b, data=new_data)
 
     @staticmethod
     def _wrap_map(
@@ -269,18 +247,6 @@ class Suite:
     ) -> BenchFactory:
         def wrapped(ctx: Any) -> list[Benchmark]:
             return [b for b in factory(ctx) if pred(b)]
-
-        return wrapped
-
-    @staticmethod
-    def _wrap_expand(
-        factory: BenchFactory, expand: Callable[[Benchmark], list[Benchmark]]
-    ) -> BenchFactory:
-        def wrapped(ctx: Any) -> list[Benchmark]:
-            out: list[Benchmark] = []
-            for b in factory(ctx):
-                out.extend(expand(b))
-            return out
 
         return wrapped
 

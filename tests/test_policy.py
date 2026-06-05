@@ -9,7 +9,7 @@ from benchr import CoefficientOfVariation, Custom, FixedRuns, PolicyState, Sampl
 
 def _mk(value: float, run: int, *, metric: str = "rt") -> Sample:
     return Sample(
-        suite="S", benchmark="B", info=(), run=run, phase="measure",
+        suite="S", benchmark="B", variant=(), run=run, phase="measure",
         metric=metric, value=value, unit="s", lower_is_better=True,
     )
 
@@ -149,7 +149,7 @@ class _SeenN(PolicyState):
 
 
 def test_custom_policy():
-    p = Custom(state_factory=lambda: _SeenN(2))
+    p = Custom(lambda: _SeenN(2))
     state = p.start()
     state.observe(1, [_mk(0.0, 1)])
     state.observe(2, [_mk(1.0, 2)])
@@ -175,7 +175,7 @@ def test_cov_introspection():
 
 
 def test_custom_introspection_defaults_conservative():
-    p = Custom(state_factory=lambda: _SeenN(3))
+    p = Custom(lambda: _SeenN(3))
     assert p.max_runs() is None
     assert p.independent() is False
 

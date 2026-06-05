@@ -2,11 +2,8 @@
 
 import re
 
-import pytest
-
-from benchr import (
-    PartialSample, Processor, P, process_all, stamp,
-)
+from benchr import PartialSample, P
+from benchr.grammar.processor import process_all, stamp
 
 from conftest import make_failure, make_rusage, make_sched, make_success
 

@@ -1,7 +1,6 @@
 """Reporter sinks (Csv, Json, Dir, Mixed)."""
 
 import io
-import json
 from pathlib import Path
 
 from rich.console import Console
@@ -60,12 +59,13 @@ def test_mixed_fans_out(tmp_path: Path):
     assert js.exists() and cs.exists()
 
 
-def test_csv_header_includes_info_columns(tmp_path: Path):
+def test_csv_header_includes_variant_columns(tmp_path: Path):
     out = tmp_path / "r.csv"
     s = (
-        suite("M", bench("c"))
+        suite("M", bench("c")
+              .with_command(lambda b, ctx: ["sh", "-c", "sleep 0.01"])
+              .with_matrix(compiler=["gcc"]))
         .with_cwd(Path("/tmp")).with_process(P.time())
-        .matrix("compiler", ["gcc"], command=lambda b, ctx, v: ["sh", "-c", "sleep 0.01"])
         .runs(1)
     )
     Sequential(reporter=Csv(out)).run([s], ctx=None)

@@ -15,8 +15,8 @@ from benchr.report.sample import Report, report_from_json
 
 
 MetricKey = tuple[str, str]                # (metric, unit)
-VariantInfo = tuple[tuple[str, str], ...]  # canonical info tuple
-BenchmarkId = tuple[str, str, VariantInfo] # (suite, benchmark, info)
+Variant = tuple[tuple[str, str], ...]      # canonical variant tuple
+BenchmarkId = tuple[str, str, Variant]     # (suite, benchmark, variant)
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,8 @@ class BenchmarkGroup:
 
     suite: str
     benchmark: str
-    info: VariantInfo
+    variant: Variant
+    variant_label: str = ""
     metrics: dict[MetricKey, list[float]] = field(default_factory=dict)
     run_counts: RunCounts = field(default_factory=RunCounts)
 
@@ -60,18 +61,21 @@ def group(report: Report, *, name: str = "current",
     metrics: dict[BenchmarkId, dict[MetricKey, list[float]]] = {}
     succeeded: dict[BenchmarkId, int] = {}
     failed: dict[BenchmarkId, int] = {}
+    labels: dict[BenchmarkId, str] = {}
     lib: dict[MetricKey, bool] = {}
 
-    def register(bid: BenchmarkId) -> None:
+    def register(bid: BenchmarkId, label: str) -> None:
         if bid not in metrics:
             metrics[bid] = {}
             order.append(bid)
+        if label and not labels.get(bid):
+            labels[bid] = label
 
     for s in report.samples:
         if s.phase == "warmup" and not include_warmup:
             continue
-        bid: BenchmarkId = (s.suite, s.benchmark, s.info)
-        register(bid)
+        bid: BenchmarkId = (s.suite, s.benchmark, s.variant)
+        register(bid, s.variant_label)
         mk = (s.metric, s.unit)
         if s.lower_is_better is not None:
             lib[mk] = s.lower_is_better
@@ -80,8 +84,8 @@ def group(report: Report, *, name: str = "current",
     for r in report.runs:
         if r.phase == "warmup" and not include_warmup:
             continue
-        bid = (r.suite, r.benchmark, r.info)
-        register(bid)
+        bid = (r.suite, r.benchmark, r.variant)
+        register(bid, r.variant_label)
         if r.is_failure():
             failed[bid] = failed.get(bid, 0) + 1
         else:
@@ -89,10 +93,11 @@ def group(report: Report, *, name: str = "current",
 
     groups: list[BenchmarkGroup] = []
     for bid in order:
-        suite, bench, info = bid
+        suite, bench, variant = bid
         groups.append(
             BenchmarkGroup(
-                suite=suite, benchmark=bench, info=info,
+                suite=suite, benchmark=bench, variant=variant,
+                variant_label=labels.get(bid, ""),
                 metrics=metrics[bid],
                 run_counts=RunCounts(
                     failures=failed.get(bid, 0),
@@ -135,14 +140,14 @@ class MetricStats:
     stdev: float  # 0.0 if n < 2
     min: float
     max: float
-    values: list[float]
 
 
 @dataclass(slots=True)
 class GroupStats:
     suite: str
     benchmark: str
-    info: VariantInfo
+    variant: Variant
+    variant_label: str
     run_counts: RunCounts
     metrics: dict[MetricKey, MetricStats]
 
@@ -158,13 +163,13 @@ def metric_stats(values: list[float], metric: str, unit: str,
         stdev=statistics.stdev(values) if n >= 2 else 0.0,
         min=min(values),
         max=max(values),
-        values=list(values),
     )
 
 
 def group_stats(g: BenchmarkGroup, lib_map: dict[MetricKey, bool]) -> GroupStats:
     return GroupStats(
-        suite=g.suite, benchmark=g.benchmark, info=g.info, run_counts=g.run_counts,
+        suite=g.suite, benchmark=g.benchmark, variant=g.variant,
+        variant_label=g.variant_label, run_counts=g.run_counts,
         metrics={
             mk: metric_stats(vs, mk[0], mk[1], lib_map.get(mk))
             for mk, vs in g.metrics.items()
@@ -275,11 +280,11 @@ def _all_ratios(baseline: GroupedReport, comparee: GroupedReport):
     lib.update(comparee.lower_is_better)
 
     bl_index: dict[BenchmarkId, BenchmarkGroup] = {
-        (g.suite, g.benchmark, g.info): g for g in baseline.groups
+        (g.suite, g.benchmark, g.variant): g for g in baseline.groups
     }
     out: dict[BenchmarkId, dict[MetricKey, MetricRatio]] = {}
     for cg in comparee.groups:
-        bid: BenchmarkId = (cg.suite, cg.benchmark, cg.info)
+        bid: BenchmarkId = (cg.suite, cg.benchmark, cg.variant)
         bg = bl_index.get(bid)
         if bg is None:
             continue
@@ -304,7 +309,7 @@ def _per_suite_geomean(
     bench_ratios: dict[BenchmarkId, dict[MetricKey, MetricRatio]],
     comparee: GroupedReport,
 ) -> dict[str, dict[MetricKey, GeoMeanRatio]]:
-    comp_index = {(g.suite, g.benchmark, g.info): g for g in comparee.groups}
+    comp_index = {(g.suite, g.benchmark, g.variant): g for g in comparee.groups}
     by_suite: dict[str, dict[MetricKey, list[tuple[BenchmarkId, MetricRatio]]]] = {}
     for bid, m in bench_ratios.items():
         for mk, mr in m.items():

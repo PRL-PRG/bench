@@ -3,10 +3,8 @@
 import time
 from pathlib import Path
 
-import pytest
-
 from benchr import (
-    Csv, Dry, FixedRuns, Json, Mixed, P, Parallel, Sequential,
+    Csv, Dry, Json, Mixed, P, Parallel, Sequential,
     bench, report_from_json, suite,
 )
 

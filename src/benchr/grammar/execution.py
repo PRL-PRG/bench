@@ -13,9 +13,9 @@ import resource
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping
 
-_EMPTY_ENV: Mapping[str, str] = MappingProxyType({})
+_EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +24,7 @@ class Execution:
 
     command: tuple[str, ...]
     cwd: Path
-    env: Mapping[str, str] = _EMPTY_ENV
+    env: Mapping[str, str] = _EMPTY_MAPPING
     timeout: float | None = None
     stdin: bytes | None = None
 
@@ -78,35 +78,53 @@ type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
 Phase = Literal["warmup", "measure"]
 
 
-def format_variant(info: tuple[tuple[str, str], ...]) -> str:
-    """`` (k=v, …)`` suffix identifying a matrix variant; ``""`` if no info."""
-    if not info:
+def format_variant(variant: tuple[tuple[str, str], ...]) -> str:
+    """`` (k=v, …)`` suffix identifying a matrix variant; ``""`` if empty."""
+    if not variant:
         return ""
-    return " (" + ", ".join(f"{k}={v}" for k, v in info) + ")"
+    return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
 
 
 def format_identifier(
     suite: str,
     benchmark: str,
-    info: tuple[tuple[str, str], ...],
+    variant: tuple[tuple[str, str], ...],
     run: int,
     phase: Phase,
+    variant_label: str = "",
 ) -> str:
-    """Canonical run label: ``suite/benchmark (k=v, …) #run [phase]``."""
-    return f"{suite}/{benchmark}{format_variant(info)} #{run} [{phase}]"
+    """Canonical run label: ``suite/benchmark[/label or (k=v, …)] #run [phase]``.
+
+    Collapses ``suite/benchmark`` to a single token when the two names match
+    (common for one-off CLI runs).
+    """
+    head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
+    if variant_label:
+        head = f"{head}/{variant_label}"
+    else:
+        head = f"{head}{format_variant(variant)}"
+    return f"{head} #{run} [{phase}]"
 
 
 @dataclass(frozen=True, slots=True)
 class ScheduledExecution:
-    """An Execution plus the (suite, benchmark, run, phase, info) tag."""
+    """An Execution plus the (suite, benchmark, run, phase, variant) tag.
+
+    ``variant`` is the matrix cell identifier — a canonical (sorted) tuple of
+    ``(axis_name, axis_value)`` pairs. ``variant_label`` is the human-readable
+    name of the variant (from ``Benchmark.label_fn`` or, by default, the
+    formatted ``variant`` tuple).
+    """
 
     execution: Execution
     suite: str
     benchmark: str
-    info: tuple[tuple[str, str], ...] = ()  # canonical, sorted
+    variant: tuple[tuple[str, str], ...] = ()  # canonical, sorted
+    variant_label: str = ""
     run: int = 1
     phase: Phase = "measure"
 
     def identifier(self) -> str:
-        return format_identifier(self.suite, self.benchmark, self.info,
-                                 self.run, self.phase)
+        return format_identifier(self.suite, self.benchmark, self.variant,
+                                 self.run, self.phase,
+                                 variant_label=self.variant_label)

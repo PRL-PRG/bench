@@ -9,7 +9,7 @@
 """Lox: two suites sharing a base; per-suite formatter.
 
 Demonstrates:
-- ``suite(...).from_files(...)`` discovery + ``.matrix`` / ``.filter``
+- ``suite(...).from_files(...)`` discovery + ``.filter``
 - Multiple suites, each with its own processor.
 - Per-suite Compact summary via Mixed reporters.
 - Typed ``LoxParams`` dataclass for CLI flags.

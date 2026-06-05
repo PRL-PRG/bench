@@ -96,7 +96,7 @@ round-trip cleanly through JSON.
    Benchmark.compile()        ← coroutine, yields one ScheduledExecution per run
         │
         ▼
-   ScheduledExecution         ← (Execution, suite, benchmark, run, phase, info)
+   ScheduledExecution         ← (Execution, suite, benchmark, run, phase, variant)
         │
         ▼
    execute()                  ← the only step that spawns a process
@@ -162,13 +162,17 @@ attach extra output sinks alongside whatever reporter the script configured.
 The two pieces of pure data the runner produces:
 
 ```python
-Sample(suite, benchmark, info, run, phase, metric, value, unit, lower_is_better)
-RunRecord(suite, benchmark, info, run, phase, command, returncode, runtime,
-          failure, message)
+Sample(suite, benchmark, variant, run, phase,
+       metric, value, unit, lower_is_better, variant_label)
+RunRecord(suite, benchmark, variant, run, phase, command,
+          returncode, runtime, failure, message, variant_label)
 ```
 
-* `info` is a sorted tuple of `(key, value)` pairs identifying a matrix variant
-  (e.g. `(("compiler","gcc"),("opt","O2"))`). Empty tuple if no matrix.
+* `variant` is a sorted tuple of `(axis, value)` pairs identifying the
+  matrix cell (e.g. `(("compiler","gcc"),("opt","O2"))`). Empty tuple when
+  the benchmark has no matrix.
+* `variant_label` is the human-readable label of the variant (from
+  `Benchmark.with_label(...)`, or the formatted `variant` tuple otherwise).
 * `phase` is `"warmup"` or `"measure"`. Warmup samples are reported in
   JSON/CSV/dir outputs but excluded from stats.
 * `lower_is_better` is set by the Processor — `True` for runtime, `False` for
@@ -189,7 +193,7 @@ get:
     {
       "suite": "factory_demo",
       "benchmark": "tiny",
-      "info": [],
+      "variant": [],
       "run": 1,
       "phase": "measure",
       "metric": "elapsed",
@@ -202,7 +206,7 @@ get:
     {
       "suite": "factory_demo",
       "benchmark": "tiny",
-      "info": [],
+      "variant": [],
       "run": 1,
       "phase": "measure",
       "command": ["python3", "-c", "sum(range(1000))"],
@@ -303,7 +307,7 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
   *independent* and *bounded* (e.g. `FixedRuns`) have their individual runs
   spread across workers. Convergence-driven benchmarks stay sequential.
 * **`Dry`** — advance each coroutine once and print what *would* run; no
-  subprocess. `--dry -v` adds resolved cwd, env, run plan, and matrix info per
+  subprocess. `--dry -v` adds resolved cwd, env, run plan, and matrix variant per
   cell.
 
 ```console
@@ -324,30 +328,53 @@ factory_demo/small
 
 ### Matrix — cross-product variants
 
+A benchmark's `.with_matrix(**axes)` declares the axes that vary; the
+cartesian product of axis values produces the *variants* of that benchmark.
+Variant values reach `with_command` / `with_skip` callables as attributes on
+the benchmark (`b.compiler`, `b.opt`).
+
 ```python
+def cmd(b, ctx):
+    return ["sh", "-c", f"echo {b.compiler}-{b.opt}: $((RANDOM%50+50))"]
+
 suite("compile_matrix")
-    .add(bench("compute"))
+    .add(
+        bench("compute")
+            .with_command(cmd)
+            .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
+    )
     .with_cwd(Path("/tmp"))
     .with_process(P.regex("size", r"(\d+)\s*$", unit="lines"))
-    .matrix(
-        "config",
-        [("gcc", "O0"), ("gcc", "O2"), ("clang", "O0"), ("clang", "O2")],
-        command=lambda b, ctx, v: ["sh", "-c", f"echo {v[0]}-{v[1]}: $((RANDOM%50+50))"],
-        info=lambda v: {"compiler": v[0], "opt": v[1]},
-    )
     .runs(3)
 ```
 
 ```console
-compile_matrix/compute (compiler=gcc, opt=O0): 0/3 runs
+compile_matrix/compute/compiler=gcc, opt=O0: 0/3 runs
   size  (mean ± σ):  60.33 ± 10.02    (50.00 … 70.00)
-compile_matrix/compute (compiler=gcc, opt=O2): 0/3 runs
+compile_matrix/compute/compiler=gcc, opt=O2: 0/3 runs
   size  (mean ± σ):  68.00 ± 10.54    (58.00 … 79.00)
 ...
 ```
 
-Each cell's `Sample.info` carries the variant labels so reporters split by
-axis. See [`examples/matrix.py`](examples/matrix.py).
+Each cell's `Sample.variant` carries the axis values so reporters split by
+axis. Ranking in the end-of-run "Summary" compares variants *within* a
+benchmark; cross-benchmark ranking is never emitted (different programs are
+not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
+
+### Skips: dropping or slicing matrix cells
+
+```python
+# Full cartesian minus one cell:
+bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
+              .with_skip(vm="v8", size=500)
+
+# Slice (predicate form): keep only jsc
+bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
+              .with_skip(lambda b: b.vm != "jsc")
+```
+
+`Suite.with_matrix` / `Suite.with_skip` apply the same shape across every
+contained benchmark.
 
 ### File-discovered benchmarks
 
@@ -497,6 +524,6 @@ src/benchr/
 ## Development
 
 ```console
-uv run pytest          # 125 tests
+uv run pytest          # 137 tests
 uv run benchr bench --runs 20 'sleep 0.1' 'sleep 0.2'
 ```

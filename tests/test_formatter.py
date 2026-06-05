@@ -12,14 +12,14 @@ def _mk(metric: str, value: float, *, run: int = 1, bench: str = "b",
         suite: str = "S", phase: Phase = "measure", unit: str = "s",
         lower_is_better: bool | None = True) -> Sample:
     return Sample(
-        suite=suite, benchmark=bench, info=(), run=run, phase=phase,
+        suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
         metric=metric, value=value, unit=unit, lower_is_better=lower_is_better,
     )
 
 
 def _ok(run: int = 1, *, bench: str = "b", suite: str = "S") -> RunRecord:
     return RunRecord(
-        suite=suite, benchmark=bench, info=(), run=run, phase="measure",
+        suite=suite, benchmark=bench, variant=(), run=run, phase="measure",
         command=("x",), returncode=0,
     )
 
@@ -97,49 +97,57 @@ def _strip_markup(s: str) -> str:
     return re.sub(r"\[/?[^]]*\]", "", s)
 
 
-def test_default_summary_ranks_two_benchmarks():
+def _v(metric: str, value: float, *, run: int, label: str, variant_axis: str = "k",
+       bench: str = "b", suite: str = "S", unit: str = "s",
+       lower_is_better: bool | None = True) -> Sample:
+    """Sample stamped with a single matrix variant axis."""
+    return Sample(
+        suite=suite, benchmark=bench, variant=((variant_axis, label),),
+        variant_label=label, run=run, phase="measure",
+        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better,
+    )
+
+
+def test_default_summary_ranks_variants_within_benchmark():
+    """Two variants of the SAME benchmark: ranking should fire."""
+    r = Report()
+    for i in range(1, 4):
+        r.extend([_v("elapsed", 0.10, run=i, label="fast")])
+        r.extend([_v("elapsed", 0.20, run=i, label="slow")])
+    text = _strip_markup(DefaultSummary()(r))
+    assert "Summary" in text
+    assert "'fast' ran" in text
+    assert "2.00" in text
+    assert "faster than" in text
+    assert "'slow'" in text
+
+
+def test_default_summary_no_ranking_across_distinct_benchmarks():
+    """Two DIFFERENT benchmarks: no Summary — comparing them is meaningless."""
     r = Report()
     for i in range(1, 4):
         r.extend([_mk("elapsed", 0.10, run=i, bench="a")])
         r.extend([_mk("elapsed", 0.20, run=i, bench="b")])
     text = _strip_markup(DefaultSummary()(r))
-    assert "Summary" in text
-    assert "'a' ran" in text
-    assert "2.00" in text
-    assert "faster than" in text
-    assert "'b'" in text
+    assert "Summary" not in text
 
 
-def test_default_summary_no_ranking_with_single_benchmark():
+def test_default_summary_no_ranking_with_single_variant():
     r = Report()
     r.extend([_mk("elapsed", 0.10, run=i, bench="a") for i in range(1, 4)])
     text = _strip_markup(DefaultSummary()(r))
-    # The new ranking title is on its own line; the existing
-    # "Summary (geometric mean of ratios):" block belongs to comparison
-    # mode only (which we're not in here).
     assert "Summary" not in text
 
 
 def test_default_summary_ranking_uses_higher_for_higher_is_better():
     r = Report()
     for i in range(1, 4):
-        r.extend([_mk("throughput", 200.0, run=i, bench="fast",
-                      unit="iter/s", lower_is_better=False)])
-        r.extend([_mk("throughput", 100.0, run=i, bench="slow",
-                      unit="iter/s", lower_is_better=False)])
+        r.extend([_v("throughput", 200.0, run=i, label="fast",
+                     unit="iter/s", lower_is_better=False)])
+        r.extend([_v("throughput", 100.0, run=i, label="slow",
+                     unit="iter/s", lower_is_better=False)])
     text = _strip_markup(DefaultSummary()(r))
     assert "'fast' ran" in text
     assert "2.00" in text
     assert "times higher than" in text
     assert "'slow'" in text
-
-
-def test_default_summary_ranking_drops_suite_when_uniform():
-    r = Report()
-    for i in range(1, 4):
-        r.extend([_mk("elapsed", 0.1, run=i, bench="a", suite="bench")])
-        r.extend([_mk("elapsed", 0.2, run=i, bench="b", suite="bench")])
-    text = _strip_markup(DefaultSummary()(r))
-    # Quotes around the bare benchmark name, not "bench/a".
-    assert "'a' ran" in text
-    assert "'bench/a'" not in text

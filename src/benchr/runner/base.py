@@ -28,7 +28,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
@@ -40,24 +40,13 @@ from benchr.grammar.execution import (
 from benchr.grammar.policy import StoppingPolicy
 from benchr.grammar.processor import process_all, stamp
 from benchr.grammar.suite import Suite
+from benchr.report.reporter import Reporter
 from benchr.report.sample import Report, Sample
 
 
-# Reporter is a forward reference to avoid a circular import; we describe its
-# shape with a Protocol so reporter.py can register without inheriting.
-
-
-class ReporterLike(Protocol):
-    def start(self, plan: list[Benchmark]) -> None: ...
-    def sample(self, sched: ScheduledExecution, result: ExecutionResult, samples: list[Sample]) -> None: ...
-    def finalize(self) -> None: ...
-
-
-class _NoopReporter:
-    def start(self, plan: list[Benchmark]) -> None: pass
+class _NoopReporter(Reporter):
     def sample(self, sched: ScheduledExecution, result: ExecutionResult,
                samples: list[Sample]) -> None: pass
-    def finalize(self) -> None: pass
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +203,7 @@ def format_scheduled(
     """Render the full per-execution detail block printed by ``--verbose``.
 
     A header line plus indented command / cwd / env / timeout / stdin /
-    processors / success / run-plan / info fields. The run-plan is derived
+    processors / success / run-plan / variant fields. The run-plan is derived
     from the benchmark's warmup and measure policies; pass
     ``include_plan=False`` when the caller already enumerates every
     scheduled execution (the phase tag is in the header — no need to also
@@ -244,8 +233,10 @@ def format_scheduled(
         warmup_n = _label(benchmark.warmup)
         plan_str = measure if warmup_n == "0" else f"warmup x{warmup_n}, {measure}"
         lines.append(f"  plan:       {plan_str}")
-    if sched.info:
-        lines.append(f"  info:       {dict(sched.info)}")
+    if sched.variant:
+        lines.append(f"  variant:    {dict(sched.variant)}")
+    if sched.variant_label:
+        lines.append(f"  label:      {sched.variant_label}")
     return "\n".join(lines)
 
 
@@ -265,7 +256,7 @@ class Runner(abc.ABC):
 
     def __init__(
         self,
-        reporter: ReporterLike | None = None,
+        reporter: Reporter | None = None,
         *,
         max_runs_per_phase: int = 10_000,
         max_consecutive_failures: int = 5,

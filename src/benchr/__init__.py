@@ -1,40 +1,43 @@
 """benchr — a small algebraic grammar for benchmarking.
 
-Public surface:
+Public surface (intended user API only):
 
     from benchr import (
-        # Atoms
-        Execution, ExecutionResult, Verdict,
-        ScheduledExecution, Sample, Report,
+        # Path convenience
+        Path,
+
+        # Atoms (pipeline data types)
+        Execution, ExecutionResult, ScheduledExecution, Phase, Verdict,
+        Sample, RunRecord, Report, report_from_json, report_to_json,
 
         # Processors
-        Processor, P,
-        PartialSample,
+        Processor, PartialSample, P,
 
         # Stopping policies
         StoppingPolicy, PolicyState,
         FixedRuns, CoefficientOfVariation, Custom,
 
         # Benchmark / Suite
-        Benchmark, Suite, bench, suite,
+        Benchmark, bench, B,
+        Suite, suite,
 
         # Runners
-        Sequential, Parallel, Dry,
-        execute, default_success,    # subprocess helper + default success policy
+        Runner, Sequential, Parallel, Dry,
 
         # Reporters
         Reporter, Mixed, Csv, Json, Dir, Table, Summary, Progress,
-        console, err_console,
 
-        # Stats / Formatters
-        group, build_summary, scale_unit, geomean_with_sigma,
+        # Formatters
         Formatter, DefaultSummary, Compact,
 
-        # CLI helpers
+        # CLI entry points
         run, main,
     )
 
-Plus convenience re-exports: ``Path``, ``B`` (alias of ``bench``).
+Internal helpers (concrete Processor subclasses, stats functions, dataclass
+arg glue, subprocess helpers) live in their submodules and are not re-exported
+here. Reach them directly when needed (e.g. ``from benchr.report.stats import
+build_summary``); the package surface is reserved for the user-facing API.
 """
 
 from pathlib import Path
@@ -42,33 +45,24 @@ from pathlib import Path
 # Atoms
 from benchr.grammar.execution import (
     Execution,
-    Phase,
     ExecutionResult,
+    Phase,
     ScheduledExecution,
     Verdict,
 )
 from benchr.report.sample import (
-    RunRecord,
     Report,
+    RunRecord,
     Sample,
-    info_keys,
     report_from_json,
     report_to_json,
 )
 
 # Processors
 from benchr.grammar.processor import (
-    Constant,
-    FloatPerLine,
     P,
     PartialSample,
     Processor,
-    RUsage,
-    Regex,
-    Rebench,
-    Time,
-    process_all,
-    stamp,
 )
 
 # Stopping policies
@@ -81,14 +75,11 @@ from benchr.grammar.policy import (
 )
 
 # Benchmark / Suite
-from benchr.grammar.benchmark import Benchmark, bench, benchmark_info
+from benchr.grammar.benchmark import Benchmark, bench
 from benchr.grammar.suite import Suite, suite
 
-# Context
-from benchr.grammar.context import add_dataclass_args, build_dataclass
-
 # Runners
-from benchr.runner.base import Runner, default_success, execute, plan
+from benchr.runner.base import Runner
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -103,30 +94,10 @@ from benchr.report.reporter import (
     Reporter,
     Summary,
     Table,
-    console,
-    err_console,
 )
 
-# Stats / Formatters
+# Formatters
 from benchr.report.formatter import Compact, DefaultSummary, Formatter
-from benchr.report.stats import (
-    BenchmarkGroup,
-    BenchmarkId,
-    GeoMeanRatio,
-    GroupStats,
-    GroupedReport,
-    MetricKey,
-    MetricRatio,
-    MetricStats,
-    RunCounts,
-    SummaryData,
-    build_summary,
-    geomean_with_sigma,
-    group,
-    metric_ratio,
-    metric_stats,
-    scale_unit,
-)
 
 # CLI
 from benchr.cli import main, run
@@ -137,32 +108,21 @@ B = bench
 __all__ = [
     "Path",
     # Atoms
-    "Execution", "ExecutionResult", "Verdict",
-    "ScheduledExecution", "Phase",
-    "Sample", "Report", "RunRecord", "info_keys", "report_to_json", "report_from_json",
+    "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Verdict",
+    "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
     # Processors
-    "Processor", "PartialSample", "stamp", "process_all", "P",
-    "FloatPerLine", "Regex", "Rebench", "RUsage", "Time", "Constant",
+    "Processor", "PartialSample", "P",
     # Policies
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation", "Custom",
     # Benchmark / Suite
     "Benchmark", "bench", "B",
-    "Suite", "suite", "benchmark_info",
-    # Context
-    "add_dataclass_args", "build_dataclass",
+    "Suite", "suite",
     # Runners
-    "Runner", "execute", "plan", "default_success",
-    "Sequential", "Parallel", "Dry",
+    "Runner", "Sequential", "Parallel", "Dry",
     # Reporters
     "Reporter", "Mixed", "Csv", "Json", "Dir", "Table", "Summary", "Progress",
-    "console", "err_console",
-    # Stats / Formatters
-    "BenchmarkGroup", "BenchmarkId", "GroupedReport", "GroupStats",
-    "MetricKey", "MetricStats", "MetricRatio", "GeoMeanRatio",
-    "RunCounts", "SummaryData",
-    "group", "build_summary", "scale_unit", "geomean_with_sigma",
-    "metric_stats", "metric_ratio",
+    # Formatters
     "Formatter", "DefaultSummary", "Compact",
     # CLI
     "run", "main",

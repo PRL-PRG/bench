@@ -42,8 +42,8 @@ from benchr.report.sample import (
     RunRecord,
     Report,
     Sample,
-    info_keys,
     report_to_json,
+    variant_keys,
 )
 
 
@@ -66,7 +66,6 @@ BENCHR_THEME = Theme(
 )
 
 console = Console(theme=BENCHR_THEME, highlight=False)
-err_console = Console(theme=BENCHR_THEME, highlight=False, stderr=True)
 
 
 # ---------------------------------------------------------------------------
@@ -138,11 +137,11 @@ class Mixed(Reporter):
 class Csv(Reporter):
     """Stream rows to a CSV file. Header is fixed on the first non-empty sample.
 
-    Schema: suite, benchmark, run, phase, <info_cols...>, metric, value, unit,
-    lower_is_better. Info columns are fixed from the *first* sample's info keys;
-    in a heterogeneous run (e.g. a matrix variant alongside a plain benchmark)
-    info keys absent from the first sample are silently dropped — use ``--json``
-    for complete fidelity.
+    Schema: suite, benchmark, run, phase, <variant_cols...>, metric, value, unit,
+    lower_is_better. Variant columns are fixed from the *first* sample's variant
+    axes; in a heterogeneous run (e.g. a matrix variant alongside a plain
+    benchmark) axes absent from the first sample are silently dropped — use
+    ``--json`` for complete fidelity.
 
     Note: one row per *Sample*, so failed runs (which emit no samples) do not
     appear here — use ``--json`` / ``--dir`` to capture failures.
@@ -153,22 +152,22 @@ class Csv(Reporter):
         self.delimiter = delimiter
         self._file: IO[str] | None = None
         self._writer: csv.DictWriter | None = None
-        self._info_cols: list[str] | None = None
+        self._variant_cols: list[str] | None = None
         self._lock = threading.Lock()
 
     def start(self, plan):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._file = open(self.path, "wt", newline="")
         self._writer = None
-        self._info_cols = None
+        self._variant_cols = None
 
     def sample(self, sched, result, samples):
         if not samples or self._file is None:
             return
         with self._lock:
             if self._writer is None:
-                self._info_cols = [k for k, _ in samples[0].info]
-                cols = ["suite", "benchmark", "run", "phase"] + self._info_cols + [
+                self._variant_cols = [k for k, _ in samples[0].variant]
+                cols = ["suite", "benchmark", "run", "phase"] + self._variant_cols + [
                     "metric", "value", "unit", "lower_is_better"
                 ]
                 self._writer = csv.DictWriter(self._file, fieldnames=cols, delimiter=self.delimiter)
@@ -182,8 +181,8 @@ class Csv(Reporter):
                         "" if s.lower_is_better is None else str(s.lower_is_better)
                     ),
                 }
-                for k in self._info_cols or []:
-                    row[k] = dict(s.info).get(k, "")
+                for k in self._variant_cols or []:
+                    row[k] = dict(s.variant).get(k, "")
                 self._writer.writerow(row)
             self._file.flush()
 
@@ -246,7 +245,9 @@ class Dir(Reporter):
             f"phase={sched.phase}",
             f"run={sched.run}",
         ]
-        lines.extend(f"info[{k}]={v}" for k, v in sched.info)
+        lines.extend(f"variant[{k}]={v}" for k, v in sched.variant)
+        if sched.variant_label:
+            lines.append(f"variant_label={sched.variant_label}")
         (run_dir / "seq").write_text("\n".join(lines) + "\n")
 
         (run_dir / "stdout").write_text(result.stdout)
@@ -275,8 +276,8 @@ class Table(_BufferingReporter):
         self._console = target_console or console
 
     def finalize(self):
-        info_cols = info_keys(self._report.samples)
-        cols = ["suite", "benchmark", "run", "phase"] + info_cols + [
+        variant_cols = variant_keys(self._report.samples)
+        cols = ["suite", "benchmark", "run", "phase"] + variant_cols + [
             "metric", "value", "unit", "lib"
         ]
         t = RichTable(show_header=True, show_edge=False, pad_edge=False)
@@ -284,7 +285,7 @@ class Table(_BufferingReporter):
             t.add_column(c)
         for s in self._report.samples:
             row = [s.suite, s.benchmark, str(s.run), s.phase]
-            row += [dict(s.info).get(k, "") for k in info_cols]
+            row += [dict(s.variant).get(k, "") for k in variant_cols]
             lib = "" if s.lower_is_better is None else ("↓" if s.lower_is_better else "↑")
             row += [s.metric, f"{s.value:g}", s.unit, lib]
             t.add_row(*row)
@@ -300,13 +301,11 @@ class Table(_BufferingReporter):
 class Progress(Reporter):
     """Live progress over the planned benchmarks.
 
-    On a terminal, renders a rich spinner + bar + counter + description and
-    clears itself (``transient=True``) before the Summary prints. On a
-    non-terminal sink (piped output, CI log, file redirect), falls back to
-    plain one-line-per-sample output: ``[n/total] <bench id> ok | FAIL exit N``.
-    Total is known when every benchmark's policies expose a ``max_runs()``;
-    otherwise displays ``?`` and (on terminals) draws an indeterminate bar.
-    """
+    On a terminal, renders a progress bar and clears itself before the Summary
+    prints. On a non-terminal it falls back to plain one-line-per-sample
+    output. Total is known when every benchmark's policies expose a
+    ``max_runs()``; otherwise displays ``?`` and (on terminals) draws an
+    indeterminate bar. """
 
     def __init__(self, target_console: Console | None = None) -> None:
         self._console = target_console or console
@@ -434,14 +433,14 @@ class Summary(_BufferingReporter):
             self._console.print()
             self._console.print("[benchr.label]Failures:[/]")
             for run in self._report.failures:
-                self._console.print("  " + _failure_line(run))
+                self._console.print("  " + self._failure_line(run))
 
-
-def _failure_line(run: RunRecord) -> str:
-    if run.returncode == 124:
-        verdict = "[benchr.failure]timeout (exit 124)[/]"
-    elif run.returncode == -1:
-        verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
-    else:
-        verdict = f"[benchr.failure]exit {run.returncode}[/]"
-    return f"[benchr.failure]✗[/] {run.identifier()} — {verdict}: {run.message or '(no output)'}"
+    @staticmethod
+    def _failure_line(run: RunRecord) -> str:
+        if run.returncode == 124:
+            verdict = "[benchr.failure]timeout (exit 124)[/]"
+        elif run.returncode == -1:
+            verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
+        else:
+            verdict = f"[benchr.failure]exit {run.returncode}[/]"
+        return f"[benchr.failure]✗[/] {run.identifier()} — {verdict}: {run.message or '(no output)'}"

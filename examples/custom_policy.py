@@ -50,7 +50,7 @@ s = (
             .with_command(["bash", "-c", SCRIPT])
             .with_cwd(Path("/tmp"))
             .with_process(P.regex("READY", r"READY\s+(\d)", unit=""))
-            .with_measure(Custom(state_factory=lambda: ConsecutiveReady(n=3)).at_most(20))
+            .with_measure(Custom(lambda: ConsecutiveReady(n=3)).at_most(20))
     )
 )
 
