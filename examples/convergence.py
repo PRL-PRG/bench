@@ -13,7 +13,7 @@ Stops as soon as the last 5 runs are within 2% CoV, but always runs at least 5
 and at most 30 times.
 """
 
-from benchr import CoefficientOfVariation, P, Path, bench, run, suite
+from benchr import CoefficientOfVariation, Path, Time, bench, run, suite
 
 
 cov = (
@@ -27,7 +27,7 @@ s = (
         bench("noisy")
             .with_command(["sh", "-c", "sleep 0.02"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time())
+            .with_metric(Time())
             .with_measure(cov)
     )
 )

@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import P, Path as P_Path, run, suite
+from benchr import Path as P_Path, Rebench, max_rss, run, suite
 
 
 @dataclass
@@ -53,7 +53,7 @@ rcp_suite = (
     .from_files(_bench_root, pattern=r"\.R$")
     .with_cwd(P_Path.cwd())
     .with_command(_cmd)
-    .with_process(P.rebench(), P.max_rss())
+    .with_metric(Rebench(), max_rss())
 )
 
 

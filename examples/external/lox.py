@@ -11,14 +11,15 @@
 Demonstrates:
 - ``suite(...).from_files(...)`` discovery + ``.filter``
 - Multiple suites, each with its own processor.
-- Per-suite Compact summary via Mixed reporters.
+- Per-suite Compact summary via CompositeReporter reporters.
 - Typed ``LoxParams`` dataclass for CLI flags.
 """
 
 from dataclasses import dataclass
 
 from benchr import (
-    Compact, Mixed, P, Path, Summary, bench, run, suite,
+    Compact, CompositeReporter, FloatPerLine, Path, Summary, Time,
+    bench, max_rss, run, suite,
 )
 
 
@@ -46,10 +47,10 @@ lox_suite = (
     .with_command(lox_cmd)
     .with_timeout(20)
     .runs(10)
-    .with_process(
-        P.float_per_line("s").last_line().lower_is_better(),
-        P.max_rss(),
-        P.time(user=True, system=True),
+    .with_metric(
+        FloatPerLine("s").last_line().lower_is_better(),
+        max_rss(),
+        Time(user=True, system=True),
     )
 )
 
@@ -60,8 +61,8 @@ zoo_suite = (
     .with_command(lambda b, ctx: [str(ctx.lox), str((_bench_root(ctx) / b.path).name)])
     .with_timeout(12)
     .runs(5)
-    .with_process(
-        P.float_per_line("iter", metric="throughput").nth(2).higher_is_better()
+    .with_metric(
+        FloatPerLine("iter", metric="throughput").nth(2).higher_is_better()
     )
 )
 
@@ -70,7 +71,7 @@ if __name__ == "__main__":
     run(
         [lox_suite, zoo_suite],
         params=LoxParams,
-        reporter=Mixed(
+        reporter=CompositeReporter(
             Summary(formatter=Compact("runtime", suite="LoxSuite")),
             Summary(formatter=Compact("throughput", suite="ZooBatch")),
         ),

@@ -234,7 +234,7 @@ class _Or(StoppingPolicy):
 
     def max_runs(self) -> int | None:
         # Stops as soon as either converges → at most the earlier of the two.
-        # Treat ``None`` as +∞: an unbounded child can't tighten the bound.
+        # Treat ``None`` as Inf, an unbounded child can't tighten the bound.
         a, b = self.a.max_runs(), self.b.max_runs()
         if a is None:
             return b

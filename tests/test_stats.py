@@ -2,49 +2,27 @@
 
 from pathlib import Path
 
-from benchr import RunRecord, Phase, Report, Sample
+from benchr import Phase, Report, RunRecord, Sample
 from benchr.report.stats import (
     build_summary, geomean_with_sigma, group,
     metric_ratio, metric_stats, scale_unit,
 )
 
 
-def _mk(metric: str, value: float, *, phase: Phase = "measure", run: int = 1,
-        bench: str = "b", suite: str = "S",
-        lower_is_better: bool | None = True, unit: str = "s") -> Sample:
-    return Sample(
-        suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
-        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better,
-    )
+def _smp(metric: str, value: float, *, unit: str = "s",
+         lower_is_better: bool | None = True) -> Sample:
+    return Sample(metric=metric, value=value, unit=unit,
+                  lower_is_better=lower_is_better)
 
 
-def test_group_excludes_warmup_by_default():
-    r = Report()
-    r.extend([
-        _mk("runtime", 1.0, phase="warmup", run=1),
-        _mk("runtime", 0.5, phase="measure", run=1),
-    ])
-    g = group(r)
-    assert len(g.groups) == 1
-    assert g.groups[0].metrics[("runtime", "s")] == [0.5]
-
-
-def test_group_with_warmup_when_opted_in():
-    r = Report()
-    r.extend([
-        _mk("runtime", 1.0, phase="warmup", run=1),
-        _mk("runtime", 0.5, phase="measure", run=1),
-    ])
-    g = group(r, include_warmup=True)
-    assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
-
-
-def _run(run: int, *, returncode: int = 0, failure: str | None = None,
-         phase: Phase = "measure", bench: str = "b", suite: str = "S") -> RunRecord:
+def _run(run: int = 1, *, returncode: int = 0, failure: str | None = None,
+         phase: Phase = "measure", bench: str = "b", suite: str = "S",
+         samples: list[Sample] | None = None) -> RunRecord:
     return RunRecord(
         suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
         command=("x",), returncode=returncode, failure=failure,
         message="boom" if failure else "",
+        samples=list(samples) if samples else [],
     )
 
 
@@ -52,20 +30,37 @@ def _fail(run: int, **kw) -> RunRecord:
     return _run(run, returncode=7, failure="boom", **kw)
 
 
+def test_group_excludes_warmup_by_default():
+    r = Report(runs=[
+        _run(1, phase="warmup", samples=[_smp("runtime", 1.0)]),
+        _run(1, phase="measure", samples=[_smp("runtime", 0.5)]),
+    ])
+    g = group(r)
+    assert len(g.groups) == 1
+    assert g.groups[0].metrics[("runtime", "s")] == [0.5]
+
+
+def test_group_with_warmup_when_opted_in():
+    r = Report(runs=[
+        _run(1, phase="warmup", samples=[_smp("runtime", 1.0)]),
+        _run(1, phase="measure", samples=[_smp("runtime", 0.5)]),
+    ])
+    g = group(r, include_warmup=True)
+    assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
+
+
 def test_failures_count_into_run_counts():
-    r = Report()
-    r.extend([_mk("runtime", 1.0, phase="measure", run=2)])
-    r.add_run(_run(2))
-    r.add_run(_fail(1))
+    r = Report(runs=[
+        _run(2, samples=[_smp("runtime", 1.0)]),
+        _fail(1),
+    ])
     g = group(r)
     assert g.groups[0].run_counts.failures == 1
     assert g.groups[0].run_counts.successes == 1
 
 
 def test_all_failed_benchmark_still_appears():
-    r = Report()
-    r.add_run(_fail(1))
-    r.add_run(_fail(2))
+    r = Report(runs=[_fail(1), _fail(2)])
     g = group(r)
     assert len(g.groups) == 1
     assert g.groups[0].run_counts.failures == 2
@@ -74,8 +69,9 @@ def test_all_failed_benchmark_still_appears():
 
 
 def test_group_excludes_failures_in_warmup():
-    r = Report()
-    r.add_run(_run(1, returncode=1, failure="x", phase="warmup"))
+    r = Report(runs=[
+        _run(1, returncode=1, failure="x", phase="warmup"),
+    ])
     g = group(r)
     assert g.groups == []
 
@@ -140,8 +136,9 @@ def test_geomean_with_sigma():
 
 
 def test_build_summary_with_no_baseline():
-    r = Report()
-    r.extend([_mk("runtime", 0.5, run=i) for i in range(1, 4)])
+    r = Report(runs=[
+        _run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
+    ])
     data = build_summary(r, [])
     assert len(data.groups) == 1
     assert data.baseline is None
@@ -150,13 +147,15 @@ def test_build_summary_with_no_baseline():
 
 def test_build_summary_with_baseline(tmp_path: Path):
     from benchr import report_to_json
-    baseline = Report()
-    baseline.extend([_mk("runtime", 1.0, run=i) for i in range(1, 4)])
+    baseline = Report(runs=[
+        _run(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)
+    ])
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
-    current = Report()
-    current.extend([_mk("runtime", 0.5, run=i) for i in range(1, 4)])
+    current = Report(runs=[
+        _run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
+    ])
     data = build_summary(current, [bpath])
     assert data.baseline is not None
     assert "current" in data.ratios

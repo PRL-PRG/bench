@@ -1,11 +1,6 @@
 """Dry runner: enumerates planned executions without spawning subprocesses.
 
-Prints the plan straight to stdout and ignores any reporter / output sink
-(``--json`` / ``--csv`` / ``--dir`` have no effect under ``--dry``). Without
-``verbose`` it prints one compact line per scheduled execution
-(``suite/benchmark (variant) #run [phase]: command``); with ``verbose`` it
-prints the full per-execution block once per benchmark (the same one
-``--verbose`` echoes for the real runners) plus the run plan summary.
+Prints the plan straight to stdout and ignores any reporter / output sink.
 
 Unbounded policies (e.g. CoefficientOfVariation) have no run count to
 enumerate — they would loop forever — so we print one line with an
@@ -45,8 +40,6 @@ class Dry(Runner):
             return
         try:
             if not bounded:
-                # Convergence-driven policy: emit a single representative entry
-                # with an [unbounded] marker rather than spinning forever.
                 self._print_one(sched, b, unbounded=True)
                 return
             while True:
@@ -60,11 +53,9 @@ class Dry(Runner):
 
     def _print_one(self, sched, benchmark, *, unbounded: bool) -> None:
         if self.verbose:
-            # Dry enumerates every scheduled execution — the per-block plan
-            # summary becomes redundant (phase + run # already in the header).
-            block = format_scheduled(sched, benchmark, include_plan=False)
-            print(f"{block} [unbounded]" if unbounded else block)
+            block = format_scheduled(sched, benchmark)
         else:
             cmd = " ".join(sched.execution.command)
-            line = f"{sched.identifier()}: {cmd}"
-            print(f"{line} [unbounded]" if unbounded else line)
+            block = f"{sched.identifier()}: {cmd}"
+
+        print(f"{block} [unbounded]" if unbounded else block)

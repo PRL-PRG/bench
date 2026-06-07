@@ -40,7 +40,9 @@ def test_bench_writes_json(tmp_path: Path):
     assert r.returncode == 0, r.stderr
     assert out.exists()
     data = json.loads(out.read_text())
-    assert "samples" in data and len(data["samples"]) >= 2
+    assert "runs" in data
+    all_samples = [s for r in data["runs"] for s in r.get("samples", [])]
+    assert len(all_samples) >= 2
 
 
 def test_bench_writes_csv(tmp_path: Path):
@@ -97,10 +99,10 @@ def test_bench_help_describes_subcommand():
 def test_bench_quiet_omits_progress_lines():
     r = _run("bench", "--quiet", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
-    # Plain-progress lines look like "[N/M] bench/sleep 0.01 #X [measure] ok".
+    # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X [measure] ok".
     # With --quiet they should not appear.
-    assert "[1/2]" not in r.stdout
-    assert "[2/2]" not in r.stdout
+    assert "[1|2]" not in r.stdout
+    assert "[2|2]" not in r.stdout
     # Summary still prints.
     assert "sleep 0.01" in r.stdout
 
@@ -109,8 +111,8 @@ def test_bench_non_tty_shows_plain_progress():
     r = _run("bench", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
     # subprocess capture is a non-TTY → Progress falls back to plain lines.
-    assert "[1/2]" in r.stdout
-    assert "[2/2]" in r.stdout
+    assert "[1|2]" in r.stdout
+    assert "[2|2]" in r.stdout
 
 
 def test_bench_surfaces_failure_diagnostics():
@@ -126,7 +128,7 @@ def test_bench_two_commands_prints_summary_ranking():
     r = _run("bench", "--quiet", "--runs", "3", "sleep 0.01", "sleep 0.05")
     assert r.returncode == 0, r.stderr
     assert "Summary" in r.stdout
-    assert "ran" in r.stdout
-    assert "times faster than" in r.stdout
+    assert "was" in r.stdout
+    assert "times lower than" in r.stdout
     # The fastest is named first in the block; sleep 0.01 should be it.
-    assert "'sleep 0.01' ran" in r.stdout
+    assert "'sleep 0.01' [elapsed] was" in r.stdout

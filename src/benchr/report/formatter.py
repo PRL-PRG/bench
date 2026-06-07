@@ -18,6 +18,7 @@ from pathlib import Path
 from benchr.grammar.execution import format_variant
 from benchr.report.sample import Report
 from benchr.report.stats import (
+    BenchKey,
     BenchmarkGroup,
     BenchmarkId,
     GeoMeanRatio,
@@ -59,10 +60,11 @@ def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
     return inv, inv_sigma, "worse"
 
 
-def _count_markup(rc: RunCounts) -> tuple[str, str]:
+def _count_markup(rc: RunCounts) -> str:
+    """Render fail|success counts with markup. Single token, pipe separator."""
     f_s = f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
     s_s = f"[benchr.success]{rc.successes}[/]"
-    return f_s, s_s
+    return f"{f_s}|{s_s}"
 
 
 def _variant_suffix(gs: GroupStats) -> str:
@@ -126,8 +128,7 @@ class DefaultSummary(Formatter):
         rc = gs.run_counts
         total = rc.failures + rc.successes
         word = "run" if total <= 1 else "runs"
-        f_s, s_s = _count_markup(rc)
-        lines.append(f"[benchr.label]{name}:[/] {f_s}/{s_s} {word}")
+        lines.append(f"[benchr.label]{name}:[/] {_count_markup(rc)} {word}")
 
         if not gs.metrics:
             return
@@ -170,15 +171,14 @@ class DefaultSummary(Formatter):
     def _fmt_ranking(self, data: SummaryData, lines: list[str]) -> None:
         """Append "Summary" blocks ranking the variants WITHIN each benchmark.
 
-        Comparison is meaningful only between variants of the same workload —
-        we never rank `fast/a` against `slow/y`. For each `(suite, benchmark)`
-        partition with ≥ 2 variants and each rankable metric, emit one block:
-        best variant, then one line per slower variant with the factor and
-        propagated sigma.
+        Comparison is meaningful only between variants of the same workload.
+        For each `(suite, benchmark)` partition with ≥ 2 variants and each
+        rankable metric, emit one block: best variant, then one line per slower
+        variant with the factor and propagated sigma.
         """
-        # Partition groups by (suite, benchmark). Preserve insertion order so
-        # the Summary blocks follow the order of the per-group stats blocks.
-        partitions: dict[tuple[str, str], list[GroupStats]] = {}
+        # Partition groups by BenchKey. Preserve insertion order so the
+        # Summary blocks follow the order of the per-group stats blocks.
+        partitions: dict[BenchKey, list[GroupStats]] = {}
         for gs in data.groups:
             partitions.setdefault((gs.suite, gs.benchmark), []).append(gs)
 
@@ -201,7 +201,6 @@ class DefaultSummary(Formatter):
             if not rankable:
                 continue
 
-            multi_metric = len(rankable) > 1
             for mk, gs_list in rankable.items():
                 is_lower = gs_list[0].metrics[mk].lower_is_better
                 ranked = sorted(
@@ -210,20 +209,15 @@ class DefaultSummary(Formatter):
                     reverse=not is_lower,
                 )
                 best = ranked[0]
-                word = "faster" if is_lower else "higher"
+                word = "lower" if is_lower else "higher"
 
                 lines.append("")
-                if multi_partition or multi_metric:
-                    bits: list[str] = []
-                    if multi_partition:
-                        bits.append(f"{suite}/{bench}")
-                    if multi_metric:
-                        bits.append(mk[0])
-                    title = "Summary — " + " ".join(f"({b})" for b in bits) if len(bits) > 1 else f"Summary — {bits[0]}"
-                else:
-                    title = "Summary"
+                title = f"Summary — {suite}/{bench}" if multi_partition else "Summary"
                 lines.append(f"[benchr.label]{title}[/]")
-                lines.append(f"  [benchr.name]'{_variant_name(best)}'[/] ran")
+                lines.append(
+                    f"  [benchr.name]'{_variant_name(best)}'[/]"
+                    f" [benchr.metric]\\[{mk[0]}][/] was"
+                )
                 for other in ranked[1:]:
                     mr = metric_ratio(best.metrics[mk], other.metrics[mk])
                     if mr is None:
@@ -327,8 +321,7 @@ class DefaultSummary(Formatter):
 
     @staticmethod
     def _fmt_runs(name: str, rc: RunCounts) -> str:
-        f_s, s_s = _count_markup(rc)
-        return f"{name}: {f_s} failed / {s_s} succeeded"
+        return f"{name}: {_count_markup(rc)} (failed|succeeded)"
 
     @staticmethod
     def _fmt_ratio_line(indent: str, name: str, ratio: float, sigma: float,
@@ -386,14 +379,14 @@ class Compact(Formatter):
             return f"Error: comparee {cname!r} not found"
 
         bench_ratios = data.ratios[cname]
-        entries: list[tuple[str, MetricRatio]] = []
+        entries: list[tuple[BenchKey, MetricRatio]] = []
         matched: set[MetricKey] = set()
         for bid, m in bench_ratios.items():
             if self._suite is not None and bid[0] != self._suite:
                 continue
             for mk, mr in m.items():
                 if self._match(mk):
-                    entries.append((bid[1], mr))
+                    entries.append(((bid[0], bid[1]), mr))
                     matched.add(mk)
                     break
         if not entries:
@@ -433,8 +426,8 @@ class Compact(Formatter):
         elif gmr_err is not None:
             out.append(gmr_err)
             out.append("")
-        for name, mr in sorted(entries, key=lambda e: e[0]):
-            out.append(f"{name}: {mr.display_ratio:.{p}f} ± {mr.sigma:.{p}f}")
+        for key, mr in sorted(entries, key=lambda e: e[0]):
+            out.append(f"{key[1]}: {mr.display_ratio:.{p}f} ± {mr.sigma:.{p}f}")
         return "\n".join(out)
 
     @staticmethod

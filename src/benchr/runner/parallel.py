@@ -2,35 +2,39 @@
 
 Two-tier parallelism:
 
-  ``Parallel(n)``                         n workers; each worker drives one
-                                          full Benchmark coroutine end-to-end.
-                                          Within one benchmark, runs are still
-                                          sequential — required for any policy
-                                          that observes per-run state.
+- ``Parallel(n)``                         
 
-  ``Parallel(n, fanout=True)``            opt-in: for benchmarks whose ``warmup``
-                                          and ``measure`` policies are both
-                                          ``independent()`` and bounded
-                                          (``max_runs()`` is not ``None`` — e.g.
-                                          ``FixedRuns``), fan the individual runs
-                                          out across workers. Order-dependent or
-                                          unbounded (convergence-driven) policies
-                                          stay sequential.
+  n workers, each worker drives one full Benchmark coroutine end-to-end. Within
+  one benchmark, runs are still sequential — required for any policy that
+  observes per-run state.
+
+- ``Parallel(n, fanout=True)``            
+
+  for benchmarks whose ``warmup`` and ``measure`` policies are both
+  ``independent()`` and bounded (``max_runs()`` is not ``None`` — e.g.
+  ``FixedRuns``), fan the individual runs out across workers. Order-dependent
+  or unbounded (convergence-driven) policies stay sequential.
+
 """
 
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
+from benchr.grammar.execution import ExecutionResult, ScheduledExecution
 from benchr.grammar.suite import Suite
-from benchr.report.sample import Report
+from benchr.report.sample import Report, Sample
 from benchr.runner.base import (
+    _INTERRUPTED,
     PlannedBenchmark,
     Runner,
-    judge,
     execute,
+    format_scheduled,
+    install_sigint_handler,
+    judge,
     plan,
 )
 
@@ -48,23 +52,44 @@ class Parallel(Runner):
         super().__init__(*args, **kwargs)
         self.workers = workers
         self.fanout = fanout
+        # Guards the shared Report + serializes verbose blocks across workers.
+        self._lock = threading.Lock()
+
+    def _record(
+        self,
+        report: Report,
+        sched: ScheduledExecution,
+        result: ExecutionResult,
+        samples: list[Sample],
+    ) -> None:
+        with self._lock:
+            report.record(sched, result, samples)
+        # Reporters guard their own state; no need to hold the lock.
+        self.reporter.sample(sched, result, samples)
+
+    def _print_verbose(self, sched: ScheduledExecution, b: Benchmark) -> None:
+        with self._lock:
+            print(format_scheduled(sched, b))
 
     def run(self, suites: list[Suite], ctx: Any) -> Report:
         planned = plan(suites, ctx)
         self.reporter.start([p.benchmark for p in planned])
         report = Report()
         try:
-            with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                futures = [pool.submit(self._dispatch, p, ctx, report) for p in planned]
-                for f in futures:
-                    f.result()
+            with install_sigint_handler():
+                with ThreadPoolExecutor(max_workers=self.workers) as pool:
+                    futures = [pool.submit(self._dispatch, p, ctx, report) for p in planned]
+                    for f in futures:
+                        f.result()
+                if _INTERRUPTED.is_set():
+                    raise KeyboardInterrupt
             return report
         finally:
             self.reporter.finalize()
 
     def _dispatch(self, p: PlannedBenchmark, ctx: Any, report: Report) -> None:
-        # The base pump is single-threaded per benchmark; shared Report and
-        # Reporter mutations are guarded inside ``_record`` / the reporters.
+        if _INTERRUPTED.is_set():
+            return
         if self.fanout and self._fanout_eligible(p.benchmark):
             self._run_fanout(p, ctx, report)
         else:
@@ -83,14 +108,12 @@ class Parallel(Runner):
 
     def _run_fanout(self, p: PlannedBenchmark, ctx: Any, report: Report) -> None:
         b = p.benchmark
-        if not b.processors:
-            raise ValueError(f"Benchmark {b.name!r} has no processor")
+        if not b.metrics:
+            raise ValueError(f"Benchmark {b.name!r} has no metric")
         n_warm = b.warmup.max_runs()
         n_meas = b.measure.max_runs()
         assert n_warm is not None and n_meas is not None  # gated by _fanout_eligible
 
-        # Pre-materialize scheduled executions; the policy promised the runs
-        # are order-independent, so we can submit them in parallel.
         warm = [
             b.schedule(ctx, suite=p.suite, run=i, phase="warmup")
             for i in range(1, n_warm + 1)
@@ -100,6 +123,10 @@ class Parallel(Runner):
             for i in range(1, n_meas + 1)
         ]
         all_sched = warm + meas
+
+        if self.verbose and all_sched:
+            with self._lock:
+                print(format_scheduled(all_sched[0], b))
 
         # This runs inside an outer-pool worker, so cap the inner pool at the
         # number of executions to avoid spawning idle threads (the outer pool
@@ -111,3 +138,5 @@ class Parallel(Runner):
                 # emits no metrics, only a RunRecord.
                 result, samples = judge(b, sched, result)
                 self._record(report, sched, result, samples)
+                if _INTERRUPTED.is_set():
+                    break

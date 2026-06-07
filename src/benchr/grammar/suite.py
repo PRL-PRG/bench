@@ -37,8 +37,8 @@ from benchr.grammar.benchmark import (
     _coerce_policy,
     bench,
 )
+from benchr.grammar.metric import Metric
 from benchr.grammar.policy import FixedRuns, StoppingPolicy
-from benchr.grammar.processor import Processor
 
 
 # A function the Runner can call to materialize benchmarks given the ctx.
@@ -152,8 +152,8 @@ class Suite:
     def with_timeout(self, timeout: float) -> Suite:
         return self._map(lambda b: b.with_timeout(timeout) if b.timeout is None else b)
 
-    def with_process(self, *processors: Processor) -> Suite:
-        return self._map(lambda b: b.with_process(*processors) if not b.processors else b)
+    def with_metric(self, *metrics: Metric) -> Suite:
+        return self._map(lambda b: b.with_metric(*metrics) if not b.metrics else b)
 
     def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
         """Propagate a warmup policy. By default fills only benchmarks still at

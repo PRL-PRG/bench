@@ -13,7 +13,7 @@ Typical workflow:
     ./compare_baseline.py --compare baseline.json
 """
 
-from benchr import P, Path, bench, run, suite
+from benchr import Time, Path, bench, run, suite
 
 
 s = (
@@ -22,7 +22,7 @@ s = (
         bench("slow").with_command(["sh", "-c", "sleep 0.05"]),
     )
     .with_cwd(Path("/tmp"))
-    .with_process(P.time())
+    .with_metric(Time())
     .runs(5)
 )
 

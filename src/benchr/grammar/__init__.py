@@ -1,1 +1,1 @@
-"""Algebraic grammar of benchmarks: Execution, Processor, Policy, Benchmark, Suite."""
+"""Algebraic grammar of benchmarks: Execution, Metric, Policy, Benchmark, Suite."""

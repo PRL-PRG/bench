@@ -24,7 +24,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 
-from benchr import B, P, Path, run, suite
+from benchr import B, Path, FloatPerLine, max_rss, run, suite
 
 
 _HARNESS_R = r"""
@@ -74,7 +74,7 @@ def _suite_cwd(subdir: str):
 # Suites
 # ----------------------------------------------------------------------
 
-_PROC = (P.float_per_line("us").lower_is_better(), P.max_rss())
+_PROC = (FloatPerLine("us").lower_is_better(), max_rss())
 
 
 are_we_fast_r = (
@@ -87,7 +87,7 @@ are_we_fast_r = (
     .with_cwd(_suite_cwd("areWeFast"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_process(*_PROC)
+    .with_metric(*_PROC)
 )
 
 
@@ -132,7 +132,7 @@ shootout = (
     .with_cwd(_suite_cwd("shootout"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_process(*_PROC)
+    .with_metric(*_PROC)
 )
 
 
@@ -143,7 +143,7 @@ simple_extra = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_process(*_PROC)
+    .with_metric(*_PROC)
 )
 
 
@@ -166,7 +166,7 @@ simple_reduced = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_process(*_PROC)
+    .with_metric(*_PROC)
 )
 
 
@@ -181,7 +181,7 @@ real_thing = (
     .with_cwd(_suite_cwd("RealThing"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_process(*_PROC)
+    .with_metric(*_PROC)
 )
 
 

@@ -11,11 +11,11 @@
 ``.factory(fn)`` registers a deferred ``(ctx) -> [Benchmark]`` producer. It runs
 when the Runner materializes the suite, so the benchmark list can depend on
 ``ctx`` (CLI params) or anything computed at run time. Propagating defaults
-(``.with_cwd`` / ``.with_process`` / ``.runs``) still reach factory-produced
+(``.with_cwd`` / ``.with_metric`` / ``.runs``) still reach factory-produced
 benchmarks. Run ``--dry`` to see what the factory expands to.
 """
 
-from benchr import P, Path, bench, run, suite
+from benchr import Time, Path, bench, run, suite
 
 WORKLOADS = {"tiny": 1_000, "small": 100_000, "large": 10_000_000}
 
@@ -31,7 +31,7 @@ s = (
     suite("factory_demo")
     .factory(make_benchmarks)
     .with_cwd(Path("/tmp"))
-    .with_process(P.time())
+    .with_metric(Time())
     .runs(5)
 )
 

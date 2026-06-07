@@ -13,7 +13,7 @@ Reads as: "at least 5 runs AND CoV stable, OR 30 runs reached" — exactly what
 combinators are visible.
 """
 
-from benchr import CoefficientOfVariation, FixedRuns, P, Path, bench, run, suite
+from benchr import CoefficientOfVariation, FixedRuns, Path, Time, bench, run, suite
 
 
 policy = FixedRuns(5) & CoefficientOfVariation("elapsed", threshold=0.05) | FixedRuns(30)
@@ -26,7 +26,7 @@ s = (
         bench("workload")
             .with_command(["sh", "-c", "sleep 0.02"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time())
+            .with_metric(Time())
             .with_measure(policy)
     )
 )

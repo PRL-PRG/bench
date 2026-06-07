@@ -13,7 +13,7 @@ pipeline (e.g. a Jupyter notebook or a CI script that does follow-up
 analysis on the raw samples).
 """
 
-from benchr import P, Path, Sequential, bench, suite
+from benchr import Time, Path, Sequential, bench, suite
 
 
 s = (
@@ -22,14 +22,16 @@ s = (
         bench("b").with_command(["sh", "-c", "sleep 0.05"]),
     )
     .with_cwd(Path("/tmp"))
-    .with_process(P.time())
+    .with_metric(Time())
     .runs(3)
 )
 
 
 if __name__ == "__main__":
     report = Sequential().run([s], ctx=None)
-    print(f"Got {len(report.samples)} samples, {len(report.failures)} failures.")
-    for sample in report.samples:
-        print(f"  {sample.benchmark}#{sample.run}/{sample.phase}: "
-              f"{sample.metric}={sample.value:.4f}{sample.unit}")
+    total = sum(len(r.samples) for r in report.runs)
+    print(f"Got {total} samples, {len(report.failures)} failures.")
+    for r in report.runs:
+        for sample in r.samples:
+            print(f"  {r.benchmark}#{r.run}/{r.phase}: "
+                  f"{sample.metric}={sample.value:.4f}{sample.unit}")

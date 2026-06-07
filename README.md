@@ -6,7 +6,7 @@ Two ways to use it:
 
 * **`benchr bench`** — hyperfine-style CLI for ad-hoc command timing.
 * **`run(suite, …)`** — declarative Python scripts for repeatable benchmark
-  configurations (file-discovered benchmarks, matrices, custom processors,
+  configurations (file-discovered benchmarks, matrices, custom metrics,
   convergence policies).
 
 ---
@@ -17,30 +17,30 @@ Two ways to use it:
 
 ```console
 $ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
-[1/12] bench/sleep 0.05 #1  ok       ← warmup
-[2/12] bench/sleep 0.05 #1  ok       ← measure starts
-[3/12] bench/sleep 0.05 #2  ok
+[1|12] bench/sleep 0.05 #1 [warmup] ok
+[2|12] bench/sleep 0.05 #1 [measure] ok
+[3|12] bench/sleep 0.05 #2 [measure] ok
 ...
-[12/12] bench/sleep 0.1 #5  ok
+[12|12] bench/sleep 0.1 #5 [measure] ok
 
-bench/sleep 0.05: 0/5 runs
+bench/sleep 0.05: 0|5 runs
   elapsed  (mean ± σ):  55.71 ± 1.98    (53.64 … 58.14)
 
-bench/sleep 0.1: 0/5 runs
+bench/sleep 0.1: 0|5 runs
   elapsed  (mean ± σ):  108.05 ± 1.58    (105.39 … 109.39)
 
 Summary
-  'sleep 0.05' ran
-    1.97 ± 0.08 times faster than 'sleep 0.1'
+  'sleep 0.05' [elapsed] was
+    1.97 ± 0.08 times lower than 'sleep 0.1'
 ```
 
-`0/5 runs` means **0 failures / 5 successes**. The `elapsed` numbers are
-milliseconds (auto-scaled from the seconds the `P.time()` processor emits).
+`0|5 runs` means **0 failures | 5 successes**. The `elapsed` numbers are
+milliseconds (auto-scaled from the seconds the `Time()` metric emits).
 
 ### As a script
 
 ```python
-from benchr import P, Path, bench, run, suite
+from benchr import Path, Time, bench, run, suite
 
 s = (
     suite("demo",
@@ -48,8 +48,8 @@ s = (
         bench("slow").with_command(["sleep", "0.1"]),
     )
     .with_cwd(Path("."))
-    .with_process(P.time())   # measure wall-clock elapsed
-    .runs(5)                  # 5 measured runs each
+    .with_metric(Time())   # measure wall-clock elapsed
+    .runs(5)               # 5 measured runs each
 )
 
 if __name__ == "__main__":
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 ```
 
 ```console
-$ python demo.py --runs 10 --json out.json
+python demo.py --runs 10 --json out.json
 ```
 
 Every flag the CLI accepts (`--runs`, `--warmup`, `--jobs`, `--json`, `--csv`,
@@ -73,22 +73,15 @@ See [`examples/`](examples/) for one runnable script per capability.
 ## The model
 
 A benchmark run is a pipeline. The blocks below are the things you build
-(`Suite`, `Benchmark`) and the things a run produces (`Sample`, `RunRecord`,
-`Report`). Everything in the right column is **pure data** — Reports
-round-trip cleanly through JSON.
+(`Suite`, `Benchmark`) and the things a run produces (`RunRecord`, `Sample`,
+`Report`). Everything in the right column is **pure data** — Reports round-trip
+cleanly through JSON.
 
-```
-  WHAT YOU BUILD                       WHAT A RUN PRODUCES
-  -------------                        --------------------
-  Suite     a named bag of             Sample      one measurement
-              Benchmarks +                          (metric, value, unit, run, phase)
-              propagating defaults
-                                       RunRecord   one execution
-  Benchmark command + cwd + env +                   (command, returncode, failure, …)
-              Processor(s) +
-              StoppingPolicy(s)        Report      [Sample] + [RunRecord] + metadata
-                                                    (JSON round-trippable)
-```
+* `Suite`: a named collection of benchmarks
+* `Benchmark`: command + cwd + end + metrics + stopping policy + variants
+* `RunRecord`: one execution identity with outcome (failure or list of samples)
+* `Sample`: one metric value
+* `Report`: `[RunRecord]`, JSON round-trippable
 
 ### Pipeline
 
@@ -110,25 +103,28 @@ round-trip cleanly through JSON.
    ┌────┴────────┐
    ▼             ▼
  failure       success
-   │             │ Processor.process()
+   │             │ Metric.process()
    │             ▼
- RunRecord    Sample (+ RunRecord)
+   │           [Sample]
    │             │
-   │             ▼
-   │      StoppingPolicy.observe(run, samples)
-   │             │
-   │             ▼ not converged → next ScheduledExecution
-   └─────────────┘
-                  │ converged
-                  ▼
-              Report  →  Reporter (stream) + Formatter (final summary)
+   └─────┬───────┘
+         ▼
+   RunRecord(identity, outcome, samples)
+         │
+         ▼
+   StoppingPolicy.observe(run, samples)
+         │
+         ▼ not converged → next ScheduledExecution
+         │
+         ▼ converged
+     Report  →  Reporter (stream) + Formatter (final summary)
 ```
 
-A **failed run still produces a `RunRecord`** (with `failure` set, no `Sample`s).
-That's why a failing benchmark appears in the summary as `3/0 runs` (3 failures,
-0 successes) with the reason listed in a `Failures:` block — no fake metrics
-poisoning the stats. `.runs(N)` means "N attempts", so a crashing benchmark
-stops after N runs rather than retrying.
+A **failed run still produces a `RunRecord`** (with `failure` set, empty
+`samples`). That's why a failing benchmark appears in the summary as `3|0 runs`
+(3 failures, 0 successes) with the reason listed in a `Failures:` block — no
+fake metrics poisoning the stats. `.runs(N)` means "N attempts", so a crashing
+benchmark stops after N runs rather than retrying.
 
 ### Suite vs Benchmark — who overrides whom
 
@@ -157,15 +153,20 @@ set:
 Other CLI flags (`--json`, `--csv`, `--dir`, `--compare`) are **additive**: they
 attach extra output sinks alongside whatever reporter the script configured.
 
-### Sample and RunRecord
+### RunRecord and Sample
 
-The two pieces of pure data the runner produces:
+The single abstraction the runner produces is `RunRecord`. Each `RunRecord`
+carries identity + outcome + nested `Sample`s:
 
 ```python
-Sample(suite, benchmark, variant, run, phase,
-       metric, value, unit, lower_is_better, variant_label)
-RunRecord(suite, benchmark, variant, run, phase, command,
-          returncode, runtime, failure, message, variant_label)
+RunRecord(
+    suite, benchmark, variant, run, phase,        # identity
+    command, returncode, runtime, failure, message,  # outcome
+    variant_label,
+    samples: list[Sample],                        # parsed metrics (empty on failure)
+)
+
+Sample(metric, value, unit, lower_is_better)      # metric data only
 ```
 
 * `variant` is a sorted tuple of `(axis, value)` pairs identifying the
@@ -173,13 +174,14 @@ RunRecord(suite, benchmark, variant, run, phase, command,
   the benchmark has no matrix.
 * `variant_label` is the human-readable label of the variant (from
   `Benchmark.with_label(...)`, or the formatted `variant` tuple otherwise).
-* `phase` is `"warmup"` or `"measure"`. Warmup samples are reported in
-  JSON/CSV/dir outputs but excluded from stats.
-* `lower_is_better` is set by the Processor — `True` for runtime, `False` for
-  throughput, `None` when not comparable.
+* `phase` is `"warmup"` or `"measure"`. Warmup runs appear in JSON/CSV/dir
+  outputs but are excluded from stats.
+* `Sample.lower_is_better` is set by the Metric — `True` for runtime, `False`
+  for throughput, `None` when not comparable.
 
-Every execution yields one `RunRecord`. A *successful* run also yields one or
-more `Sample`s (one per metric the Processor emitted).
+Every execution yields one `RunRecord`. A *successful* run carries one or more
+`Sample`s (one per metric the Metric emitted); a failed run carries an empty
+`samples` list and a non-None `failure`.
 
 ### Serialization
 
@@ -188,20 +190,6 @@ get:
 
 ```json
 {
-  "metadata": {},
-  "samples": [
-    {
-      "suite": "factory_demo",
-      "benchmark": "tiny",
-      "variant": [],
-      "run": 1,
-      "phase": "measure",
-      "metric": "elapsed",
-      "value": 0.014422666048631072,
-      "unit": "s",
-      "lower_is_better": true
-    }
-  ],
   "runs": [
     {
       "suite": "factory_demo",
@@ -211,7 +199,15 @@ get:
       "phase": "measure",
       "command": ["python3", "-c", "sum(range(1000))"],
       "returncode": 0,
-      "runtime": 0.014422666048631072
+      "runtime": 0.014422666048631072,
+      "samples": [
+        {
+          "metric": "elapsed",
+          "value": 0.014422666048631072,
+          "unit": "s",
+          "lower_is_better": true
+        }
+      ]
     }
   ]
 }
@@ -223,33 +219,43 @@ Programmatically:
 from benchr import report_from_json, report_to_json
 
 r = report_from_json(Path("out.json").read_text())
-print(r.samples[0].value, r.failures)
+for run in r.runs:
+    for s in run.samples:
+        print(run.benchmark, run.run, s.metric, s.value)
+print("failures:", r.failures)
 Path("out2.json").write_text(report_to_json(r))
 ```
 
-CSV (`--csv`) is sample-flat; dir (`--dir`) writes a per-execution tree
+CSV (`--csv`) is one row per `(run, sample)` for successful runs, plus one
+row per failed run carrying the failure verdict. The schema is
+`suite, benchmark, run, phase, <variant cols>, metric, value, unit, lower_is_better, failure`
+where variant columns are the **union** of every axis observed across all runs
+(cells absent in a particular run are blank).
+
+Dir (`--dir`) writes a per-execution tree
 (`<suite>/<bench>/<phase>/<run>/{stdout,stderr,exitcode,rusage,seq}`).
 
-### Processor — output → metrics
+### Metric — output → metrics
 
-A Processor parses one `ExecutionResult` into zero or more `PartialSample`s
-(the runner stamps benchmark identity onto them to make full `Sample`s). The
-Runner only calls `process()` on a run it judged successful, so a Processor
-never has to re-check exit codes.
+A Metric parses one `ExecutionResult` into zero or more `Sample`s. The Runner
+only calls `process()` on a run it judged successful, so a Metric never has to
+re-check exit codes.
 
 ```python
-.with_process(
-    P.float_per_line("s").last_line().lower_is_better(),  # parse last stdout line as seconds
-    P.max_rss(),                                          # peak RSS from rusage
-    P.time(user=True),                                    # wall + user CPU
+from benchr import FloatPerLine, Time, max_rss
+
+.with_metric(
+    FloatPerLine("s").last_line().lower_is_better(),  # parse last stdout line as seconds
+    max_rss(),                                        # peak RSS from rusage
+    Time(user=True),                                  # wall + user CPU
 )
 ```
 
-Built-ins in the `P.` namespace: `P.time`, `P.max_rss`, `P.rusage`,
-`P.float_per_line`, `P.regex`, `P.rebench`, `P.constant`. See
-[`src/benchr/grammar/processor.py`](src/benchr/grammar/processor.py) for the
-full list and [`examples/custom_processor.py`](examples/custom_processor.py)
-to write your own.
+Built-in metric builders exported from `benchr`: `Time`, `Regex`,
+`FloatPerLine`, `Rebench`, `RUsage`, `Constant`, `max_rss()`. See
+[`src/benchr/grammar/metric.py`](src/benchr/grammar/metric.py) for the full
+list and [`examples/custom_metric.py`](examples/custom_metric.py) to
+write your own.
 
 ### StoppingPolicy and PolicyState — when to stop
 
@@ -292,8 +298,8 @@ Combinators:
 CoefficientOfVariation("elapsed", threshold=0.02).at_least(5).at_most(30)
 ```
 
-The `metric` a CoV policy watches must match what a Processor emits
-(`P.time()` emits `elapsed`/`user`/`system`; `P.float_per_line()` defaults to
+The `metric` a CoV policy watches must match what a Metric emits
+(`Time()` emits `elapsed`/`user`/`system`; `FloatPerLine()` defaults to
 `runtime`). A CoV watching a metric nobody emits never converges and runs to
 the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
 [`examples/jit_warmup.py`](examples/jit_warmup.py),
@@ -307,19 +313,25 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
   *independent* and *bounded* (e.g. `FixedRuns`) have their individual runs
   spread across workers. Convergence-driven benchmarks stay sequential.
 * **`Dry`** — advance each coroutine once and print what *would* run; no
-  subprocess. `--dry -v` adds resolved cwd, env, run plan, and matrix variant per
-  cell.
+  subprocess. `--dry -v` dumps every field of the `ScheduledExecution`.
 
 ```console
 $ uv run examples/factory.py --dry -v
-factory_demo/tiny
-  command: python3 -c sum(range(1000))
-  cwd:     /tmp
-  plan:    measure x5
-factory_demo/small
-  command: python3 -c sum(range(100000))
-  cwd:     /tmp
-  plan:    measure x5
+factory_demo/tiny #1 [measure]
+  suite:      factory_demo
+  benchmark:  tiny
+  run:        1
+  phase:      measure
+  command:    python3 -c sum(range(1000))
+  cwd:        /tmp
+  env:        {}
+  timeout:    <none>
+  stdin:      <none>
+  metrics:    Time
+  success:    <default>
+  plan:       warmup x0, measure x5
+  variant:    {}
+  label:      <none>
 ```
 
 ---
@@ -334,6 +346,8 @@ Variant values reach `with_command` / `with_skip` callables as attributes on
 the benchmark (`b.compiler`, `b.opt`).
 
 ```python
+from benchr import Path, Regex, bench, suite
+
 def cmd(b, ctx):
     return ["sh", "-c", f"echo {b.compiler}-{b.opt}: $((RANDOM%50+50))"]
 
@@ -344,19 +358,19 @@ suite("compile_matrix")
             .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
     )
     .with_cwd(Path("/tmp"))
-    .with_process(P.regex("size", r"(\d+)\s*$", unit="lines"))
+    .with_metric(Regex("size", r"(\d+)\s*$", unit="lines"))
     .runs(3)
 ```
 
 ```console
-compile_matrix/compute/compiler=gcc, opt=O0: 0/3 runs
+compile_matrix/compute/compiler=gcc, opt=O0: 0|3 runs
   size  (mean ± σ):  60.33 ± 10.02    (50.00 … 70.00)
-compile_matrix/compute/compiler=gcc, opt=O2: 0/3 runs
+compile_matrix/compute/compiler=gcc, opt=O2: 0|3 runs
   size  (mean ± σ):  68.00 ± 10.54    (58.00 … 79.00)
 ...
 ```
 
-Each cell's `Sample.variant` carries the axis values so reporters split by
+Each cell's `RunRecord.variant` carries the axis values so reporters split by
 axis. Ranking in the end-of-run "Summary" compares variants *within* a
 benchmark; cross-benchmark ranking is never emitted (different programs are
 not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
@@ -379,11 +393,13 @@ contained benchmark.
 ### File-discovered benchmarks
 
 ```python
+from benchr import FloatPerLine, suite
+
 suite("LoxSuite")
     .from_files(lambda ctx: ctx.cwd / "benchmarks", pattern=r"\.lox$")
     .with_command(lambda b, ctx: [str(ctx.lox), str(b.path)])
     .runs(10)
-    .with_process(P.float_per_line("s").last_line().lower_is_better())
+    .with_metric(FloatPerLine("s").last_line().lower_is_better())
 ```
 
 `b.path` is set on each discovered benchmark; access any user data via
@@ -393,17 +409,19 @@ suite("LoxSuite")
 ### Failure handling
 
 ```python
+from benchr import Path, Time, bench, suite
+
 suite("flaky",
     bench("ok").with_command(["sh", "-c", "sleep 0.02"]).runs(3),
     bench("broken").with_command(["sh", "-c", "exit 7"]).runs(3),
-).with_cwd(Path("/tmp")).with_process(P.time())
+).with_cwd(Path("/tmp")).with_metric(Time())
 ```
 
 ```console
-flaky/ok: 0/3 runs
+flaky/ok: 0|3 runs
   elapsed  (mean ± σ):  25.60 ± 1.61    (23.77 … 26.77)
 
-flaky/broken: 3/0 runs
+flaky/broken: 3|0 runs
 
 Failures:
   ✗ flaky/broken #1  — exit 7: (no output)
@@ -418,8 +436,8 @@ $ python compare_baseline.py --json baseline.json
 $ python compare_baseline.py --compare baseline.json
 cmp/fast:
   runs:
-    baseline: 0 failed / 5 succeeded
-    current: 0 failed / 5 succeeded
+    baseline: 0|5 (failed|succeeded)
+    current:  0|5 (failed|succeeded)
   elapsed:
     current was 1.12 ± 0.12 times worse than baseline
 ...
@@ -432,14 +450,15 @@ Summary (geometric mean of ratios):
 ### Programmatic use
 
 ```python
-from benchr import P, Path, Sequential, bench, suite
+from benchr import Path, Sequential, Time, bench, suite
 
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
-     .with_cwd(Path("/tmp")).with_process(P.time()).runs(3))
+     .with_cwd(Path("/tmp")).with_metric(Time()).runs(3))
 
 report = Sequential().run([s], ctx=None)
-for sample in report.samples:
-    print(sample.benchmark, sample.run, sample.value)
+for run in report.runs:
+    for sample in run.samples:
+        print(run.benchmark, run.run, sample.metric, sample.value)
 print("failures:", report.failures)
 ```
 
@@ -453,7 +472,7 @@ builder lambda as `ctx`.
 
 ```python
 from dataclasses import dataclass
-from benchr import Path, run, suite, bench, P
+from benchr import Path, Time, bench, run, suite
 
 @dataclass
 class Params:
@@ -464,7 +483,7 @@ def cmd(b, ctx: Params):
     return [str(ctx.binary), str(ctx.size)]
 
 run(
-    suite("s", bench("x")).with_cwd(".").with_command(cmd).with_process(P.time()),
+    suite("s", bench("x")).with_cwd(".").with_command(cmd).with_metric(Time()),
     params=Params,
 )
 ```
@@ -503,8 +522,9 @@ src/benchr/
     __init__.py            public re-exports
     cli.py                 run() entry point + bench/compare/show
     grammar/
-        execution.py       Execution, ExecutionResult, ScheduledExecution
-        processor.py       Processor + combinators + P. builtins
+        execution.py       Execution, ExecutionResult, ScheduledExecution,
+                           Variant, TIMEOUT_RC, SPAWN_FAIL_RC
+        metric.py          Metric + combinators + Time/Regex/FloatPerLine/…
         policy.py          StoppingPolicy, FixedRuns, CoV, combinators
         benchmark.py       Benchmark + compile() coroutine
         suite.py           Suite + matrix + from_files
@@ -513,10 +533,11 @@ src/benchr/
         base.py            execute(), plan(), Runner base + coroutine pump
         sequential.py / parallel.py / dry.py
     report/
-        sample.py          Sample, Report, JSON round-trip
+        sample.py          Sample, RunRecord, Report, JSON round-trip
         stats.py           grouping, stats, ratios, geomean
         formatter.py       DefaultSummary, Compact
-        reporter.py        streaming sinks + rich theme
+        reporter.py        streaming sinks (CompositeReporter, Csv, Json, …)
+        theme.py           rich theme + shared Console
 ```
 
 ---
@@ -524,6 +545,6 @@ src/benchr/
 ## Development
 
 ```console
-uv run pytest          # 137 tests
+uv run pytest          # 136 tests
 uv run benchr bench --runs 20 'sleep 0.1' 'sleep 0.2'
 ```

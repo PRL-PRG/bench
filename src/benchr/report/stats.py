@@ -11,11 +11,12 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from benchr.grammar.execution import Variant
 from benchr.report.sample import Report, report_from_json
 
 
 MetricKey = tuple[str, str]                # (metric, unit)
-Variant = tuple[tuple[str, str], ...]      # canonical variant tuple
+BenchKey = tuple[str, str]                 # (suite, benchmark)
 BenchmarkId = tuple[str, str, Variant]     # (suite, benchmark, variant)
 
 
@@ -54,8 +55,8 @@ def group(report: Report, *, name: str = "current",
     """Reshape a Report for stats/comparison.
 
     Counts ``report.runs`` into ``run_counts`` and collects per-metric
-    direction annotations. Warmup samples and runs are excluded by default.
-    Benchmarks that only ever failed still appear (zero successes).
+    direction annotations. Warmup runs are excluded by default. Benchmarks
+    that only ever failed still appear (zero successes).
     """
     order: list[BenchmarkId] = []
     metrics: dict[BenchmarkId, dict[MetricKey, list[float]]] = {}
@@ -71,25 +72,20 @@ def group(report: Report, *, name: str = "current",
         if label and not labels.get(bid):
             labels[bid] = label
 
-    for s in report.samples:
-        if s.phase == "warmup" and not include_warmup:
-            continue
-        bid: BenchmarkId = (s.suite, s.benchmark, s.variant)
-        register(bid, s.variant_label)
-        mk = (s.metric, s.unit)
-        if s.lower_is_better is not None:
-            lib[mk] = s.lower_is_better
-        metrics[bid].setdefault(mk, []).append(s.value)
-
     for r in report.runs:
         if r.phase == "warmup" and not include_warmup:
             continue
-        bid = (r.suite, r.benchmark, r.variant)
+        bid: BenchmarkId = (r.suite, r.benchmark, r.variant)
         register(bid, r.variant_label)
         if r.is_failure():
             failed[bid] = failed.get(bid, 0) + 1
         else:
             succeeded[bid] = succeeded.get(bid, 0) + 1
+        for s in r.samples:
+            mk = (s.metric, s.unit)
+            if s.lower_is_better is not None:
+                lib[mk] = s.lower_is_better
+            metrics[bid].setdefault(mk, []).append(s.value)
 
     groups: list[BenchmarkGroup] = []
     for bid in order:

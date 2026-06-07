@@ -8,10 +8,10 @@ from benchr import CoefficientOfVariation, Custom, FixedRuns, PolicyState, Sampl
 
 
 def _mk(value: float, run: int, *, metric: str = "rt") -> Sample:
-    return Sample(
-        suite="S", benchmark="B", variant=(), run=run, phase="measure",
-        metric=metric, value=value, unit="s", lower_is_better=True,
-    )
+    # run is preserved as a parameter name for readability — policies receive
+    # the run index separately via ``observe(run, samples)``.
+    del run
+    return Sample(metric=metric, value=value, unit="s", lower_is_better=True)
 
 
 # ---------------------------------------------------------------------------

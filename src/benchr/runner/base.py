@@ -1,47 +1,117 @@
-"""Runner protocol and shared coroutine pump.
-
-Two abstractions are split intentionally:
-
-  ``execute(sched)``  spawn one subprocess, return an ExecutionResult.
-                      Pure mechanism — no policy, no reporting.
-  ``Runner``          orchestrate compile() coroutines for a list of suites.
-                      The coroutine yields ScheduledExecution; Runner calls
-                      ``execute`` to get an ExecutionResult; the benchmark's
-                      Processor turns that into Samples; the Runner stamps
-                      them, forwards to the Reporter, and sends them back
-                      into the coroutine via ``.send()`` so the StoppingPolicy
-                      can observe. ``run()`` returns the accumulated ``Report``
-                      (every Sample plus a RunRecord per execution).
-
-The default Runner has a configurable global cap (``max_runs_per_phase``) as a
-safety net against custom policies that never converge.
-"""
+"""Runner protocol and shared coroutine pump."""
 
 from __future__ import annotations
 
 import abc
+import contextlib
 import dataclasses
+import errno
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
+    SPAWN_FAIL_RC,
+    TIMEOUT_RC,
     Execution,
     ExecutionResult,
     ScheduledExecution,
     Verdict,
 )
-from benchr.grammar.policy import StoppingPolicy
-from benchr.grammar.processor import process_all, stamp
+from benchr.grammar.metric import extract_all
 from benchr.grammar.suite import Suite
 from benchr.report.reporter import Reporter
 from benchr.report.sample import Report, Sample
+
+
+# ---------------------------------------------------------------------------
+# Ctrl+C handling: track every live benchmark subprocess so a SIGINT can kill
+# the whole subtree (each child runs in its own process group) before the CLI
+# exits. Without this, Python's KeyboardInterrupt only unblocks the main
+# thread's ``os.wait4`` and leaves the children orphaned (and parallel worker
+# threads stuck in ``wait4`` forever, since SIGINT is delivered to the main
+# thread only).
+# ---------------------------------------------------------------------------
+
+_INTERRUPTED = threading.Event()
+_LIVE_PROCS: set[subprocess.Popen] = set()
+_LIVE_LOCK = threading.Lock()
+
+
+def _register_proc(proc: subprocess.Popen) -> None:
+    with _LIVE_LOCK:
+        _LIVE_PROCS.add(proc)
+
+
+def _unregister_proc(proc: subprocess.Popen) -> None:
+    with _LIVE_LOCK:
+        _LIVE_PROCS.discard(proc)
+
+
+def _kill_all_live_procs() -> None:
+    with _LIVE_LOCK:
+        procs = list(_LIVE_PROCS)
+    for p in procs:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            # Already dead, or never made it into its own group — fall back to
+            # a direct kill on the proc itself.
+            try:
+                p.kill()
+            except (ProcessLookupError, OSError):
+                pass
+
+
+@contextlib.contextmanager
+def install_sigint_handler() -> Iterator[None]:
+    """Install a SIGINT handler that kills tracked subprocesses and restores
+    the previous handler so a second Ctrl+C is a hard exit.
+
+    No-op when called off the main thread (Python only allows ``signal.signal``
+    in the main thread). Library callers running a runner inside their own
+    worker thread get the previous behavior.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    _INTERRUPTED.clear()
+    prev = signal.getsignal(signal.SIGINT)
+
+    def _handler(signum: int, frame) -> None:
+        _INTERRUPTED.set()
+        _kill_all_live_procs()
+        # Restore the previous handler so a second Ctrl+C is a hard exit
+        # instead of being swallowed while we drain the pool.
+        signal.signal(signal.SIGINT, prev)
+
+    signal.signal(signal.SIGINT, _handler)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, prev)
+        _INTERRUPTED.clear()
+
+
+def _wait4_eintr(pid: int) -> tuple[int, int, Any]:
+    """``os.wait4`` that retries on EINTR (the SIGINT itself wakes wait4)."""
+    while True:
+        try:
+            return os.wait4(pid, 0)
+        except InterruptedError:
+            continue
+        except OSError as e:
+            if e.errno == errno.EINTR:
+                continue
+            raise
 
 
 class _NoopReporter(Reporter):
@@ -55,15 +125,16 @@ class _NoopReporter(Reporter):
 
 
 def execute(exe: Execution) -> ExecutionResult:
-    """Spawn one subprocess and return a ExecutionResult.
+    """Spawn one subprocess and return an ExecutionResult.
 
-    Honors ``exe.timeout`` (returncode 124 on timeout), captures stdout/stderr,
-    and includes ``rusage`` via ``os.wait4``.
+    Honors ``exe.timeout`` (returncode ``TIMEOUT_RC`` on timeout), captures
+    stdout/stderr, and includes ``rusage`` via ``os.wait4``. Pure mechanism —
+    no policy, no reporting.
     """
     cmd = list(exe.command)
     found = shutil.which(cmd[0])
     if found is None:
-        return ExecutionResult(execution=exe, returncode=-1,
+        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC,
                                failure=f"Command not found: {cmd[0]}")
     # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
     # doesn't re-resolve a relative executable against the subprocess's cwd.
@@ -71,6 +142,7 @@ def execute(exe: Execution) -> ExecutionResult:
 
     stdout_f = tempfile.TemporaryFile()
     stderr_f = tempfile.TemporaryFile()
+    proc: subprocess.Popen | None = None
     try:
         proc = subprocess.Popen(
             cmd,
@@ -80,7 +152,12 @@ def execute(exe: Execution) -> ExecutionResult:
             stdout=stdout_f,
             stderr=stderr_f,
             shell=False,
+            # Put the child in its own process group so a Ctrl+C handler can
+            # kill the whole subtree via ``os.killpg`` (matters for shell
+            # wrappers like ``sh -c "..."`` that spawn the real workload).
+            start_new_session=True,
         )
+        _register_proc(proc)
         if exe.stdin and proc.stdin is not None:
             try:
                 proc.stdin.write(exe.stdin)
@@ -101,7 +178,7 @@ def execute(exe: Execution) -> ExecutionResult:
             timer = threading.Timer(exe.timeout, _kill)
             timer.start()
 
-        _, waitstatus, rusage = os.wait4(proc.pid, 0)
+        _, waitstatus, rusage = _wait4_eintr(proc.pid)
         endtime = time.monotonic()
         if timer is not None:
             timer.cancel()
@@ -112,7 +189,18 @@ def execute(exe: Execution) -> ExecutionResult:
         stdout = stdout_f.read().decode(errors="replace")
         stderr = stderr_f.read().decode(errors="replace")
 
-        returncode = 124 if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
+        if _INTERRUPTED.is_set():
+            return ExecutionResult(
+                execution=exe,
+                returncode=os.waitstatus_to_exitcode(waitstatus),
+                stdout=stdout,
+                stderr=stderr,
+                runtime=runtime,
+                rusage=rusage,
+                failure="interrupted",
+            )
+
+        returncode = TIMEOUT_RC if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
 
         # execute() records facts only; judging success is the Runner's job
         # (see default_success / Benchmark.with_success).
@@ -125,9 +213,11 @@ def execute(exe: Execution) -> ExecutionResult:
             rusage=rusage,
         )
     except OSError as e:
-        return ExecutionResult(execution=exe, returncode=-1,
+        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC,
                                failure=f"spawn failed: {e}")
     finally:
+        if proc is not None:
+            _unregister_proc(proc)
         stdout_f.close()
         stderr_f.close()
 
@@ -136,7 +226,7 @@ def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
     """Default success policy: clean exit passes, anything else fails."""
     if result.failure is not None:        # spawn failure already judged by execute()
         return result.failure
-    if result.returncode == 124:
+    if result.returncode == TIMEOUT_RC:
         return "timeout"
     if result.returncode != 0:
         return f"exit code {result.returncode}"
@@ -146,25 +236,18 @@ def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
 def judge(
     b: Benchmark, sched: ScheduledExecution, result: ExecutionResult
 ) -> tuple[ExecutionResult, list[Sample]]:
-    """Apply the success policy to an already-run result, then parse samples.
+    """Apply the success policy and extract samples.
 
     Asks the benchmark's ``success`` policy (or ``default_success``) for a
     verdict and stamps the reason onto ``result.failure``. On success runs the
-    processors and stamps benchmark identity onto the samples; on failure
-    returns no samples — a failed run never produces metrics.
+    metrics; on failure returns no samples — a failed run never produces
+    metrics.
     """
     reason = (b.success or default_success)(sched.execution, result)
     if reason is not None and result.failure is None:
         result = dataclasses.replace(result, failure=reason)
-    samples = list(stamp(process_all(b.processors, result), sched)) if not result.is_failure() else []
+    samples = list(extract_all(b.metrics, result)) if not result.is_failure() else []
     return result, samples
-
-
-def evaluate(
-    b: Benchmark, sched: ScheduledExecution
-) -> tuple[ExecutionResult, list[Sample]]:
-    """Spawn one ScheduledExecution and judge+parse it (see ``judge``)."""
-    return judge(b, sched, execute(sched.execution))
 
 
 # ---------------------------------------------------------------------------
@@ -194,50 +277,46 @@ def plan(suites: list[Suite], ctx: Any) -> list[PlannedBenchmark]:
 # ---------------------------------------------------------------------------
 
 
-def format_scheduled(
-    sched: ScheduledExecution,
-    benchmark: Benchmark,
-    *,
-    include_plan: bool = True,
-) -> str:
-    """Render the full per-execution detail block printed by ``--verbose``.
+def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
+    """Dump a ScheduledExecution + benchmark plan as a deterministic text block.
 
-    A header line plus indented command / cwd / env / timeout / stdin /
-    processors / success / run-plan / variant fields. The run-plan is derived
-    from the benchmark's warmup and measure policies; pass
-    ``include_plan=False`` when the caller already enumerates every
-    scheduled execution (the phase tag is in the header — no need to also
-    summarize totals on every block).
+    One header (``sched.identifier()``) followed by every field of
+    ``ScheduledExecution`` (and its nested ``Execution``) plus the benchmark's
+    metric/success/plan summary. Every line printed every time — no
+    conditional fields.
     """
-    # "unbounded" for convergence policies (CoV etc.) whose max_runs() is None.
-    def _label(p: StoppingPolicy) -> str:
+    e = sched.execution
+    env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
+    stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
+    timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
+    metric_str = ", ".join(type(m).__name__ for m in benchmark.metrics) or "<none>"
+    success_str = benchmark.success.__name__ if benchmark.success is not None else "<default>"
+    variant_str = dict(sched.variant) if sched.variant else {}
+    label_str = sched.variant_label or "<none>"
+
+    def _label(p):
         n = p.max_runs()
         return "unbounded" if n is None else str(n)
 
-    e = sched.execution
-    ident = sched.identifier()
+    plan_str = f"warmup x{_label(benchmark.warmup)}, measure x{_label(benchmark.measure)}"
 
-    lines = [ident, f"  command:    {' '.join(e.command)}", f"  cwd:        {e.cwd}"]
-    env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
-    lines.append(f"  env:        {{{env_str}}}")
-    if e.timeout is not None:
-        lines.append(f"  timeout:    {e.timeout}s")
-    if e.stdin is not None:
-        lines.append(f"  stdin:      {len(e.stdin)} bytes")
-    procs = ", ".join(type(p).__name__ for p in benchmark.processors) or "<none>"
-    lines.append(f"  processors: {procs}")
-    if benchmark.success is not None:
-        lines.append(f"  success:    {benchmark.success.__name__}")
-    if include_plan:
-        measure = f"measure x{_label(benchmark.measure)}"
-        warmup_n = _label(benchmark.warmup)
-        plan_str = measure if warmup_n == "0" else f"warmup x{warmup_n}, {measure}"
-        lines.append(f"  plan:       {plan_str}")
-    if sched.variant:
-        lines.append(f"  variant:    {dict(sched.variant)}")
-    if sched.variant_label:
-        lines.append(f"  label:      {sched.variant_label}")
-    return "\n".join(lines)
+    return "\n".join([
+        sched.identifier(),
+        f"  suite:      {sched.suite}",
+        f"  benchmark:  {sched.benchmark}",
+        f"  run:        {sched.run}",
+        f"  phase:      {sched.phase}",
+        f"  command:    {' '.join(e.command)}",
+        f"  cwd:        {e.cwd}",
+        f"  env:        {{{env_str}}}",
+        f"  timeout:    {timeout_str}",
+        f"  stdin:      {stdin_str}",
+        f"  metrics:    {metric_str}",
+        f"  success:    {success_str}",
+        f"  plan:       {plan_str}",
+        f"  variant:    {variant_str}",
+        f"  label:      {label_str}",
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +326,12 @@ def format_scheduled(
 
 class Runner(abc.ABC):
     """Drives compile() coroutines, calls executor, forwards samples.
+
+    The coroutine yields ScheduledExecution; the Runner runs it via
+    ``execute``, ``judge``s the result against the benchmark's metrics, forwards
+    samples to the Reporter, and sends them back into the coroutine with
+    ``.send()`` so the StoppingPolicy can observe. ``run()`` returns the
+    accumulated ``Report``.
 
     ``max_runs_per_phase`` is a defensive backstop for non-converging custom
     policies. ``max_consecutive_failures`` silently aborts a benchmark whose
@@ -266,8 +351,6 @@ class Runner(abc.ABC):
         self.max_runs_per_phase = max_runs_per_phase
         self.max_consecutive_failures = max_consecutive_failures
         self.verbose = verbose
-        # Guards the shared Report when workers record concurrently (Parallel).
-        self._report_lock = threading.Lock()
 
     @abc.abstractmethod
     def run(self, suites: list[Suite], ctx: Any) -> Report: ...
@@ -281,10 +364,12 @@ class Runner(abc.ABC):
         result: ExecutionResult,
         samples: list[Sample],
     ) -> None:
-        with self._report_lock:
-            report.record(sched, result, samples)
-        # Reporters guard their own state; no need to hold the report lock.
+        report.record(sched, result, samples)
         self.reporter.sample(sched, result, samples)
+
+    def _print_verbose(self, sched: ScheduledExecution, b: Benchmark) -> None:
+        """Print the per-benchmark verbose block. Parallel overrides to lock."""
+        print(format_scheduled(sched, b))
 
     def _run_benchmark(
         self, planned: PlannedBenchmark, ctx: Any, report: Report
@@ -293,13 +378,13 @@ class Runner(abc.ABC):
         consecutive_failures = 0
         guard = 0
 
-        # Bounded policies (e.g. FixedRuns) ARE the user contract: ``runs(N)``
-        # means N attempts, success or failure. The consecutive-failure cap
-        # only protects unbounded policies (CoV etc.) from spinning forever.
         bounded = (
             b.warmup.max_runs() is not None and b.measure.max_runs() is not None
         )
         failure_cap = None if bounded else self.max_consecutive_failures
+
+        if _INTERRUPTED.is_set():
+            return
 
         gen = b.compile(ctx, suite=planned.suite)
         try:
@@ -308,9 +393,7 @@ class Runner(abc.ABC):
             return
 
         if self.verbose:
-            # One block per benchmark; lock so Parallel workers don't interleave.
-            with self._report_lock:
-                print(format_scheduled(sched, b))
+            self._print_verbose(sched, b)
 
         while True:
             guard += 1
@@ -320,12 +403,13 @@ class Runner(abc.ABC):
                     f"({self.max_runs_per_phase}); did you forget .at_most(N)?"
                 )
 
-            # A failed run produces no metrics, only a RunRecord. The policy
-            # still observes (sees ``[]``) so that ``.runs(N)`` counts every
-            # attempt, not just successes.
-            result, samples = evaluate(b, sched)
+            result, samples = judge(b, sched, execute(sched.execution))
             consecutive_failures = 0 if not result.is_failure() else consecutive_failures + 1
             self._record(report, sched, result, samples)
+
+            if _INTERRUPTED.is_set():
+                gen.close()
+                return
 
             if failure_cap is not None and consecutive_failures >= failure_cap:
                 gen.close()

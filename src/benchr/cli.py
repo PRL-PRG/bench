@@ -14,14 +14,14 @@ from pathlib import Path
 
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
-from benchr.grammar.processor import P
+from benchr.grammar.metric import Time
 from benchr.grammar.suite import Suite, suite
 from benchr.report.formatter import DefaultSummary, Formatter
 from benchr.report.reporter import (
+    CompositeReporter,
     Csv as CsvReporter,
     Dir as DirReporter,
     Json as JsonReporter,
-    Mixed,
     Progress as ProgressReporter,
     Reporter,
     Summary as SummaryReporter,
@@ -54,7 +54,7 @@ def run(
     ``params`` is the user's @dataclass that declares CLI flags. If omitted,
     no user flags are added and ``ctx = None`` is passed to builders.
     ``reporter`` overrides the default Summary reporter; output flags
-    (--json/--csv/--dir) are *additional* Mixed sinks alongside.
+    (--json/--csv/--dir) are *additional* CompositeReporter sinks alongside.
     ``formatter`` overrides the default summary formatter (used for the
     terminal summary; defaults to ``DefaultSummary``).
 
@@ -69,9 +69,7 @@ def run(
     ns = parser.parse_args(argv)
     ctx = build_dataclass(params, ns) if params is not None else None
 
-    summary_reporter = (
-        reporter if reporter is not None else SummaryReporter(formatter=formatter)
-    )
+    summary_reporter = reporter or SummaryReporter(formatter=formatter)
     final_reporter = _assemble(
         ns, summary_reporter, with_progress=not ns.dry and not ns.quiet
     )
@@ -103,8 +101,8 @@ def _assemble(
     with_progress: bool,
 ) -> Reporter:
     """Build the live reporter: optional progress, the summary reporter, plus
-    any --json/--csv/--dir sinks, fanned out via Mixed. Wires --compare onto
-    the summary reporter when it is a SummaryReporter."""
+    any --json/--csv/--dir sinks, fanned out via CompositeReporter. Wires
+    --compare onto the summary reporter when it is a SummaryReporter."""
     sinks: list[Reporter] = []
     if with_progress:
         sinks.append(ProgressReporter())
@@ -117,13 +115,13 @@ def _assemble(
         sinks.append(DirReporter(Path(ns.dir)))
     if ns.compare and isinstance(summary_reporter, SummaryReporter):
         summary_reporter.set_baseline([Path(p) for p in ns.compare])
-    return sinks[0] if len(sinks) == 1 else Mixed(*sinks)
+    return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
 def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
     verbose = getattr(ns, "verbose", False)
     if getattr(ns, "dry", False):
-        return Dry(verbose=verbose)  # prints the plan only; ignores reporters / sinks
+        return Dry(verbose=verbose)
     if ns.jobs > 1:
         return Parallel(workers=ns.jobs, reporter=reporter, verbose=verbose)
     return Sequential(reporter=reporter, verbose=verbose)
@@ -266,7 +264,7 @@ def _run_bench(ns: argparse.Namespace) -> int:
         .with_matrix(command=argvs)
         .with_label(lambda bb: " ".join(bb.data["command"]))
         .with_cwd(Path.cwd())
-        .with_process(P.time())
+        .with_metric(Time())
         .runs(ns.runs)
     )
     if ns.timeout is not None:

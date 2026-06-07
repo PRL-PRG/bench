@@ -1,4 +1,4 @@
-"""Reporter sinks (Csv, Json, Dir, Mixed)."""
+"""Reporter sinks (Csv, Json, Dir, CompositeReporter)."""
 
 import io
 from pathlib import Path
@@ -6,10 +6,10 @@ from pathlib import Path
 from rich.console import Console
 
 from benchr import (
-    Csv, Dir, Json, Mixed, P, Progress, Sequential, Summary, bench,
-    report_from_json, suite,
+    Csv, Dir, Json, CompositeReporter, FloatPerLine, Progress, Sequential, Summary,
+    Time, bench, report_from_json, suite,
 )
-from benchr.report.reporter import BENCHR_THEME
+from benchr.report.theme import BENCHR_THEME
 
 
 def _s():
@@ -18,7 +18,7 @@ def _s():
         bench("a")
             .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.float_per_line("s").last_line().lower_is_better())
+            .with_metric(FloatPerLine("s").last_line().lower_is_better())
             .runs(2),
     )
 
@@ -36,8 +36,9 @@ def test_json_writer_round_trip(tmp_path: Path):
     out = tmp_path / "r.json"
     Sequential(reporter=Json(out)).run([_s()], ctx=None)
     r = report_from_json(out.read_text())
-    assert len(r.samples) == 2
-    assert all(s.metric == "runtime" for s in r.samples)
+    all_samples = [s for run in r.runs for s in run.samples]
+    assert len(all_samples) == 2
+    assert all(s.metric == "runtime" for s in all_samples)
 
 
 def test_dir_writer_creates_tree(tmp_path: Path):
@@ -55,7 +56,7 @@ def test_dir_writer_creates_tree(tmp_path: Path):
 def test_mixed_fans_out(tmp_path: Path):
     js = tmp_path / "r.json"
     cs = tmp_path / "r.csv"
-    Sequential(reporter=Mixed(Json(js), Csv(cs))).run([_s()], ctx=None)
+    Sequential(reporter=CompositeReporter(Json(js), Csv(cs))).run([_s()], ctx=None)
     assert js.exists() and cs.exists()
 
 
@@ -65,7 +66,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
         suite("M", bench("c")
               .with_command(lambda b, ctx: ["sh", "-c", "sleep 0.01"])
               .with_matrix(compiler=["gcc"]))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
         .runs(1)
     )
     Sequential(reporter=Csv(out)).run([s], ctx=None)
@@ -91,7 +92,7 @@ def test_summary_appends_failures_block_with_diagnostic():
     s = suite("F", bench("bad")
               .with_command(["sh", "-c", "echo trouble >&2; exit 7"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time())
+              .with_metric(Time())
               .runs(1))
     rep = Summary(target_console=c)
     Sequential(reporter=rep, max_consecutive_failures=1).run([s], ctx=None)
@@ -108,7 +109,7 @@ def test_summary_failures_block_handles_spawn_failure():
     s = suite("F", bench("missing")
               .with_command(["/no_such_binary_xyzzy"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time())
+              .with_metric(Time())
               .runs(1))
     rep = Summary(target_console=c)
     Sequential(reporter=rep, max_consecutive_failures=1).run([s], ctx=None)
@@ -123,7 +124,7 @@ def test_summary_no_failures_block_when_all_succeed():
     s = suite("S", bench("a")
               .with_command(["sh", "-c", "echo ok"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time())
+              .with_metric(Time())
               .runs(1))
     rep = Summary(target_console=c)
     Sequential(reporter=rep).run([s], ctx=None)
@@ -141,12 +142,12 @@ def test_progress_plain_lines_in_non_tty():
     s = suite("S", bench("a")
               .with_command(["sh", "-c", "echo ok"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time())
+              .with_metric(Time())
               .runs(3))
     Sequential(reporter=Progress(target_console=c)).run([s], ctx=None)
     text = buf.getvalue()
     # One line per sample, with running count and 'ok' tag.
-    assert "[1/3]" in text and "[2/3]" in text and "[3/3]" in text
+    assert "[1|3]" in text and "[2|3]" in text and "[3|3]" in text
     assert text.count(" ok") >= 3
 
 
@@ -155,7 +156,7 @@ def test_progress_plain_marks_failures():
     s = suite("F", bench("bad")
               .with_command(["sh", "-c", "exit 11"])
               .with_cwd(Path("/tmp"))
-              .with_process(P.time())
+              .with_metric(Time())
               .runs(1))
     Sequential(reporter=Progress(target_console=c),
                max_consecutive_failures=1).run([s], ctx=None)

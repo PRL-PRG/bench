@@ -27,7 +27,7 @@ shaped so VM1 is roughly 2× slower than VM2 and bigger ``size`` is slightly
 slower — enough that the Summary lines look meaningful.
 """
 
-from benchr import P, Path, bench, run, suite
+from benchr import FloatPerLine, max_rss, Path, bench, run, suite
 
 
 def cmd(b, ctx):
@@ -51,8 +51,8 @@ s = (
             .with_command(cmd)
             .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
             .with_cwd(Path("/tmp"))
-            .with_process(P.float_per_line("ms").lower_is_better())
-            .with_process(P.max_rss())
+            .with_metric(FloatPerLine("ms").lower_is_better())
+            .with_metric(max_rss())
             .runs(5),
 
         # 2. Cartesian minus one cell — 3 variants.
@@ -61,7 +61,7 @@ s = (
             .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
             .with_skip(vm="VM1", size=500)
             .with_cwd(Path("/tmp"))
-            .with_process(P.float_per_line("ms").lower_is_better())
+            .with_metric(FloatPerLine("ms").lower_is_better())
             .runs(5),
 
         # 3. Slice — fix vm=VM2, vary size. 2 variants.
@@ -70,7 +70,7 @@ s = (
             .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
             .with_skip(lambda b: b.vm != "VM2")
             .with_cwd(Path("/tmp"))
-            .with_process(P.float_per_line("ms").lower_is_better())
+            .with_metric(FloatPerLine("ms").lower_is_better())
             .runs(5),
 
         # 4. Slice — fix size=500, vary vm. 2 variants.
@@ -79,7 +79,7 @@ s = (
             .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
             .with_skip(lambda b: b.size != 500)
             .with_cwd(Path("/tmp"))
-            .with_process(P.float_per_line("ms").lower_is_better())
+            .with_metric(FloatPerLine("ms").lower_is_better())
             .runs(5),
     )
 )

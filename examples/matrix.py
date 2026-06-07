@@ -13,7 +13,7 @@ Each (compiler, opt) cell is a variant; reports compare variants within the
 benchmark.
 """
 
-from benchr import P, Path, bench, run, suite
+from benchr import Regex, Path, bench, run, suite
 
 
 def fake_cmd(b, ctx):
@@ -29,7 +29,7 @@ s = (
         .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
     )
     .with_cwd(Path("/tmp"))
-    .with_process(P.regex("size", r"(\d+)\s*$", unit="lines"))
+    .with_metric(Regex("size", r"(\d+)\s*$", unit="lines"))
     .runs(3)
 )
 

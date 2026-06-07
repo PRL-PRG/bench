@@ -1,17 +1,4 @@
-"""Streaming reporter sinks.
-
-A ``Reporter`` is called by the Runner three times: ``start(plan)`` once,
-``sample(sched, result, samples)`` per execution, ``finalize()`` once at the end.
-
-Built-ins:
-    Mixed      fan-out to multiple reporters
-    Csv        stream rows to a CSV file
-    Json       buffer in memory; serialize on finalize
-    Dir        per-execution tree (<suite>/<bench>/<phase>/<run>/{stdout,stderr,...})
-    Table      buffer and print a final table
-    Progress   live spinner + bar; ``transient`` so it clears at finalize
-    Summary    buffer and run a Formatter (see report/formatter.py)
-"""
+"""Streaming reporter sinks."""
 
 from __future__ import annotations
 
@@ -19,7 +6,7 @@ import abc
 import csv
 import threading
 from pathlib import Path
-from typing import IO, Any
+from typing import Any
 
 from rich.console import Console
 from rich.progress import (
@@ -30,42 +17,21 @@ from rich.progress import (
     TextColumn,
     TimeElapsedColumn,
 )
-from rich.table import Table as RichTable
-from rich.theme import Theme
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.grammar.execution import (
+    SPAWN_FAIL_RC,
+    TIMEOUT_RC,
     ExecutionResult,
     ScheduledExecution,
 )
 from benchr.report.sample import (
-    RunRecord,
     Report,
+    RunRecord,
     Sample,
     report_to_json,
-    variant_keys,
 )
-
-
-# Centralized rich theme — change colors in one place.
-BENCHR_THEME = Theme(
-    {
-        "benchr.success": "green",
-        "benchr.failure": "red",
-        "benchr.metric": "cyan",
-        "benchr.value": "green bold",
-        "benchr.min": "cyan",
-        "benchr.max": "magenta",
-        "benchr.name": "magenta",
-        "benchr.label": "bold",
-        "benchr.better": "green bold",
-        "benchr.worse": "red bold",
-        "benchr.progress": "blue bold",
-        "benchr.in_process": "magenta bold",
-    }
-)
-
-console = Console(theme=BENCHR_THEME, highlight=False)
+from benchr.report.theme import BENCHR_THEME, console
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +76,7 @@ class _BufferingReporter(Reporter):
             self._report.record(sched, result, samples)
 
 
-class Mixed(Reporter):
+class CompositeReporter(Reporter):
     """Fan out events to multiple Reporters in registration order."""
 
     def __init__(self, *reporters: Reporter) -> None:
@@ -134,62 +100,59 @@ class Mixed(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class Csv(Reporter):
-    """Stream rows to a CSV file. Header is fixed on the first non-empty sample.
+class Csv(_BufferingReporter):
+    """Buffer per-execution rows; write CSV on ``finalize()``.
 
-    Schema: suite, benchmark, run, phase, <variant_cols...>, metric, value, unit,
-    lower_is_better. Variant columns are fixed from the *first* sample's variant
-    axes; in a heterogeneous run (e.g. a matrix variant alongside a plain
-    benchmark) axes absent from the first sample are silently dropped — use
-    ``--json`` for complete fidelity.
+    Schema: ``suite, benchmark, run, phase, <variant_cols...>, metric, value,
+    unit, lower_is_better, failure``. Variant columns are the union of every
+    axis observed across all runs (cells absent in a particular run are blank).
 
-    Note: one row per *Sample*, so failed runs (which emit no samples) do not
-    appear here — use ``--json`` / ``--dir`` to capture failures.
+    One row per Sample for successful runs. Failed runs (which emit no samples)
+    are still represented: one row with blank metric/value/unit and the failure
+    verdict in the ``failure`` column.
     """
 
     def __init__(self, path: Path, *, delimiter: str = ",") -> None:
+        super().__init__()
         self.path = path
         self.delimiter = delimiter
-        self._file: IO[str] | None = None
-        self._writer: csv.DictWriter | None = None
-        self._variant_cols: list[str] | None = None
-        self._lock = threading.Lock()
-
-    def start(self, plan):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._file = open(self.path, "wt", newline="")
-        self._writer = None
-        self._variant_cols = None
-
-    def sample(self, sched, result, samples):
-        if not samples or self._file is None:
-            return
-        with self._lock:
-            if self._writer is None:
-                self._variant_cols = [k for k, _ in samples[0].variant]
-                cols = ["suite", "benchmark", "run", "phase"] + self._variant_cols + [
-                    "metric", "value", "unit", "lower_is_better"
-                ]
-                self._writer = csv.DictWriter(self._file, fieldnames=cols, delimiter=self.delimiter)
-                self._writer.writeheader()
-            for s in samples:
-                row = {
-                    "suite": s.suite, "benchmark": s.benchmark, "run": s.run,
-                    "phase": s.phase, "metric": s.metric, "value": s.value,
-                    "unit": s.unit,
-                    "lower_is_better": (
-                        "" if s.lower_is_better is None else str(s.lower_is_better)
-                    ),
-                }
-                for k in self._variant_cols or []:
-                    row[k] = dict(s.variant).get(k, "")
-                self._writer.writerow(row)
-            self._file.flush()
 
     def finalize(self):
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        variant_cols = self._report.variant_keys()
+        cols = ["suite", "benchmark", "run", "phase"] + variant_cols + [
+            "metric", "value", "unit", "lower_is_better", "failure"
+        ]
+        with open(self.path, "wt", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
+            w.writeheader()
+            for r in self._report.runs:
+                variant_map = dict(r.variant)
+                base = {
+                    "suite": r.suite,
+                    "benchmark": r.benchmark,
+                    "run": r.run,
+                    "phase": r.phase,
+                }
+                for k in variant_cols:
+                    base[k] = variant_map.get(k, "")
+                if r.is_failure():
+                    row = {**base,
+                           "metric": "", "value": "", "unit": "",
+                           "lower_is_better": "",
+                           "failure": r.failure or ""}
+                    w.writerow(row)
+                    continue
+                for s in r.samples:
+                    row = {**base,
+                           "metric": s.metric,
+                           "value": s.value,
+                           "unit": s.unit,
+                           "lower_is_better": (
+                               "" if s.lower_is_better is None else str(s.lower_is_better)
+                           ),
+                           "failure": ""}
+                    w.writerow(row)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +161,7 @@ class Csv(Reporter):
 
 
 class Json(_BufferingReporter):
-    """Buffer samples + runs in memory, write a single JSON file on finalize()."""
+    """Buffer runs in memory, write a single JSON file on finalize()."""
 
     def __init__(self, path: Path) -> None:
         super().__init__()
@@ -264,36 +227,6 @@ class Dir(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Table
-# ---------------------------------------------------------------------------
-
-
-class Table(_BufferingReporter):
-    """Buffer all samples; print a rich Table on finalize()."""
-
-    def __init__(self, target_console: Console | None = None) -> None:
-        super().__init__()
-        self._console = target_console or console
-
-    def finalize(self):
-        variant_cols = variant_keys(self._report.samples)
-        cols = ["suite", "benchmark", "run", "phase"] + variant_cols + [
-            "metric", "value", "unit", "lib"
-        ]
-        t = RichTable(show_header=True, show_edge=False, pad_edge=False)
-        for c in cols:
-            t.add_column(c)
-        for s in self._report.samples:
-            row = [s.suite, s.benchmark, str(s.run), s.phase]
-            row += [dict(s.variant).get(k, "") for k in variant_cols]
-            lib = "" if s.lower_is_better is None else ("↓" if s.lower_is_better else "↑")
-            row += [s.metric, f"{s.value:g}", s.unit, lib]
-            t.add_row(*row)
-        self._console.print()
-        self._console.print(t)
-
-
-# ---------------------------------------------------------------------------
 # Progress: live spinner + bar while the run is in flight
 # ---------------------------------------------------------------------------
 
@@ -322,8 +255,8 @@ class Progress(Reporter):
                 BarColumn(),
                 TextColumn(
                     "([benchr.failure]{task.fields[failures]}[/]"
-                    "/[benchr.success]{task.fields[successes]}[/]"
-                    "/{task.fields[total_str]})"
+                    "|[benchr.success]{task.fields[successes]}[/]"
+                    "|{task.fields[total_str]})"
                 ),
                 TextColumn("[benchr.in_process]{task.description}[/]"),
                 console=self._console,
@@ -374,13 +307,13 @@ class Progress(Reporter):
         total_str = str(self._total) if self._total is not None else "?"
         if not result.is_failure():
             tag = "[benchr.success]ok[/]"
-        elif result.returncode == 124:
+        elif result.returncode == TIMEOUT_RC:
             tag = "[benchr.failure]FAIL timeout[/]"
-        elif result.returncode == -1:
+        elif result.returncode == SPAWN_FAIL_RC:
             tag = f"[benchr.failure]FAIL spawn[/] ({result.failure or 'unknown'})"
         else:
             tag = f"[benchr.failure]FAIL exit {result.returncode}[/]"
-        self._console.print(f"[{n}/{total_str}] {sched.identifier()} {tag}")
+        self._console.print(f"[{n}|{total_str}] {sched.identifier()} {tag}")
 
     @staticmethod
     def _compute_total(plan: list[Benchmark]) -> int | None:
@@ -399,7 +332,7 @@ class Progress(Reporter):
 
 
 class Summary(_BufferingReporter):
-    """Buffer samples; format on finalize().
+    """Buffer runs; format on finalize().
 
     Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
     Defaults to ``DefaultSummary``. After the formatter output, appends a
@@ -437,10 +370,23 @@ class Summary(_BufferingReporter):
 
     @staticmethod
     def _failure_line(run: RunRecord) -> str:
-        if run.returncode == 124:
-            verdict = "[benchr.failure]timeout (exit 124)[/]"
-        elif run.returncode == -1:
+        if run.returncode == TIMEOUT_RC:
+            verdict = f"[benchr.failure]timeout (exit {TIMEOUT_RC})[/]"
+        elif run.returncode == SPAWN_FAIL_RC:
             verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
         else:
             verdict = f"[benchr.failure]exit {run.returncode}[/]"
         return f"[benchr.failure]✗[/] {run.identifier()} — {verdict}: {run.message or '(no output)'}"
+
+
+__all__ = [
+    "BENCHR_THEME",
+    "console",
+    "Reporter",
+    "CompositeReporter",
+    "Csv",
+    "Json",
+    "Dir",
+    "Progress",
+    "Summary",
+]

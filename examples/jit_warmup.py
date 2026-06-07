@@ -14,7 +14,7 @@ inspect the warmup curve in the JSON/CSV outputs, but the summary stats only
 include the measurement runs.
 """
 
-from benchr import CoefficientOfVariation, FixedRuns, P, Path, bench, run, suite
+from benchr import CoefficientOfVariation, FixedRuns, Path, Time, bench, run, suite
 
 
 s = (
@@ -22,7 +22,7 @@ s = (
         bench("workload")
             .with_command(["sh", "-c", "sleep 0.05"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time())
+            .with_metric(Time())
             .with_warmup(
                 CoefficientOfVariation("elapsed", threshold=0.05, window=4, min_runs=4)
                 .at_most(20)

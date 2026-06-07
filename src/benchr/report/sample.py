@@ -1,10 +1,13 @@
-"""Sample and Report: immutable measurement records.
+"""Sample and Report: one abstraction (RunRecord) over one execution.
 
-A ``Sample`` is one parsed metric from one ``ScheduledExecution``. A
-``RunRecord`` is the context of one *execution* — identity, command, outcome —
-carrying no metric value; a failed run is a RunRecord whose ``failure`` is set.
-A ``Report`` accumulates both. All are pure data — no references to live
-Execution/Processor objects — so they round-trip through JSON.
+A ``RunRecord`` is the record of one ``ScheduledExecution`` — its identity,
+command, outcome, and the parsed metric ``Sample``s. A ``Sample`` carries only
+the metric data (``metric, value, unit, lower_is_better``); its identity is
+the enclosing ``RunRecord``. A failed run is a RunRecord with ``failure`` set
+and an empty ``samples`` list.
+
+All are pure data — no references to live Execution/Metric objects — so they
+round-trip through JSON.
 """
 
 from __future__ import annotations
@@ -14,70 +17,44 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from benchr.grammar.execution import (
-    Phase,
     ExecutionResult,
+    Phase,
     ScheduledExecution,
+    Variant,
     format_identifier,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """One parsed measurement.
+    """One parsed metric value. Identity lives on the enclosing RunRecord."""
 
-    ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
-    identifying the matrix cell — e.g. ``(("compiler", "gcc"), ("opt", "O2"))``.
-    The tuple form is hashable so Samples group cleanly.
-    ``variant_label`` is the human-readable label for that cell (from
-    ``Benchmark.label_fn``, or ``format_variant(variant)`` by default).
-
-    ``phase`` is ``"warmup"`` or ``"measure"``. Stats default to excluding
-    warmup; raw outputs (JSON, CSV, dir) always include both.
-
-    ``lower_is_better`` is ``None`` for metrics that aren't comparable;
-    ``True``/``False`` is set by the Processor.
-    """
-
-    suite: str
-    benchmark: str
-    variant: tuple[tuple[str, str], ...]
-    run: int
-    phase: Phase
     metric: str
     value: float
     unit: str = ""
     lower_is_better: bool | None = None
-    variant_label: str = ""
-
-
-def variant_keys(samples: Iterable[Sample]) -> list[str]:
-    """Stable list of variant-axis names across a stream of samples."""
-    seen: dict[str, None] = {}
-    for s in samples:
-        for k, _ in s.variant:
-            seen.setdefault(k, None)
-    return list(seen)
 
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
-    """The context of one execution: identity + command + outcome, no metric.
+    """One execution: identity + command + outcome + parsed samples.
 
-    Samples join to a RunRecord by the shared (suite, benchmark, variant, run,
-    phase) key. A *failed* run is a RunRecord with ``failure is not None`` and
-    no associated Samples. Recording every execution structurally lets
-    summaries, JSON and stats report *which* runs ran, *what* command, and *why*
-    they failed without a magic ``failed`` metric polluting real measurements.
+    ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
+    identifying the matrix cell; ``variant_label`` is its human-readable name.
 
-    ``returncode`` follows the ExecutionResult convention: ``124`` = timeout,
+    ``phase`` is ``"warmup"`` or ``"measure"``. Stats default to excluding
+    warmup; raw outputs (JSON, CSV, dir) keep both.
+
+    ``returncode`` conventions follow ExecutionResult: ``124`` = timeout,
     ``-1`` = pre-execution failure, any other ``> 0`` = exit code. ``failure``
-    is the failure verdict string (``None`` on success); ``message`` is the last
-    non-empty line of stderr/stdout on failure.
+    is the failure verdict string (``None`` on success); ``message`` is the
+    last non-empty line of stderr/stdout on failure. A failed run carries
+    ``samples = []``.
     """
 
     suite: str
     benchmark: str
-    variant: tuple[tuple[str, str], ...]
+    variant: Variant
     run: int
     phase: Phase
     command: tuple[str, ...]
@@ -86,6 +63,7 @@ class RunRecord:
     failure: str | None = None
     message: str = ""
     variant_label: str = ""
+    samples: list[Sample] = field(default_factory=list)
 
     def is_failure(self) -> bool:
         return self.failure is not None
@@ -97,7 +75,9 @@ class RunRecord:
 
     @staticmethod
     def from_result(
-        sched: ScheduledExecution, result: ExecutionResult
+        sched: ScheduledExecution,
+        result: ExecutionResult,
+        samples: Iterable[Sample] = (),
     ) -> RunRecord:
         return RunRecord(
             suite=sched.suite,
@@ -111,6 +91,7 @@ class RunRecord:
             runtime=result.runtime,
             failure=result.failure,
             message=RunRecord._diagnostic_excerpt(result) if result.is_failure() else "",
+            samples=list(samples),
         )
 
     @staticmethod
@@ -125,12 +106,19 @@ class RunRecord:
         return "(no output)"
 
 
+def variant_keys(runs: Iterable[RunRecord]) -> list[str]:
+    """Stable list of variant-axis names across a stream of runs."""
+    seen: dict[str, None] = {}
+    for r in runs:
+        for k, _ in r.variant:
+            seen.setdefault(k, None)
+    return list(seen)
+
+
 @dataclass(slots=True)
 class Report:
-    """The accumulating Samples and RunRecords plus optional metadata."""
+    """The accumulating RunRecords (each carrying its parsed Samples)."""
 
-    samples: list[Sample] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
     runs: list[RunRecord] = field(default_factory=list)
 
     @property
@@ -138,16 +126,14 @@ class Report:
         return [r for r in self.runs if r.is_failure()]
 
     def metrics(self) -> list[str]:
-        return list({s.metric: None for s in self.samples})
+        seen: dict[str, None] = {}
+        for r in self.runs:
+            for s in r.samples:
+                seen.setdefault(s.metric, None)
+        return list(seen)
 
     def variant_keys(self) -> list[str]:
-        return variant_keys(self.samples)
-
-    def extend(self, samples: Iterable[Sample]) -> None:
-        self.samples.extend(samples)
-
-    def add_run(self, run: RunRecord) -> None:
-        self.runs.append(run)
+        return variant_keys(self.runs)
 
     def record(
         self,
@@ -155,9 +141,8 @@ class Report:
         result: ExecutionResult,
         samples: Iterable[Sample],
     ) -> None:
-        """Ingest one execution: keep its samples and a RunRecord of its outcome."""
-        self.samples.extend(samples)
-        self.runs.append(RunRecord.from_result(sched, result))
+        """Ingest one execution as a single RunRecord with its samples nested."""
+        self.runs.append(RunRecord.from_result(sched, result, samples))
 
 
 # ---------------------------------------------------------------------------
@@ -175,26 +160,6 @@ def report_from_json(text: str) -> Report:
 
 def _to_dict(report: Report) -> dict[str, Any]:
     return {
-        "metadata": report.metadata,
-        "samples": [
-            {
-                "suite": s.suite,
-                "benchmark": s.benchmark,
-                "variant": list(s.variant),
-                **({"variant_label": s.variant_label} if s.variant_label else {}),
-                "run": s.run,
-                "phase": s.phase,
-                "metric": s.metric,
-                "value": s.value,
-                **({"unit": s.unit} if s.unit else {}),
-                **(
-                    {"lower_is_better": s.lower_is_better}
-                    if s.lower_is_better is not None
-                    else {}
-                ),
-            }
-            for s in report.samples
-        ],
         "runs": [
             {
                 "suite": r.suite,
@@ -208,6 +173,19 @@ def _to_dict(report: Report) -> dict[str, Any]:
                 **({"runtime": r.runtime} if r.runtime is not None else {}),
                 **({"failure": r.failure} if r.failure else {}),
                 **({"message": r.message} if r.message else {}),
+                "samples": [
+                    {
+                        "metric": s.metric,
+                        "value": s.value,
+                        **({"unit": s.unit} if s.unit else {}),
+                        **(
+                            {"lower_is_better": s.lower_is_better}
+                            if s.lower_is_better is not None
+                            else {}
+                        ),
+                    }
+                    for s in r.samples
+                ],
             }
             for r in report.runs
         ],
@@ -215,26 +193,18 @@ def _to_dict(report: Report) -> dict[str, Any]:
 
 
 def _from_dict(d: dict[str, Any]) -> Report:
-    samples: list[Sample] = []
-    for sd in d.get("samples", []):
-        variant = tuple((k, v) for k, v in sd.get("variant", []))
-        samples.append(
+    runs: list[RunRecord] = []
+    for rd in d.get("runs", []):
+        variant = tuple((k, v) for k, v in rd.get("variant", []))
+        samples = [
             Sample(
-                suite=sd["suite"],
-                benchmark=sd["benchmark"],
-                variant=variant,
-                variant_label=sd.get("variant_label", ""),
-                run=sd["run"],
-                phase=sd.get("phase", "measure"),
                 metric=sd["metric"],
                 value=sd["value"],
                 unit=sd.get("unit", ""),
                 lower_is_better=sd.get("lower_is_better"),
             )
-        )
-    runs: list[RunRecord] = []
-    for rd in d.get("runs", []):
-        variant = tuple((k, v) for k, v in rd.get("variant", []))
+            for sd in rd.get("samples", [])
+        ]
         runs.append(
             RunRecord(
                 suite=rd["suite"],
@@ -248,8 +218,7 @@ def _from_dict(d: dict[str, Any]) -> Report:
                 runtime=rd.get("runtime"),
                 failure=rd.get("failure"),
                 message=rd.get("message", ""),
+                samples=samples,
             )
         )
-    return Report(
-        samples=samples, metadata=d.get("metadata", {}), runs=runs
-    )
+    return Report(runs=runs)

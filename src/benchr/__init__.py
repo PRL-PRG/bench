@@ -1,44 +1,4 @@
-"""benchr — a small algebraic grammar for benchmarking.
-
-Public surface (intended user API only):
-
-    from benchr import (
-        # Path convenience
-        Path,
-
-        # Atoms (pipeline data types)
-        Execution, ExecutionResult, ScheduledExecution, Phase, Verdict,
-        Sample, RunRecord, Report, report_from_json, report_to_json,
-
-        # Processors
-        Processor, PartialSample, P,
-
-        # Stopping policies
-        StoppingPolicy, PolicyState,
-        FixedRuns, CoefficientOfVariation, Custom,
-
-        # Benchmark / Suite
-        Benchmark, bench, B,
-        Suite, suite,
-
-        # Runners
-        Runner, Sequential, Parallel, Dry,
-
-        # Reporters
-        Reporter, Mixed, Csv, Json, Dir, Table, Summary, Progress,
-
-        # Formatters
-        Formatter, DefaultSummary, Compact,
-
-        # CLI entry points
-        run, main,
-    )
-
-Internal helpers (concrete Processor subclasses, stats functions, dataclass
-arg glue, subprocess helpers) live in their submodules and are not re-exported
-here. Reach them directly when needed (e.g. ``from benchr.report.stats import
-build_summary``); the package surface is reserved for the user-facing API.
-"""
+"""benchr — a benchmarking framewrok."""
 
 from pathlib import Path
 
@@ -48,6 +8,7 @@ from benchr.grammar.execution import (
     ExecutionResult,
     Phase,
     ScheduledExecution,
+    Variant,
     Verdict,
 )
 from benchr.report.sample import (
@@ -58,11 +19,16 @@ from benchr.report.sample import (
     report_to_json,
 )
 
-# Processors
-from benchr.grammar.processor import (
-    P,
-    PartialSample,
-    Processor,
+# Metrics
+from benchr.grammar.metric import (
+    Constant,
+    FloatPerLine,
+    Metric,
+    Rebench,
+    Regex,
+    RUsage,
+    Time,
+    max_rss,
 )
 
 # Stopping policies
@@ -86,14 +52,13 @@ from benchr.runner.sequential import Sequential
 
 # Reporters
 from benchr.report.reporter import (
+    CompositeReporter,
     Csv,
     Dir,
     Json,
-    Mixed,
     Progress,
     Reporter,
     Summary,
-    Table,
 )
 
 # Formatters
@@ -108,10 +73,10 @@ B = bench
 __all__ = [
     "Path",
     # Atoms
-    "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Verdict",
+    "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Variant", "Verdict",
     "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
-    # Processors
-    "Processor", "PartialSample", "P",
+    # Metrics
+    "Metric", "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
     # Policies
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation", "Custom",
@@ -121,7 +86,7 @@ __all__ = [
     # Runners
     "Runner", "Sequential", "Parallel", "Dry",
     # Reporters
-    "Reporter", "Mixed", "Csv", "Json", "Dir", "Table", "Summary", "Progress",
+    "Reporter", "CompositeReporter", "Csv", "Json", "Dir", "Summary", "Progress",
     # Formatters
     "Formatter", "DefaultSummary", "Compact",
     # CLI

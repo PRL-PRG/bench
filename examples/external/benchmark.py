@@ -16,7 +16,7 @@ Demonstrates:
 
 from dataclasses import dataclass
 
-from benchr import B, P, Path, run, suite
+from benchr import B, Path, Rebench, run, suite
 
 
 HERE = Path(__file__).resolve().parent
@@ -63,7 +63,7 @@ areWeFast = (
     .add(B("Storage", size=100))
     .with_cwd(BENCHMARKS / "areWeFast")
     .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
-    .with_process(P.rebench())
+    .with_metric(Rebench())
 )
 
 
@@ -90,7 +90,7 @@ shootout = (
     .add(_shootout("spectralnorm_math",      "spectralnorm",     1200))
     .with_cwd(lambda b, ctx: BENCHMARKS / "shootout" / b.subfolder)
     .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.arg)])
-    .with_process(P.rebench())
+    .with_metric(Rebench())
 )
 
 
@@ -102,7 +102,7 @@ realThing = (
     .add(B("flexclust", size=5))
     .with_cwd(BENCHMARKS / "RealThing")
     .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
-    .with_process(P.rebench())
+    .with_metric(Rebench())
 )
 
 
@@ -115,7 +115,7 @@ kaggle = (
     .add(B("titanic"))
     .with_cwd(lambda b, ctx: INPUTS / "kaggle" / b.name)
     .with_command(lambda b, ctx: [_rscript(ctx), "../../harness.r", b.name, str(ctx.iterations)])
-    .with_process(P.rebench())
+    .with_metric(Rebench())
 )
 
 
@@ -124,7 +124,7 @@ recommenderlab = (
     .add(B("recommenderlab"))
     .with_cwd(INPUTS / "recommenderlab")
     .with_command(lambda b, ctx: [_rscript(ctx), "runner.r"])
-    .with_process(P.rebench())
+    .with_metric(Rebench())
 )
 
 

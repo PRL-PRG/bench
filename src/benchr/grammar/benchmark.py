@@ -44,8 +44,8 @@ from benchr.grammar.execution import (
     SuccessFn,
     format_variant,
 )
+from benchr.grammar.metric import Metric
 from benchr.grammar.policy import FixedRuns, StoppingPolicy
-from benchr.grammar.processor import Processor
 from benchr.report.sample import Sample
 
 
@@ -111,7 +111,7 @@ class Benchmark:
     env: Mapping[str, str] | EnvFn = _EMPTY_MAPPING
     timeout: float | None = None
 
-    processors: tuple[Processor, ...] = ()
+    metrics: tuple[Metric, ...] = ()
 
     # Optional success policy: returns a failure reason (str) or None for
     # success. Defaults to the Runner's ``default_success`` when unset.
@@ -157,10 +157,12 @@ class Benchmark:
     def with_timeout(self, timeout: float) -> Benchmark:
         return dataclasses.replace(self, timeout=timeout)
 
-    def with_process(self, *processors: Processor) -> Benchmark:
-        """Attach processors, replacing any already set — pass them all in one
-        call (``with_process(p1, p2, …)``); calling again does not append."""
-        return dataclasses.replace(self, processors=processors)
+    def with_metric(self, *metrics: Metric) -> Benchmark:
+        """Append metrics. Repeated calls compose: pass several in one call
+        (``with_metric(m1, m2, …)``) or chain calls
+        (``.with_metric(m1).with_metric(m2)``) — both yield the same final
+        tuple."""
+        return dataclasses.replace(self, metrics=self.metrics + metrics)
 
     def with_success(self, fn: SuccessFn) -> Benchmark:
         """Override the success policy (returns a failure reason, or None)."""
@@ -304,8 +306,8 @@ class Benchmark:
         outputs.
 
         Failure handling: a failed run produces no samples (the Runner judges
-        success via ``default_success`` / ``with_success`` and skips
-        ``process()`` on failure), but the policy still observes it with an
+        success via ``default_success`` / ``with_success`` and skips metric
+        extraction on failure), but the policy still observes it with an
         empty list, so every run counts.
         """
         if self.axes:
@@ -317,8 +319,8 @@ class Benchmark:
             raise ValueError(f"Benchmark {self.name!r} has no command")
         if self.cwd is None:
             raise ValueError(f"Benchmark {self.name!r} has no cwd")
-        if not self.processors:
-            raise ValueError(f"Benchmark {self.name!r} has no processor")
+        if not self.metrics:
+            raise ValueError(f"Benchmark {self.name!r} has no metric")
 
         yield from self._phase(ctx, suite, self.warmup, phase="warmup")
         yield from self._phase(ctx, suite, self.measure, phase="measure")

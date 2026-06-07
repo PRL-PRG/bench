@@ -70,6 +70,15 @@ type Verdict = str | None                     # None = success; str = failure re
 type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
 
 
+# Conventional returncode sentinels (see ExecutionResult docstring above).
+TIMEOUT_RC = 124
+SPAWN_FAIL_RC = -1
+
+
+# Canonical matrix-variant identifier: sorted ((axis_name, axis_value), …).
+Variant = tuple[tuple[str, str], ...]
+
+
 # ---------------------------------------------------------------------------
 # ScheduledExecution: an Execution annotated with the benchmark identity it
 # belongs to. Produced by Benchmark.compile; consumed by the Runner.
@@ -78,7 +87,7 @@ type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
 Phase = Literal["warmup", "measure"]
 
 
-def format_variant(variant: tuple[tuple[str, str], ...]) -> str:
+def format_variant(variant: Variant) -> str:
     """`` (k=v, …)`` suffix identifying a matrix variant; ``""`` if empty."""
     if not variant:
         return ""
@@ -88,7 +97,7 @@ def format_variant(variant: tuple[tuple[str, str], ...]) -> str:
 def format_identifier(
     suite: str,
     benchmark: str,
-    variant: tuple[tuple[str, str], ...],
+    variant: Variant,
     run: int,
     phase: Phase,
     variant_label: str = "",
@@ -119,7 +128,7 @@ class ScheduledExecution:
     execution: Execution
     suite: str
     benchmark: str
-    variant: tuple[tuple[str, str], ...] = ()  # canonical, sorted
+    variant: Variant = ()  # canonical, sorted
     variant_label: str = ""
     run: int = 1
     phase: Phase = "measure"

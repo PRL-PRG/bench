@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    CoefficientOfVariation, FixedRuns, P, Sample, bench,
+    CoefficientOfVariation, FixedRuns, FloatPerLine, Sample, Time, bench,
 )
 
 
@@ -18,11 +18,8 @@ def _pump(b, fake_value=1.0):
         sched = next(gen)
         while True:
             out.append(sched)
-            s = Sample(
-                suite="S", benchmark=b.name, variant=sched.variant, run=sched.run,
-                phase=sched.phase, metric="runtime", value=fake_value,
-                unit="s", lower_is_better=True,
-            )
+            s = Sample(metric="runtime", value=fake_value, unit="s",
+                       lower_is_better=True)
             sched = gen.send([s])
     except StopIteration:
         pass
@@ -34,7 +31,7 @@ def _base():
         bench("b")
         .with_command(["sh", "-c", "echo 1"])
         .with_cwd(Path("/tmp"))
-        .with_process(P.float_per_line("s"))
+        .with_metric(FloatPerLine("s"))
     )
 
 
@@ -67,11 +64,11 @@ def test_missing_command_raises():
 
 def test_missing_cwd_raises():
     with pytest.raises(ValueError, match="no cwd"):
-        list(bench("x").with_command(["true"]).with_process(P.time()).compile(ctx=None, suite="S"))
+        list(bench("x").with_command(["true"]).with_metric(Time()).compile(ctx=None, suite="S"))
 
 
-def test_missing_processor_raises():
-    with pytest.raises(ValueError, match="no processor"):
+def test_missing_metric_raises():
+    with pytest.raises(ValueError, match="no metric"):
         list(bench("x").with_command(["true"]).with_cwd(Path("/tmp")).compile(ctx=None, suite="S"))
 
 

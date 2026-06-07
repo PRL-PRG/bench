@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from benchr import FixedRuns, P, bench, suite
+from benchr import FixedRuns, Time, bench, suite
 
 
 def _b(name: str):
@@ -50,7 +50,7 @@ def test_from_files(tmp_path: Path):
     (tmp_path / "skip.txt").write_text("")
     s = (
         suite("X").from_files(tmp_path, pattern=r"\.lox$")
-        .with_command(["true"]).with_cwd(tmp_path).with_process(P.time())
+        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(ctx=None))
     assert names == ["a", "b"]
@@ -64,7 +64,7 @@ def test_from_files_recursive_with_exclude(tmp_path: Path):
     (tmp_path / "excl.lox").write_text("")
     s = (
         suite("X").from_files(tmp_path, pattern=r"\.lox$", exclude={"excl"})
-        .with_command(["true"]).with_cwd(tmp_path).with_process(P.time())
+        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(ctx=None))
     assert names == ["a", "sub/nested"]
@@ -74,7 +74,7 @@ def test_from_files_callable_root(tmp_path: Path):
     (tmp_path / "p.lox").write_text("")
     s = (
         suite("X").from_files(lambda ctx: ctx, pattern=r"\.lox$")
-        .with_command(["true"]).with_cwd(tmp_path).with_process(P.time())
+        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(ctx=tmp_path))
     assert names == ["p"]
@@ -85,7 +85,7 @@ def test_with_matrix_expands_and_stamps_variant():
         suite("M", _b("compute")
               .with_command(lambda b, ctx: ["x", "-" + b.opt])
               .with_matrix(opt=["O0", "O2"]))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     benchmarks = list(s.materialize(ctx=None))
     assert len(benchmarks) == 2
@@ -103,7 +103,7 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
               _b("a").with_command(lambda b, ctx: ["x", b.vm]),
               _b("b").with_command(lambda b, ctx: ["y", b.vm]))
         .with_matrix(vm=["v8", "jsc"])
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
     names_vms = sorted((b.name, b.vm) for b in bs)
@@ -116,7 +116,7 @@ def test_with_skip_kwargs_drops_variant():
               .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
               .with_matrix(vm=["v8", "jsc"], size=[100, 500])
               .with_skip(vm="v8", size=500))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
     assert len(bs) == 3
@@ -129,7 +129,7 @@ def test_with_skip_predicate_drops_variant():
               .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
               .with_matrix(vm=["v8", "jsc"], size=[100, 500])
               .with_skip(lambda b: b.vm != "jsc"))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
     assert all(b.vm == "jsc" for b in bs)
@@ -142,7 +142,7 @@ def test_with_label_overrides_default():
               .with_command(lambda b, ctx: ["true"])
               .with_matrix(arg=["one", "two"])
               .with_label(lambda b: f"<{b.arg}>"))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
     assert sorted(b.variant_label() for b in bs) == ["<one>", "<two>"]
@@ -152,7 +152,7 @@ def test_command_axis_default_builder():
     """When axis name is `command` and no with_command set, axis value becomes cmd."""
     s = (
         suite("M", _b("c").with_matrix(command=[["echo", "a"], ["echo", "b"]]))
-        .with_cwd(Path("/tmp")).with_process(P.time())
+        .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
     scheds = [b.schedule(ctx=None, suite="M", run=1, phase="measure") for b in bs]

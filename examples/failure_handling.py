@@ -13,7 +13,7 @@ the summary lists in a ``Failures:`` block. ``.runs(N)`` counts every attempt,
 so ``broken`` runs exactly 3 times and reports 3 failures (no fake timings).
 """
 
-from benchr import P, Path, bench, run, suite
+from benchr import Time, Path, bench, run, suite
 
 
 s = (
@@ -22,14 +22,14 @@ s = (
         bench("ok")
             .with_command(["sh", "-c", "sleep 0.02"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time())
+            .with_metric(Time())
             .runs(3),
 
         # Always fails: 3 runs, 3 recorded failures (exit 7):
         bench("broken")
             .with_command(["sh", "-c", "exit 7"])
             .with_cwd(Path("/tmp"))
-            .with_process(P.time())
+            .with_metric(Time())
             .runs(3),
     )
 )
