@@ -17,25 +17,25 @@ Two ways to use it:
 
 ```console
 $ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
-[1|12] bench/sleep 0.05 #1  ok
-[2|12] bench/sleep 0.05 #1  ok
-[3|12] bench/sleep 0.05 #2  ok
+[1|12] bench/sleep 0.05 #1 [warmup] ok
+[2|12] bench/sleep 0.05 #1 [measure] ok
+[3|12] bench/sleep 0.05 #2 [measure] ok
 ...
-[12|12] bench/sleep 0.1 #5  ok
+[12|12] bench/sleep 0.1 #5 [measure] ok
 
 bench/sleep 0.05: 0|5 runs
-  elapsed  (mean ± σ):  55.67 ± 3.64    (51.66 … 59.77)
+  elapsed [ms] (mean ± σ):  55.22 ± 2.11    (51.83 … 57.35)
 
 bench/sleep 0.1: 0|5 runs
-  elapsed  (mean ± σ):  109.01 ± 1.90    (106.48 … 111.24)
+  elapsed [ms] (mean ± σ):  106.79 ± 2.45    (103.94 … 109.83)
 
 Summary
   'sleep 0.05' [elapsed] was
-    1.90 ± 0.13 times lower than 'sleep 0.1'
+    1.92 ± 0.08 times lower than 'sleep 0.1'
 ```
 
-`0|5 runs` means **0 failures | 5 successes**. The `elapsed` numbers are
-milliseconds (auto-scaled from the seconds the `Time()` metric emits).
+`0|5 runs` means **0 failures | 5 successes**. `elapsed` is auto-scaled to
+milliseconds from the seconds the `Time()` metric emits.
 
 ### As a script
 
@@ -560,6 +560,6 @@ src/benchr/
 ## Development
 
 ```console
-uv run pytest          # 150 tests
+uv run pytest          # 153 tests
 uv run benchr bench --runs 20 'sleep 0.1' 'sleep 0.2'
 ```

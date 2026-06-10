@@ -154,3 +154,18 @@ def test_default_summary_ranking_uses_higher_for_higher_is_better():
     assert "2.00" in text
     assert "times higher than" in text
     assert "'slow'" in text
+
+
+def test_default_summary_unit_label_survives_rich_markup():
+    # The "[ms]" unit tag must be escaped, otherwise rich eats it as a
+    # markup tag and the rendered summary loses the unit.
+    from io import StringIO
+
+    from rich.console import Console
+
+    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    out = DefaultSummary()(r)
+    console = Console(file=StringIO(), force_terminal=False, width=200)
+    console.print(out)
+    rendered = console.file.getvalue()
+    assert "runtime [ms]" in rendered

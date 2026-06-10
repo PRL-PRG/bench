@@ -161,3 +161,26 @@ def test_progress_plain_marks_failures():
     Sequential(reporter=ProgressReporter(target_console=c),
                max_consecutive_failures=1).run([s], ctx=None)
     assert "FAIL exit 11" in buf.getvalue()
+
+
+def test_progress_plain_keeps_phase_tag():
+    # "[measure]" in the identifier must be escaped, otherwise rich eats it
+    # as a markup tag and the phase disappears from the line.
+    c, buf = _string_console()
+    s = suite("S", bench("a")
+              .with_command(["sh", "-c", "echo ok"])
+              .with_metric(Time())
+              .runs(1))
+    Sequential(reporter=ProgressReporter(target_console=c)).run([s], ctx=None)
+    assert "[measure]" in buf.getvalue()
+
+
+def test_summary_failure_line_keeps_phase_tag():
+    c, buf = _string_console()
+    s = suite("F", bench("bad")
+              .with_command(["sh", "-c", "exit 11"])
+              .with_metric(Time())
+              .runs(1))
+    Sequential(reporter=SummaryReporter(target_console=c),
+               max_consecutive_failures=1).run([s], ctx=None)
+    assert "[measure]" in buf.getvalue()

@@ -150,7 +150,9 @@ class DefaultSummary(Formatter):
 
         for mk, (scale, _) in scaled.items():
             ms = gs.metrics[mk]
-            label = labels[mk].ljust(max_w)
+            # Escape after padding: "[ms]" must not be parsed as a rich tag,
+            # and the invisible backslash must not skew the column width.
+            label = labels[mk].ljust(max_w).replace("[", "\\[")
             mean_v = ms.mean * scale
             if ms.n >= 2:
                 std_v = ms.stdev * scale

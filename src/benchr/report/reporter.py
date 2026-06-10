@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+from rich.markup import escape as markup_escape
 from rich.progress import (
     BarColumn,
     Progress as RichProgress,
@@ -288,7 +289,8 @@ class ProgressReporter(Reporter):
             if self._progress is not None and self._task_id is not None:
                 self._progress.update(
                     self._task_id,
-                    description=sched.identifier(),
+                    # Escape so "[measure]" isn't parsed as a rich tag.
+                    description=markup_escape(sched.identifier()),
                     failures=self._failures,
                     successes=self._successes,
                 )
@@ -313,7 +315,7 @@ class ProgressReporter(Reporter):
             tag = f"[benchr.failure]FAIL spawn[/] ({result.failure or 'unknown'})"
         else:
             tag = f"[benchr.failure]FAIL exit {result.returncode}[/]"
-        self._console.print(f"[{n}|{total_str}] {sched.identifier()} {tag}")
+        self._console.print(f"[{n}|{total_str}] {markup_escape(sched.identifier())} {tag}")
 
     @staticmethod
     def _compute_total(plan: list[Benchmark]) -> int | None:
@@ -376,7 +378,8 @@ class SummaryReporter(_BufferingReporter):
             verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
         else:
             verdict = f"[benchr.failure]exit {run.returncode}[/]"
-        return f"[benchr.failure]✗[/] {run.identifier()} — {verdict}: {run.message or '(no output)'}"
+        return (f"[benchr.failure]✗[/] {markup_escape(run.identifier())}"
+                f" — {verdict}: {markup_escape(run.message) or '(no output)'}")
 
 
 __all__ = [
