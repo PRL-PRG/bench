@@ -19,7 +19,7 @@ import re
 from typing import Iterable
 
 from benchr import (
-    Execution, ExecutionResult, Metric, Path, Sample, Time,
+    Execution, ExecutionResult, Metric, Sample, Time,
     bench, run, suite,
 )
 
@@ -52,7 +52,6 @@ s = (
     suite("custom",
         bench("with_stderr")
             .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
-            .with_cwd(Path("/tmp"))
             .with_metric(StderrFloat(), Time())
             .with_success(succeeded)
             .runs(3)

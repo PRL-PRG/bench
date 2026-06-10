@@ -1,6 +1,4 @@
-"""benchr — a benchmarking framewrok."""
-
-from pathlib import Path
+"""benchr — a benchmarking framework."""
 
 # Atoms
 from benchr.grammar.execution import (
@@ -53,12 +51,12 @@ from benchr.runner.sequential import Sequential
 # Reporters
 from benchr.report.reporter import (
     CompositeReporter,
-    Csv,
-    Dir,
-    Json,
-    Progress,
+    CsvReporter,
+    DirReporter,
+    JsonReporter,
+    ProgressReporter,
     Reporter,
-    Summary,
+    SummaryReporter,
 )
 
 # Formatters
@@ -71,7 +69,6 @@ from benchr.cli import main, run
 B = bench
 
 __all__ = [
-    "Path",
     # Atoms
     "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Variant", "Verdict",
     "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
@@ -86,7 +83,7 @@ __all__ = [
     # Runners
     "Runner", "Sequential", "Parallel", "Dry",
     # Reporters
-    "Reporter", "CompositeReporter", "Csv", "Json", "Dir", "Summary", "Progress",
+    "Reporter", "CompositeReporter", "CsvReporter", "JsonReporter", "DirReporter", "SummaryReporter", "ProgressReporter",
     # Formatters
     "Formatter", "DefaultSummary", "Compact",
     # CLI

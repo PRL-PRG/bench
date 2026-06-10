@@ -11,12 +11,13 @@
 Demonstrates:
 - Five suites sharing a common locale environment.
 - Mixing static and dynamic working directories.
-- ``Rebench`` processor over many benchmark families.
+- ``Rebench`` metric over many benchmark families.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
-from benchr import B, Path, Rebench, run, suite
+from benchr import B, Rebench, run, suite
 
 
 HERE = Path(__file__).resolve().parent

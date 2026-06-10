@@ -18,14 +18,14 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import Path as P_Path, Rebench, max_rss, run, suite
+from benchr import Rebench, max_rss, run, suite
 
 
 @dataclass
 class RcpParams:
     RSH_HOME: Path                        # path to RSH client
     R_HOME: Path                          # R installation root
-    output: Path = P_Path(tempfile.gettempdir()) / "rcp"
+    output: Path = Path(tempfile.gettempdir()) / "rcp"
     path_filter: str = ""
     iterations: int = 1                   # harness --runs (avoids benchr's reserved --runs)
 
@@ -51,7 +51,7 @@ def _bench_root(ctx: RcpParams) -> Path:
 rcp_suite = (
     suite("RCPSuite")
     .from_files(_bench_root, pattern=r"\.R$")
-    .with_cwd(P_Path.cwd())
+    .with_cwd(Path.cwd())
     .with_command(_cmd)
     .with_metric(Rebench(), max_rss())
 )

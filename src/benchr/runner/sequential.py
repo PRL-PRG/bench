@@ -12,7 +12,7 @@ from benchr.runner.base import Runner, _INTERRUPTED, install_sigint_handler, pla
 class Sequential(Runner):
     """Run benchmarks one at a time, in suite-then-benchmark order."""
 
-    def run(self, suites: list[Suite], ctx: Any) -> Report:
+    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report:
         planned = plan(suites, ctx)
         self.reporter.start([p.benchmark for p in planned])
         report = Report()

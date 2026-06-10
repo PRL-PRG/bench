@@ -9,12 +9,12 @@ def _b(name: str):
     return bench(name)
 
 
-def test_with_runs_propagates():
+def test_runs_propagates():
     s = suite("S", _b("a"), _b("b")).runs(7)
     assert all(b.measure == FixedRuns(7) for b in s.benchmarks)
 
 
-def test_with_runs_preserves_benchmark_override():
+def test_runs_preserves_benchmark_override():
     a = _b("a").with_measure(FixedRuns(5))
     s = suite("S", a, _b("b")).runs(10)
     measure_values = [b.measure for b in s.benchmarks]
@@ -157,3 +157,31 @@ def test_command_axis_default_builder():
     bs = list(s.materialize(ctx=None))
     scheds = [b.schedule(ctx=None, suite="M", run=1, phase="measure") for b in bs]
     assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]
+
+
+def test_suite_warmup_respects_explicit_zero():
+    b = bench("x").with_warmup(0)
+    s = suite("s", b).with_warmup(3)
+    assert s.benchmarks[0].warmup == FixedRuns(0)
+
+
+def test_suite_measure_respects_explicit_one():
+    b = bench("x").with_measure(1)
+    s = suite("s", b).with_measure(9)
+    assert s.benchmarks[0].measure == FixedRuns(1)
+
+
+def test_suite_with_success_propagates_and_respects_override():
+    suite_fn = lambda e, r: None
+    bench_fn = lambda e, r: "nope"
+    s = suite("s", bench("a"), bench("b").with_success(bench_fn)).with_success(suite_fn)
+    assert s.benchmarks[0].success is suite_fn
+    assert s.benchmarks[1].success is bench_fn
+
+
+def test_suite_with_label_propagates_and_respects_override():
+    suite_label = lambda b: "suite"
+    bench_label = lambda b: "bench"
+    s = suite("s", bench("a"), bench("b").with_label(bench_label)).with_label(suite_label)
+    assert s.benchmarks[0].label_fn is suite_label
+    assert s.benchmarks[1].label_fn is bench_label

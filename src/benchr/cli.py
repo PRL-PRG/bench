@@ -19,12 +19,12 @@ from benchr.grammar.suite import Suite, suite
 from benchr.report.formatter import DefaultSummary, Formatter
 from benchr.report.reporter import (
     CompositeReporter,
-    Csv as CsvReporter,
-    Dir as DirReporter,
-    Json as JsonReporter,
-    Progress as ProgressReporter,
+    CsvReporter,
+    DirReporter,
+    JsonReporter,
+    ProgressReporter,
     Reporter,
-    Summary as SummaryReporter,
+    SummaryReporter,
     console,
 )
 from benchr.report.sample import Report, report_from_json
@@ -77,7 +77,7 @@ def run(
     # Optionally override warmup/measure across all benchmarks (unconditional:
     # these flags mean "for every benchmark", overriding per-benchmark values).
     if ns.runs is not None:
-        suites = [s.with_runs(int(ns.runs), force=True) for s in suites]
+        suites = [s.with_measure(int(ns.runs), force=True) for s in suites]
     if ns.warmup is not None:
         suites = [s.with_warmup(int(ns.warmup), force=True) for s in suites]
 

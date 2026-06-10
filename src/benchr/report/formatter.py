@@ -1,6 +1,6 @@
 """Formatters: turn a Report (or pre-computed SummaryData) into a string.
 
-The Reporter sinks (Csv/Json/Dir) handle raw output; Formatters are for
+The Reporter sinks (CsvReporter/JsonReporter/DirReporter) handle raw output; Formatters are for
 human-readable summaries. They are pure: ``format(report, baseline=...) -> str``.
 
 Built-ins:

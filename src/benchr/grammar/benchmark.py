@@ -23,8 +23,9 @@ observe and decide whether to continue. ``.expand(ctx)`` produces one
 
 Two policies live on a Benchmark: ``warmup`` (samples reported, not fed to
 the measure policy) and ``measure`` (samples reported and fed to the policy
-that controls how many more measure runs to take). Both default to no-op:
-``warmup = FixedRuns(0)``, ``measure = FixedRuns(1)``.
+that controls how many more measure runs to take). Both default to ``None``
+(= unset, fillable by Suite defaults); the effective defaults are
+``warmup_policy() == FixedRuns(0)`` and ``measure_policy() == FixedRuns(1)``.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ from benchr.grammar.execution import (
     SuccessFn,
     format_variant,
 )
-from benchr.grammar.metric import Metric
+from benchr.grammar.metric import Metric, Time
 from benchr.grammar.policy import FixedRuns, StoppingPolicy
 from benchr.report.sample import Sample
 
@@ -107,9 +108,11 @@ class Benchmark:
 
     # Either a static list[str] command, or a callable (benchmark, ctx) -> [str].
     command: Sequence[str] | CommandFn | None = None
-    cwd: Path | PathFn | None = None
+    # cwd: defaults to the invoking process's cwd when unset.
+    cwd: str | Path | PathFn | None = None
     env: Mapping[str, str] | EnvFn = _EMPTY_MAPPING
     timeout: float | None = None
+    stdin: bytes | None = None
 
     metrics: tuple[Metric, ...] = ()
 
@@ -117,8 +120,11 @@ class Benchmark:
     # success. Defaults to the Runner's ``default_success`` when unset.
     success: SuccessFn | None = None
 
-    warmup: StoppingPolicy = FixedRuns(0)
-    measure: StoppingPolicy = FixedRuns(1)
+    # Stopping policies. ``None`` means "unset" so Suite defaults can fill
+    # them; effective defaults are warmup FixedRuns(0), measure FixedRuns(1)
+    # (see warmup_policy / measure_policy).
+    warmup: StoppingPolicy | None = None
+    measure: StoppingPolicy | None = None
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = _EMPTY_MAPPING
@@ -148,7 +154,7 @@ class Benchmark:
     def with_command(self, command: Sequence[str] | CommandFn) -> Benchmark:
         return dataclasses.replace(self, command=command)
 
-    def with_cwd(self, cwd: Path | PathFn) -> Benchmark:
+    def with_cwd(self, cwd: str | Path | PathFn) -> Benchmark:
         return dataclasses.replace(self, cwd=cwd)
 
     def with_env(self, env: Mapping[str, str] | EnvFn) -> Benchmark:
@@ -156,6 +162,11 @@ class Benchmark:
 
     def with_timeout(self, timeout: float) -> Benchmark:
         return dataclasses.replace(self, timeout=timeout)
+
+    def with_stdin(self, data: bytes | str) -> Benchmark:
+        """Feed ``data`` to the process's stdin (str is UTF-8 encoded)."""
+        return dataclasses.replace(
+            self, stdin=data.encode() if isinstance(data, str) else data)
 
     def with_metric(self, *metrics: Metric) -> Benchmark:
         """Append metrics. Repeated calls compose: pass several in one call
@@ -173,6 +184,18 @@ class Benchmark:
 
     def with_measure(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, measure=_coerce_policy(p))
+
+    def warmup_policy(self) -> StoppingPolicy:
+        """Effective warmup policy: the set value or ``FixedRuns(0)``."""
+        return self.warmup if self.warmup is not None else FixedRuns(0)
+
+    def measure_policy(self) -> StoppingPolicy:
+        """Effective measure policy: the set value or ``FixedRuns(1)``."""
+        return self.measure if self.measure is not None else FixedRuns(1)
+
+    def effective_metrics(self) -> tuple[Metric, ...]:
+        """The set metrics, or ``(Time(),)`` when none were declared."""
+        return self.metrics or (Time(),)
 
     def runs(self, n: int) -> Benchmark:
         """Sugar for ``.with_measure(FixedRuns(n))``."""
@@ -317,13 +340,9 @@ class Benchmark:
             )
         if self.command is None:
             raise ValueError(f"Benchmark {self.name!r} has no command")
-        if self.cwd is None:
-            raise ValueError(f"Benchmark {self.name!r} has no cwd")
-        if not self.metrics:
-            raise ValueError(f"Benchmark {self.name!r} has no metric")
 
-        yield from self._phase(ctx, suite, self.warmup, phase="warmup")
-        yield from self._phase(ctx, suite, self.measure, phase="measure")
+        yield from self._phase(ctx, suite, self.warmup_policy(), phase="warmup")
+        yield from self._phase(ctx, suite, self.measure_policy(), phase="measure")
 
     def _phase(
         self,
@@ -361,7 +380,7 @@ class Benchmark:
             raise ValueError(f"Benchmark {self.name!r} has no command")
         cwd = self.cwd(self, ctx) if callable(self.cwd) else self.cwd
         if cwd is None:
-            raise ValueError(f"Benchmark {self.name!r} has no cwd")
+            cwd = Path.cwd()
         env = self.env(self, ctx) if callable(self.env) else self.env
         variant = self.variant()
         return ScheduledExecution(
@@ -370,6 +389,7 @@ class Benchmark:
                 cwd=Path(cwd),
                 env=env or _EMPTY_MAPPING,
                 timeout=self.timeout,
+                stdin=self.stdin,
             ),
             suite=suite,
             benchmark=self.name,

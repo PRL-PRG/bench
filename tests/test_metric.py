@@ -63,7 +63,7 @@ def test_regex_unit_in_pattern_or_arg():
     assert samples[1].value == 7.0 and samples[1].unit == "us"
 
 
-def test_time_processor_emits_optional_fields():
+def test_time_metric_emits_optional_fields():
     ru = make_rusage(ru_utime=0.2, ru_stime=0.1)
     pr = make_success(runtime=1.0, rusage=ru)
     proc = Time(elapsed=True, user=True, system=True)
@@ -79,7 +79,7 @@ def test_max_rss():
     assert samples[0].unit == "kB"
 
 
-def test_rebench_processor():
+def test_rebench_metric():
     pr = make_success(stdout=(
         "log: bench1 total: iterations=1 runtime: 1500ms\n"
         "log: bench1: gc-rate: 12kB\n"
@@ -87,3 +87,9 @@ def test_rebench_processor():
     samples = list(Rebench().process(pr))
     assert any(s.metric == "runtime" and s.unit == "ms" for s in samples)
     assert any(s.metric == "gc-rate" for s in samples)
+
+
+def test_regex_unit_defaults_to_empty():
+    m = Regex("n", r"(\d+)")
+    samples = list(m.process(make_success(stdout="42\n")))
+    assert samples[0].unit == ""

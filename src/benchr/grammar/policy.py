@@ -8,7 +8,7 @@ Configuration is frozen / hashable; mutable per-run state lives in a separate
     a.at_least(n)   == a & FixedRuns(n)
     a.at_most(n)    == a | FixedRuns(n)
 
-Each policy also exposes two static introspection methods consumers can use
+Each policy also exposes two introspection methods consumers can use
 in place of ``isinstance`` checks:
 
     .max_runs()    int | None — upper bound on permitted runs, ``None`` = ∞
@@ -154,7 +154,7 @@ class _CoVState(PolicyState):
             raise ValueError(
                 f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
                 f"{len(matching)} samples in run {run}; it expects at most one "
-                f"per run. Restrict the processor to a single line (e.g. "
+                f"per run. Restrict the metric to a single line (e.g. "
                 f".last_line()) or watch a different metric."
             )
         for value in matching:  # 0 or 1

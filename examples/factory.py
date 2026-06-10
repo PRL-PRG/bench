@@ -15,7 +15,7 @@ when the Runner materializes the suite, so the benchmark list can depend on
 benchmarks. Run ``--dry`` to see what the factory expands to.
 """
 
-from benchr import Time, Path, bench, run, suite
+from benchr import Time, bench, run, suite
 
 WORKLOADS = {"tiny": 1_000, "small": 100_000, "large": 10_000_000}
 
@@ -30,7 +30,6 @@ def make_benchmarks(ctx):
 s = (
     suite("factory_demo")
     .factory(make_benchmarks)
-    .with_cwd(Path("/tmp"))
     .with_metric(Time())
     .runs(5)
 )

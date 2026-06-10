@@ -139,11 +139,9 @@ class Regex(Metric):
         output: _Output = "stdout",
         match_group: _MatchGroup = 1,
         transform: Callable[[str], float] = float,
-        unit: str | None = None,
+        unit: str = "",
         unit_group: _MatchGroup | None = None,
     ):
-        if unit is None and unit_group is None:
-            raise ValueError("Regex needs either `unit` or `unit_group`")
         self.metric = metric
         self.regex = re.compile(regex) if isinstance(regex, str) else regex
         self.output = output
@@ -163,7 +161,7 @@ class Regex(Metric):
         for text in outs:
             for m in self.regex.finditer(text):
                 value = self.transform(m.group(self.match_group))
-                unit = m.group(self.unit_group) if self.unit_group is not None else (self.unit or "")
+                unit = m.group(self.unit_group) if self.unit_group is not None else self.unit
                 yield Sample(metric=self.metric, value=value, unit=unit)
 
 

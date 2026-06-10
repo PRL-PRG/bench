@@ -17,21 +17,21 @@ Two ways to use it:
 
 ```console
 $ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
-[1|12] bench/sleep 0.05 #1 [warmup] ok
-[2|12] bench/sleep 0.05 #1 [measure] ok
-[3|12] bench/sleep 0.05 #2 [measure] ok
+[1|12] bench/sleep 0.05 #1  ok
+[2|12] bench/sleep 0.05 #1  ok
+[3|12] bench/sleep 0.05 #2  ok
 ...
-[12|12] bench/sleep 0.1 #5 [measure] ok
+[12|12] bench/sleep 0.1 #5  ok
 
 bench/sleep 0.05: 0|5 runs
-  elapsed  (mean ± σ):  55.71 ± 1.98    (53.64 … 58.14)
+  elapsed  (mean ± σ):  55.67 ± 3.64    (51.66 … 59.77)
 
 bench/sleep 0.1: 0|5 runs
-  elapsed  (mean ± σ):  108.05 ± 1.58    (105.39 … 109.39)
+  elapsed  (mean ± σ):  109.01 ± 1.90    (106.48 … 111.24)
 
 Summary
   'sleep 0.05' [elapsed] was
-    1.97 ± 0.08 times lower than 'sleep 0.1'
+    1.90 ± 0.13 times lower than 'sleep 0.1'
 ```
 
 `0|5 runs` means **0 failures | 5 successes**. The `elapsed` numbers are
@@ -40,14 +40,13 @@ milliseconds (auto-scaled from the seconds the `Time()` metric emits).
 ### As a script
 
 ```python
-from benchr import Path, Time, bench, run, suite
+from benchr import Time, bench, run, suite
 
 s = (
     suite("demo",
         bench("fast").with_command(["sleep", "0.05"]),
         bench("slow").with_command(["sleep", "0.1"]),
     )
-    .with_cwd(Path("."))
     .with_metric(Time())   # measure wall-clock elapsed
     .runs(5)               # 5 measured runs each
 )
@@ -55,6 +54,9 @@ s = (
 if __name__ == "__main__":
     run(s)
 ```
+
+`cwd` defaults to the invoking directory; metrics default to `Time()` — both
+shown explicitly elsewhere.
 
 ```console
 python demo.py --runs 10 --json out.json
@@ -78,7 +80,7 @@ A benchmark run is a pipeline. The blocks below are the things you build
 cleanly through JSON.
 
 * `Suite`: a named collection of benchmarks
-* `Benchmark`: command + cwd + end + metrics + stopping policy + variants
+* `Benchmark`: command + cwd + env + metrics + stopping policy + variants
 * `RunRecord`: one execution identity with outcome (failure or list of samples)
 * `Sample`: one metric value
 * `Report`: `[RunRecord]`, JSON round-trippable
@@ -137,6 +139,10 @@ suite("S",
     bench("b"),                       # b gets timeout=30 from the suite
 ).with_timeout(30)
 ```
+
+Two propagators deviate from fill-if-unset: `with_env` **merges** (suite env
+first, benchmark keys win), and `Suite.with_metric` fills only benchmarks with
+**no** metrics while `Benchmark.with_metric` **appends**.
 
 The CLI sits one layer above that: `--runs N` and `--warmup N` are *forcing*
 overrides — they replace every benchmark's value regardless of what the script
@@ -232,7 +238,7 @@ row per failed run carrying the failure verdict. The schema is
 where variant columns are the **union** of every axis observed across all runs
 (cells absent in a particular run are blank).
 
-Dir (`--dir`) writes a per-execution tree
+DirReporter (`--dir`) writes a per-execution tree
 (`<suite>/<bench>/<phase>/<run>/{stdout,stderr,exitcode,rusage,seq}`).
 
 ### Metric — output → metrics
@@ -298,6 +304,9 @@ Combinators:
 CoefficientOfVariation("elapsed", threshold=0.02).at_least(5).at_most(30)
 ```
 
+`min_runs` counts runs that produced the watched metric; `.at_least(n)` counts
+all runs including failures.
+
 The `metric` a CoV policy watches must match what a Metric emits
 (`Time()` emits `elapsed`/`user`/`system`; `FloatPerLine()` defaults to
 `runtime`). A CoV watching a metric nobody emits never converges and runs to
@@ -307,11 +316,14 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
 
 ### Runner
 
-* **`Sequential`** — one benchmark at a time. The default.
-* **`Parallel(workers, fanout=False)`** — `n` workers drive one benchmark
-  coroutine each. With `fanout=True`, benchmarks whose policies are
-  *independent* and *bounded* (e.g. `FixedRuns`) have their individual runs
-  spread across workers. Convergence-driven benchmarks stay sequential.
+* **`Sequential`** — one benchmark at a time, runs in order. The default, and
+  the only sound choice when wall-clock time is the metric (no contention).
+* **`Parallel(workers)`** — flattens every `(benchmark, run)` into one work
+  queue and spreads it across `n` workers. For work where time is *not* the
+  metric — test suites (pass/fail), smoke runs. Requires *bounded* and
+  *order-independent* policies (e.g. `FixedRuns`); convergence-driven or
+  order-dependent policies are rejected — use `Sequential`, or force a run
+  count with `--runs N`.
 * **`Dry`** — advance each coroutine once and print what *would* run; no
   subprocess. `--dry -v` dumps every field of the `ScheduledExecution`.
 
@@ -346,7 +358,7 @@ Variant values reach `with_command` / `with_skip` callables as attributes on
 the benchmark (`b.compiler`, `b.opt`).
 
 ```python
-from benchr import Path, Regex, bench, suite
+from benchr import Regex, bench, suite
 
 def cmd(b, ctx):
     return ["sh", "-c", f"echo {b.compiler}-{b.opt}: $((RANDOM%50+50))"]
@@ -357,7 +369,6 @@ suite("compile_matrix")
             .with_command(cmd)
             .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
     )
-    .with_cwd(Path("/tmp"))
     .with_metric(Regex("size", r"(\d+)\s*$", unit="lines"))
     .runs(3)
 ```
@@ -388,7 +399,7 @@ bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
 ```
 
 `Suite.with_matrix` / `Suite.with_skip` apply the same shape across every
-contained benchmark.
+contained benchmark. See [`examples/matrix_skips.py`](examples/matrix_skips.py).
 
 ### File-discovered benchmarks
 
@@ -403,18 +414,19 @@ suite("LoxSuite")
 ```
 
 `b.path` is set on each discovered benchmark; access any user data via
-`benchmark.<attr>`. See [`examples/external/lox.py`](examples/external/lox.py),
+`benchmark.<attr>`. See [`examples/discovery.py`](examples/discovery.py),
+[`examples/external/lox.py`](examples/external/lox.py),
 [`examples/external/rcp.py`](examples/external/rcp.py).
 
 ### Failure handling
 
 ```python
-from benchr import Path, Time, bench, suite
+from benchr import Time, bench, suite
 
 suite("flaky",
     bench("ok").with_command(["sh", "-c", "sleep 0.02"]).runs(3),
     bench("broken").with_command(["sh", "-c", "exit 7"]).runs(3),
-).with_cwd(Path("/tmp")).with_metric(Time())
+).with_metric(Time())
 ```
 
 ```console
@@ -450,10 +462,10 @@ Summary (geometric mean of ratios):
 ### Programmatic use
 
 ```python
-from benchr import Path, Sequential, Time, bench, suite
+from benchr import Sequential, Time, bench, suite
 
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
-     .with_cwd(Path("/tmp")).with_metric(Time()).runs(3))
+     .with_metric(Time()).runs(3))
 
 report = Sequential().run([s], ctx=None)
 for run in report.runs:
@@ -472,7 +484,8 @@ builder lambda as `ctx`.
 
 ```python
 from dataclasses import dataclass
-from benchr import Path, Time, bench, run, suite
+from pathlib import Path
+from benchr import Time, bench, run, suite
 
 @dataclass
 class Params:
@@ -483,10 +496,12 @@ def cmd(b, ctx: Params):
     return [str(ctx.binary), str(ctx.size)]
 
 run(
-    suite("s", bench("x")).with_cwd(".").with_command(cmd).with_metric(Time()),
+    suite("s", bench("x")).with_command(cmd).with_metric(Time()),
     params=Params,
 )
 ```
+
+See [`examples/params.py`](examples/params.py).
 
 Supported field types: `str`, `int`, `float`, `bool` (→ `--flag/--no-flag`),
 `Path`, `Optional[T]`.
@@ -496,7 +511,7 @@ Supported field types: `str`, `int`, `float`, `bool` (→ `--flag/--no-flag`),
 ## CLI reference
 
 ```
-benchr bench   [--runs N] [--warmup N] [--timeout T] [--jobs J] [--dry] [-v]
+benchr bench   [--runs N] [--warmup N] [--timeout T] [--jobs J] [--quiet] [--dry] [-v]
                [--json F] [--csv F] [--dir D] [--compare base.json ...]
                [--metric M] CMD1 CMD2 ...
 
@@ -536,7 +551,7 @@ src/benchr/
         sample.py          Sample, RunRecord, Report, JSON round-trip
         stats.py           grouping, stats, ratios, geomean
         formatter.py       DefaultSummary, Compact
-        reporter.py        streaming sinks (CompositeReporter, Csv, Json, …)
+        reporter.py        streaming sinks (CompositeReporter, CsvReporter, JsonReporter, …)
         theme.py           rich theme + shared Console
 ```
 
@@ -545,6 +560,6 @@ src/benchr/
 ## Development
 
 ```console
-uv run pytest          # 136 tests
+uv run pytest          # 150 tests
 uv run benchr bench --runs 20 'sleep 0.1' 'sleep 0.2'
 ```

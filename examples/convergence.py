@@ -6,14 +6,19 @@
 # [tool.uv.sources]
 # benchr = { path = "..", editable = true }
 # ///
-"""Run a benchmark until coefficient of variation stabilizes.
+"""Run a benchmark until the coefficient of variation stabilizes.
 
-Demonstrates: ``CoefficientOfVariation`` with ``.at_least(N).at_most(M)``.
 Stops as soon as the last 5 runs are within 2% CoV, but always runs at least 5
-and at most 30 times.
+and at most 30 times. ``.at_least`` / ``.at_most`` are sugar over the raw
+policy combinators:
+
+    cov.at_least(5).at_most(30)
+        == (cov & FixedRuns(5)) | FixedRuns(30)
+
+(`&` = both must converge, `|` = either suffices; `&` binds tighter than `|`.)
 """
 
-from benchr import CoefficientOfVariation, Path, Time, bench, run, suite
+from benchr import CoefficientOfVariation, Time, bench, run, suite
 
 
 cov = (
@@ -22,14 +27,11 @@ cov = (
     .at_most(30)
 )
 
-s = (
-    suite("converge",
-        bench("noisy")
-            .with_command(["sh", "-c", "sleep 0.02"])
-            .with_cwd(Path("/tmp"))
-            .with_metric(Time())
-            .with_measure(cov)
-    )
+s = suite("converge",
+    bench("noisy")
+        .with_command(["sh", "-c", "sleep 0.02"])
+        .with_metric(Time())
+        .with_measure(cov)
 )
 
 

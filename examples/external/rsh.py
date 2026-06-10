@@ -23,8 +23,9 @@ only in the ``Rscript`` path. Here, the executor is selected at the CLI via
 import os
 import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 
-from benchr import B, Path, FloatPerLine, max_rss, run, suite
+from benchr import B, FloatPerLine, max_rss, run, suite
 
 
 _HARNESS_R = r"""

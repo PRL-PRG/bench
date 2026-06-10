@@ -1,7 +1,7 @@
 """Grouping, statistics, ratios, geometric means.
 
 By default ``group(report)`` excludes ``phase == "warmup"`` samples from the
-groups (and therefore from stats). Raw outputs (Csv, Json, Dir) keep warmup.
+groups (and therefore from stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep warmup.
 """
 
 from __future__ import annotations
@@ -378,6 +378,8 @@ def build_summary(
 
 
 def _unique_names(paths: list[Path]) -> list[str]:
+    """Shortest distinguishing display names: strip path components shared by
+    every input from the front and back, keep what differs."""
     if not paths:
         return []
     if len(paths) == 1:

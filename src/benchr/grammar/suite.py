@@ -16,6 +16,8 @@ Producers:
   ``.from_files(path, pattern=...)`` discover files and turn each into a Benchmark
   ``.with_matrix(**axes)``           add matrix axes to every contained benchmark
   ``.with_skip(...)``                add skip rules to every contained benchmark
+  ``.with_success(fn)``              fill the success policy where unset
+  ``.with_label(fn)``                fill the variant-label fn where unset
   ``.filter(pred)``                  keep matching benchmarks
   ``.named(new_name)``               rename
 """
@@ -32,13 +34,15 @@ from benchr.grammar.benchmark import (
     Benchmark,
     CommandFn,
     EnvFn,
+    LabelFn,
     PathFn,
     SkipFn,
     _coerce_policy,
     bench,
 )
+from benchr.grammar.execution import SuccessFn
 from benchr.grammar.metric import Metric
-from benchr.grammar.policy import FixedRuns, StoppingPolicy
+from benchr.grammar.policy import StoppingPolicy
 
 
 # A function the Runner can call to materialize benchmarks given the ctx.
@@ -129,7 +133,7 @@ class Suite:
     def with_command(self, command: Sequence[str] | CommandFn) -> Suite:
         return self._map(lambda b: b.with_command(command) if b.command is None else b)
 
-    def with_cwd(self, cwd: Path | PathFn) -> Suite:
+    def with_cwd(self, cwd: str | Path | PathFn) -> Suite:
         return self._map(lambda b: b.with_cwd(cwd) if b.cwd is None else b)
 
     def with_env(self, env: Mapping[str, str] | EnvFn) -> Suite:
@@ -155,31 +159,29 @@ class Suite:
     def with_metric(self, *metrics: Metric) -> Suite:
         return self._map(lambda b: b.with_metric(*metrics) if not b.metrics else b)
 
+    def with_success(self, fn: SuccessFn) -> Suite:
+        return self._map(lambda b: b.with_success(fn) if b.success is None else b)
+
+    def with_label(self, fn: LabelFn) -> Suite:
+        return self._map(lambda b: b.with_label(fn) if b.label_fn is None else b)
+
     def with_warmup(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
-        """Propagate a warmup policy. By default fills only benchmarks still at
-        the ``FixedRuns(0)`` default; ``force=True`` overrides every benchmark
-        (used by the CLI ``--warmup`` global override)."""
+        """Propagate a warmup policy. By default fills only benchmarks with no
+        warmup policy set; ``force=True`` overrides every benchmark (used by
+        the CLI ``--warmup`` global override)."""
         policy = _coerce_policy(p)
-        return self._map(
-            lambda b: b.with_warmup(policy) if force or b.warmup == FixedRuns(0) else b
-        )
+        return self._map(lambda b: b.with_warmup(policy) if force or b.warmup is None else b)
 
     def with_measure(self, p: StoppingPolicy | int, *, force: bool = False) -> Suite:
-        """Propagate a measure policy. By default fills only benchmarks still at
-        the ``FixedRuns(1)`` default; ``force=True`` overrides every benchmark
-        (used by the CLI ``--runs`` global override)."""
+        """Propagate a measure policy. By default fills only benchmarks with no
+        measure policy set; ``force=True`` overrides every benchmark (used by
+        the CLI ``--runs`` global override)."""
         policy = _coerce_policy(p)
-        return self._map(
-            lambda b: b.with_measure(policy) if force or b.measure == FixedRuns(1) else b
-        )
-
-    def with_runs(self, n: int, *, force: bool = False) -> Suite:
-        """Alias of ``with_measure(FixedRuns(n))`` — propagates to children."""
-        return self.with_measure(n, force=force)
+        return self._map(lambda b: b.with_measure(policy) if force or b.measure is None else b)
 
     def runs(self, n: int) -> Suite:
-        """Shorthand for ``with_runs``. Mirrors ``Benchmark.runs``."""
-        return self.with_runs(n)
+        """Sugar for ``with_measure(FixedRuns(n))``. Mirrors ``Benchmark.runs``."""
+        return self.with_measure(n)
 
     # ----- matrix / skip ---------------------------------------------
 

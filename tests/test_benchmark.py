@@ -62,16 +62,6 @@ def test_missing_command_raises():
         list(bench("x").compile(ctx=None, suite="S"))
 
 
-def test_missing_cwd_raises():
-    with pytest.raises(ValueError, match="no cwd"):
-        list(bench("x").with_command(["true"]).with_metric(Time()).compile(ctx=None, suite="S"))
-
-
-def test_missing_metric_raises():
-    with pytest.raises(ValueError, match="no metric"):
-        list(bench("x").with_command(["true"]).with_cwd(Path("/tmp")).compile(ctx=None, suite="S"))
-
-
 def test_bench_kwargs_attach_to_data():
     b = bench("z", path=Path("zoo.lox"), size=42)
     assert b.path == Path("zoo.lox")
@@ -89,3 +79,28 @@ def test_immutability_via_with_methods():
     a = _base().runs(3)
     b = a.runs(5)
     assert a.measure != b.measure
+
+
+def test_policy_accessors_coerce_defaults():
+    b = bench("x")
+    assert b.warmup is None and b.measure is None
+    assert b.warmup_policy() == FixedRuns(0)
+    assert b.measure_policy() == FixedRuns(1)
+
+
+def test_with_stdin_str_is_encoded():
+    b = bench("x").with_command(["cat"]).with_stdin("hello")
+    sched = b.schedule(None, suite="s", run=1, phase="measure")
+    assert sched.execution.stdin == b"hello"
+
+
+def test_with_stdin_bytes_passthrough():
+    b = bench("x").with_command(["cat"]).with_stdin(b"\x00\x01")
+    sched = b.schedule(None, suite="s", run=1, phase="measure")
+    assert sched.execution.stdin == b"\x00\x01"
+
+
+def test_default_cwd_is_invokers_cwd():
+    b = bench("x").with_command(["true"])
+    sched = b.schedule(None, suite="s", run=1, phase="measure")
+    assert sched.execution.cwd == Path.cwd()

@@ -13,7 +13,7 @@ pipeline (e.g. a Jupyter notebook or a CI script that does follow-up
 analysis on the raw samples).
 """
 
-from benchr import Time, Path, Sequential, bench, suite
+from benchr import Time, Sequential, bench, suite
 
 
 s = (
@@ -21,7 +21,6 @@ s = (
         bench("a").with_command(["sh", "-c", "sleep 0.02"]),
         bench("b").with_command(["sh", "-c", "sleep 0.05"]),
     )
-    .with_cwd(Path("/tmp"))
     .with_metric(Time())
     .runs(3)
 )

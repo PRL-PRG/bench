@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from benchr import (
-    CompositeReporter, Csv, Dry, FloatPerLine, Json, Parallel, Sequential,
+    CompositeReporter, CsvReporter, Dry, FloatPerLine, JsonReporter, Parallel, Sequential,
     Time, bench, report_from_json, suite,
 )
 
@@ -59,7 +59,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
               .with_metric(Time())
               .runs(10))
     out = tmp_path / "r.json"
-    report = Sequential(reporter=Json(out), max_consecutive_failures=3).run([s], ctx=None)
+    report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run([s], ctx=None)
     assert _all_samples(report) == []  # failed runs emit no metrics
     r = report_from_json(out.read_text())
     assert len(r.failures) == 10
@@ -74,7 +74,7 @@ def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Pa
               .with_metric(Time())
               .with_measure(CoefficientOfVariation("elapsed")))  # unbounded
     out = tmp_path / "r.json"
-    report = Sequential(reporter=Json(out), max_consecutive_failures=3).run([s], ctx=None)
+    report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run([s], ctx=None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
@@ -92,13 +92,31 @@ def test_parallel_runs_faster_than_sequential():
     assert par_t < seq_t * 0.7, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
 
 
-def test_parallel_fanout_eligible_only_for_fixed_runs():
+def test_parallel_parallelizable_only_for_bounded_independent():
     from benchr.runner.parallel import Parallel as P_
     fr = bench("a").with_command(["true"]).with_cwd(Path("/tmp")).with_metric(Time()).runs(3)
-    assert P_._fanout_eligible(fr)
+    assert P_._parallelizable(fr)
     from benchr import CoefficientOfVariation
     cov_b = fr.with_measure(CoefficientOfVariation("elapsed").at_most(5))
-    assert not P_._fanout_eligible(cov_b)
+    assert not P_._parallelizable(cov_b)
+
+
+def test_parallel_records_every_run():
+    s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks × 3 runs
+    report = Parallel(workers=4).run([s], ctx=None)
+    assert len(_all_samples(report)) == 6
+
+
+def test_parallel_rejects_unbounded_policy():
+    import pytest
+    from benchr import CoefficientOfVariation
+    s = suite("U", bench("conv")
+              .with_command(["true"])
+              .with_cwd(Path("/tmp"))
+              .with_metric(Time())
+              .with_measure(CoefficientOfVariation("elapsed")))  # unbounded
+    with pytest.raises(ValueError, match="--runs"):
+        Parallel(workers=2).run([s], ctx=None)
 
 
 def test_dry_no_subprocess():
@@ -192,7 +210,7 @@ def test_sequential_quiet_prints_no_block(capsys):
 def test_mixed_reporter_lifecycle(tmp_path: Path):
     json_path = tmp_path / "r.json"
     csv_path = tmp_path / "r.csv"
-    sinks = CompositeReporter(Json(json_path), Csv(csv_path))
+    sinks = CompositeReporter(JsonReporter(json_path), CsvReporter(csv_path))
     Sequential(reporter=sinks).run([_sleep_suite(runs=1)], ctx=None)
     assert json_path.exists() and csv_path.exists()
     assert json_path.read_text().count('"metric"') >= 2
@@ -220,7 +238,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential(reporter=Json(json_path)).run([s], ctx=None)
+        Sequential(reporter=JsonReporter(json_path)).run([s], ctx=None)
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -252,7 +270,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Parallel(workers=4, reporter=Json(json_path)).run([s], ctx=None)
+        Parallel(workers=4, reporter=JsonReporter(json_path)).run([s], ctx=None)
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -315,3 +333,15 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(tmp_path: Path, m
     # max_consecutive_failures quickly. abspath() in execute() prevents that.
     assert len(samples) == 2
     assert all(s.metric == "elapsed" for s in samples)
+
+
+def test_default_metric_is_time():
+    s = suite("s", bench("x").with_command(["true"]))
+    report = Sequential().run([s], ctx=None)
+    assert [smp.metric for smp in report.runs[0].samples] == ["elapsed"]
+
+
+def test_run_accepts_single_suite_and_default_ctx():
+    s = suite("s", bench("a").with_command(["true"]))
+    report = Sequential().run(s)
+    assert len(report.runs) == 1

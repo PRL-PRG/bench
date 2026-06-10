@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from benchr import (
-    FloatPerLine, Json, Sequential, Time, bench,
+    FloatPerLine, JsonReporter, Sequential, Time, bench,
     report_from_json, suite,
 )
 
@@ -43,7 +43,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
               .runs(3))
-    report = Sequential(reporter=Json(out)).run([s], ctx=None)
+    report = Sequential(reporter=JsonReporter(out)).run([s], ctx=None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
@@ -58,7 +58,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
               .with_metric(Time())
               .with_timeout(0.05)
               .runs(1))
-    report = Sequential(reporter=Json(out)).run([s], ctx=None)
+    report = Sequential(reporter=JsonReporter(out)).run([s], ctx=None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 1

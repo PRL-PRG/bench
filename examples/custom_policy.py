@@ -13,7 +13,7 @@ consecutive runs. Demonstrates inheriting from ``PolicyState`` and using
 ``Custom`` to wrap a state factory.
 """
 
-from benchr import Custom, Path, PolicyState, Regex, bench, run, suite
+from benchr import Custom, PolicyState, Regex, bench, run, suite
 
 
 class ConsecutiveReady(PolicyState):
@@ -48,7 +48,6 @@ s = (
     suite("ready_loop",
         bench("p")
             .with_command(["bash", "-c", SCRIPT])
-            .with_cwd(Path("/tmp"))
             .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
             .with_measure(Custom(lambda: ConsecutiveReady(n=3)).at_most(20))
     )

@@ -246,7 +246,7 @@ def judge(
     reason = (b.success or default_success)(sched.execution, result)
     if reason is not None and result.failure is None:
         result = dataclasses.replace(result, failure=reason)
-    samples = list(extract_all(b.metrics, result)) if not result.is_failure() else []
+    samples = list(extract_all(b.effective_metrics(), result)) if not result.is_failure() else []
     return result, samples
 
 
@@ -263,8 +263,10 @@ class PlannedBenchmark:
     benchmark: Benchmark
 
 
-def plan(suites: list[Suite], ctx: Any) -> list[PlannedBenchmark]:
+def plan(suites: Suite | list[Suite], ctx: Any = None) -> list[PlannedBenchmark]:
     """Flatten suites + their deferred factories into concrete benchmarks."""
+    if isinstance(suites, Suite):
+        suites = [suites]
     out: list[PlannedBenchmark] = []
     for s in suites:
         for b in s.materialize(ctx):
@@ -289,7 +291,7 @@ def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(type(m).__name__ for m in benchmark.metrics) or "<none>"
+    metric_str = ", ".join(type(m).__name__ for m in benchmark.effective_metrics())
     success_str = benchmark.success.__name__ if benchmark.success is not None else "<default>"
     variant_str = dict(sched.variant) if sched.variant else {}
     label_str = sched.variant_label or "<none>"
@@ -298,7 +300,7 @@ def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
         n = p.max_runs()
         return "unbounded" if n is None else str(n)
 
-    plan_str = f"warmup x{_label(benchmark.warmup)}, measure x{_label(benchmark.measure)}"
+    plan_str = f"warmup x{_label(benchmark.warmup_policy())}, measure x{_label(benchmark.measure_policy())}"
 
     return "\n".join([
         sched.identifier(),
@@ -353,7 +355,7 @@ class Runner(abc.ABC):
         self.verbose = verbose
 
     @abc.abstractmethod
-    def run(self, suites: list[Suite], ctx: Any) -> Report: ...
+    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report: ...
 
     # ----- shared pump --------------------------------------------------
 
@@ -368,7 +370,7 @@ class Runner(abc.ABC):
         self.reporter.sample(sched, result, samples)
 
     def _print_verbose(self, sched: ScheduledExecution, b: Benchmark) -> None:
-        """Print the per-benchmark verbose block. Parallel overrides to lock."""
+        """Print the per-benchmark verbose block."""
         print(format_scheduled(sched, b))
 
     def _run_benchmark(
@@ -379,7 +381,7 @@ class Runner(abc.ABC):
         guard = 0
 
         bounded = (
-            b.warmup.max_runs() is not None and b.measure.max_runs() is not None
+            b.warmup_policy().max_runs() is not None and b.measure_policy().max_runs() is not None
         )
         failure_cap = None if bounded else self.max_consecutive_failures
 

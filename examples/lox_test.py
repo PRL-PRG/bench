@@ -26,7 +26,7 @@ from pathlib import Path
 
 from benchr import (
     Benchmark, Execution, ExecutionResult, Reporter, Sample,
-    ScheduledExecution, Time, bench, run, suite,
+    ScheduledExecution, Time, run, suite,
 )
 from benchr.report.reporter import console
 
@@ -125,28 +125,16 @@ def lox_cmd(b: Benchmark, ctx: TestParams) -> list[str]:
     return [str(ctx.lox), str(b.path)]
 
 
-def lox_factory(ctx: TestParams) -> list[Benchmark]:
-    """Discover .lox files and turn each into a Benchmark with our success
-    policy attached. Done in a factory because ``Suite`` propagates metric,
-    cwd, command, etc. as defaults but does not propagate ``with_success``.
-    """
-    root = _test_root(ctx)
-    benches: list[Benchmark] = []
-    for fp in sorted(root.rglob("*.lox")):
-        name = str(fp.relative_to(root).with_suffix(""))
-        benches.append(
-            bench(name, path=fp)
-                .with_command(lox_cmd)
-                .with_cwd(root)
-                .with_timeout(10)
-                .with_metric(Time())
-                .with_success(lox_expect)
-                .runs(1)
-        )
-    return benches
-
-
-lox_tests = suite("LoxTests").factory(lox_factory)
+lox_tests = (
+    suite("LoxTests")
+    .from_files(_test_root, pattern=r"\.lox$")
+    .with_command(lox_cmd)
+    .with_cwd(lambda _b, ctx: _test_root(ctx))
+    .with_timeout(10)
+    .with_metric(Time())
+    .with_success(lox_expect)
+    .runs(1)
+)
 
 
 if __name__ == "__main__":

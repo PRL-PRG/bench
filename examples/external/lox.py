@@ -10,15 +10,16 @@
 
 Demonstrates:
 - ``suite(...).from_files(...)`` discovery + ``.filter``
-- Multiple suites, each with its own processor.
+- Multiple suites, each with its own metrics.
 - Per-suite Compact summary via CompositeReporter reporters.
 - Typed ``LoxParams`` dataclass for CLI flags.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from benchr import (
-    Compact, CompositeReporter, FloatPerLine, Path, Summary, Time,
+    Compact, CompositeReporter, FloatPerLine, SummaryReporter, Time,
     bench, max_rss, run, suite,
 )
 
@@ -72,7 +73,7 @@ if __name__ == "__main__":
         [lox_suite, zoo_suite],
         params=LoxParams,
         reporter=CompositeReporter(
-            Summary(formatter=Compact("runtime", suite="LoxSuite")),
-            Summary(formatter=Compact("throughput", suite="ZooBatch")),
+            SummaryReporter(formatter=Compact("runtime", suite="LoxSuite")),
+            SummaryReporter(formatter=Compact("throughput", suite="ZooBatch")),
         ),
     )

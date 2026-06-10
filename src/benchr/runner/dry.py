@@ -22,7 +22,7 @@ class Dry(Runner):
     def __init__(self, verbose: bool = False) -> None:
         super().__init__(verbose=verbose)
 
-    def run(self, suites: list[Suite], ctx: Any) -> Report:
+    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report:
         planned = plan(suites, ctx)
         for p in planned:
             self._print_executions(p, ctx)
@@ -31,7 +31,7 @@ class Dry(Runner):
     def _print_executions(self, p: PlannedBenchmark, ctx: Any) -> None:
         b = p.benchmark
         bounded = (
-            b.warmup.max_runs() is not None and b.measure.max_runs() is not None
+            b.warmup_policy().max_runs() is not None and b.measure_policy().max_runs() is not None
         )
         gen = b.compile(ctx, suite=p.suite)
         try:

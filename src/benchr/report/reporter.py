@@ -96,11 +96,11 @@ class CompositeReporter(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Csv
+# CsvReporter
 # ---------------------------------------------------------------------------
 
 
-class Csv(_BufferingReporter):
+class CsvReporter(_BufferingReporter):
     """Buffer per-execution rows; write CSV on ``finalize()``.
 
     Schema: ``suite, benchmark, run, phase, <variant_cols...>, metric, value,
@@ -156,11 +156,11 @@ class Csv(_BufferingReporter):
 
 
 # ---------------------------------------------------------------------------
-# Json
+# JsonReporter
 # ---------------------------------------------------------------------------
 
 
-class Json(_BufferingReporter):
+class JsonReporter(_BufferingReporter):
     """Buffer runs in memory, write a single JSON file on finalize()."""
 
     def __init__(self, path: Path) -> None:
@@ -173,11 +173,11 @@ class Json(_BufferingReporter):
 
 
 # ---------------------------------------------------------------------------
-# Dir
+# DirReporter
 # ---------------------------------------------------------------------------
 
 
-class Dir(Reporter):
+class DirReporter(Reporter):
     """Per-execution tree at ``<out>/<suite>/<bench>/<phase>/<run>/``.
 
     Files: stdout, stderr, exitcode, rusage, seq (cwd + cmd + info + phase).
@@ -227,14 +227,14 @@ class Dir(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Progress: live spinner + bar while the run is in flight
+# ProgressReporter: live spinner + bar while the run is in flight
 # ---------------------------------------------------------------------------
 
 
-class Progress(Reporter):
+class ProgressReporter(Reporter):
     """Live progress over the planned benchmarks.
 
-    On a terminal, renders a progress bar and clears itself before the Summary
+    On a terminal, renders a progress bar and clears itself before the SummaryReporter
     prints. On a non-terminal it falls back to plain one-line-per-sample
     output. Total is known when every benchmark's policies expose a
     ``max_runs()``; otherwise displays ``?`` and (on terminals) draws an
@@ -319,7 +319,7 @@ class Progress(Reporter):
     def _compute_total(plan: list[Benchmark]) -> int | None:
         total = 0
         for b in plan:
-            w, m = b.warmup.max_runs(), b.measure.max_runs()
+            w, m = b.warmup_policy().max_runs(), b.measure_policy().max_runs()
             if w is None or m is None:
                 return None
             total += w + m
@@ -327,11 +327,11 @@ class Progress(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Summary (delegates to a Formatter; see report/formatter.py)
+# SummaryReporter (delegates to a Formatter; see report/formatter.py)
 # ---------------------------------------------------------------------------
 
 
-class Summary(_BufferingReporter):
+class SummaryReporter(_BufferingReporter):
     """Buffer runs; format on finalize().
 
     Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
@@ -384,9 +384,9 @@ __all__ = [
     "console",
     "Reporter",
     "CompositeReporter",
-    "Csv",
-    "Json",
-    "Dir",
-    "Progress",
-    "Summary",
+    "CsvReporter",
+    "JsonReporter",
+    "DirReporter",
+    "ProgressReporter",
+    "SummaryReporter",
 ]
