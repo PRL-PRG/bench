@@ -144,9 +144,10 @@ suite("S",
 ).with_timeout(30)                    # same result if called before add()
 ```
 
-Two methods deviate from plain inherit-if-unset: `with_env` **merges** (suite
-env first, benchmark keys win), and `Suite.with_metric` **sets** the suite
-default (initially `Time()`) while `Benchmark.with_metric` **appends**.
+One method deviates from plain inherit-if-unset: `with_env` **merges** (suite
+env first, benchmark keys win). Metrics don't merge — `Suite.with_metric` and
+`Benchmark.with_metric` both **set** (replace), and a benchmark with its own
+metrics ignores the suite default (initially `Time()`) entirely.
 
 The CLI sits one layer above that: `--runs N` and `--warmup N` are *forcing*
 overrides — they beat every benchmark's value regardless of what the script
@@ -363,7 +364,7 @@ factory_demo/tiny #1 [runs]
 
 A benchmark's `.with_matrix(**axes)` declares the axes that vary; the
 cartesian product of axis values produces the *variants* of that benchmark.
-Variant values reach `with_command` / `with_matrix_skip` callables as attributes on
+Variant values reach `with_command` / `add_matrix_skip` callables as attributes on
 the benchmark (`b.compiler`, `b.opt`).
 
 ```python
@@ -400,14 +401,14 @@ not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
 ```python
 # Full cartesian minus one cell:
 bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .with_matrix_skip(vm="v8", size=500)
+              .add_matrix_skip(vm="v8", size=500)
 
 # Slice (predicate form): keep only jsc
 bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .with_matrix_skip(lambda b: b.vm != "jsc")
+              .add_matrix_skip(lambda b: b.vm != "jsc")
 ```
 
-`Suite.with_matrix` / `Suite.with_matrix_skip` apply the same shape across every
+`Suite.with_matrix` / `Suite.add_matrix_skip` apply the same shape across every
 contained benchmark. See [`examples/matrix_skips.py`](examples/matrix_skips.py).
 
 ### File-discovered benchmarks

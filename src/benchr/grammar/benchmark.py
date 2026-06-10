@@ -309,11 +309,9 @@ class Benchmark:
             self, stdin=data.encode() if isinstance(data, str) else data)
 
     def with_metric(self, *metrics: Metric) -> Benchmark:
-        """Append metrics. Repeated calls compose: pass several in one call
-        (``with_metric(m1, m2, …)``) or chain calls
-        (``.with_metric(m1).with_metric(m2)``) — both yield the same final
-        tuple."""
-        return dataclasses.replace(self, metrics=self.metrics + metrics)
+        """Set (replace) the benchmark's metrics. Pass all of them in one call
+        (``with_metric(m1, m2, …)``); a later call replaces an earlier one."""
+        return dataclasses.replace(self, metrics=metrics)
 
     def with_success(self, fn: SuccessFn) -> Benchmark:
         """Override the success policy (returns a failure reason, or None)."""
@@ -328,40 +326,36 @@ class Benchmark:
     # ----- matrix / skip / label --------------------------------------
 
     def with_matrix(self, **axes: Sequence[Any]) -> Benchmark:
-        """Add one matrix axis per kwarg. Repeated calls compose as cartesian product.
+        """Declare the matrix axes (replaces any previously set).
 
-        ``b.with_matrix(vm=["v8", "jsc"])`` adds a ``vm`` axis with two
-        values. A second call ``.with_matrix(size=[100, 500])`` adds a ``size``
-        axis; the benchmark now has 4 variants. Axis values are arbitrary;
-        callables (``with_command``, ``with_matrix_skip``) read them as attributes on
-        the variant-stamped benchmark (``b.vm``, ``b.size``).
+        Pass every axis in one call: ``b.with_matrix(vm=["v8", "jsc"], size=[100,
+        500])`` gives 4 variants (the cartesian product). Axis values are
+        arbitrary; callables (``with_command``, ``add_matrix_skip``) read them as
+        attributes on the variant-stamped benchmark (``b.vm``, ``b.size``).
         """
-        new_axes = list(self.axes)
-        existing = {name for name, _ in new_axes}
-        for name, values in axes.items():
-            if name in existing:
-                raise ValueError(f"Benchmark {self.name!r}: axis {name!r} already declared")
+        for name in axes:
             if name.startswith("_"):
                 raise ValueError(f"Axis name {name!r} cannot start with '_'")
-            new_axes.append((name, tuple(values)))
-        return dataclasses.replace(self, axes=tuple(new_axes))
+        return dataclasses.replace(
+            self, axes=tuple((name, tuple(values)) for name, values in axes.items())
+        )
 
-    def with_matrix_skip(
+    def add_matrix_skip(
         self,
         predicate: SkipFn | None = None,
         /,
         **kwargs: Any,
     ) -> Benchmark:
-        """Drop variants matching the given rule.
+        """Add a rule that drops variants.
 
         Two interchangeable styles, combinable in one call:
 
-          ``.with_matrix_skip(vm="v8", size=500)``    — drop variants where every
+          ``.add_matrix_skip(vm="v8", size=500)``    — drop variants where every
                                                  named axis equals the given value
-          ``.with_matrix_skip(lambda b: b.vm != "jsc")`` — drop variants where the
+          ``.add_matrix_skip(lambda b: b.vm != "jsc")`` — drop variants where the
                                                  predicate returns truthy
 
-        Multiple ``.with_matrix_skip(...)`` calls compose as OR (any rule may drop a
+        Multiple ``.add_matrix_skip(...)`` calls compose as OR (any rule may drop a
         variant).
         """
         if predicate is None and not kwargs:

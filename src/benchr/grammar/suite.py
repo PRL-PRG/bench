@@ -24,7 +24,7 @@ Producers:
   ``.with_success/.with_label``        set a suite default
   ``.with_warmup/.with_runs``          set a default warmup/runs policy
   ``.with_matrix(**axes)``             add axes to every benchmark (at materialize)
-  ``.with_matrix_skip(...)``           add a skip rule to every benchmark
+  ``.add_matrix_skip(...)``            add a skip rule to every benchmark
   ``.filter(pred)``                    keep matching benchmarks (eager — the one
                                        order-dependent builder; add before filtering)
   ``.with_name(new_name)``             rename
@@ -143,8 +143,7 @@ class Suite:
         return dataclasses.replace(self, timeout=timeout)
 
     def with_metric(self, *metrics: Metric) -> Suite:
-        """Set (replace) the suite's default metrics — initially ``(Time(),)``.
-        Unlike ``Benchmark.with_metric``, this does not append."""
+        """Set (replace) the suite's default metrics — initially ``(Time(),)``."""
         return dataclasses.replace(self, metrics=tuple(metrics))
 
     def with_success(self, fn: SuccessFn) -> Suite:
@@ -162,31 +161,29 @@ class Suite:
         return dataclasses.replace(self, runs=_coerce_policy(p))
 
     def with_matrix(self, **axes: Sequence[Any]) -> Suite:
-        """Add one matrix axis per kwarg to every contained benchmark.
+        """Declare matrix axes applied to every contained benchmark (replaces
+        any previously set).
 
-        Stored on the suite; ``materialize`` appends the axes to each
+        Stored on the suite; ``materialize`` appends these axes to each
         benchmark's own (so per-benchmark axes still compose with suite-level
         ones). See ``Benchmark.with_matrix``.
         """
-        new_axes = list(self.axes)
-        existing = {name for name, _ in new_axes}
-        for name, values in axes.items():
-            if name in existing:
-                raise ValueError(f"Suite {self.name!r}: axis {name!r} already declared")
+        for name in axes:
             if name.startswith("_"):
                 raise ValueError(f"Axis name {name!r} cannot start with '_'")
-            new_axes.append((name, tuple(values)))
-        return dataclasses.replace(self, axes=tuple(new_axes))
+        return dataclasses.replace(
+            self, axes=tuple((name, tuple(values)) for name, values in axes.items())
+        )
 
-    def with_matrix_skip(
+    def add_matrix_skip(
         self,
         predicate: SkipFn | None = None,
         /,
         **kwargs: Any,
     ) -> Suite:
-        """Drop variants matching the rule, applied to every contained benchmark.
+        """Add a skip rule applied to every contained benchmark.
 
-        Same shape as ``Benchmark.with_matrix_skip``: kwargs are AND-matched against
+        Same shape as ``Benchmark.add_matrix_skip``: kwargs are AND-matched against
         axis values, optional ``predicate(bench) -> bool`` for complex cases.
         """
         if predicate is None and not kwargs:
@@ -219,8 +216,13 @@ class Suite:
     def _with_suite_matrix(self, b: Benchmark) -> Benchmark:
         """Append suite axes after the benchmark's own; union skip rules."""
         if self.axes:
-            # Reuses Benchmark.with_matrix validation (duplicate axis names raise).
-            b = b.with_matrix(**dict(self.axes))
+            existing = {name for name, _ in b.axes}
+            for name, _ in self.axes:
+                if name in existing:
+                    raise ValueError(
+                        f"Benchmark {b.name!r}: axis {name!r} already declared"
+                    )
+            b = dataclasses.replace(b, axes=b.axes + self.axes)
         if self.skips:
             b = dataclasses.replace(b, skips=b.skips + self.skips)
         return b

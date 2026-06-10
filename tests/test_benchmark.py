@@ -131,3 +131,27 @@ def test_default_cwd_is_invokers_cwd():
     b = _mat(bench("x").with_command(["true"]))
     sched = b.schedule(None, suite="s", run=1, phase="runs")
     assert sched.execution.cwd == Path.cwd()
+
+
+def test_with_metric_replaces_not_appends():
+    b = bench("x").with_metric(Time()).with_metric(FloatPerLine("s"))
+    assert len(b.metrics) == 1 and isinstance(b.metrics[0], FloatPerLine)
+
+
+def test_with_metric_takes_several_in_one_call():
+    b = bench("x").with_metric(Time(), FloatPerLine("s"))
+    assert len(b.metrics) == 2
+
+
+def test_with_matrix_replaces_axes():
+    b = bench("x").with_matrix(a=[1]).with_matrix(b=[2])
+    assert [n for n, _ in b.axes] == ["b"]
+
+
+def test_add_matrix_skip_unions_rules_on_one_benchmark():
+    b = (bench("x").with_command(["true"])
+         .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+         .add_matrix_skip(vm="v8", size=500)
+         .add_matrix_skip(vm="jsc", size=100))
+    bs = suite("S", b).materialize(ctx=None)
+    assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}
