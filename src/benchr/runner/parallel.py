@@ -65,7 +65,7 @@ class Parallel(Runner):
         # (we have to pre-materialize the execution list).
         return all(
             p.independent() and p.max_runs() is not None
-            for p in (b.warmup, b.measure)
+            for p in (b.warmup, b.runs)
         )
 
     def run(
@@ -93,7 +93,7 @@ class Parallel(Runner):
             first: ScheduledExecution | None = None
             phases: tuple[tuple[Phase, StoppingPolicy], ...] = (
                 ("warmup", b.warmup),
-                ("measure", b.measure),
+                ("runs", b.runs),
             )
             for phase, policy in phases:
                 # _parallelizable guarantees a bounded policy (max_runs not None).

@@ -379,7 +379,7 @@ class Runner(abc.ABC):
 
         bounded = (
             b.warmup.max_runs() is not None
-            and b.measure.max_runs() is not None
+            and b.runs.max_runs() is not None
         )
         failure_cap = None if bounded else self.max_consecutive_failures
 
@@ -397,7 +397,7 @@ class Runner(abc.ABC):
 
         while True:
             guard += 1
-            if guard > self.max_runs_per_phase * 2:  # warmup + measure
+            if guard > self.max_runs_per_phase * 2:  # warmup + runs
                 raise RuntimeError(
                     f"Benchmark {b.name!r} exceeded max_runs_per_phase backstop "
                     f"({self.max_runs_per_phase}); did you forget .at_most(N)?"

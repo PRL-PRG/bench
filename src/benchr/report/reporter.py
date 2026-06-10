@@ -289,7 +289,7 @@ class ProgressReporter(Reporter):
             if self._progress is not None and self._task_id is not None:
                 self._progress.update(
                     self._task_id,
-                    # Escape so "[measure]" isn't parsed as a rich tag.
+                    # Escape so "[runs]" isn't parsed as a rich tag.
                     description=markup_escape(sched.identifier()),
                     failures=self._failures,
                     successes=self._successes,
@@ -321,7 +321,7 @@ class ProgressReporter(Reporter):
     def _compute_total(plan: list[Benchmark]) -> int | None:
         total = 0
         for b in plan:
-            w, m = b.warmup.max_runs(), b.measure.max_runs()
+            w, m = b.warmup.max_runs(), b.runs.max_runs()
             if w is None or m is None:
                 return None
             total += w + m

@@ -39,7 +39,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
             .with_command(["sh", "-c", f"sleep {duration}"])
             .with_cwd(Path("/tmp"))
             .with_metric(Time())
-            .runs(runs)
+            .with_runs(runs)
             for i in range(2)
         ],
     )
@@ -57,7 +57,7 @@ def test_sequential_three_runs_yields_three_samples():
         .with_command(["sh", "-c", "echo 0.5"])
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("s").lower_is_better())
-        .runs(3),
+        .with_runs(3),
     )
     report = Sequential().run(plan([s], None), ctx=None)
     pairs = _runs_with_samples(report)
@@ -75,7 +75,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         .with_command(["false"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(10),
+        .with_runs(10),
     )
     out = tmp_path / "r.json"
     report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
@@ -96,7 +96,7 @@ def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Pa
         .with_command(["false"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .with_measure(CoefficientOfVariation("elapsed")),
+        .with_runs(CoefficientOfVariation("elapsed")),
     )  # unbounded
     out = tmp_path / "r.json"
     report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
@@ -128,12 +128,12 @@ def test_parallel_parallelizable_only_for_bounded_independent():
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(3),
+        .with_runs(3),
     ).materialize(ctx=None)[0]
     assert P_._parallelizable(fr)
     from benchr import CoefficientOfVariation
 
-    cov_b = fr.with_measure(CoefficientOfVariation("elapsed").at_most(5))
+    cov_b = fr.with_runs(CoefficientOfVariation("elapsed").at_most(5))
     assert not P_._parallelizable(cov_b)
 
 
@@ -153,7 +153,7 @@ def test_parallel_rejects_unbounded_policy():
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .with_measure(CoefficientOfVariation("elapsed")),
+        .with_runs(CoefficientOfVariation("elapsed")),
     )  # unbounded
     with pytest.raises(ValueError, match="--runs"):
         Parallel(workers=2).run(plan([s], None), ctx=None)
@@ -167,7 +167,7 @@ def test_dry_no_subprocess():
         .with_command(["/nonexistent_binary_xyz"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(5),
+        .with_runs(5),
     )
     out = _all_samples(Dry().run(plan([s], None), ctx=None))
     assert out == []
@@ -180,14 +180,14 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(5),
+        .with_runs(5),
     )
     Dry().run(plan([s], None), ctx=None)
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
     for i, ln in enumerate(lines, start=1):
-        assert ln == f"X/a #{i} [measure]: /bin/echo hi"
+        assert ln == f"X/a #{i} [runs]: /bin/echo hi"
     assert "cwd:" not in out and "plan:" not in out
 
 
@@ -199,7 +199,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
         .with_warmup(2)
-        .runs(3),
+        .with_runs(3),
     )
     Dry().run(plan([s], None), ctx=None)
     out = capsys.readouterr().out
@@ -207,9 +207,9 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
     assert len(lines) == 5
     assert lines[0] == "X/a #1 [warmup]: /bin/echo hi"
     assert lines[1] == "X/a #2 [warmup]: /bin/echo hi"
-    assert lines[2] == "X/a #1 [measure]: /bin/echo hi"
-    assert lines[3] == "X/a #2 [measure]: /bin/echo hi"
-    assert lines[4] == "X/a #3 [measure]: /bin/echo hi"
+    assert lines[2] == "X/a #1 [runs]: /bin/echo hi"
+    assert lines[3] == "X/a #2 [runs]: /bin/echo hi"
+    assert lines[4] == "X/a #3 [runs]: /bin/echo hi"
 
 
 def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
@@ -221,7 +221,7 @@ def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .with_measure(CoefficientOfVariation("elapsed")),
+        .with_runs(CoefficientOfVariation("elapsed")),
     )
     Dry().run(plan([s], None), ctx=None)
     out = capsys.readouterr().out
@@ -237,7 +237,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(5),
+        .with_runs(5),
     )
     Dry(verbose=True).run(plan([s], None), ctx=None)
     out = capsys.readouterr().out
@@ -245,8 +245,8 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
     assert "cwd:" in out
     assert "metrics:    Time" in out
     assert out.count("command:    /bin/echo hi") == 5
-    assert out.count("X/a #1 [measure]") == 1
-    assert out.count("X/a #5 [measure]") == 1
+    assert out.count("X/a #1 [runs]") == 1
+    assert out.count("X/a #5 [runs]") == 1
 
 
 def test_sequential_quiet_prints_no_block(capsys):
@@ -283,7 +283,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
         .with_command(["sleep", "10"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(3),
+        .with_runs(3),
     )
     json_path = tmp_path / "r.json"
 
@@ -317,7 +317,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
             .with_command(["sleep", "10"])
             .with_cwd(Path("/tmp"))
             .with_metric(Time())
-            .runs(1)
+            .with_runs(1)
             for i in range(4)
         ],
     )
@@ -348,7 +348,7 @@ def test_sigint_kills_shell_wrapped_subtree():
         .with_command(["sh", "-c", "sleep 10"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
-        .runs(1),
+        .with_runs(1),
     )
 
     t = threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGINT))
@@ -392,7 +392,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         .with_command(["tools/echo_hi"])
         .with_cwd(other_dir)  # subprocess runs from elsewhere/
         .with_metric(Time())  # emits one `elapsed` sample on success
-        .runs(2),
+        .with_runs(2),
     )
     report = Sequential(max_consecutive_failures=2).run(plan([s], None), ctx=None)
     samples = _all_samples(report)

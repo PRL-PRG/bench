@@ -29,7 +29,7 @@ s = (
         .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
     )
     .with_metric(Regex("size", r"(\d+)\s*$", unit="lines"))
-    .runs(3)
+    .with_runs(3)
 )
 
 

@@ -95,7 +95,7 @@ def _create_benchmarks(
     planned = plan(suites, ctx)
     params = {}
     if args.runs is not None:
-        params["measure"] = FixedRuns(args.runs)
+        params["runs"] = FixedRuns(args.runs)
     if args.warmup is not None:
         params["warmup"] = FixedRuns(args.warmup)
 
@@ -166,7 +166,7 @@ def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=None,
         metavar="N",
-        help="Override the measure-phase run count for every benchmark.",
+        help="Override the runs-phase count for every benchmark.",
     )
     g.add_argument(
         "--warmup",
@@ -392,7 +392,7 @@ def _run_bench(ns: argparse.Namespace) -> int:
         .with_label(lambda bb: " ".join(bb.data["command"]))
         .with_cwd(Path.cwd())
         .with_metric(Time())
-        .runs(ns.runs)
+        .with_runs(ns.runs)
     )
     if ns.timeout is not None:
         b = b.with_timeout(ns.timeout)

@@ -7,7 +7,7 @@ from benchr import Report, RunRecord, Sample, report_from_json, report_to_json
 
 def _run(variant=(), **kw) -> RunRecord:
     base: dict[str, Any] = dict(
-        suite="S", benchmark="B", variant=variant, run=1, phase="measure",
+        suite="S", benchmark="B", variant=variant, run=1, phase="runs",
         command=("./bench",), returncode=0, runtime=0.1,
     )
     base.update(kw)
@@ -39,7 +39,7 @@ def test_json_round_trip():
     r = Report(runs=[
         _run(samples=[_smp(), _smp(metric="max_rss", value=2048, unit="kB")]),
         RunRecord(
-            suite="S", benchmark="B", variant=(("opt", "O2"),), run=3, phase="measure",
+            suite="S", benchmark="B", variant=(("opt", "O2"),), run=3, phase="runs",
             command=("./bench", "--opt"), returncode=7, failure="exit 7", message="boom",
         ),
     ])

@@ -40,7 +40,15 @@ from benchr.grammar.policy import (
 )
 
 # Benchmark / Suite
-from benchr.grammar.benchmark import Benchmark, Command, Cwd, Env, bench, default_label
+from benchr.grammar.benchmark import (
+    Benchmark,
+    Command,
+    Cwd,
+    Env,
+    bench,
+    default_label,
+    from_files,
+)
 from benchr.grammar.suite import Suite, suite
 
 # Runners
@@ -81,7 +89,7 @@ __all__ = [
     "FixedRuns", "CoefficientOfVariation", "Custom",
     # Benchmark / Suite
     "Benchmark", "bench", "B",
-    "Command", "Cwd", "Env", "default_label",
+    "Command", "Cwd", "Env", "default_label", "from_files",
     "Suite", "suite",
     # Runners
     "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",

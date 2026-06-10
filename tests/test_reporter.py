@@ -19,7 +19,7 @@ def _s():
             .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
             .with_cwd(Path("/tmp"))
             .with_metric(FloatPerLine("s").last_line().lower_is_better())
-            .runs(2),
+            .with_runs(2),
     )
 
 
@@ -67,7 +67,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
               .with_command(lambda b, ctx: ["sh", "-c", "sleep 0.01"])
               .with_matrix(compiler=["gcc"]))
         .with_cwd(Path("/tmp")).with_metric(Time())
-        .runs(1)
+        .with_runs(1)
     )
     Sequential(reporter=CsvReporter(out)).run(plan([s], None), ctx=None)
     header = out.read_text().splitlines()[0]
@@ -93,7 +93,7 @@ def test_summary_appends_failures_block_with_diagnostic():
               .with_command(["sh", "-c", "echo trouble >&2; exit 7"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep, max_consecutive_failures=1).run(plan([s], None), ctx=None)
     rep.finalize()
@@ -110,7 +110,7 @@ def test_summary_failures_block_handles_spawn_failure():
               .with_command(["/no_such_binary_xyzzy"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep, max_consecutive_failures=1).run(plan([s], None), ctx=None)
     rep.finalize()
@@ -125,7 +125,7 @@ def test_summary_no_failures_block_when_all_succeed():
               .with_command(["sh", "-c", "echo ok"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep).run(plan([s], None), ctx=None)
     rep.finalize()
@@ -143,7 +143,7 @@ def test_progress_plain_lines_in_non_tty():
               .with_command(["sh", "-c", "echo ok"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(3))
+              .with_runs(3))
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), ctx=None)
     text = buf.getvalue()
     # One line per sample, with running count and 'ok' tag.
@@ -157,22 +157,22 @@ def test_progress_plain_marks_failures():
               .with_command(["sh", "-c", "exit 11"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     Sequential(reporter=ProgressReporter(target_console=c),
                max_consecutive_failures=1).run(plan([s], None), ctx=None)
     assert "FAIL exit 11" in buf.getvalue()
 
 
 def test_progress_plain_keeps_phase_tag():
-    # "[measure]" in the identifier must be escaped, otherwise rich eats it
+    # "[runs]" in the identifier must be escaped, otherwise rich eats it
     # as a markup tag and the phase disappears from the line.
     c, buf = _string_console()
     s = suite("S", bench("a")
               .with_command(["sh", "-c", "echo ok"])
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), ctx=None)
-    assert "[measure]" in buf.getvalue()
+    assert "[runs]" in buf.getvalue()
 
 
 def test_summary_failure_line_keeps_phase_tag():
@@ -180,7 +180,7 @@ def test_summary_failure_line_keeps_phase_tag():
     s = suite("F", bench("bad")
               .with_command(["sh", "-c", "exit 11"])
               .with_metric(Time())
-              .runs(1))
+              .with_runs(1))
     Sequential(reporter=SummaryReporter(target_console=c),
                max_consecutive_failures=1).run(plan([s], None), ctx=None)
-    assert "[measure]" in buf.getvalue()
+    assert "[runs]" in buf.getvalue()

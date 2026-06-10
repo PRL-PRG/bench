@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import Rebench, max_rss, run, suite
+from benchr import Rebench, from_files, max_rss, run, suite
 
 
 @dataclass
@@ -50,7 +50,7 @@ def _bench_root(ctx: RcpParams) -> Path:
 
 rcp_suite = (
     suite("RCPSuite")
-    .from_files(_bench_root, pattern=r"\.R$")
+    .factory(lambda ctx: from_files(_bench_root(ctx), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
     .with_metric(Rebench(), max_rss())

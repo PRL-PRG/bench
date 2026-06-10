@@ -107,7 +107,7 @@ Variant = tuple[tuple[str, str], ...]
 # belongs to. Produced by Benchmark.compile; consumed by the Runner.
 # ---------------------------------------------------------------------------
 
-Phase = Literal["warmup", "measure"]
+Phase = Literal["warmup", "runs"]
 
 
 def format_variant(variant: Variant) -> str:
@@ -154,7 +154,7 @@ class ScheduledExecution:
     variant: Variant = ()  # canonical, sorted
     variant_label: str = ""
     run: int = 1
-    phase: Phase = "measure"
+    phase: Phase = "runs"
 
     def identifier(self) -> str:
         return format_identifier(self.suite, self.benchmark, self.variant,

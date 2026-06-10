@@ -49,7 +49,7 @@ s = (
         bench("p")
             .with_command(["bash", "-c", SCRIPT])
             .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
-            .with_measure(Custom(lambda: ConsecutiveReady(n=3)).at_most(20))
+            .with_runs(Custom(lambda: ConsecutiveReady(n=3)).at_most(20))
     )
 )
 

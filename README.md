@@ -18,10 +18,10 @@ Two ways to use it:
 ```console
 $ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
 [1|12] bench/sleep 0.05 #1 [warmup] ok
-[2|12] bench/sleep 0.05 #1 [measure] ok
-[3|12] bench/sleep 0.05 #2 [measure] ok
+[2|12] bench/sleep 0.05 #1 [runs] ok
+[3|12] bench/sleep 0.05 #2 [runs] ok
 ...
-[12|12] bench/sleep 0.1 #5 [measure] ok
+[12|12] bench/sleep 0.1 #5 [runs] ok
 
 bench/sleep 0.05: 0|5 runs
   elapsed [ms] (mean ± σ):  55.22 ± 2.11    (51.83 … 57.35)
@@ -48,7 +48,7 @@ s = (
         bench("slow").with_command(["sleep", "0.1"]),
     )
     .with_metric(Time())   # measure wall-clock elapsed
-    .runs(5)               # 5 measured runs each
+    .with_runs(5)               # 5 measured runs each
 )
 
 if __name__ == "__main__":
@@ -125,7 +125,7 @@ cleanly through JSON.
 A **failed run still produces a `RunRecord`** (with `failure` set, empty
 `samples`). That's why a failing benchmark appears in the summary as `3|0 runs`
 (3 failures, 0 successes) with the reason listed in a `Failures:` block — no
-fake metrics poisoning the stats. `.runs(N)` means "N attempts", so a crashing
+fake metrics poisoning the stats. `.with_runs(N)` means "N attempts", so a crashing
 benchmark stops after N runs rather than retrying.
 
 ### Suite vs Benchmark — who overrides whom
@@ -155,11 +155,11 @@ set. The full precedence, most specific wins:
 ```
    CLI --runs 10                     ← forcing override, beats everything
         ▲
-   bench(...).runs(10)               ← per-benchmark explicit value
+   bench(...).with_runs(10)               ← per-benchmark explicit value
         ▲
    with_matrix(command=[...])        ← benchmark axis default (command/cwd/env axes)
         ▲
-   suite(...).runs(10)               ← suite default, fills unset benchmarks
+   suite(...).with_runs(10)               ← suite default, fills unset benchmarks
 ```
 
 Other CLI flags (`--json`, `--csv`, `--dir`, `--compare`) are **additive**: they
@@ -186,7 +186,7 @@ Sample(metric, value, unit, lower_is_better)      # metric data only
   the benchmark has no matrix.
 * `variant_label` is the human-readable label of the variant (from
   `Benchmark.with_label(...)`, or the formatted `variant` tuple otherwise).
-* `phase` is `"warmup"` or `"measure"`. Warmup runs appear in JSON/CSV/dir
+* `phase` is `"warmup"` or `"runs"`. Warmup runs appear in JSON/CSV/dir
   outputs but are excluded from stats.
 * `Sample.lower_is_better` is set by the Metric — `True` for runtime, `False`
   for throughput, `None` when not comparable.
@@ -208,7 +208,7 @@ get:
       "benchmark": "tiny",
       "variant": [],
       "run": 1,
-      "phase": "measure",
+      "phase": "runs",
       "command": ["python3", "-c", "sum(range(1000))"],
       "returncode": 0,
       "runtime": 0.014422666048631072,
@@ -339,7 +339,7 @@ A runner executes a flat list of planned benchmarks, not suites: call
 
 ```console
 $ uv run examples/factory.py --dry -v
-factory_demo/tiny #1 [measure]
+factory_demo/tiny #1 [runs]
   suite:      factory_demo
   benchmark:  tiny
   run:        1
@@ -363,7 +363,7 @@ factory_demo/tiny #1 [measure]
 
 A benchmark's `.with_matrix(**axes)` declares the axes that vary; the
 cartesian product of axis values produces the *variants* of that benchmark.
-Variant values reach `with_command` / `with_skip` callables as attributes on
+Variant values reach `with_command` / `with_matrix_skip` callables as attributes on
 the benchmark (`b.compiler`, `b.opt`).
 
 ```python
@@ -379,7 +379,7 @@ suite("compile_matrix")
             .with_matrix(compiler=["gcc", "clang"], opt=["O0", "O2"])
     )
     .with_metric(Regex("size", r"(\d+)\s*$", unit="lines"))
-    .runs(3)
+    .with_runs(3)
 ```
 
 ```console
@@ -400,25 +400,29 @@ not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
 ```python
 # Full cartesian minus one cell:
 bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .with_skip(vm="v8", size=500)
+              .with_matrix_skip(vm="v8", size=500)
 
 # Slice (predicate form): keep only jsc
 bench("regex").with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .with_skip(lambda b: b.vm != "jsc")
+              .with_matrix_skip(lambda b: b.vm != "jsc")
 ```
 
-`Suite.with_matrix` / `Suite.with_skip` apply the same shape across every
+`Suite.with_matrix` / `Suite.with_matrix_skip` apply the same shape across every
 contained benchmark. See [`examples/matrix_skips.py`](examples/matrix_skips.py).
 
 ### File-discovered benchmarks
 
+`from_files(root, pattern=...)` returns a `list[Benchmark]`. Splat a fixed root
+straight into `suite(name, *from_files(...))`, or wrap it in `.factory(...)` when
+the root depends on `ctx` (resolved after CLI parsing):
+
 ```python
-from benchr import FloatPerLine, suite
+from benchr import FloatPerLine, from_files, suite
 
 suite("LoxSuite")
-    .from_files(lambda ctx: ctx.cwd / "benchmarks", pattern=r"\.lox$")
+    .factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=r"\.lox$"))
     .with_command(lambda b, ctx: [str(ctx.lox), str(b.path)])
-    .runs(10)
+    .with_runs(10)
     .with_metric(FloatPerLine("s").last_line().lower_is_better())
 ```
 
@@ -433,8 +437,8 @@ suite("LoxSuite")
 from benchr import Time, bench, suite
 
 suite("flaky",
-    bench("ok").with_command(["sh", "-c", "sleep 0.02"]).runs(3),
-    bench("broken").with_command(["sh", "-c", "exit 7"]).runs(3),
+    bench("ok").with_command(["sh", "-c", "sleep 0.02"]).with_runs(3),
+    bench("broken").with_command(["sh", "-c", "exit 7"]).with_runs(3),
 ).with_metric(Time())
 ```
 
@@ -474,7 +478,7 @@ Summary (geometric mean of ratios):
 from benchr import Sequential, Time, bench, plan, suite
 
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
-     .with_metric(Time()).runs(3))
+     .with_metric(Time()).with_runs(3))
 
 report = Sequential().run(plan([s], None), ctx=None)
 for run in report.runs:

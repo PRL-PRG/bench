@@ -17,7 +17,7 @@ def test_e2e_sleep_runs_produce_expected_count():
               .with_command(["sleep", "0.02"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(3))
+              .with_runs(3))
     pairs = _all_samples(Sequential().run(plan([s], None), ctx=None))
     elapsed = [sm.value for _, sm in pairs if sm.metric == "elapsed"]
     assert len(elapsed) == 3
@@ -30,10 +30,10 @@ def test_e2e_warmup_then_measure():
               .with_cwd(Path("/tmp"))
               .with_metric(FloatPerLine("s").lower_is_better())
               .with_warmup(2)
-              .runs(2))
+              .with_runs(2))
     pairs = _all_samples(Sequential().run(plan([s], None), ctx=None))
     phases = [r.phase for r, _ in pairs]
-    assert phases == ["warmup", "warmup", "measure", "measure"]
+    assert phases == ["warmup", "warmup", "runs", "runs"]
 
 
 def test_e2e_runs_flag_overrides_every_benchmark():
@@ -42,9 +42,9 @@ def test_e2e_runs_flag_overrides_every_benchmark():
     s = suite(
         "S",
         bench("a").with_command(["sleep", "0.01"]).with_cwd(Path("/tmp"))
-            .with_metric(Time()).runs(5),
+            .with_metric(Time()).with_runs(5),
         bench("b").with_command(["sleep", "0.01"]).with_cwd(Path("/tmp"))
-            .with_metric(Time()).runs(1),
+            .with_metric(Time()).with_runs(1),
     )
     report = run(s, argv=["--runs", "2", "--quiet"])
     per_bench: dict[str, int] = {}
@@ -59,7 +59,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
               .with_command(["/no_such_binary_xyzzy"])
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
-              .runs(3))
+              .with_runs(3))
     report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), ctx=None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
@@ -74,7 +74,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
               .with_timeout(0.05)
-              .runs(1))
+              .with_runs(1))
     report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), ctx=None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())

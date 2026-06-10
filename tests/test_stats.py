@@ -16,7 +16,7 @@ def _smp(metric: str, value: float, *, unit: str = "s",
 
 
 def _run(run: int = 1, *, returncode: int = 0, failure: str | None = None,
-         phase: Phase = "measure", bench: str = "b", suite: str = "S",
+         phase: Phase = "runs", bench: str = "b", suite: str = "S",
          samples: list[Sample] | None = None) -> RunRecord:
     return RunRecord(
         suite=suite, benchmark=bench, variant=(), run=run, phase=phase,
@@ -33,7 +33,7 @@ def _fail(run: int, **kw) -> RunRecord:
 def test_group_excludes_warmup_by_default():
     r = Report(runs=[
         _run(1, phase="warmup", samples=[_smp("runtime", 1.0)]),
-        _run(1, phase="measure", samples=[_smp("runtime", 0.5)]),
+        _run(1, phase="runs", samples=[_smp("runtime", 0.5)]),
     ])
     g = group(r)
     assert len(g.groups) == 1
@@ -43,7 +43,7 @@ def test_group_excludes_warmup_by_default():
 def test_group_with_warmup_when_opted_in():
     r = Report(runs=[
         _run(1, phase="warmup", samples=[_smp("runtime", 1.0)]),
-        _run(1, phase="measure", samples=[_smp("runtime", 0.5)]),
+        _run(1, phase="runs", samples=[_smp("runtime", 0.5)]),
     ])
     g = group(r, include_warmup=True)
     assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]

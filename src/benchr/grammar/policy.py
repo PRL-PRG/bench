@@ -132,7 +132,7 @@ class _FixedState(PolicyState):
         self.cur = 0
 
     def observe(self, run: int, samples: Iterable[Sample]) -> None:
-        # Count every run, success or failure. ``.runs(N)`` means "N attempts",
+        # Count every run, success or failure. ``.with_runs(N)`` means "N attempts",
         # so a crashing benchmark stops after N runs instead of retrying until
         # the consecutive-failure cap.
         self.cur += 1

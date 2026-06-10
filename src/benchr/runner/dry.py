@@ -32,7 +32,7 @@ class Dry(Runner):
         b = p.benchmark
         bounded = (
             b.warmup.max_runs() is not None
-            and b.measure.max_runs() is not None
+            and b.runs.max_runs() is not None
         )
         gen = b.compile(ctx, suite=p.suite)
         try:

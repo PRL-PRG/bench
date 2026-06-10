@@ -33,7 +33,7 @@ class RunCounts:
 
 @dataclass(slots=True)
 class BenchmarkGroup:
-    """All measure-phase samples for one benchmark variant, by (metric, unit)."""
+    """All runs-phase samples for one benchmark variant, by (metric, unit)."""
 
     suite: str
     benchmark: str

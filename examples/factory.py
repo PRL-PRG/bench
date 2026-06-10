@@ -32,7 +32,7 @@ s = (
     suite("factory_demo")
     .factory(make_benchmarks)
     .with_metric(Time())
-    .runs(5)
+    .with_runs(5)
 )
 
 

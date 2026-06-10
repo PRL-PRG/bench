@@ -54,7 +54,7 @@ s = (
             .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
             .with_metric(StderrFloat(), Time())
             .with_success(succeeded)
-            .runs(3)
+            .with_runs(3)
     )
 )
 

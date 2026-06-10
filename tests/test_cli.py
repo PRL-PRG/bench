@@ -99,7 +99,7 @@ def test_bench_help_describes_subcommand():
 def test_bench_quiet_omits_progress_lines():
     r = _run("bench", "--quiet", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
-    # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X [measure] ok".
+    # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X [runs] ok".
     # With --quiet they should not appear.
     assert "[1|2]" not in r.stdout
     assert "[2|2]" not in r.stdout

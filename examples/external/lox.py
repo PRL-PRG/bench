@@ -9,7 +9,7 @@
 """Lox: two suites sharing a base; per-suite formatter.
 
 Demonstrates:
-- ``suite(...).from_files(...)`` discovery + ``.filter``
+- ``.factory(lambda ctx: from_files(...))`` discovery + ``.filter``
 - Multiple suites, each with its own metrics.
 - Per-suite Compact summary via CompositeReporter reporters.
 - Typed ``LoxParams`` dataclass for CLI flags.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from benchr import (
     Compact, CompositeReporter, FloatPerLine, SummaryReporter, Time,
-    bench, max_rss, run, suite,
+    bench, from_files, max_rss, run, suite,
 )
 
 
@@ -43,11 +43,11 @@ def _bench_root(ctx: LoxParams) -> Path:
 
 lox_suite = (
     suite("LoxSuite")
-    .from_files(_bench_root, pattern=r"\.lox$", exclude={"zoo_batch"})
+    .factory(lambda ctx: from_files(_bench_root(ctx), pattern=r"\.lox$", exclude={"zoo_batch"}))
     .with_cwd(lambda _, ctx: _bench_root(ctx))
     .with_command(lox_cmd)
     .with_timeout(20)
-    .runs(10)
+    .with_runs(10)
     .with_metric(
         FloatPerLine("s").last_line().lower_is_better(),
         max_rss(),
@@ -61,7 +61,7 @@ zoo_suite = (
     .with_cwd(lambda _, ctx: _bench_root(ctx))
     .with_command(lambda b, ctx: [str(ctx.lox), str((_bench_root(ctx) / b.path).name)])
     .with_timeout(12)
-    .runs(5)
+    .with_runs(5)
     .with_metric(
         FloatPerLine("iter", metric="throughput").nth(2).higher_is_better()
     )

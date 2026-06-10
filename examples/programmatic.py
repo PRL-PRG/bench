@@ -22,7 +22,7 @@ s = (
         bench("b").with_command(["sh", "-c", "sleep 0.05"]),
     )
     .with_metric(Time())
-    .runs(3)
+    .with_runs(3)
 )
 
 

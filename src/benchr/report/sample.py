@@ -44,7 +44,7 @@ class RunRecord:
     ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
     identifying the matrix cell; ``variant_label`` is its human-readable name.
 
-    ``phase`` is ``"warmup"`` or ``"measure"``. Stats default to excluding
+    ``phase`` is ``"warmup"`` or ``"runs"``. Stats default to excluding
     warmup; raw outputs (JSON, CSV, dir) keep both.
 
     ``returncode`` conventions follow ExecutionResult: ``124`` = timeout,

@@ -17,22 +17,22 @@ on the materialized benchmark list — not by the Suite. See ``benchr.run``.)
 
 Producers:
   ``.add(b)`` / ``.add_all(*bs)``      append benchmarks
-  ``.factory(fn)``                     defer benchmark production to run time
-  ``.from_files(path, pattern=...)``   discover files -> one Benchmark each
+  ``.factory(fn)``                     defer ``(ctx) -> [Benchmark]`` production
+                                       (wrap the ``from_files`` helper for
+                                       ctx-dependent discovery)
   ``.with_command/.with_cwd/.with_env/.with_timeout/.with_metric/``
   ``.with_success/.with_label``        set a suite default
-  ``.with_warmup/.with_measure``       set a default warmup/measure policy
+  ``.with_warmup/.with_runs``          set a default warmup/runs policy
   ``.with_matrix(**axes)``             add axes to every benchmark (at materialize)
-  ``.with_skip(...)``                  add a skip rule to every benchmark
+  ``.with_matrix_skip(...)``           add a skip rule to every benchmark
   ``.filter(pred)``                    keep matching benchmarks (eager — the one
                                        order-dependent builder; add before filtering)
-  ``.named(new_name)``                 rename
+  ``.with_name(new_name)``             rename
 """
 
 from __future__ import annotations
 
 import dataclasses
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -91,7 +91,7 @@ class Suite:
     metrics: tuple[Metric, ...] = (Time(),)
     success: SuccessFn = default_success
     warmup: StoppingPolicy = FixedRuns(0)
-    measure: StoppingPolicy = FixedRuns(1)
+    runs: StoppingPolicy = FixedRuns(1)
     label_fn: LabelFn = default_label
 
     # ----- suite-level matrix / skip (applied at materialize) --------
@@ -100,7 +100,7 @@ class Suite:
 
     # ----- producers -------------------------------------------------
 
-    def named(self, name: str) -> Suite:
+    def with_name(self, name: str) -> Suite:
         return dataclasses.replace(self, name=name)
 
     def add(self, b: Benchmark) -> Suite:
@@ -110,54 +110,10 @@ class Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
     def factory(self, fn: BenchFactory) -> Suite:
-        """Register a deferred factory; ``materialize(ctx)`` will call it."""
+        """Register a deferred ``(ctx) -> [Benchmark]`` producer; ``materialize(ctx)``
+        calls it. Wrap ``from_files`` here for ctx-dependent discovery, e.g.
+        ``.factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=...))``."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
-
-    def from_files(
-        self,
-        root: Path | Callable[[Any], Path],
-        *,
-        pattern: str | None = None,
-        recursive: bool = True,
-        exclude: set[str] | None = None,
-    ) -> Suite:
-        """Discover files; each becomes a Benchmark with ``b.path`` set.
-
-        ``root`` may be a callable so discovery depends on ctx (e.g. ``ctx.cwd``).
-        Benchmark name is the path relative to root, without extension
-        (forward-slash separated). ``pattern`` is a regex matched against the
-        filename via ``re.search``.
-        """
-        compiled = re.compile(pattern) if pattern else None
-        exclude_set = exclude or set()
-
-        def factory(ctx: Any) -> list[Benchmark]:
-            r = root(ctx) if callable(root) else root
-            r = Path(r)
-            out: list[Benchmark] = []
-            if r.is_dir():
-                entries = (
-                    (Path(d) / fn for d, _, fns in r.walk() for fn in fns)
-                    if recursive
-                    else (c for c in r.iterdir() if c.is_file())
-                )
-                for fp in entries:
-                    if compiled and not compiled.search(fp.name):
-                        continue
-                    name = str(fp.relative_to(r).with_suffix(""))
-                    if name in exclude_set:
-                        continue
-                    out.append(bench(name, path=fp))
-            elif r.is_file():
-                if compiled is None or compiled.search(r.name):
-                    name = r.stem
-                    if name not in exclude_set:
-                        out.append(bench(name, path=r))
-            else:
-                raise FileNotFoundError(f"from_files root not found: {r}")
-            return out
-
-        return self.factory(factory)
 
     def filter(self, pred: Callable[[Benchmark], bool]) -> Suite:
         """Keep only benchmarks for which ``pred(b)`` is truthy. Wraps any
@@ -201,15 +157,9 @@ class Suite:
         """Set the default warmup policy."""
         return dataclasses.replace(self, warmup=_coerce_policy(p))
 
-    def with_measure(self, p: StoppingPolicy | int) -> Suite:
-        """Set the default measure policy."""
-        return dataclasses.replace(self, measure=_coerce_policy(p))
-
-    def runs(self, n: int) -> Suite:
-        """Sugar for ``with_measure(FixedRuns(n))``. Mirrors ``Benchmark.runs``."""
-        return self.with_measure(n)
-
-    # ----- matrix / skip ---------------------------------------------
+    def with_runs(self, p: StoppingPolicy | int) -> Suite:
+        """Set the default runs (measure-phase) policy."""
+        return dataclasses.replace(self, runs=_coerce_policy(p))
 
     def with_matrix(self, **axes: Sequence[Any]) -> Suite:
         """Add one matrix axis per kwarg to every contained benchmark.
@@ -228,7 +178,7 @@ class Suite:
             new_axes.append((name, tuple(values)))
         return dataclasses.replace(self, axes=tuple(new_axes))
 
-    def with_skip(
+    def with_matrix_skip(
         self,
         predicate: SkipFn | None = None,
         /,
@@ -236,7 +186,7 @@ class Suite:
     ) -> Suite:
         """Drop variants matching the rule, applied to every contained benchmark.
 
-        Same shape as ``Benchmark.with_skip``: kwargs are AND-matched against
+        Same shape as ``Benchmark.with_matrix_skip``: kwargs are AND-matched against
         axis values, optional ``predicate(bench) -> bool`` for complex cases.
         """
         if predicate is None and not kwargs:
@@ -246,8 +196,6 @@ class Suite:
             predicate=predicate,
         )
         return dataclasses.replace(self, skips=self.skips + (rule,))
-
-    # ----- materialization ------------------------------------------
 
     def materialize(self, ctx: Any) -> list[Benchmark]:
         """Return the concrete (post-expansion, fully resolved) benchmark list.
@@ -289,7 +237,7 @@ class Suite:
             metrics=b.metrics or self.metrics,
             success=self.success if b.success is UNSET_SUCCESS else b.success,
             warmup=self.warmup if b.warmup is UNSET_POLICY else b.warmup,
-            measure=self.measure if b.measure is UNSET_POLICY else b.measure,
+            runs=self.runs if b.runs is UNSET_POLICY else b.runs,
             label_fn=self.label_fn if b.label_fn is UNSET_LABEL else b.label_fn,
         )
         if resolved.command is UNSET_COMMAND:

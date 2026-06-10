@@ -26,7 +26,7 @@ from pathlib import Path
 
 from benchr import (
     Benchmark, Execution, ExecutionResult, Reporter, Sample,
-    ScheduledExecution, Time, run, suite,
+    ScheduledExecution, Time, from_files, run, suite,
 )
 from benchr.report.reporter import console
 
@@ -127,13 +127,13 @@ def lox_cmd(b: Benchmark, ctx: TestParams) -> list[str]:
 
 lox_tests = (
     suite("LoxTests")
-    .from_files(_test_root, pattern=r"\.lox$")
+    .factory(lambda ctx: from_files(_test_root(ctx), pattern=r"\.lox$"))
     .with_command(lox_cmd)
     .with_cwd(lambda _b, ctx: _test_root(ctx))
     .with_timeout(10)
     .with_metric(Time())
     .with_success(lox_expect)
-    .runs(1)
+    .with_runs(1)
 )
 
 

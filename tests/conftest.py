@@ -28,7 +28,7 @@ def make_sched(**overrides: Any) -> ScheduledExecution:
         benchmark="B",
         variant=(),
         run=1,
-        phase="measure",
+        phase="runs",
     )
     defaults.update(overrides)
     return ScheduledExecution(**defaults)

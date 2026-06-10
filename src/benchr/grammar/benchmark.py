@@ -22,8 +22,8 @@ observe and decide whether to continue. ``.expand(ctx)`` produces one
 ``data`` so user callables can read ``b.vm``, ``b.size`` etc.).
 
 Two policies live on a Benchmark: ``warmup`` (samples reported, not fed to
-the measure policy) and ``measure`` (samples reported and fed to the policy
-that controls how many more measure runs to take).
+the runs policy) and ``runs`` (samples reported and fed to the policy that
+controls how many more measured runs to take).
 
 Unset fields hold *null objects* (``UNSET_COMMAND``, ``UNSET_POLICY``, …)
 meaning "inherit the suite's default". ``Suite.materialize()`` replaces every
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -263,7 +264,7 @@ class Benchmark:
 
     # Stopping policies (see module docstring).
     warmup: StoppingPolicy = UNSET_POLICY
-    measure: StoppingPolicy = UNSET_POLICY
+    runs: StoppingPolicy = UNSET_POLICY
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = _EMPTY_MAPPING
@@ -321,12 +322,8 @@ class Benchmark:
     def with_warmup(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, warmup=_coerce_policy(p))
 
-    def with_measure(self, p: StoppingPolicy | int) -> Benchmark:
-        return dataclasses.replace(self, measure=_coerce_policy(p))
-
-    def runs(self, n: int) -> Benchmark:
-        """Sugar for ``.with_measure(FixedRuns(n))``."""
-        return self.with_measure(FixedRuns(n))
+    def with_runs(self, p: StoppingPolicy | int) -> Benchmark:
+        return dataclasses.replace(self, runs=_coerce_policy(p))
 
     # ----- matrix / skip / label --------------------------------------
 
@@ -336,7 +333,7 @@ class Benchmark:
         ``b.with_matrix(vm=["v8", "jsc"])`` adds a ``vm`` axis with two
         values. A second call ``.with_matrix(size=[100, 500])`` adds a ``size``
         axis; the benchmark now has 4 variants. Axis values are arbitrary;
-        callables (``with_command``, ``with_skip``) read them as attributes on
+        callables (``with_command``, ``with_matrix_skip``) read them as attributes on
         the variant-stamped benchmark (``b.vm``, ``b.size``).
         """
         new_axes = list(self.axes)
@@ -349,7 +346,7 @@ class Benchmark:
             new_axes.append((name, tuple(values)))
         return dataclasses.replace(self, axes=tuple(new_axes))
 
-    def with_skip(
+    def with_matrix_skip(
         self,
         predicate: SkipFn | None = None,
         /,
@@ -359,12 +356,12 @@ class Benchmark:
 
         Two interchangeable styles, combinable in one call:
 
-          ``.with_skip(vm="v8", size=500)``    — drop variants where every
+          ``.with_matrix_skip(vm="v8", size=500)``    — drop variants where every
                                                  named axis equals the given value
-          ``.with_skip(lambda b: b.vm != "jsc")`` — drop variants where the
+          ``.with_matrix_skip(lambda b: b.vm != "jsc")`` — drop variants where the
                                                  predicate returns truthy
 
-        Multiple ``.with_skip(...)`` calls compose as OR (any rule may drop a
+        Multiple ``.with_matrix_skip(...)`` calls compose as OR (any rule may drop a
         variant).
         """
         if predicate is None and not kwargs:
@@ -440,7 +437,7 @@ class Benchmark:
     ) -> Generator[ScheduledExecution, list[Sample], None]:
         """Yield ScheduledExecutions; the Runner sends back parsed Samples.
 
-        ``measure`` policy receives Samples; ``warmup`` policy does too, in case
+        ``runs`` policy receives Samples; ``warmup`` policy does too, in case
         you want CoV-driven warmup (run until things stabilize, then start
         measuring). Samples emitted during warmup are tagged ``phase="warmup"``
         — formatters skip them by default but they appear in JSON/CSV/dir
@@ -460,7 +457,7 @@ class Benchmark:
             raise ValueError(f"Benchmark {self.name!r} has no command")
 
         yield from self._phase(ctx, suite, self.warmup, phase="warmup")
-        yield from self._phase(ctx, suite, self.measure, phase="measure")
+        yield from self._phase(ctx, suite, self.runs, phase="runs")
 
     def _phase(
         self,
@@ -548,3 +545,46 @@ def bench(name: str, **data: Any) -> Benchmark:
     matrix axes use ``.with_matrix(...)``.
     """
     return Benchmark(name=name, data=dict(data) if data else _EMPTY_MAPPING)
+
+
+def from_files(
+    root: str | Path,
+    *,
+    pattern: str | None = None,
+    recursive: bool = True,
+    exclude: set[str] | None = None,
+) -> list[Benchmark]:
+    """Discover files under ``root``; each becomes a Benchmark with ``b.path`` set.
+
+    Returns the list eagerly — splat into ``suite(name, *from_files(...))``, or
+    wrap in ``Suite.factory`` when the root depends on ctx
+    (``.factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=...))``).
+    Benchmark name is the path relative to ``root`` without extension
+    (forward-slash separated). ``pattern`` is a regex matched against the
+    filename via ``re.search``.
+    """
+    compiled = re.compile(pattern) if pattern else None
+    exclude_set = exclude or set()
+    r = Path(root)
+    out: list[Benchmark] = []
+    if r.is_dir():
+        entries = (
+            (Path(d) / fn for d, _, fns in r.walk() for fn in fns)
+            if recursive
+            else (c for c in r.iterdir() if c.is_file())
+        )
+        for fp in entries:
+            if compiled and not compiled.search(fp.name):
+                continue
+            name = str(fp.relative_to(r).with_suffix(""))
+            if name in exclude_set:
+                continue
+            out.append(bench(name, path=fp))
+    elif r.is_file():
+        if compiled is None or compiled.search(r.name):
+            name = r.stem
+            if name not in exclude_set:
+                out.append(bench(name, path=r))
+    else:
+        raise FileNotFoundError(f"from_files root not found: {r}")
+    return out

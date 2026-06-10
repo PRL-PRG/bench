@@ -14,17 +14,16 @@ extension) and stamps the file onto ``b.path``.
 
 from pathlib import Path
 
-from benchr import Time, run, suite
+from benchr import Time, from_files, run, suite
 
 
 HERE = Path(__file__).resolve().parent
 
 s = (
-    suite("discovered")
-    .from_files(HERE / "workloads", pattern=r"\.py$")
+    suite("discovered", *from_files(HERE / "workloads", pattern=r"\.py$"))
     .with_command(lambda b, ctx: ["python3", str(b.path)])
     .with_metric(Time())
-    .runs(3)
+    .with_runs(3)
 )
 
 

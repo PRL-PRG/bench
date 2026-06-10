@@ -18,7 +18,7 @@ def _ok(run: int = 1, *, bench: str = "b", suite: str = "S",
         variant=(), variant_label: str = "",
         samples: list[Sample] | None = None) -> RunRecord:
     return RunRecord(
-        suite=suite, benchmark=bench, variant=variant, run=run, phase="measure",
+        suite=suite, benchmark=bench, variant=variant, run=run, phase="runs",
         command=("x",), returncode=0,
         variant_label=variant_label,
         samples=list(samples) if samples else [],

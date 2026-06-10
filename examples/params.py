@@ -29,7 +29,7 @@ def cmd(b, ctx: Params):
 
 
 s = suite("params",
-    bench("sum").with_command(cmd).with_metric(Time()).runs(3)
+    bench("sum").with_command(cmd).with_metric(Time()).with_runs(3)
 )
 
 

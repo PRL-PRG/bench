@@ -31,7 +31,7 @@ s = suite("converge",
     bench("noisy")
         .with_command(["sh", "-c", "sleep 0.02"])
         .with_metric(Time())
-        .with_measure(cov)
+        .with_runs(cov)
 )
 
 

@@ -26,7 +26,7 @@ s = (
                 CoefficientOfVariation("elapsed", threshold=0.05, window=4, min_runs=4)
                 .at_most(20)
             )
-            .with_measure(FixedRuns(10))
+            .with_runs(FixedRuns(10))
     )
 )
 
