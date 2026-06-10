@@ -9,12 +9,16 @@ JSON outputs offline.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from pathlib import Path
+
+from typing import Any
 
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
 from benchr.grammar.metric import Time
+from benchr.grammar.policy import FixedRuns
 from benchr.grammar.suite import Suite, suite
 from benchr.report.formatter import DefaultSummary, Formatter
 from benchr.report.reporter import (
@@ -29,7 +33,7 @@ from benchr.report.reporter import (
 )
 from benchr.report.sample import Report, report_from_json
 from benchr.report.stats import build_summary
-from benchr.runner.base import Runner
+from benchr.runner.base import PlannedBenchmark, Runner, plan
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -66,32 +70,41 @@ def run(
         suites = [suites]
 
     parser = _make_run_parser(params)
-    ns = parser.parse_args(argv)
-    ctx = build_dataclass(params, ns) if params is not None else None
+    cli_args = parser.parse_args(argv)
+    ctx = build_dataclass(params, cli_args) if params is not None else None
 
-    summary_reporter = reporter or SummaryReporter(formatter=formatter)
-    final_reporter = _assemble(
-        ns, summary_reporter, with_progress=not ns.dry and not ns.quiet
+    reporter = reporter or SummaryReporter(formatter=formatter)
+    reporter = _assemble(
+        cli_args,
+        reporter,
+        with_progress=not cli_args.dry and not cli_args.quiet,
     )
 
-    # Optionally override warmup/measure across all benchmarks (unconditional:
-    # these flags mean "for every benchmark", overriding per-benchmark values).
-    if ns.runs is not None:
-        suites = [s.with_measure(int(ns.runs), force=True) for s in suites]
-    if ns.warmup is not None:
-        suites = [s.with_warmup(int(ns.warmup), force=True) for s in suites]
-
-    runner = _make_runner(ns, final_reporter)
+    benchmarks = _create_benchmarks(suites, ctx, cli_args)
+    runner = _make_runner(cli_args, reporter)
     try:
-        return runner.run(suites, ctx)
+        return runner.run(benchmarks, ctx)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# Shared reporter / runner assembly (used by both run() and `benchr bench`)
-# ---------------------------------------------------------------------------
+def _create_benchmarks(
+    suites: list[Suite], ctx: Any, args: argparse.Namespace
+) -> list[PlannedBenchmark]:
+    planned = plan(suites, ctx)
+    params = {}
+    if args.runs is not None:
+        params["measure"] = FixedRuns(args.runs)
+    if args.warmup is not None:
+        params["warmup"] = FixedRuns(args.warmup)
+
+    if params:
+        planned = [
+            dataclasses.replace(p, benchmark=dataclasses.replace(p.benchmark, **params))
+            for p in planned
+        ]
+    return planned
 
 
 def _assemble(
@@ -148,28 +161,75 @@ def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> No
 
 def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
     g = parser.add_argument_group("benchr flags")
-    g.add_argument("--runs", type=int, default=None, metavar="N",
-                   help="Override the measure-phase run count for every benchmark.")
-    g.add_argument("--warmup", type=int, default=None, metavar="N",
-                   help="Override the warmup-phase run count for every benchmark.")
-    g.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
-                   help="Run up to N benchmarks in parallel (default: 1, sequential).")
-    g.add_argument("--quiet", "-q", action="store_true",
-                   help="Suppress the live progress reporter (summary still prints).")
-    g.add_argument("--dry", action="store_true",
-                   help="Print the planned executions and exit without running anything.")
-    g.add_argument("--verbose", "-v", action="store_true",
-                   help="Echo each benchmark's full command / cwd / env / run plan "
-                        "before running it (and the only output under --dry -v).")
-    g.add_argument("--json", type=str, default=None, metavar="FILE",
-                   help="Write a JSON report of every sample to FILE.")
-    g.add_argument("--csv", type=str, default=None, metavar="FILE",
-                   help="Write a CSV report of every sample to FILE.")
-    g.add_argument("--dir", type=str, default=None, metavar="DIR",
-                   help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.")
-    g.add_argument("--compare", action="append", default=None, metavar="JSON",
-                   help="Compare against a baseline JSON report (repeat to add more; "
-                        "first is the baseline, last is the current run).")
+    g.add_argument(
+        "--runs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override the measure-phase run count for every benchmark.",
+    )
+    g.add_argument(
+        "--warmup",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Override the warmup-phase run count for every benchmark.",
+    )
+    g.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run up to N benchmarks in parallel (default: 1, sequential).",
+    )
+    g.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress the live progress reporter (summary still prints).",
+    )
+    g.add_argument(
+        "--dry",
+        action="store_true",
+        help="Print the planned executions and exit without running anything.",
+    )
+    g.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Echo each benchmark's full command / cwd / env / run plan "
+        "before running it (and the only output under --dry -v).",
+    )
+    g.add_argument(
+        "--json",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Write a JSON report of every sample to FILE.",
+    )
+    g.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Write a CSV report of every sample to FILE.",
+    )
+    g.add_argument(
+        "--dir",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.",
+    )
+    g.add_argument(
+        "--compare",
+        action="append",
+        default=None,
+        metavar="JSON",
+        help="Compare against a baseline JSON report (repeat to add more; "
+        "first is the baseline, last is the current run).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -188,33 +248,39 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    _bench_subparser(sub.add_parser(
-        "bench",
-        help="Time one or more shell commands (hyperfine-style).",
-        description=(
-            "Time one or more shell commands. Each positional CMD is split with "
-            "shlex and benchmarked as its own benchmark; results are summarized "
-            "side by side. Example:\n\n"
-            "    benchr bench --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
-            "Use --json / --csv / --dir to persist outputs and --compare to diff "
-            "against a previously saved JSON baseline."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    ))
-    _compare_subparser(sub.add_parser(
-        "compare",
-        help="Compare JSON reports from prior runs.",
-        description=(
-            "Summarize one or more JSON reports and print ratios against the "
-            "first one as a baseline. With a single file, just pretty-prints "
-            "its summary."
-        ),
-    ))
-    _show_subparser(sub.add_parser(
-        "show",
-        help="Pretty-print a JSON report.",
-        description="Re-render the summary block of a previously saved JSON report.",
-    ))
+    _bench_subparser(
+        sub.add_parser(
+            "bench",
+            help="Time one or more shell commands (hyperfine-style).",
+            description=(
+                "Time one or more shell commands. Each positional CMD is split with "
+                "shlex and benchmarked as its own benchmark; results are summarized "
+                "side by side. Example:\n\n"
+                "    benchr bench --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
+                "Use --json / --csv / --dir to persist outputs and --compare to diff "
+                "against a previously saved JSON baseline."
+            ),
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+    )
+    _compare_subparser(
+        sub.add_parser(
+            "compare",
+            help="Compare JSON reports from prior runs.",
+            description=(
+                "Summarize one or more JSON reports and print ratios against the "
+                "first one as a baseline. With a single file, just pretty-prints "
+                "its summary."
+            ),
+        )
+    )
+    _show_subparser(
+        sub.add_parser(
+            "show",
+            help="Pretty-print a JSON report.",
+            description="Re-render the summary block of a previously saved JSON report.",
+        )
+    )
 
     ns = parser.parse_args(argv)
     return ns._func(ns)
@@ -224,34 +290,95 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _bench_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument("commands", nargs="+", metavar="CMD",
-                   help="One or more shell commands to benchmark (each split with shlex).")
-    p.add_argument("--runs", type=int, default=10, metavar="N",
-                   help="Number of measured runs per command (default: 10).")
-    p.add_argument("--warmup", type=int, default=0, metavar="N",
-                   help="Number of warmup runs executed but excluded from stats (default: 0).")
-    p.add_argument("--timeout", type=float, default=None, metavar="SECONDS",
-                   help="Kill a run that takes longer than SECONDS (treated as a failure).")
-    p.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
-                   help="Run up to N benchmarks in parallel (default: 1, sequential).")
-    p.add_argument("--quiet", "-q", action="store_true",
-                   help="Suppress the live progress reporter (summary still prints).")
-    p.add_argument("--dry", action="store_true",
-                   help="Print the planned executions and exit without running anything.")
-    p.add_argument("--verbose", "-v", action="store_true",
-                   help="Echo each benchmark's full command / cwd / env / run plan "
-                        "before running it (and the only output under --dry -v).")
-    p.add_argument("--json", type=str, default=None, metavar="FILE",
-                   help="Write a JSON report of every sample to FILE.")
-    p.add_argument("--csv", type=str, default=None, metavar="FILE",
-                   help="Write a CSV report of every sample to FILE.")
-    p.add_argument("--dir", type=str, default=None, metavar="DIR",
-                   help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.")
-    p.add_argument("--compare", action="append", default=None, metavar="JSON",
-                   help="Compare against a baseline JSON report (repeat to add more; "
-                        "first is the baseline, last is the current run).")
-    p.add_argument("--metric", type=str, default="elapsed", metavar="NAME",
-                   help="Metric to highlight in the comparison summary (default: elapsed).")
+    p.add_argument(
+        "commands",
+        nargs="+",
+        metavar="CMD",
+        help="One or more shell commands to benchmark (each split with shlex).",
+    )
+    p.add_argument(
+        "--runs",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Number of measured runs per command (default: 10).",
+    )
+    p.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of warmup runs executed but excluded from stats (default: 0).",
+    )
+    p.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Kill a run that takes longer than SECONDS (treated as a failure).",
+    )
+    p.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run up to N benchmarks in parallel (default: 1, sequential).",
+    )
+    p.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="Suppress the live progress reporter (summary still prints).",
+    )
+    p.add_argument(
+        "--dry",
+        action="store_true",
+        help="Print the planned executions and exit without running anything.",
+    )
+    p.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Echo each benchmark's full command / cwd / env / run plan "
+        "before running it (and the only output under --dry -v).",
+    )
+    p.add_argument(
+        "--json",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Write a JSON report of every sample to FILE.",
+    )
+    p.add_argument(
+        "--csv",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help="Write a CSV report of every sample to FILE.",
+    )
+    p.add_argument(
+        "--dir",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.",
+    )
+    p.add_argument(
+        "--compare",
+        action="append",
+        default=None,
+        metavar="JSON",
+        help="Compare against a baseline JSON report (repeat to add more; "
+        "first is the baseline, last is the current run).",
+    )
+    p.add_argument(
+        "--metric",
+        type=str,
+        default="elapsed",
+        metavar="NAME",
+        help="Metric to highlight in the comparison summary (default: elapsed).",
+    )
     p.set_defaults(_func=_run_bench)
 
 
@@ -279,7 +406,7 @@ def _run_bench(ns: argparse.Namespace) -> int:
 
     runner = _make_runner(ns, rep)
     try:
-        runner.run([s], ctx=None)
+        runner.run(plan([s], None), ctx=None)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         return 1
@@ -291,8 +418,12 @@ def _run_bench(ns: argparse.Namespace) -> int:
 
 def _compare_subparser(p: argparse.ArgumentParser) -> None:
     p.add_argument("files", nargs="+")
-    p.add_argument("--metric", type=str, default=None,
-                   help="Comma-separated metric filter (e.g. runtime,max_rss)")
+    p.add_argument(
+        "--metric",
+        type=str,
+        default=None,
+        help="Comma-separated metric filter (e.g. runtime,max_rss)",
+    )
     p.set_defaults(_func=_run_compare)
 
 

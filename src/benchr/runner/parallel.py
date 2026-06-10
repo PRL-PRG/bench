@@ -18,17 +18,17 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
-from benchr.grammar.execution import ExecutionResult, ScheduledExecution
-from benchr.grammar.suite import Suite
+from benchr.grammar.execution import ExecutionResult, Phase, ScheduledExecution
+from benchr.grammar.policy import StoppingPolicy
 from benchr.report.sample import Report, Sample
 from benchr.runner.base import (
     _INTERRUPTED,
+    PlannedBenchmark,
     Runner,
     execute,
-    format_scheduled,
+    format_scheduled_verbose,
     install_sigint_handler,
     judge,
-    plan,
 )
 
 
@@ -65,12 +65,12 @@ class Parallel(Runner):
         # (we have to pre-materialize the execution list).
         return all(
             p.independent() and p.max_runs() is not None
-            for p in (b.warmup_policy(), b.measure_policy())
+            for p in (b.warmup, b.measure)
         )
 
-    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report:
-        planned = plan(suites, ctx)
-
+    def run(
+        self, planned: list[PlannedBenchmark], ctx: Any = None
+    ) -> Report:
         # Validate up front: a flat work queue can only hold runs we can count
         # ahead of time and reorder freely.
         for p in planned:
@@ -91,15 +91,22 @@ class Parallel(Runner):
         for p in planned:
             b = p.benchmark
             first: ScheduledExecution | None = None
-            for phase, policy in (("warmup", b.warmup_policy()), ("measure", b.measure_policy())):
-                for i in range(1, policy.max_runs() + 1):
+            phases: tuple[tuple[Phase, StoppingPolicy], ...] = (
+                ("warmup", b.warmup),
+                ("measure", b.measure),
+            )
+            for phase, policy in phases:
+                # _parallelizable guarantees a bounded policy (max_runs not None).
+                max_runs = policy.max_runs()
+                assert max_runs is not None
+                for i in range(1, max_runs + 1):
                     sched = b.schedule(ctx, suite=p.suite, run=i, phase=phase)
                     if first is None:
                         first = sched
                     work.append((b, sched))
             if self.verbose and first is not None:
                 with self._lock:
-                    print(format_scheduled(first, b))
+                    print(format_scheduled_verbose(first, b))
 
         def _do(item: tuple[Benchmark, ScheduledExecution]):
             # Don't spawn anything once a Ctrl+C has fired — the kill sweep has

@@ -1,10 +1,12 @@
 """Sample, RunRecord, Report, and JSON round-trip."""
 
+from typing import Any
+
 from benchr import Report, RunRecord, Sample, report_from_json, report_to_json
 
 
 def _run(variant=(), **kw) -> RunRecord:
-    base = dict(
+    base: dict[str, Any] = dict(
         suite="S", benchmark="B", variant=variant, run=1, phase="measure",
         command=("./bench",), returncode=0, runtime=0.1,
     )

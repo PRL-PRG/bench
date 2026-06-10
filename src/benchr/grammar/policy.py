@@ -38,6 +38,8 @@ from benchr.report.sample import Sample
 class StoppingPolicy(abc.ABC):
     """Immutable policy configuration. Use ``.start()`` to get an observer."""
 
+    __slots__ = ()
+
     @abc.abstractmethod
     def start(self) -> PolicyState: ...
 
@@ -74,11 +76,33 @@ class StoppingPolicy(abc.ABC):
 class PolicyState(abc.ABC):
     """Mutable per-run observer."""
 
+    __slots__ = ()
+
     @abc.abstractmethod
     def observe(self, run: int, samples: Iterable[Sample]) -> None: ...
 
     @abc.abstractmethod
     def converged(self) -> bool: ...
+
+
+class _UnsetPolicy(StoppingPolicy):
+    """Null object meaning "inherit the suite's policy". Replaced by
+    ``Suite.materialize()``; ``start()`` raising means a benchmark escaped
+    resolution."""
+
+    __slots__ = ()
+
+    def start(self) -> PolicyState:
+        raise RuntimeError(
+            "stopping policy is unset — benchmarks must be resolved via "
+            "Suite.materialize() before running"
+        )
+
+    def __repr__(self) -> str:
+        return "UNSET_POLICY"
+
+
+UNSET_POLICY: StoppingPolicy = _UnsetPolicy()
 
 
 # ---------------------------------------------------------------------------

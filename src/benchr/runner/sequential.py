@@ -4,16 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchr.grammar.suite import Suite
 from benchr.report.sample import Report
-from benchr.runner.base import Runner, _INTERRUPTED, install_sigint_handler, plan
+from benchr.runner.base import (
+    PlannedBenchmark,
+    Runner,
+    _INTERRUPTED,
+    install_sigint_handler,
+)
 
 
 class Sequential(Runner):
     """Run benchmarks one at a time, in suite-then-benchmark order."""
 
-    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report:
-        planned = plan(suites, ctx)
+    def run(
+        self, planned: list[PlannedBenchmark], ctx: Any = None
+    ) -> Report:
         self.reporter.start([p.benchmark for p in planned])
         report = Report()
         try:

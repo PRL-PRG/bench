@@ -8,6 +8,7 @@ from benchr.grammar.execution import (
     ScheduledExecution,
     Variant,
     Verdict,
+    default_success,
 )
 from benchr.report.sample import (
     Report,
@@ -39,11 +40,11 @@ from benchr.grammar.policy import (
 )
 
 # Benchmark / Suite
-from benchr.grammar.benchmark import Benchmark, bench
+from benchr.grammar.benchmark import Benchmark, Command, Cwd, Env, bench, default_label
 from benchr.grammar.suite import Suite, suite
 
 # Runners
-from benchr.runner.base import Runner
+from benchr.runner.base import PlannedBenchmark, Runner, plan
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -71,6 +72,7 @@ B = bench
 __all__ = [
     # Atoms
     "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Variant", "Verdict",
+    "default_success",
     "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
     # Metrics
     "Metric", "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
@@ -79,9 +81,10 @@ __all__ = [
     "FixedRuns", "CoefficientOfVariation", "Custom",
     # Benchmark / Suite
     "Benchmark", "bench", "B",
+    "Command", "Cwd", "Env", "default_label",
     "Suite", "suite",
     # Runners
-    "Runner", "Sequential", "Parallel", "Dry",
+    "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",
     # Reporters
     "Reporter", "CompositeReporter", "CsvReporter", "JsonReporter", "DirReporter", "SummaryReporter", "ProgressReporter",
     # Formatters

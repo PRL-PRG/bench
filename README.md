@@ -56,7 +56,7 @@ if __name__ == "__main__":
 ```
 
 `cwd` defaults to the invoking directory; metrics default to `Time()` — both
-shown explicitly elsewhere.
+are suite defaults, shown explicitly elsewhere.
 
 ```console
 python demo.py --runs 10 --json out.json
@@ -130,30 +130,36 @@ benchmark stops after N runs rather than retrying.
 
 ### Suite vs Benchmark — who overrides whom
 
-Suites propagate defaults to their members **only when the benchmark's field is
-still unset**, so per-benchmark values always win over suite defaults:
+A `Suite` *stores* defaults (command, cwd, env, metrics, policies, …) next to
+its benchmarks; nothing propagates when a `.with_*` method is called. Every
+unset benchmark field holds a null object (`UNSET_COMMAND`, `UNSET_POLICY`, …)
+meaning "inherit the suite's value", and resolution happens once, at
+materialize time. Per-benchmark values always win over suite defaults — and
+because resolution is deferred, **builder-call order never matters**:
 
 ```python
 suite("S",
     bench("a").with_timeout(5),       # a keeps timeout=5
     bench("b"),                       # b gets timeout=30 from the suite
-).with_timeout(30)
+).with_timeout(30)                    # same result if called before add()
 ```
 
-Two propagators deviate from fill-if-unset: `with_env` **merges** (suite env
-first, benchmark keys win), and `Suite.with_metric` fills only benchmarks with
-**no** metrics while `Benchmark.with_metric` **appends**.
+Two methods deviate from plain inherit-if-unset: `with_env` **merges** (suite
+env first, benchmark keys win), and `Suite.with_metric` **sets** the suite
+default (initially `Time()`) while `Benchmark.with_metric` **appends**.
 
 The CLI sits one layer above that: `--runs N` and `--warmup N` are *forcing*
-overrides — they replace every benchmark's value regardless of what the script
-set:
+overrides — they beat every benchmark's value regardless of what the script
+set. The full precedence, most specific wins:
 
 ```
-   bench(...).runs(10)               ← per-benchmark, wins over suite default
+   CLI --runs 10                     ← forcing override, beats everything
+        ▲
+   bench(...).runs(10)               ← per-benchmark explicit value
+        ▲
+   with_matrix(command=[...])        ← benchmark axis default (command/cwd/env axes)
         ▲
    suite(...).runs(10)               ← suite default, fills unset benchmarks
-        ▲
-   CLI --runs 10                     ← forcing override, replaces every benchmark
 ```
 
 Other CLI flags (`--json`, `--csv`, `--dir`, `--compare`) are **additive**: they
@@ -327,6 +333,10 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
 * **`Dry`** — advance each coroutine once and print what *would* run; no
   subprocess. `--dry -v` dumps every field of the `ScheduledExecution`.
 
+A runner executes a flat list of planned benchmarks, not suites: call
+`plan(suites, ctx)` to materialize first, then `runner.run(planned, ctx)`. The
+`run(...)` entry point does this for you (and applies `--runs`/`--warmup`).
+
 ```console
 $ uv run examples/factory.py --dry -v
 factory_demo/tiny #1 [measure]
@@ -335,13 +345,12 @@ factory_demo/tiny #1 [measure]
   run:        1
   phase:      measure
   command:    python3 -c sum(range(1000))
-  cwd:        /tmp
+  cwd:        /home/user/benchr
   env:        {}
   timeout:    <none>
   stdin:      <none>
   metrics:    Time
   success:    <default>
-  plan:       warmup x0, measure x5
   variant:    {}
   label:      <none>
 ```
@@ -462,12 +471,12 @@ Summary (geometric mean of ratios):
 ### Programmatic use
 
 ```python
-from benchr import Sequential, Time, bench, suite
+from benchr import Sequential, Time, bench, plan, suite
 
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
      .with_metric(Time()).runs(3))
 
-report = Sequential().run([s], ctx=None)
+report = Sequential().run(plan([s], None), ctx=None)
 for run in report.runs:
     for sample in run.samples:
         print(run.benchmark, run.run, sample.metric, sample.value)

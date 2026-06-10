@@ -23,7 +23,7 @@ from benchr.grammar.execution import (
     Execution,
     ExecutionResult,
     ScheduledExecution,
-    Verdict,
+    default_success,
 )
 from benchr.grammar.metric import extract_all
 from benchr.grammar.suite import Suite
@@ -115,8 +115,10 @@ def _wait4_eintr(pid: int) -> tuple[int, int, Any]:
 
 
 class _NoopReporter(Reporter):
-    def sample(self, sched: ScheduledExecution, result: ExecutionResult,
-               samples: list[Sample]) -> None: pass
+    def sample(
+        self, sched: ScheduledExecution, result: ExecutionResult, samples: list[Sample]
+    ) -> None:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -134,8 +136,11 @@ def execute(exe: Execution) -> ExecutionResult:
     cmd = list(exe.command)
     found = shutil.which(cmd[0])
     if found is None:
-        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC,
-                               failure=f"Command not found: {cmd[0]}")
+        return ExecutionResult(
+            execution=exe,
+            returncode=SPAWN_FAIL_RC,
+            failure=f"Command not found: {cmd[0]}",
+        )
     # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
     # doesn't re-resolve a relative executable against the subprocess's cwd.
     cmd[0] = os.path.abspath(found)
@@ -172,9 +177,11 @@ def execute(exe: Execution) -> ExecutionResult:
         killed = threading.Event()
         timer: threading.Timer | None = None
         if exe.timeout is not None:
+
             def _kill() -> None:
                 killed.set()
                 proc.kill()
+
             timer = threading.Timer(exe.timeout, _kill)
             timer.start()
 
@@ -200,7 +207,9 @@ def execute(exe: Execution) -> ExecutionResult:
                 failure="interrupted",
             )
 
-        returncode = TIMEOUT_RC if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
+        returncode = (
+            TIMEOUT_RC if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
+        )
 
         # execute() records facts only; judging success is the Runner's job
         # (see default_success / Benchmark.with_success).
@@ -213,8 +222,9 @@ def execute(exe: Execution) -> ExecutionResult:
             rusage=rusage,
         )
     except OSError as e:
-        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC,
-                               failure=f"spawn failed: {e}")
+        return ExecutionResult(
+            execution=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}"
+        )
     finally:
         if proc is not None:
             _unregister_proc(proc)
@@ -222,31 +232,22 @@ def execute(exe: Execution) -> ExecutionResult:
         stderr_f.close()
 
 
-def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
-    """Default success policy: clean exit passes, anything else fails."""
-    if result.failure is not None:        # spawn failure already judged by execute()
-        return result.failure
-    if result.returncode == TIMEOUT_RC:
-        return "timeout"
-    if result.returncode != 0:
-        return f"exit code {result.returncode}"
-    return None
-
-
 def judge(
     b: Benchmark, sched: ScheduledExecution, result: ExecutionResult
 ) -> tuple[ExecutionResult, list[Sample]]:
     """Apply the success policy and extract samples.
 
-    Asks the benchmark's ``success`` policy (or ``default_success``) for a
-    verdict and stamps the reason onto ``result.failure``. On success runs the
-    metrics; on failure returns no samples — a failed run never produces
-    metrics.
+    Asks the benchmark's ``success`` policy (``default_success`` unless
+    overridden) for a verdict and stamps the reason onto ``result.failure``.
+    On success runs the metrics; on failure returns no samples — a failed run
+    never produces metrics.
     """
-    reason = (b.success or default_success)(sched.execution, result)
+    reason = b.success(sched.execution, result)
     if reason is not None and result.failure is None:
         result = dataclasses.replace(result, failure=reason)
-    samples = list(extract_all(b.effective_metrics(), result)) if not result.is_failure() else []
+    samples = (
+        list(extract_all(b.metrics, result)) if not result.is_failure() else []
+    )
     return result, samples
 
 
@@ -274,12 +275,7 @@ def plan(suites: Suite | list[Suite], ctx: Any = None) -> list[PlannedBenchmark]
     return out
 
 
-# ---------------------------------------------------------------------------
-# Plan rendering (shared by Dry and the --verbose echo)
-# ---------------------------------------------------------------------------
-
-
-def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
+def format_scheduled_verbose(sched: ScheduledExecution, benchmark: Benchmark) -> str:
     """Dump a ScheduledExecution + benchmark plan as a deterministic text block.
 
     One header (``sched.identifier()``) followed by every field of
@@ -291,34 +287,33 @@ def format_scheduled(sched: ScheduledExecution, benchmark: Benchmark) -> str:
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(type(m).__name__ for m in benchmark.effective_metrics())
-    success_str = benchmark.success.__name__ if benchmark.success is not None else "<default>"
+    metric_str = ", ".join(type(m).__name__ for m in benchmark.metrics)
+    success_str = (
+        "<default>"
+        if benchmark.success is default_success
+        else getattr(benchmark.success, "__name__", repr(benchmark.success))
+    )
     variant_str = dict(sched.variant) if sched.variant else {}
     label_str = sched.variant_label or "<none>"
 
-    def _label(p):
-        n = p.max_runs()
-        return "unbounded" if n is None else str(n)
-
-    plan_str = f"warmup x{_label(benchmark.warmup_policy())}, measure x{_label(benchmark.measure_policy())}"
-
-    return "\n".join([
-        sched.identifier(),
-        f"  suite:      {sched.suite}",
-        f"  benchmark:  {sched.benchmark}",
-        f"  run:        {sched.run}",
-        f"  phase:      {sched.phase}",
-        f"  command:    {' '.join(e.command)}",
-        f"  cwd:        {e.cwd}",
-        f"  env:        {{{env_str}}}",
-        f"  timeout:    {timeout_str}",
-        f"  stdin:      {stdin_str}",
-        f"  metrics:    {metric_str}",
-        f"  success:    {success_str}",
-        f"  plan:       {plan_str}",
-        f"  variant:    {variant_str}",
-        f"  label:      {label_str}",
-    ])
+    return "\n".join(
+        [
+            sched.identifier(),
+            f"  suite:      {sched.suite}",
+            f"  benchmark:  {sched.benchmark}",
+            f"  run:        {sched.run}",
+            f"  phase:      {sched.phase}",
+            f"  command:    {' '.join(e.command)}",
+            f"  cwd:        {e.cwd}",
+            f"  env:        {{{env_str}}}",
+            f"  timeout:    {timeout_str}",
+            f"  stdin:      {stdin_str}",
+            f"  metrics:    {metric_str}",
+            f"  success:    {success_str}",
+            f"  variant:    {variant_str}",
+            f"  label:      {label_str}",
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +350,9 @@ class Runner(abc.ABC):
         self.verbose = verbose
 
     @abc.abstractmethod
-    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report: ...
+    def run(
+        self, planned: list[PlannedBenchmark], ctx: Any = None
+    ) -> Report: ...
 
     # ----- shared pump --------------------------------------------------
 
@@ -371,7 +368,7 @@ class Runner(abc.ABC):
 
     def _print_verbose(self, sched: ScheduledExecution, b: Benchmark) -> None:
         """Print the per-benchmark verbose block."""
-        print(format_scheduled(sched, b))
+        print(format_scheduled_verbose(sched, b))
 
     def _run_benchmark(
         self, planned: PlannedBenchmark, ctx: Any, report: Report
@@ -381,7 +378,8 @@ class Runner(abc.ABC):
         guard = 0
 
         bounded = (
-            b.warmup_policy().max_runs() is not None and b.measure_policy().max_runs() is not None
+            b.warmup.max_runs() is not None
+            and b.measure.max_runs() is not None
         )
         failure_cap = None if bounded else self.max_consecutive_failures
 
@@ -406,7 +404,9 @@ class Runner(abc.ABC):
                 )
 
             result, samples = judge(b, sched, execute(sched.execution))
-            consecutive_failures = 0 if not result.is_failure() else consecutive_failures + 1
+            consecutive_failures = (
+                0 if not result.is_failure() else consecutive_failures + 1
+            )
             self._record(report, sched, result, samples)
 
             if _INTERRUPTED.is_set():

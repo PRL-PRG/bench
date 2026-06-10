@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Iterable
+
+from cattrs import structure, unstructure
 
 from benchr.grammar.execution import (
     ExecutionResult,
@@ -151,74 +153,8 @@ class Report:
 
 
 def report_to_json(report: Report, *, indent: int = 2) -> str:
-    return json.dumps(_to_dict(report), indent=indent)
+    return json.dumps(unstructure(report), indent=indent)
 
 
 def report_from_json(text: str) -> Report:
-    return _from_dict(json.loads(text))
-
-
-def _to_dict(report: Report) -> dict[str, Any]:
-    return {
-        "runs": [
-            {
-                "suite": r.suite,
-                "benchmark": r.benchmark,
-                "variant": list(r.variant),
-                **({"variant_label": r.variant_label} if r.variant_label else {}),
-                "run": r.run,
-                "phase": r.phase,
-                "command": list(r.command),
-                "returncode": r.returncode,
-                **({"runtime": r.runtime} if r.runtime is not None else {}),
-                **({"failure": r.failure} if r.failure else {}),
-                **({"message": r.message} if r.message else {}),
-                "samples": [
-                    {
-                        "metric": s.metric,
-                        "value": s.value,
-                        **({"unit": s.unit} if s.unit else {}),
-                        **(
-                            {"lower_is_better": s.lower_is_better}
-                            if s.lower_is_better is not None
-                            else {}
-                        ),
-                    }
-                    for s in r.samples
-                ],
-            }
-            for r in report.runs
-        ],
-    }
-
-
-def _from_dict(d: dict[str, Any]) -> Report:
-    runs: list[RunRecord] = []
-    for rd in d.get("runs", []):
-        variant = tuple((k, v) for k, v in rd.get("variant", []))
-        samples = [
-            Sample(
-                metric=sd["metric"],
-                value=sd["value"],
-                unit=sd.get("unit", ""),
-                lower_is_better=sd.get("lower_is_better"),
-            )
-            for sd in rd.get("samples", [])
-        ]
-        runs.append(
-            RunRecord(
-                suite=rd["suite"],
-                benchmark=rd["benchmark"],
-                variant=variant,
-                variant_label=rd.get("variant_label", ""),
-                run=rd["run"],
-                phase=rd.get("phase", "measure"),
-                command=tuple(rd.get("command", ())),
-                returncode=rd["returncode"],
-                runtime=rd.get("runtime"),
-                failure=rd.get("failure"),
-                message=rd.get("message", ""),
-                samples=samples,
-            )
-        )
-    return Report(runs=runs)
+    return structure(json.loads(text), Report)

@@ -75,6 +75,29 @@ TIMEOUT_RC = 124
 SPAWN_FAIL_RC = -1
 
 
+def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
+    """Default success policy: clean exit passes, anything else fails."""
+    if result.failure is not None:  # spawn failure already judged by execute()
+        return result.failure
+    if result.returncode == TIMEOUT_RC:
+        return "timeout"
+    if result.returncode != 0:
+        return f"exit code {result.returncode}"
+    return None
+
+
+def _unset_success(execution: Execution, result: ExecutionResult) -> Verdict:
+    raise RuntimeError(
+        "success policy is unset — benchmarks must be resolved via "
+        "Suite.materialize() before running"
+    )
+
+
+# Null object for Benchmark.success: "inherit the suite's policy". Replaced by
+# Suite.materialize(); calling it means a benchmark escaped resolution.
+UNSET_SUCCESS: SuccessFn = _unset_success
+
+
 # Canonical matrix-variant identifier: sorted ((axis_name, axis_value), …).
 Variant = tuple[tuple[str, str], ...]
 

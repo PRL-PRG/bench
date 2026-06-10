@@ -33,6 +33,8 @@ def extract_all(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[
 class Metric(abc.ABC):
     """ExecutionResult -> Iterable[Sample]."""
 
+    __slots__ = ()
+
     @abc.abstractmethod
     def process(self, result: ExecutionResult) -> Iterable[Sample]: ...
 

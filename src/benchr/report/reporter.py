@@ -321,7 +321,7 @@ class ProgressReporter(Reporter):
     def _compute_total(plan: list[Benchmark]) -> int | None:
         total = 0
         for b in plan:
-            w, m = b.warmup_policy().max_runs(), b.measure_policy().max_runs()
+            w, m = b.warmup.max_runs(), b.measure.max_runs()
             if w is None or m is None:
                 return None
             total += w + m

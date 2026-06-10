@@ -165,7 +165,8 @@ def test_default_summary_unit_label_survives_rich_markup():
 
     r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     out = DefaultSummary()(r)
-    console = Console(file=StringIO(), force_terminal=False, width=200)
+    buf = StringIO()
+    console = Console(file=buf, force_terminal=False, width=200)
     console.print(out)
-    rendered = console.file.getvalue()
+    rendered = buf.getvalue()
     assert "runtime [ms]" in rendered

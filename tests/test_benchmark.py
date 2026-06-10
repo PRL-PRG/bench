@@ -5,15 +5,22 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    CoefficientOfVariation, FixedRuns, FloatPerLine, Sample, Time, bench,
+    CoefficientOfVariation, FixedRuns, FloatPerLine, Sample, Time, bench, suite,
 )
+from benchr.grammar.policy import UNSET_POLICY
+
+
+def _mat(b):
+    """Resolve one benchmark against an otherwise-default suite."""
+    return suite("S", b).materialize(ctx=None)[0]
 
 
 def _pump(b, fake_value=1.0):
-    """Helper: drive a compile() coroutine to exhaustion, feeding back one
-    Sample per yield. Returns the list of ScheduledExecutions seen."""
+    """Helper: materialize ``b``, then drive its compile() coroutine to
+    exhaustion, feeding back one Sample per yield. Returns the list of
+    ScheduledExecutions seen."""
     out = []
-    gen = b.compile(ctx=None, suite="S")
+    gen = _mat(b).compile(ctx=None, suite="S")
     try:
         sched = next(gen)
         while True:
@@ -81,26 +88,46 @@ def test_immutability_via_with_methods():
     assert a.measure != b.measure
 
 
-def test_policy_accessors_coerce_defaults():
+def test_policy_defaults_resolve_via_suite():
     b = bench("x")
-    assert b.warmup is None and b.measure is None
-    assert b.warmup_policy() == FixedRuns(0)
-    assert b.measure_policy() == FixedRuns(1)
+    assert b.warmup is UNSET_POLICY and b.measure is UNSET_POLICY
+    m = _mat(b.with_command(["true"]))
+    assert m.warmup == FixedRuns(0)
+    assert m.measure == FixedRuns(1)
+
+
+def test_unresolved_policy_raises_on_compile():
+    b = bench("x").with_command(["true"])  # never materialized
+    with pytest.raises(RuntimeError, match="materialize"):
+        list(b.compile(ctx=None, suite="S"))
+
+
+def test_unresolved_cwd_raises_on_schedule():
+    b = bench("x").with_command(["true"])  # never materialized
+    with pytest.raises(RuntimeError, match="cwd is unset"):
+        b.schedule(None, suite="s", run=1, phase="measure")
+
+
+def test_unset_command_raises_on_call():
+    from benchr.grammar.benchmark import UNSET_COMMAND
+
+    with pytest.raises(ValueError, match="no command"):
+        UNSET_COMMAND(bench("x"), None)
 
 
 def test_with_stdin_str_is_encoded():
-    b = bench("x").with_command(["cat"]).with_stdin("hello")
+    b = _mat(bench("x").with_command(["cat"]).with_stdin("hello"))
     sched = b.schedule(None, suite="s", run=1, phase="measure")
     assert sched.execution.stdin == b"hello"
 
 
 def test_with_stdin_bytes_passthrough():
-    b = bench("x").with_command(["cat"]).with_stdin(b"\x00\x01")
+    b = _mat(bench("x").with_command(["cat"]).with_stdin(b"\x00\x01"))
     sched = b.schedule(None, suite="s", run=1, phase="measure")
     assert sched.execution.stdin == b"\x00\x01"
 
 
 def test_default_cwd_is_invokers_cwd():
-    b = bench("x").with_command(["true"])
+    b = _mat(bench("x").with_command(["true"]))
     sched = b.schedule(None, suite="s", run=1, phase="measure")
     assert sched.execution.cwd == Path.cwd()

@@ -67,7 +67,7 @@ def _count_markup(rc: RunCounts) -> str:
     return f"{f_s}|{s_s}"
 
 
-def _variant_suffix(gs: GroupStats) -> str:
+def _variant_suffix(gs: GroupStats | BenchmarkGroup) -> str:
     """Render the variant portion of a display name.
 
     Prefers the explicit ``variant_label`` (set via ``Benchmark.with_label``);
@@ -78,7 +78,7 @@ def _variant_suffix(gs: GroupStats) -> str:
     return format_variant(gs.variant)
 
 
-def _group_label(gs: GroupStats) -> str:
+def _group_label(gs: GroupStats | BenchmarkGroup) -> str:
     """`suite/benchmark`, collapsing the stutter when both names match."""
     if gs.suite == gs.benchmark:
         return gs.benchmark

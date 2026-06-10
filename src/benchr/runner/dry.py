@@ -11,9 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchr.grammar.suite import Suite
 from benchr.report.sample import Report
-from benchr.runner.base import PlannedBenchmark, Runner, format_scheduled, plan
+from benchr.runner.base import PlannedBenchmark, Runner, format_scheduled_verbose
 
 
 class Dry(Runner):
@@ -22,8 +21,9 @@ class Dry(Runner):
     def __init__(self, verbose: bool = False) -> None:
         super().__init__(verbose=verbose)
 
-    def run(self, suites: Suite | list[Suite], ctx: Any = None) -> Report:
-        planned = plan(suites, ctx)
+    def run(
+        self, planned: list[PlannedBenchmark], ctx: Any = None
+    ) -> Report:
         for p in planned:
             self._print_executions(p, ctx)
         return Report()
@@ -31,7 +31,8 @@ class Dry(Runner):
     def _print_executions(self, p: PlannedBenchmark, ctx: Any) -> None:
         b = p.benchmark
         bounded = (
-            b.warmup_policy().max_runs() is not None and b.measure_policy().max_runs() is not None
+            b.warmup.max_runs() is not None
+            and b.measure.max_runs() is not None
         )
         gen = b.compile(ctx, suite=p.suite)
         try:
@@ -53,7 +54,7 @@ class Dry(Runner):
 
     def _print_one(self, sched, benchmark, *, unbounded: bool) -> None:
         if self.verbose:
-            block = format_scheduled(sched, benchmark)
+            block = format_scheduled_verbose(sched, benchmark)
         else:
             cmd = " ".join(sched.execution.command)
             block = f"{sched.identifier()}: {cmd}"

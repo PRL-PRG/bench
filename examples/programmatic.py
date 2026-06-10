@@ -13,7 +13,7 @@ pipeline (e.g. a Jupyter notebook or a CI script that does follow-up
 analysis on the raw samples).
 """
 
-from benchr import Time, Sequential, bench, suite
+from benchr import Time, Sequential, bench, plan, suite
 
 
 s = (
@@ -27,7 +27,7 @@ s = (
 
 
 if __name__ == "__main__":
-    report = Sequential().run([s], ctx=None)
+    report = Sequential().run(plan([s], None), ctx=None)
     total = sum(len(r.samples) for r in report.runs)
     print(f"Got {total} samples, {len(report.failures)} failures.")
     for r in report.runs:

@@ -23,9 +23,12 @@ observe and decide whether to continue. ``.expand(ctx)`` produces one
 
 Two policies live on a Benchmark: ``warmup`` (samples reported, not fed to
 the measure policy) and ``measure`` (samples reported and fed to the policy
-that controls how many more measure runs to take). Both default to ``None``
-(= unset, fillable by Suite defaults); the effective defaults are
-``warmup_policy() == FixedRuns(0)`` and ``measure_policy() == FixedRuns(1)``.
+that controls how many more measure runs to take).
+
+Unset fields hold *null objects* (``UNSET_COMMAND``, ``UNSET_POLICY``, …)
+meaning "inherit the suite's default". ``Suite.materialize()`` replaces every
+null with the suite's value, so a materialized Benchmark is fully concrete;
+using an unresolved field raises instead of guessing.
 """
 
 from __future__ import annotations
@@ -43,10 +46,11 @@ from benchr.grammar.execution import (
     Phase,
     ScheduledExecution,
     SuccessFn,
+    UNSET_SUCCESS,
     format_variant,
 )
-from benchr.grammar.metric import Metric, Time
-from benchr.grammar.policy import FixedRuns, StoppingPolicy
+from benchr.grammar.metric import Metric
+from benchr.grammar.policy import UNSET_POLICY, FixedRuns, StoppingPolicy
 from benchr.report.sample import Sample
 
 
@@ -63,6 +67,143 @@ type LabelFn = Callable[["Benchmark"], str]
 # A skip predicate. Returning truthy drops the variant. Predicate receives
 # the variant-stamped benchmark so it can read ``b.vm``, ``b.size``, etc.
 type SkipFn = Callable[["Benchmark"], bool]
+
+
+# ---------------------------------------------------------------------------
+# Command / Cwd / Env: one concrete wrapper type per invocation field.
+#
+# Each wrapper normalizes the two user spellings — a static value or a
+# ``(benchmark, ctx) -> value`` callable — at ``with_*`` time, so the
+# dataclass field has a single type and ``schedule()`` never branches on
+# ``callable()``. The ``UNSET_*`` singletons are null objects meaning
+# "inherit the suite's default"; ``Suite.materialize()`` resolves them away,
+# and calling one raises instead of silently misbehaving.
+# ---------------------------------------------------------------------------
+
+
+class Command:
+    """Resolves one variant's argv: ``command(benchmark, ctx) -> tuple[str, ...]``."""
+
+    __slots__ = ("_fn",)
+
+    def __init__(self, command: Sequence[str] | CommandFn) -> None:
+        if callable(command):
+            self._fn = command
+        else:
+            static = tuple(command)
+            self._fn = lambda b, ctx: static
+
+    def __call__(self, b: Benchmark, ctx: Any) -> tuple[str, ...]:
+        return tuple(self._fn(b, ctx))
+
+
+class _UnsetCommand(Command):
+    __slots__ = ()
+
+    def __init__(self) -> None:  # no fn — calling it IS the error
+        pass
+
+    def __call__(self, b: Benchmark, ctx: Any) -> tuple[str, ...]:
+        raise ValueError(f"Benchmark {b.name!r} has no command")
+
+    def __repr__(self) -> str:
+        return "UNSET_COMMAND"
+
+
+UNSET_COMMAND: Command = _UnsetCommand()
+
+
+class Cwd:
+    """Resolves one variant's working directory: ``cwd(benchmark, ctx) -> Path``."""
+
+    __slots__ = ("_fn",)
+
+    def __init__(self, cwd: str | Path | PathFn) -> None:
+        if callable(cwd):
+            self._fn = cwd
+        else:
+            static = Path(cwd)
+            self._fn = lambda b, ctx: static
+
+    def __call__(self, b: Benchmark, ctx: Any) -> Path:
+        return Path(self._fn(b, ctx))
+
+
+class _UnsetCwd(Cwd):
+    __slots__ = ()
+
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, b: Benchmark, ctx: Any) -> Path:
+        raise RuntimeError(
+            f"Benchmark {b.name!r}: cwd is unset — resolve via Suite.materialize()"
+        )
+
+    def __repr__(self) -> str:
+        return "UNSET_CWD"
+
+
+UNSET_CWD: Cwd = _UnsetCwd()
+
+# The suite-level default: the invoking process's cwd, read at schedule time.
+DEFAULT_CWD: Cwd = Cwd(lambda b, ctx: Path.cwd())
+
+
+class Env:
+    """Resolves one variant's environment: ``env(benchmark, ctx) -> Mapping``."""
+
+    __slots__ = ("_fn",)
+
+    def __init__(self, env: Mapping[str, str] | EnvFn) -> None:
+        if callable(env):
+            self._fn = env
+        else:
+            static = MappingProxyType(dict(env))
+            self._fn = lambda b, ctx: static
+
+    def __call__(self, b: Benchmark, ctx: Any) -> Mapping[str, str]:
+        return self._fn(b, ctx)
+
+    def merge(self, override: Env) -> Env:
+        """Lazy per-key merge: self first, ``override`` wins (suite ⊕ benchmark)."""
+        return Env(lambda b, ctx: {**self(b, ctx), **override(b, ctx)})
+
+
+class _UnsetEnv(Env):
+    __slots__ = ()
+
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, b: Benchmark, ctx: Any) -> Mapping[str, str]:
+        raise RuntimeError(
+            f"Benchmark {b.name!r}: env is unset — resolve via Suite.materialize()"
+        )
+
+    def __repr__(self) -> str:
+        return "UNSET_ENV"
+
+
+UNSET_ENV: Env = _UnsetEnv()
+
+# The suite-level default: empty — the child inherits the OS environment.
+EMPTY_ENV: Env = Env({})
+
+
+def default_label(b: Benchmark) -> str:
+    """Default variant label: the formatted ``(k=v, …)`` tuple, no parens."""
+    return format_variant(b.variant()).strip(" ()")
+
+
+def _unset_label(b: Benchmark) -> str:
+    raise RuntimeError(
+        f"Benchmark {b.name!r}: label is unset — resolve via Suite.materialize()"
+    )
+
+
+# Null object for Benchmark.label_fn: "inherit the suite's label function".
+UNSET_LABEL: LabelFn = _unset_label
 
 
 _VARIANT_KEY = "__variant__"
@@ -106,25 +247,23 @@ class Benchmark:
 
     name: str
 
-    # Either a static list[str] command, or a callable (benchmark, ctx) -> [str].
-    command: Sequence[str] | CommandFn | None = None
-    # cwd: defaults to the invoking process's cwd when unset.
-    cwd: str | Path | PathFn | None = None
-    env: Mapping[str, str] | EnvFn = _EMPTY_MAPPING
-    timeout: float | None = None
-    stdin: bytes | None = None
+    # How to invoke the workload. One concrete wrapper type per field; the
+    # UNSET_* null objects mean "inherit the suite's default" and are
+    # resolved away by Suite.materialize().
+    command: Command = UNSET_COMMAND
+    cwd: Cwd = UNSET_CWD
+    env: Env = UNSET_ENV
+    timeout: float | None = None  # None = no timeout (and inheritable)
+    stdin: bytes | None = None  # None = no stdin (never inherited)
 
-    metrics: tuple[Metric, ...] = ()
+    metrics: tuple[Metric, ...] = ()  # () = inherit the suite's metrics
 
-    # Optional success policy: returns a failure reason (str) or None for
-    # success. Defaults to the Runner's ``default_success`` when unset.
-    success: SuccessFn | None = None
+    # Success policy: returns a failure reason (str) or None for success.
+    success: SuccessFn = UNSET_SUCCESS
 
-    # Stopping policies. ``None`` means "unset" so Suite defaults can fill
-    # them; effective defaults are warmup FixedRuns(0), measure FixedRuns(1)
-    # (see warmup_policy / measure_policy).
-    warmup: StoppingPolicy | None = None
-    measure: StoppingPolicy | None = None
+    # Stopping policies (see module docstring).
+    warmup: StoppingPolicy = UNSET_POLICY
+    measure: StoppingPolicy = UNSET_POLICY
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = _EMPTY_MAPPING
@@ -136,8 +275,8 @@ class Benchmark:
     # Skip rules; a variant is dropped if any rule matches it.
     skips: tuple[SkipRule, ...] = ()
 
-    # Optional variant-label override.
-    label_fn: LabelFn | None = None
+    # Variant-label function; UNSET_LABEL = inherit the suite's.
+    label_fn: LabelFn = UNSET_LABEL
 
     # ----- attribute access into data ---------------------------------
 
@@ -152,13 +291,13 @@ class Benchmark:
     # ----- with_* methods ---------------------------------------------
 
     def with_command(self, command: Sequence[str] | CommandFn) -> Benchmark:
-        return dataclasses.replace(self, command=command)
+        return dataclasses.replace(self, command=Command(command))
 
     def with_cwd(self, cwd: str | Path | PathFn) -> Benchmark:
-        return dataclasses.replace(self, cwd=cwd)
+        return dataclasses.replace(self, cwd=Cwd(cwd))
 
     def with_env(self, env: Mapping[str, str] | EnvFn) -> Benchmark:
-        return dataclasses.replace(self, env=env)
+        return dataclasses.replace(self, env=Env(env))
 
     def with_timeout(self, timeout: float) -> Benchmark:
         return dataclasses.replace(self, timeout=timeout)
@@ -184,18 +323,6 @@ class Benchmark:
 
     def with_measure(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, measure=_coerce_policy(p))
-
-    def warmup_policy(self) -> StoppingPolicy:
-        """Effective warmup policy: the set value or ``FixedRuns(0)``."""
-        return self.warmup if self.warmup is not None else FixedRuns(0)
-
-    def measure_policy(self) -> StoppingPolicy:
-        """Effective measure policy: the set value or ``FixedRuns(1)``."""
-        return self.measure if self.measure is not None else FixedRuns(1)
-
-    def effective_metrics(self) -> tuple[Metric, ...]:
-        """The set metrics, or ``(Time(),)`` when none were declared."""
-        return self.metrics or (Time(),)
 
     def runs(self, n: int) -> Benchmark:
         """Sugar for ``.with_measure(FixedRuns(n))``."""
@@ -282,22 +409,16 @@ class Benchmark:
             variant = dataclasses.replace(self, data=stamped_data, axes=())
 
             # Apply built-in axis defaults if the user didn't override.
-            if "command" in variant_dict and not self._has_explicit("command"):
+            if "command" in variant_dict and self.command is UNSET_COMMAND:
                 variant = variant.with_command(_axis_command)
-            if "cwd" in variant_dict and not self._has_explicit("cwd"):
+            if "cwd" in variant_dict and self.cwd is UNSET_CWD:
                 variant = variant.with_cwd(_axis_cwd)
-            if "env" in variant_dict and self.env is _EMPTY_MAPPING:
+            if "env" in variant_dict and self.env is UNSET_ENV:
                 variant = variant.with_env(_axis_env)
 
             if any(rule.matches(variant) for rule in self.skips):
                 continue
             yield variant
-
-    def _has_explicit(self, attr: str) -> bool:
-        v = getattr(self, attr)
-        if attr == "env":
-            return v is not _EMPTY_MAPPING
-        return v is not None
 
     def variant(self) -> tuple[tuple[str, str], ...]:
         """Canonical variant tuple stamped at expansion time (empty if none)."""
@@ -306,11 +427,8 @@ class Benchmark:
         return ()
 
     def variant_label(self) -> str:
-        """Variant label for reports. ``label_fn(self)`` if set, else default."""
-        if self.label_fn is not None:
-            return self.label_fn(self)
-        v = self.variant()
-        return format_variant(v).strip(" ()")
+        """Variant label for reports: ``label_fn(self)`` (suite-filled)."""
+        return self.label_fn(self)
 
     # ----- compile -----------------------------------------------------
 
@@ -338,11 +456,11 @@ class Benchmark:
                 f"Benchmark {self.name!r} still has unexpanded matrix axes "
                 f"{[n for n, _ in self.axes]}; call .expand() first"
             )
-        if self.command is None:
+        if self.command is UNSET_COMMAND:
             raise ValueError(f"Benchmark {self.name!r} has no command")
 
-        yield from self._phase(ctx, suite, self.warmup_policy(), phase="warmup")
-        yield from self._phase(ctx, suite, self.measure_policy(), phase="measure")
+        yield from self._phase(ctx, suite, self.warmup, phase="warmup")
+        yield from self._phase(ctx, suite, self.measure, phase="measure")
 
     def _phase(
         self,
@@ -375,19 +493,15 @@ class Benchmark:
         Resolves dynamic command/cwd/env callables against ``ctx`` and stamps
         the current variant onto the result.
         """
-        cmd = self.command(self, ctx) if callable(self.command) else self.command
-        if cmd is None:
-            raise ValueError(f"Benchmark {self.name!r} has no command")
-        cwd = self.cwd(self, ctx) if callable(self.cwd) else self.cwd
-        if cwd is None:
-            cwd = Path.cwd()
-        env = self.env(self, ctx) if callable(self.env) else self.env
+        cmd = self.command(self, ctx)
+        cwd = self.cwd(self, ctx)
+        env = self.env(self, ctx)
         variant = self.variant()
         return ScheduledExecution(
             execution=Execution(
-                command=tuple(cmd),
-                cwd=Path(cwd),
-                env=env or _EMPTY_MAPPING,
+                command=cmd,
+                cwd=cwd,
+                env=env if env else _EMPTY_MAPPING,
                 timeout=self.timeout,
                 stdin=self.stdin,
             ),
