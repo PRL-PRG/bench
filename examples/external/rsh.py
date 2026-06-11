@@ -25,7 +25,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import B, FloatPerLine, max_rss, run, suite
+from benchr import bench as B, FloatPerLine, max_rss, run, suite
 
 
 _HARNESS_R = r"""

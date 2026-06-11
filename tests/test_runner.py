@@ -108,6 +108,25 @@ def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Pa
     assert all(f.returncode != 0 for f in r.failures)
 
 
+def test_abort_during_warmup_still_records_warmup_count(tmp_path: Path):
+    from benchr import CoefficientOfVariation
+
+    s = suite(
+        "F",
+        bench("bad")
+        .with_command(["false"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_warmup(CoefficientOfVariation("elapsed"))  # unbounded
+        .with_runs(1),
+    )
+    report = Sequential(max_consecutive_failures=2).run(plan([s], None), ctx=None)
+    # Aborted while warming up: every recorded run was warmup, so stats drop
+    # them all (the benchmark surfaces via the Failures block only).
+    assert len(report.runs) == 2
+    assert report.warmups == {"F/bad": 2}
+
+
 def test_parallel_runs_faster_than_sequential():
     s = _sleep_suite(duration=0.1, runs=2)
     t0 = time.monotonic()
@@ -187,7 +206,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
     for i, ln in enumerate(lines, start=1):
-        assert ln == f"X/a #{i} [runs]: /bin/echo hi"
+        assert ln == f"X/a #{i}: /bin/echo hi"
     assert "cwd:" not in out and "plan:" not in out
 
 
@@ -205,11 +224,9 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
-    assert lines[0] == "X/a #1 [warmup]: /bin/echo hi"
-    assert lines[1] == "X/a #2 [warmup]: /bin/echo hi"
-    assert lines[2] == "X/a #1 [runs]: /bin/echo hi"
-    assert lines[3] == "X/a #2 [runs]: /bin/echo hi"
-    assert lines[4] == "X/a #3 [runs]: /bin/echo hi"
+    # Continuous numbering: warmup runs are #1..#2, measured runs #3..#5.
+    for i, ln in enumerate(lines, start=1):
+        assert ln == f"X/a #{i}: /bin/echo hi"
 
 
 def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
@@ -245,8 +262,8 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
     assert "cwd:" in out
     assert "metrics:    Time" in out
     assert out.count("command:    /bin/echo hi") == 5
-    assert out.count("X/a #1 [runs]") == 1
-    assert out.count("X/a #5 [runs]") == 1
+    assert out.count("X/a #1") == 1
+    assert out.count("X/a #5") == 1
 
 
 def test_sequential_quiet_prints_no_block(capsys):

@@ -2,20 +2,21 @@
 
 An Execution is a description of how to start one subprocess: command,
 working directory, environment, optional timeout, optional stdin payload.
-It carries no benchmark-level identity (suite/benchmark/run/phase) — that
-metadata lives on the ``ScheduledExecution`` produced by ``Benchmark.compile``
+It carries no benchmark-level identity (suite/benchmark/run) — that
+metadata lives on the ``ScheduledExecution`` produced by ``Benchmark.schedule``
 and on the ``Sample`` emitted afterward.
 """
 
 from __future__ import annotations
 
 import resource
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Literal, Mapping
+from typing import Any
 
-_EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
+EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +25,7 @@ class Execution:
 
     command: tuple[str, ...]
     cwd: Path
-    env: Mapping[str, str] = _EMPTY_MAPPING
+    env: Mapping[str, str] = EMPTY_MAPPING
     timeout: float | None = None
     stdin: bytes | None = None
 
@@ -67,7 +68,7 @@ class ExecutionResult:
 
 
 type Verdict = str | None                     # None = success; str = failure reason
-type SuccessFn = Callable[[Execution, ExecutionResult], Verdict]
+type SuccessFn = Callable[[ExecutionResult], Verdict]
 
 
 # Conventional returncode sentinels (see ExecutionResult docstring above).
@@ -75,7 +76,7 @@ TIMEOUT_RC = 124
 SPAWN_FAIL_RC = -1
 
 
-def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
+def default_success(result: ExecutionResult) -> Verdict:
     """Default success policy: clean exit passes, anything else fails."""
     if result.failure is not None:  # spawn failure already judged by execute()
         return result.failure
@@ -86,28 +87,14 @@ def default_success(execution: Execution, result: ExecutionResult) -> Verdict:
     return None
 
 
-def _unset_success(execution: Execution, result: ExecutionResult) -> Verdict:
-    raise RuntimeError(
-        "success policy is unset — benchmarks must be resolved via "
-        "Suite.materialize() before running"
-    )
-
-
-# Null object for Benchmark.success: "inherit the suite's policy". Replaced by
-# Suite.materialize(); calling it means a benchmark escaped resolution.
-UNSET_SUCCESS: SuccessFn = _unset_success
-
-
 # Canonical matrix-variant identifier: sorted ((axis_name, axis_value), …).
-Variant = tuple[tuple[str, str], ...]
+type Variant = tuple[tuple[str, str], ...]
 
 
 # ---------------------------------------------------------------------------
 # ScheduledExecution: an Execution annotated with the benchmark identity it
-# belongs to. Produced by Benchmark.compile; consumed by the Runner.
+# belongs to. Produced by Benchmark.schedule; consumed by the Runner.
 # ---------------------------------------------------------------------------
-
-Phase = Literal["warmup", "runs"]
 
 
 def format_variant(variant: Variant) -> str:
@@ -117,15 +104,24 @@ def format_variant(variant: Variant) -> str:
     return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
 
 
+def record_key(suite: str, benchmark: str, variant: Variant) -> str:
+    """Canonical benchmark-variant key: ``suite/benchmark (k=v, …)``.
+
+    Built from the variant tuple (never the cosmetic label) so the runner and
+    a deserialized report agree. Keys ``Report.warmups``.
+    """
+    head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
+    return f"{head}{format_variant(variant)}"
+
+
 def format_identifier(
     suite: str,
     benchmark: str,
     variant: Variant,
     run: int,
-    phase: Phase,
     variant_label: str = "",
 ) -> str:
-    """Canonical run label: ``suite/benchmark[/label or (k=v, …)] #run [phase]``.
+    """Canonical run label: ``suite/benchmark[/label or (k=v, …)] #run``.
 
     Collapses ``suite/benchmark`` to a single token when the two names match
     (common for one-off CLI runs).
@@ -135,17 +131,18 @@ def format_identifier(
         head = f"{head}/{variant_label}"
     else:
         head = f"{head}{format_variant(variant)}"
-    return f"{head} #{run} [{phase}]"
+    return f"{head} #{run}"
 
 
 @dataclass(frozen=True, slots=True)
 class ScheduledExecution:
-    """An Execution plus the (suite, benchmark, run, phase, variant) tag.
+    """An Execution plus the (suite, benchmark, run, variant) tag.
 
     ``variant`` is the matrix cell identifier — a canonical (sorted) tuple of
     ``(axis_name, axis_value)`` pairs. ``variant_label`` is the human-readable
     name of the variant (from ``Benchmark.label_fn`` or, by default, the
-    formatted ``variant`` tuple).
+    formatted ``variant`` tuple). Run numbers are continuous: a benchmark's
+    warmup runs are 1..W and its measured runs follow (see ``Report.warmups``).
     """
 
     execution: Execution
@@ -154,9 +151,7 @@ class ScheduledExecution:
     variant: Variant = ()  # canonical, sorted
     variant_label: str = ""
     run: int = 1
-    phase: Phase = "runs"
 
     def identifier(self) -> str:
         return format_identifier(self.suite, self.benchmark, self.variant,
-                                 self.run, self.phase,
-                                 variant_label=self.variant_label)
+                                 self.run, variant_label=self.variant_label)

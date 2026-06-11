@@ -1,7 +1,8 @@
 """Grouping, statistics, ratios, geometric means.
 
-By default ``group(report)`` excludes ``phase == "warmup"`` samples from the
-groups (and therefore from stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep warmup.
+By default ``group(report)`` excludes each benchmark variant's warmup runs —
+the first ``report.warmups[key]`` runs — from the groups (and therefore from
+stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep every run.
 """
 
 from __future__ import annotations
@@ -11,13 +12,13 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from benchr.grammar.execution import Variant
-from benchr.report.sample import Report, report_from_json
+from benchr.core.execution import Variant
+from benchr.core.sample import Report, report_from_json
 
 
-MetricKey = tuple[str, str]                # (metric, unit)
-BenchKey = tuple[str, str]                 # (suite, benchmark)
-BenchmarkId = tuple[str, str, Variant]     # (suite, benchmark, variant)
+type MetricKey = tuple[str, str]                # (metric, unit)
+type BenchKey = tuple[str, str]                 # (suite, benchmark)
+type BenchmarkId = tuple[str, str, Variant]     # (suite, benchmark, variant)
 
 
 # ---------------------------------------------------------------------------
@@ -33,13 +34,13 @@ class RunCounts:
 
 @dataclass(slots=True)
 class BenchmarkGroup:
-    """All runs-phase samples for one benchmark variant, by (metric, unit)."""
+    """All measured samples for one benchmark variant, by (metric, unit)."""
 
     suite: str
     benchmark: str
     variant: Variant
     variant_label: str = ""
-    metrics: dict[MetricKey, list[float]] = field(default_factory=dict)
+    metrics: dict[MetricKey, list[float]] = field(default_factory=dict[MetricKey, list[float]])
     run_counts: RunCounts = field(default_factory=RunCounts)
 
 
@@ -58,50 +59,31 @@ def group(report: Report, *, name: str = "current",
     direction annotations. Warmup runs are excluded by default. Benchmarks
     that only ever failed still appear (zero successes).
     """
-    order: list[BenchmarkId] = []
-    metrics: dict[BenchmarkId, dict[MetricKey, list[float]]] = {}
-    succeeded: dict[BenchmarkId, int] = {}
-    failed: dict[BenchmarkId, int] = {}
-    labels: dict[BenchmarkId, str] = {}
+    groups: dict[BenchmarkId, BenchmarkGroup] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
 
-    def register(bid: BenchmarkId, label: str) -> None:
-        if bid not in metrics:
-            metrics[bid] = {}
-            order.append(bid)
-        if label and not labels.get(bid):
-            labels[bid] = label
-
     for r in report.runs:
-        if r.phase == "warmup" and not include_warmup:
+        if not include_warmup and r.run <= report.warmups.get(r.key(), 0):
             continue
         bid: BenchmarkId = (r.suite, r.benchmark, r.variant)
-        register(bid, r.variant_label)
+        g = groups.get(bid)
+        if g is None:
+            g = groups[bid] = BenchmarkGroup(
+                suite=r.suite, benchmark=r.benchmark, variant=r.variant)
+        if r.variant_label and not g.variant_label:
+            g.variant_label = r.variant_label
         if r.is_failure():
-            failed[bid] = failed.get(bid, 0) + 1
+            g.run_counts.failures += 1
         else:
-            succeeded[bid] = succeeded.get(bid, 0) + 1
+            g.run_counts.successes += 1
         for s in r.samples:
             mk = (s.metric, s.unit)
             if s.lower_is_better is not None:
                 lib[mk] = s.lower_is_better
-            metrics[bid].setdefault(mk, []).append(s.value)
+            g.metrics.setdefault(mk, []).append(s.value)
 
-    groups: list[BenchmarkGroup] = []
-    for bid in order:
-        suite, bench, variant = bid
-        groups.append(
-            BenchmarkGroup(
-                suite=suite, benchmark=bench, variant=variant,
-                variant_label=labels.get(bid, ""),
-                metrics=metrics[bid],
-                run_counts=RunCounts(
-                    failures=failed.get(bid, 0),
-                    successes=succeeded.get(bid, 0),
-                ),
-            )
-        )
-    return GroupedReport(name=name, groups=groups, lower_is_better=lib)
+    return GroupedReport(name=name, groups=list(groups.values()),
+                         lower_is_better=lib)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +182,7 @@ class GeoMeanRatio:
     display_ratio: float
     sigma: float
     n_benchmarks: int
-    runs_per_benchmark: int
+    runs_per_benchmark: int | None  # None = inconsistent across benchmarks
 
 
 def metric_ratio(baseline: MetricStats, current: MetricStats) -> MetricRatio | None:
@@ -264,10 +246,14 @@ def geomean_with_sigma(mrs: list[MetricRatio]) -> tuple[float, float]:
 class SummaryData:
     groups: list[GroupStats]
     baseline: GroupedReport | None = None
-    comparees: list[GroupedReport] = field(default_factory=list)
-    comparee_names: list[str] = field(default_factory=list)
-    ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = field(default_factory=dict)
-    geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = field(default_factory=dict)
+    comparees: list[GroupedReport] = field(default_factory=list[GroupedReport])
+    comparee_names: list[str] = field(default_factory=list[str])
+    # Both keyed comparee-first: ratios[comparee][benchmark_id][metric],
+    # geomeans[comparee][suite][metric].
+    ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = field(
+        default_factory=dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]])
+    geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = field(
+        default_factory=dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]])
 
 
 def _all_ratios(baseline: GroupedReport, comparee: GroupedReport):
@@ -367,8 +353,7 @@ def build_summary(
     for c, cname in zip(comparees, comparee_names):
         br = _all_ratios(base, c)
         ratios[cname] = br
-        for suite, gm in _per_suite_geomean(br, c).items():
-            geomeans.setdefault(suite, {})[cname] = gm
+        geomeans[cname] = _per_suite_geomean(br, c)
 
     return SummaryData(
         groups=current_stats,

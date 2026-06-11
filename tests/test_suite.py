@@ -83,8 +83,8 @@ def test_suite_measure_respects_explicit_one():
 
 
 def test_suite_with_success_propagates_and_respects_override():
-    suite_fn = lambda e, r: None
-    bench_fn = lambda e, r: "nope"
+    suite_fn = lambda r: None
+    bench_fn = lambda r: "nope"
     s = (
         suite("s", bench("a"), bench("b").with_success(bench_fn))
         .with_command(["true"]).with_success(suite_fn)
@@ -165,10 +165,8 @@ def test_with_matrix_expands_and_stamps_variant():
     benchmarks = list(s.materialize(ctx=None))
     assert len(benchmarks) == 2
     assert sorted(b.opt for b in benchmarks) == ["O0", "O2"]
-    # Compile and check variant is stamped.
-    g = benchmarks[0].compile(ctx=None, suite="M")
-    sched = next(g)
-    g.close()
+    # Schedule and check variant is stamped.
+    sched = benchmarks[0].schedule(ctx=None, suite="M", run=1)
     assert sched.variant == (("opt", "O0"),)
 
 
@@ -262,7 +260,7 @@ def test_command_axis_default_builder():
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(ctx=None))
-    scheds = [b.schedule(ctx=None, suite="M", run=1, phase="runs") for b in bs]
+    scheds = [b.schedule(ctx=None, suite="M", run=1) for b in bs]
     assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]
 
 
@@ -272,4 +270,5 @@ def test_command_axis_beats_suite_default():
         .with_command(["echo", "suite"])
     )
     b = _mat(s)[0]
-    assert b.command(b, None) == ("echo", "axis")
+    sched = b.schedule(ctx=None, suite="M", run=1)
+    assert sched.execution.command == ("echo", "axis")

@@ -1,10 +1,9 @@
 """benchr CLI: ``bench``, ``run`` (programmatic), ``compare``, ``show``.
 
 The ``run(...)`` function in this module is the main entry point used by
-benchmark scripts. ``benchr`` (the CLI) covers the hyperfine-style
-``benchr bench``, plus ``benchr compare`` and ``benchr show`` for inspecting
-JSON outputs offline.
-"""
+benchmark scripts. ``benchr`` (the CLI) covers the straightforward benchmarking
+tasks ``benchr bench``, ``benchr compare`` and ``benchr show`` for inspecting
+JSON outputs offline."""
 
 from __future__ import annotations
 
@@ -13,12 +12,10 @@ import dataclasses
 import sys
 from pathlib import Path
 
-from typing import Any
-
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
-from benchr.grammar.metric import Time
-from benchr.grammar.policy import FixedRuns
+from benchr.core.metric import Time
+from benchr.core.policy import FixedRuns
 from benchr.grammar.suite import Suite, suite
 from benchr.report.formatter import DefaultSummary, Formatter
 from benchr.report.reporter import (
@@ -31,7 +28,7 @@ from benchr.report.reporter import (
     SummaryReporter,
     console,
 )
-from benchr.report.sample import Report, report_from_json
+from benchr.core.sample import Report, report_from_json
 from benchr.report.stats import build_summary
 from benchr.runner.base import PlannedBenchmark, Runner, plan
 from benchr.runner.dry import Dry
@@ -74,13 +71,13 @@ def run(
     ctx = build_dataclass(params, cli_args) if params is not None else None
 
     reporter = reporter or SummaryReporter(formatter=formatter)
-    reporter = _assemble(
+    reporter = _build_reporter(
         cli_args,
         reporter,
         with_progress=not cli_args.dry and not cli_args.quiet,
     )
 
-    benchmarks = _create_benchmarks(suites, ctx, cli_args)
+    benchmarks = _apply_cli_policy_overrides(plan(suites, ctx), cli_args)
     runner = _make_runner(cli_args, reporter)
     try:
         return runner.run(benchmarks, ctx)
@@ -89,25 +86,28 @@ def run(
         sys.exit(1)
 
 
-def _create_benchmarks(
-    suites: list[Suite], ctx: Any, args: argparse.Namespace
+def _apply_cli_policy_overrides(
+    planned: list[PlannedBenchmark], ns: argparse.Namespace
 ) -> list[PlannedBenchmark]:
-    planned = plan(suites, ctx)
-    params = {}
-    if args.runs is not None:
-        params["runs"] = FixedRuns(args.runs)
-    if args.warmup is not None:
-        params["warmup"] = FixedRuns(args.warmup)
+    """Force FixedRuns policies onto every planned benchmark when --runs /
+    --warmup were given on the command line."""
+    overrides = {}
+    if ns.runs is not None:
+        overrides["runs"] = FixedRuns(ns.runs)
+    if ns.warmup is not None:
+        overrides["warmup"] = FixedRuns(ns.warmup)
 
-    if params:
+    if overrides:
         planned = [
-            dataclasses.replace(p, benchmark=dataclasses.replace(p.benchmark, **params))
+            dataclasses.replace(
+                p, benchmark=dataclasses.replace(p.benchmark, **overrides)
+            )
             for p in planned
         ]
     return planned
 
 
-def _assemble(
+def _build_reporter(
     ns: argparse.Namespace,
     summary_reporter: Reporter,
     *,
@@ -132,12 +132,11 @@ def _assemble(
 
 
 def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
-    verbose = getattr(ns, "verbose", False)
-    if getattr(ns, "dry", False):
-        return Dry(verbose=verbose)
+    if ns.dry:
+        return Dry(verbose=ns.verbose)
     if ns.jobs > 1:
-        return Parallel(workers=ns.jobs, reporter=reporter, verbose=verbose)
-    return Sequential(reporter=reporter, verbose=verbose)
+        return Parallel(workers=ns.jobs, reporter=reporter, verbose=ns.verbose)
+    return Sequential(reporter=reporter, verbose=ns.verbose)
 
 
 # ---------------------------------------------------------------------------
@@ -160,20 +159,38 @@ def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> No
 
 
 def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
-    g = parser.add_argument_group("benchr flags")
+    _add_shared_flags(parser.add_argument_group("benchr flags"))
+
+
+def _add_shared_flags(
+    # argparse exposes no public name for the add_argument_group() return type.
+    g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
+    *,
+    runs_default: int | None = None,
+    warmup_default: int | None = None,
+) -> None:
+    """The flag set shared by ``benchr.run()`` scripts and ``benchr bench``.
+
+    A ``None`` default for --runs/--warmup means "no override: each benchmark
+    keeps its own stopping policy" (the script case); ``benchr bench`` passes
+    concrete counts since its ad-hoc benchmarks have no policy of their own.
+    """
+    policy_note = "each benchmark's own policy"
     g.add_argument(
         "--runs",
         type=int,
-        default=None,
+        default=runs_default,
         metavar="N",
-        help="Override the runs-phase count for every benchmark.",
+        help="Measured run count for every benchmark (default: "
+        f"{runs_default if runs_default is not None else policy_note}).",
     )
     g.add_argument(
         "--warmup",
         type=int,
-        default=None,
+        default=warmup_default,
         metavar="N",
-        help="Override the warmup-phase run count for every benchmark.",
+        help="Warmup runs executed but excluded from stats (default: "
+        f"{warmup_default if warmup_default is not None else policy_note}).",
     )
     g.add_argument(
         "--jobs",
@@ -296,81 +313,13 @@ def _bench_subparser(p: argparse.ArgumentParser) -> None:
         metavar="CMD",
         help="One or more shell commands to benchmark (each split with shlex).",
     )
-    p.add_argument(
-        "--runs",
-        type=int,
-        default=10,
-        metavar="N",
-        help="Number of measured runs per command (default: 10).",
-    )
-    p.add_argument(
-        "--warmup",
-        type=int,
-        default=0,
-        metavar="N",
-        help="Number of warmup runs executed but excluded from stats (default: 0).",
-    )
+    _add_shared_flags(p, runs_default=10, warmup_default=0)
     p.add_argument(
         "--timeout",
         type=float,
         default=None,
         metavar="SECONDS",
         help="Kill a run that takes longer than SECONDS (treated as a failure).",
-    )
-    p.add_argument(
-        "--jobs",
-        "-j",
-        type=int,
-        default=1,
-        metavar="N",
-        help="Run up to N benchmarks in parallel (default: 1, sequential).",
-    )
-    p.add_argument(
-        "--quiet",
-        "-q",
-        action="store_true",
-        help="Suppress the live progress reporter (summary still prints).",
-    )
-    p.add_argument(
-        "--dry",
-        action="store_true",
-        help="Print the planned executions and exit without running anything.",
-    )
-    p.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Echo each benchmark's full command / cwd / env / run plan "
-        "before running it (and the only output under --dry -v).",
-    )
-    p.add_argument(
-        "--json",
-        type=str,
-        default=None,
-        metavar="FILE",
-        help="Write a JSON report of every sample to FILE.",
-    )
-    p.add_argument(
-        "--csv",
-        type=str,
-        default=None,
-        metavar="FILE",
-        help="Write a CSV report of every sample to FILE.",
-    )
-    p.add_argument(
-        "--dir",
-        type=str,
-        default=None,
-        metavar="DIR",
-        help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.",
-    )
-    p.add_argument(
-        "--compare",
-        action="append",
-        default=None,
-        metavar="JSON",
-        help="Compare against a baseline JSON report (repeat to add more; "
-        "first is the baseline, last is the current run).",
     )
     p.add_argument(
         "--metric",
@@ -402,7 +351,9 @@ def _run_bench(ns: argparse.Namespace) -> int:
 
     metrics = {ns.metric} if ns.metric else None
     summary_reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
-    rep = _assemble(ns, summary_reporter, with_progress=not ns.dry and not ns.quiet)
+    rep = _build_reporter(
+        ns, summary_reporter, with_progress=not ns.dry and not ns.quiet
+    )
 
     runner = _make_runner(ns, rep)
     try:

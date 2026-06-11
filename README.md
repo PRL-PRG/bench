@@ -17,11 +17,11 @@ Two ways to use it:
 
 ```console
 $ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
-[1|12] bench/sleep 0.05 #1 [warmup] ok
-[2|12] bench/sleep 0.05 #1 [runs] ok
-[3|12] bench/sleep 0.05 #2 [runs] ok
+[1|12] bench/sleep 0.05 #1 ok
+[2|12] bench/sleep 0.05 #2 ok
+[3|12] bench/sleep 0.05 #3 ok
 ...
-[12|12] bench/sleep 0.1 #5 [runs] ok
+[12|12] bench/sleep 0.1 #6 ok
 
 bench/sleep 0.05: 0|5 runs
   elapsed [ms] (mean ± σ):  55.22 ± 2.11    (51.83 … 57.35)
@@ -75,9 +75,11 @@ See [`examples/`](examples/) for one runnable script per capability.
 ## The model
 
 A benchmark run is a pipeline. The blocks below are the things you build
-(`Suite`, `Benchmark`) and the things a run produces (`RunRecord`, `Sample`,
-`Report`). Everything in the right column is **pure data** — Reports round-trip
-cleanly through JSON.
+(`Suite`, `Benchmark` — the builder grammar in `benchr.grammar`) and the things
+a run produces (`RunRecord`, `Sample`, `Report` — pure data in `benchr.core`,
+so Reports round-trip cleanly through JSON). Every pipeline step below except
+`Benchmark.schedule()` and the final reporting lives in `benchr.core`; see
+[Module layout](#module-layout) for the one-line layering rule.
 
 * `Suite`: a named collection of benchmarks
 * `Benchmark`: command + cwd + env + metrics + stopping policy + variants
@@ -88,10 +90,13 @@ cleanly through JSON.
 ### Pipeline
 
 ```
-   Benchmark.compile()        ← coroutine, yields one ScheduledExecution per run
+   benchmarking_loop          ← yields (run, in_warmup) slots until the policies converge
         │
         ▼
-   ScheduledExecution         ← (Execution, suite, benchmark, run, phase, variant)
+   Benchmark.schedule()       ← materializes one ScheduledExecution per slot
+        │
+        ▼
+   ScheduledExecution         ← (Execution, suite, benchmark, run, variant)
         │
         ▼
    execute()                  ← the only step that spawns a process
@@ -116,11 +121,15 @@ cleanly through JSON.
          ▼
    StoppingPolicy.observe(run, samples)
          │
-         ▼ not converged → next ScheduledExecution
+         ▼ not converged → next slot
          │
          ▼ converged
      Report  →  Reporter (stream) + Formatter (final summary)
 ```
+
+A *harness* benchmark (`.with_harness()`, see below) takes a shortcut through
+the same pipeline: one `execute()`, then the metrics parse the **complete**
+output and each iteration's samples become one `RunRecord`.
 
 A **failed run still produces a `RunRecord`** (with `failure` set, empty
 `samples`). That's why a failing benchmark appears in the summary as `3|0 runs`
@@ -132,9 +141,8 @@ benchmark stops after N runs rather than retrying.
 
 A `Suite` *stores* defaults (command, cwd, env, metrics, policies, …) next to
 its benchmarks; nothing propagates when a `.with_*` method is called. Every
-unset benchmark field holds a null object (`UNSET_COMMAND`, `UNSET_POLICY`, …)
-meaning "inherit the suite's value", and resolution happens once, at
-materialize time. Per-benchmark values always win over suite defaults — and
+unset benchmark field holds the `UNSET` null object, meaning "inherit the
+suite's value", and resolution happens once, at materialize time. Per-benchmark values always win over suite defaults — and
 because resolution is deferred, **builder-call order never matters**:
 
 ```python
@@ -173,7 +181,7 @@ carries identity + outcome + nested `Sample`s:
 
 ```python
 RunRecord(
-    suite, benchmark, variant, run, phase,        # identity
+    suite, benchmark, variant, run,               # identity
     command, returncode, runtime, failure, message,  # outcome
     variant_label,
     samples: list[Sample],                        # parsed metrics (empty on failure)
@@ -187,8 +195,10 @@ Sample(metric, value, unit, lower_is_better)      # metric data only
   the benchmark has no matrix.
 * `variant_label` is the human-readable label of the variant (from
   `Benchmark.with_label(...)`, or the formatted `variant` tuple otherwise).
-* `phase` is `"warmup"` or `"runs"`. Warmup runs appear in JSON/CSV/dir
-  outputs but are excluded from stats.
+* run numbers are **continuous**: a benchmark's warmup runs are `1..W`,
+  measured runs follow. Records carry no warmup marking — `Report.warmups`
+  maps each benchmark variant to its `W` once, and stats drop those runs.
+  Every run appears in JSON/CSV/dir outputs.
 * `Sample.lower_is_better` is set by the Metric — `True` for runtime, `False`
   for throughput, `None` when not comparable.
 
@@ -209,10 +219,12 @@ get:
       "benchmark": "tiny",
       "variant": [],
       "run": 1,
-      "phase": "runs",
       "command": ["python3", "-c", "sum(range(1000))"],
       "returncode": 0,
       "runtime": 0.014422666048631072,
+      "failure": null,
+      "message": "",
+      "variant_label": "",
       "samples": [
         {
           "metric": "elapsed",
@@ -222,9 +234,14 @@ get:
         }
       ]
     }
-  ]
+  ],
+  "warmups": {}
 }
 ```
+
+`warmups` maps a benchmark-variant key to the number of its leading runs that
+were warmup (only non-zero entries; here none) — that is how a reloaded
+report, e.g. a `--compare` baseline, knows which runs the stats must drop.
 
 Programmatically:
 
@@ -241,12 +258,13 @@ Path("out2.json").write_text(report_to_json(r))
 
 CSV (`--csv`) is one row per `(run, sample)` for successful runs, plus one
 row per failed run carrying the failure verdict. The schema is
-`suite, benchmark, run, phase, <variant cols>, metric, value, unit, lower_is_better, failure`
+`suite, benchmark, run, <variant cols>, metric, value, unit, lower_is_better, failure`
 where variant columns are the **union** of every axis observed across all runs
-(cells absent in a particular run are blank).
+(cells absent in a particular run are blank). All runs appear, warmup
+included — to drop warmup in external analysis, read `warmups` from the JSON.
 
 DirReporter (`--dir`) writes a per-execution tree
-(`<suite>/<bench>/<phase>/<run>/{stdout,stderr,exitcode,rusage,seq}`).
+(`<suite>/<bench>/<run>/{stdout,stderr,exitcode,rusage,seq}`).
 
 ### Metric — output → metrics
 
@@ -266,14 +284,14 @@ from benchr import FloatPerLine, Time, max_rss
 
 Built-in metric builders exported from `benchr`: `Time`, `Regex`,
 `FloatPerLine`, `Rebench`, `RUsage`, `Constant`, `max_rss()`. See
-[`src/benchr/grammar/metric.py`](src/benchr/grammar/metric.py) for the full
+[`src/benchr/core/metric.py`](src/benchr/core/metric.py) for the full
 list and [`examples/custom_metric.py`](examples/custom_metric.py) to
 write your own.
 
 ### StoppingPolicy and PolicyState — when to stop
 
-Each benchmark phase (warmup, measure) has a **`StoppingPolicy`** that decides
-when enough runs have been collected. The split is deliberate:
+Warmup and measurement each have a **`StoppingPolicy`** that decides when
+enough runs have been collected. The split is deliberate:
 
 * `StoppingPolicy` — frozen, hashable **configuration**.
   `policy.start() → PolicyState`.
@@ -331,8 +349,12 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
   *order-independent* policies (e.g. `FixedRuns`); convergence-driven or
   order-dependent policies are rejected — use `Sequential`, or force a run
   count with `--runs N`.
-* **`Dry`** — advance each coroutine once and print what *would* run; no
-  subprocess. `--dry -v` dumps every field of the `ScheduledExecution`.
+* **`Dry`** — enumerate and print what *would* run; no subprocess.
+  `--dry -v` dumps every field of the `ScheduledExecution`.
+
+Harness benchmarks run in all three: `Parallel` treats one as a single work
+item (one execution), so harness benchmarks and variants fan out across
+workers; `Dry` prints one `[harness]`-marked line.
 
 A runner executes a flat list of planned benchmarks, not suites: call
 `plan(suites, ctx)` to materialize first, then `runner.run(planned, ctx)`. The
@@ -340,11 +362,10 @@ A runner executes a flat list of planned benchmarks, not suites: call
 
 ```console
 $ uv run examples/factory.py --dry -v
-factory_demo/tiny #1 [runs]
+factory_demo/tiny #1
   suite:      factory_demo
   benchmark:  tiny
   run:        1
-  phase:      measure
   command:    python3 -c sum(range(1000))
   cwd:        /home/user/benchr
   env:        {}
@@ -431,6 +452,54 @@ suite("LoxSuite")
 `benchmark.<attr>`. See [`examples/discovery.py`](examples/discovery.py),
 [`examples/external/lox.py`](examples/external/lox.py),
 [`examples/external/rcp.py`](examples/external/rcp.py).
+
+### Harness benchmarks — one process runs all iterations
+
+Benchmarking a VM, you don't re-execute it per run: you start it once and let
+it iterate internally so the JIT can warm up. `.with_harness()` marks a
+benchmark (or, on a `Suite`, every benchmark) as such a *harness*: the command
+is executed **once**, the metrics parse the complete output (one sample per
+iteration), and each iteration becomes one run record — the first
+`warmup.max_runs()` of them discarded by the stats like any other warmup.
+The harness must be told how many iterations to run; derive the count in the
+command fn from the policies:
+
+```python
+def vm_command(b, ctx):
+    n = b.warmup.max_runs() + b.runs.max_runs()
+    return [str(ctx.vm), str(b.path), "-n", str(n)]
+
+suite("vm", *from_files("benchmarks", pattern=r"\.lox$"))
+    .with_command(vm_command)
+    .with_metric(FloatPerLine("ms").lower_is_better())  # one time per line
+    .with_warmup(5)
+    .with_runs(10)
+    .with_harness()
+```
+
+Real harnesses fit the same shape: Renaissance (`-r N` plus a `Regex` on its
+`iteration N completed (… ms)` lines), LevelDB's `db_bench` (a `Regex` on
+`micros/op`, warmup 0), or any ReBench-format harness (the `Rebench()`
+metric). See [`examples/harness.py`](examples/harness.py).
+
+The contract, spelled out:
+
+* warmup/runs must be **bounded** counts (no `CoefficientOfVariation`) — the
+  runner cannot stop a harness mid-flight, so the policies are rejected at
+  materialize time otherwise. `--runs`/`--warmup` overrides work and reach
+  the command fn.
+* the output is parsed only after the process exits (no live streaming, no
+  live progress), and `with_timeout` covers the whole process — all
+  iterations, not one.
+* with several metrics, the i-th sample of each metric belongs to iteration
+  i. A harness that produces **no** samples, or fewer iterations than
+  `warmup + runs`, is reported as a failure (a `Time()`-only harness
+  benchmark fails loudly instead of producing an empty summary — set an
+  output-parsing metric).
+* per-iteration records share the single execution's outcome: the process
+  `runtime` repeats on every record in the JSON, and `--dir` writes the full
+  stdout per iteration directory. The iteration measurements are whatever the
+  harness self-reports — there is no per-iteration rusage.
 
 ### Failure handling
 
@@ -546,27 +615,33 @@ python my_bench.py [--<user params>] [--runs N] [--warmup N] [--jobs J]
 
 ## Module layout
 
+Layering rule: `core ← grammar ← report ← runner ← cli` — every import
+points left.
+
 ```
 src/benchr/
     __init__.py            public re-exports
     cli.py                 run() entry point + bench/compare/show
-    grammar/
+    core/                  pure mechanism + pure data; imports nothing from benchr
         execution.py       Execution, ExecutionResult, ScheduledExecution,
                            Variant, TIMEOUT_RC, SPAWN_FAIL_RC
+        process.py         execute() + SIGINT machinery
         metric.py          Metric + combinators + Time/Regex/FloatPerLine/…
         policy.py          StoppingPolicy, FixedRuns, CoV, combinators
-        benchmark.py       Benchmark + compile() coroutine
+        loop.py            benchmarking_loop — the pure feedback core
+        sample.py          Sample, RunRecord, Report, JSON round-trip
+    grammar/               builder sugar on top of core
+        benchmark.py       Benchmark + schedule(), UNSET
         suite.py           Suite + matrix + from_files
         context.py         @dataclass -> argparse glue
-    runner/
-        base.py            execute(), plan(), Runner base + coroutine pump
-        sequential.py / parallel.py / dry.py
     report/
-        sample.py          Sample, RunRecord, Report, JSON round-trip
         stats.py           grouping, stats, ratios, geomean
         formatter.py       DefaultSummary, Compact
         reporter.py        streaming sinks (CompositeReporter, CsvReporter, JsonReporter, …)
         theme.py           rich theme + shared Console
+    runner/
+        base.py            plan(), judge(), Runner base + the loop driver
+        sequential.py / parallel.py / dry.py
 ```
 
 ---
@@ -574,6 +649,6 @@ src/benchr/
 ## Development
 
 ```console
-uv run pytest          # 153 tests
+uv run pytest
 uv run benchr bench --runs 20 'sleep 0.1' 'sleep 0.2'
 ```

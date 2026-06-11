@@ -25,8 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from benchr import (
-    Benchmark, Execution, ExecutionResult, Reporter, Sample,
-    ScheduledExecution, Time, from_files, run, suite,
+    Benchmark, ExecutionResult, Reporter, RunRecord, Time, from_files, run,
+    suite,
 )
 from benchr.report.reporter import console
 
@@ -52,11 +52,11 @@ def _expected_lines(source: Path) -> list[str] | None:
         return None
 
 
-def lox_expect(execution: Execution, result: ExecutionResult) -> str | None:
+def lox_expect(result: ExecutionResult) -> str | None:
     """Success iff stdout lines equal the // expect: comments in the source."""
     if result.returncode != 0:
         return f"exit code {result.returncode}"
-    source = Path(execution.command[-1])
+    source = Path(result.execution.command[-1])
     expected = _expected_lines(source)
     if expected is None:
         return f"source not found: {source}"
@@ -77,15 +77,10 @@ class LoxTestSummary(Reporter):
         self.failed = 0
         self.failed_tests: list[str] = []
 
-    def sample(
-        self,
-        sched: ScheduledExecution,
-        result: ExecutionResult,
-        samples: list[Sample],
-    ) -> None:
-        if result.is_failure():
+    def record(self, rec: RunRecord, result: ExecutionResult) -> None:
+        if rec.is_failure():
             self.failed += 1
-            self.failed_tests.append(f"{sched.suite}/{sched.benchmark}")
+            self.failed_tests.append(f"{rec.suite}/{rec.benchmark}")
         else:
             self.passed += 1
 

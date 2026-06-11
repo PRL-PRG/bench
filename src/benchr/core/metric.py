@@ -13,10 +13,11 @@ import abc
 import dataclasses
 import re
 import sys
-from typing import Callable, Iterable, Iterator, Literal
+from collections.abc import Callable, Iterable, Iterator
+from typing import Literal
 
-from benchr.grammar.execution import ExecutionResult
-from benchr.report.sample import Sample
+from benchr.core.execution import ExecutionResult
+from benchr.core.sample import Sample
 
 
 def extract_all(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:

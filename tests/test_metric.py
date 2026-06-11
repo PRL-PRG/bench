@@ -3,7 +3,7 @@
 import re
 
 from benchr import Constant, FloatPerLine, Rebench, Regex, Time, max_rss
-from benchr.grammar.metric import extract_all
+from benchr.core.metric import extract_all
 
 from conftest import make_failure, make_rusage, make_success
 

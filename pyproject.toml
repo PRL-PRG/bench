@@ -23,3 +23,10 @@ packages = ["src/benchr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
+include = ["src", "tests", "examples"]
+strict = ["src"]

@@ -17,7 +17,7 @@ Demonstrates:
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import B, Rebench, run, suite
+from benchr import Rebench, bench as B, run, suite
 
 
 HERE = Path(__file__).resolve().parent

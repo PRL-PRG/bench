@@ -28,7 +28,7 @@ def test_csv_writer(tmp_path: Path):
     Sequential(reporter=CsvReporter(out)).run(plan([_s()], None), ctx=None)
     text = out.read_text()
     lines = text.splitlines()
-    assert lines[0].split(",")[:4] == ["suite", "benchmark", "run", "phase"]
+    assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
     assert len(lines) == 3  # header + 2 rows
 
 
@@ -163,24 +163,26 @@ def test_progress_plain_marks_failures():
     assert "FAIL exit 11" in buf.getvalue()
 
 
-def test_progress_plain_keeps_phase_tag():
-    # "[runs]" in the identifier must be escaped, otherwise rich eats it
-    # as a markup tag and the phase disappears from the line.
+def test_progress_plain_escapes_identifier_markup():
+    # Bracketed text in the identifier (here from the label) must be escaped,
+    # otherwise rich eats it as a markup tag and it disappears from the line.
     c, buf = _string_console()
     s = suite("S", bench("a")
               .with_command(["sh", "-c", "echo ok"])
               .with_metric(Time())
+              .with_label(lambda b: "[v1]")
               .with_runs(1))
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), ctx=None)
-    assert "[runs]" in buf.getvalue()
+    assert "[v1]" in buf.getvalue()
 
 
-def test_summary_failure_line_keeps_phase_tag():
+def test_summary_failure_line_escapes_identifier_markup():
     c, buf = _string_console()
     s = suite("F", bench("bad")
               .with_command(["sh", "-c", "exit 11"])
               .with_metric(Time())
+              .with_label(lambda b: "[v1]")
               .with_runs(1))
     Sequential(reporter=SummaryReporter(target_console=c),
                max_consecutive_failures=1).run(plan([s], None), ctx=None)
-    assert "[runs]" in buf.getvalue()
+    assert "[v1]" in buf.getvalue()

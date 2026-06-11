@@ -32,5 +32,5 @@ if __name__ == "__main__":
     print(f"Got {total} samples, {len(report.failures)} failures.")
     for r in report.runs:
         for sample in r.samples:
-            print(f"  {r.benchmark}#{r.run}/{r.phase}: "
+            print(f"  {r.benchmark}#{r.run}: "
                   f"{sample.metric}={sample.value:.4f}{sample.unit}")

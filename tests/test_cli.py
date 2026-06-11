@@ -92,14 +92,14 @@ def test_bench_help_describes_subcommand():
     assert r.returncode == 0
     assert "Time one or more shell commands" in r.stdout
     # Per-flag descriptions show up:
-    assert "Number of measured runs" in r.stdout
+    assert "Measured run count" in r.stdout
     assert "Suppress the live progress" in r.stdout
 
 
 def test_bench_quiet_omits_progress_lines():
     r = _run("bench", "--quiet", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
-    # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X [runs] ok".
+    # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X ok".
     # With --quiet they should not appear.
     assert "[1|2]" not in r.stdout
     assert "[2|2]" not in r.stdout

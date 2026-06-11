@@ -18,7 +18,7 @@ def _ok(run: int = 1, *, bench: str = "b", suite: str = "S",
         variant=(), variant_label: str = "",
         samples: list[Sample] | None = None) -> RunRecord:
     return RunRecord(
-        suite=suite, benchmark=bench, variant=variant, run=run, phase="runs",
+        suite=suite, benchmark=bench, variant=variant, run=run,
         command=("x",), returncode=0,
         variant_label=variant_label,
         samples=list(samples) if samples else [],
@@ -58,6 +58,25 @@ def test_compact_with_baseline_shows_speedup(tmp_path: Path):
     assert "geometric mean speedup" in out
     assert "a:" in out
     assert "2.00" in out or "2.0" in out
+    assert "(3 runs)" in out
+
+
+def test_compact_omits_run_count_when_inconsistent(tmp_path: Path):
+    baseline = Report(runs=(
+        [_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
+        + [_ok(i, bench="b", samples=[_smp("runtime", 1.0)]) for i in range(1, 6)]
+    ))
+    bpath = tmp_path / "b.json"
+    bpath.write_text(report_to_json(baseline))
+
+    # a has 3 runs, b has 5 — no single honest count to print.
+    current = Report(runs=(
+        [_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
+        + [_ok(i, bench="b", samples=[_smp("runtime", 0.5)]) for i in range(1, 6)]
+    ))
+    out = Compact("runtime")(current, baseline=[bpath])
+    assert "geometric mean speedup" in out
+    assert "runs)" not in out
 
 
 def test_default_summary_with_baseline_includes_runs(tmp_path: Path):

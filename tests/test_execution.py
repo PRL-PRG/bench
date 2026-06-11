@@ -43,7 +43,7 @@ def test_scheduled_execution_identifier():
         execution=Execution(command=("x",), cwd=Path("/tmp")),
         suite="S", benchmark="B",
         variant=(("opt", "O2"), ("cc", "gcc")),
-        run=3, phase="warmup",
+        run=3,
     )
     s = sched.identifier()
-    assert s == "S/B (opt=O2, cc=gcc) #3 [warmup]"
+    assert s == "S/B (opt=O2, cc=gcc) #3"

@@ -29,7 +29,8 @@ _MISSING = object()
 
 
 def add_dataclass_args(
-    parser: argparse.ArgumentParser | argparse._ArgumentGroup,
+    # argparse exposes no public name for the add_argument_group() return type.
+    parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
     dc: type,
 ) -> None:
     """Generate ``--<name>`` arguments from a dataclass's fields."""
@@ -53,16 +54,12 @@ def add_dataclass_args(
             kwargs["type"] = _coerce_type(bare_type)
             kwargs["metavar"] = _metavar(bare_type)
 
+        factory = f.default_factory
         has_default = (
-            f.default is not dataclasses.MISSING
-            or f.default_factory is not dataclasses.MISSING  # type: ignore[misc]
+            f.default is not dataclasses.MISSING or factory is not dataclasses.MISSING
         )
         if has_default:
-            default = (
-                f.default
-                if f.default is not dataclasses.MISSING
-                else f.default_factory()  # type: ignore[misc]
-            )
+            default: Any = f.default if factory is dataclasses.MISSING else factory()
             kwargs["default"] = default
             kwargs["help"] = f"(default: {default})"
         elif optional:

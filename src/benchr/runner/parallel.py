@@ -1,7 +1,7 @@
 """Parallel runner.
 
-A flat work queue across N workers. Every ``(benchmark, run, phase)`` execution
-is materialized up front and spread across one thread pool — the fastest way to
+A flat work queue across N workers. Every ``(benchmark, run)`` execution is
+materialized up front and spread across one thread pool — the fastest way to
 get through a batch of tasks.
 
 This is the *only* sound use of parallelism in a benchmark tool: wall-clock
@@ -18,16 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
-from benchr.grammar.execution import ExecutionResult, Phase, ScheduledExecution
-from benchr.grammar.policy import StoppingPolicy
-from benchr.report.sample import Report, Sample
+from benchr.core.execution import ExecutionResult, ScheduledExecution
+from benchr.core.process import execute, install_sigint_handler, interrupted
+from benchr.core.sample import Report, RunRecord, Sample
+from benchr.report.reporter import Reporter
 from benchr.runner.base import (
-    _INTERRUPTED,
     PlannedBenchmark,
     Runner,
-    execute,
     format_scheduled_verbose,
-    install_sigint_handler,
     judge,
 )
 
@@ -41,8 +39,9 @@ class Parallel(Runner):
     with ``--runs N``.
     """
 
-    def __init__(self, workers: int, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, workers: int, reporter: Reporter | None = None,
+                 **kwargs: Any) -> None:
+        super().__init__(reporter, **kwargs)
         self.workers = workers
         # Guards the shared Report + serializes verbose blocks across workers.
         self._lock = threading.Lock()
@@ -54,10 +53,11 @@ class Parallel(Runner):
         result: ExecutionResult,
         samples: list[Sample],
     ) -> None:
+        rec = RunRecord.from_result(sched, result, samples)
         with self._lock:
-            report.record(sched, result, samples)
+            report.add(rec)
         # Reporters guard their own state; no need to hold the lock.
-        self.reporter.sample(sched, result, samples)
+        self.reporter.record(rec, result)
 
     @staticmethod
     def _parallelizable(b: Benchmark) -> bool:
@@ -72,9 +72,10 @@ class Parallel(Runner):
         self, planned: list[PlannedBenchmark], ctx: Any = None
     ) -> Report:
         # Validate up front: a flat work queue can only hold runs we can count
-        # ahead of time and reorder freely.
+        # ahead of time and reorder freely. A harness benchmark is exempt —
+        # it is a single execution, so there is nothing to reorder.
         for p in planned:
-            if not self._parallelizable(p.benchmark):
+            if not p.benchmark.harness and not self._parallelizable(p.benchmark):
                 raise ValueError(
                     f"Parallel cannot run benchmark {p.benchmark.name!r}: its "
                     f"stopping policy is unbounded or order-dependent "
@@ -86,32 +87,33 @@ class Parallel(Runner):
         self.reporter.start([p.benchmark for p in planned])
         report = Report()
 
-        # Flatten every (benchmark, run, phase) into one work list.
+        # Flatten every (benchmark, run) into one work list; runs are numbered
+        # continuously (warmup 1..W, measured W+1..W+R). A harness benchmark
+        # is one work item: its single execution produces all its records.
         work: list[tuple[Benchmark, ScheduledExecution]] = []
         for p in planned:
             b = p.benchmark
+            # Bounded policies are guaranteed (validation above / materialize).
+            warmup_runs, measured = b.warmup.max_runs(), b.runs.max_runs()
+            assert warmup_runs is not None and measured is not None
+            total = 1 if b.harness else warmup_runs + measured
             first: ScheduledExecution | None = None
-            phases: tuple[tuple[Phase, StoppingPolicy], ...] = (
-                ("warmup", b.warmup),
-                ("runs", b.runs),
-            )
-            for phase, policy in phases:
-                # _parallelizable guarantees a bounded policy (max_runs not None).
-                max_runs = policy.max_runs()
-                assert max_runs is not None
-                for i in range(1, max_runs + 1):
-                    sched = b.schedule(ctx, suite=p.suite, run=i, phase=phase)
-                    if first is None:
-                        first = sched
-                    work.append((b, sched))
-            if self.verbose and first is not None:
-                with self._lock:
-                    print(format_scheduled_verbose(first, b))
+            for i in range(1, total + 1):
+                sched = b.schedule(ctx, suite=p.suite, run=i)
+                if first is None:
+                    first = sched
+                work.append((b, sched))
+            if first is not None:
+                if not b.harness:
+                    self._warmup(report, first, warmup_runs)
+                if self.verbose:
+                    with self._lock:
+                        print(format_scheduled_verbose(first, b))
 
         def _do(item: tuple[Benchmark, ScheduledExecution]):
             # Don't spawn anything once a Ctrl+C has fired — the kill sweep has
             # already run, so a process started now would be orphaned.
-            if _INTERRUPTED.is_set():
+            if interrupted():
                 return None
             b, sched = item
             return b, sched, execute(sched.execution)
@@ -123,11 +125,14 @@ class Parallel(Runner):
                         if out is None:
                             continue
                         b, sched, result = out
+                        if b.harness:
+                            self._record_harness(b, sched, result, report)
+                            continue
                         # Same judge+parse step as the sequential pump; a failed
                         # run emits no metrics, only a RunRecord.
-                        result, samples = judge(b, sched, result)
+                        result, samples = judge(b, result)
                         self._record(report, sched, result, samples)
-                if _INTERRUPTED.is_set():
+                if interrupted():
                     raise KeyboardInterrupt
             return report
         finally:

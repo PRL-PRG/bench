@@ -1,4 +1,4 @@
-"""StoppingPolicy: decides when a benchmark phase has converged.
+"""StoppingPolicy: decides when to stop taking runs.
 
 Configuration is frozen / hashable; mutable per-run state lives in a separate
 ``PolicyState`` produced by ``policy.start()``. Combinators:
@@ -14,9 +14,9 @@ in place of ``isinstance`` checks:
     .max_runs()    int | None — upper bound on permitted runs, ``None`` = ∞
     .independent() bool       — whether runs can be reordered / parallelized
 
-``observe(run, samples)`` is called by the Runner once per run, whether it
-succeeded or failed. ``samples`` is the parsed output of one execution — empty
-for a failed run, since failed runs emit no metrics.
+``observe(run, samples)`` is called by ``benchmarking_loop`` once per run,
+whether it succeeded or failed. ``samples`` is the parsed output of one
+execution — empty for a failed run, since failed runs emit no metrics.
 """
 
 from __future__ import annotations
@@ -24,10 +24,10 @@ from __future__ import annotations
 import abc
 import math
 from collections import deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
-from benchr.report.sample import Sample
+from benchr.core.sample import Sample
 
 
 # ---------------------------------------------------------------------------
@@ -85,26 +85,6 @@ class PolicyState(abc.ABC):
     def converged(self) -> bool: ...
 
 
-class _UnsetPolicy(StoppingPolicy):
-    """Null object meaning "inherit the suite's policy". Replaced by
-    ``Suite.materialize()``; ``start()`` raising means a benchmark escaped
-    resolution."""
-
-    __slots__ = ()
-
-    def start(self) -> PolicyState:
-        raise RuntimeError(
-            "stopping policy is unset — benchmarks must be resolved via "
-            "Suite.materialize() before running"
-        )
-
-    def __repr__(self) -> str:
-        return "UNSET_POLICY"
-
-
-UNSET_POLICY: StoppingPolicy = _UnsetPolicy()
-
-
 # ---------------------------------------------------------------------------
 # FixedRuns: the simplest policy. Converges after seeing N runs.
 # ---------------------------------------------------------------------------
@@ -139,6 +119,11 @@ class _FixedState(PolicyState):
 
     def converged(self) -> bool:
         return self.cur >= self.target
+
+
+def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
+    """Accept the ``int`` shorthand for a stopping policy: ``n`` = FixedRuns(n)."""
+    return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,15 @@
 """benchr — a benchmarking framework."""
 
 # Atoms
-from benchr.grammar.execution import (
+from benchr.core.execution import (
     Execution,
     ExecutionResult,
-    Phase,
     ScheduledExecution,
     Variant,
     Verdict,
     default_success,
 )
-from benchr.report.sample import (
+from benchr.core.sample import (
     Report,
     RunRecord,
     Sample,
@@ -19,7 +18,7 @@ from benchr.report.sample import (
 )
 
 # Metrics
-from benchr.grammar.metric import (
+from benchr.core.metric import (
     Constant,
     FloatPerLine,
     Metric,
@@ -31,7 +30,7 @@ from benchr.grammar.metric import (
 )
 
 # Stopping policies
-from benchr.grammar.policy import (
+from benchr.core.policy import (
     CoefficientOfVariation,
     Custom,
     FixedRuns,
@@ -42,9 +41,6 @@ from benchr.grammar.policy import (
 # Benchmark / Suite
 from benchr.grammar.benchmark import (
     Benchmark,
-    Command,
-    Cwd,
-    Env,
     bench,
     default_label,
     from_files,
@@ -74,12 +70,9 @@ from benchr.report.formatter import Compact, DefaultSummary, Formatter
 # CLI
 from benchr.cli import main, run
 
-# Aliases
-B = bench
-
 __all__ = [
     # Atoms
-    "Execution", "ExecutionResult", "ScheduledExecution", "Phase", "Variant", "Verdict",
+    "Execution", "ExecutionResult", "ScheduledExecution", "Variant", "Verdict",
     "default_success",
     "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
     # Metrics
@@ -88,8 +81,8 @@ __all__ = [
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation", "Custom",
     # Benchmark / Suite
-    "Benchmark", "bench", "B",
-    "Command", "Cwd", "Env", "default_label", "from_files",
+    "Benchmark", "bench",
+    "default_label", "from_files",
     "Suite", "suite",
     # Runners
     "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",

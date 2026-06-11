@@ -7,7 +7,7 @@ from benchr import Report, RunRecord, Sample, report_from_json, report_to_json
 
 def _run(variant=(), **kw) -> RunRecord:
     base: dict[str, Any] = dict(
-        suite="S", benchmark="B", variant=variant, run=1, phase="runs",
+        suite="S", benchmark="B", variant=variant, run=1,
         command=("./bench",), returncode=0, runtime=0.1,
     )
     base.update(kw)
@@ -39,11 +39,28 @@ def test_json_round_trip():
     r = Report(runs=[
         _run(samples=[_smp(), _smp(metric="max_rss", value=2048, unit="kB")]),
         RunRecord(
-            suite="S", benchmark="B", variant=(("opt", "O2"),), run=3, phase="runs",
+            suite="S", benchmark="B", variant=(("opt", "O2"),), run=3,
             command=("./bench", "--opt"), returncode=7, failure="exit 7", message="boom",
         ),
-    ])
+    ], warmups={"S/B": 2})
     text = report_to_json(r)
     r2 = report_from_json(text)
     assert r2.runs == r.runs
     assert r2.failures == r.failures
+    assert r2.warmups == {"S/B": 2}
+
+
+def test_pre_v4_json_drops_warmup_runs():
+    import json
+
+    old = json.dumps({"runs": [
+        {"suite": "S", "benchmark": "B", "variant": [], "run": 1,
+         "phase": "warmup", "command": ["x"], "returncode": 0, "runtime": 0.1,
+         "failure": None, "message": "", "variant_label": "", "samples": []},
+        {"suite": "S", "benchmark": "B", "variant": [], "run": 1,
+         "phase": "runs", "command": ["x"], "returncode": 0, "runtime": 0.2,
+         "failure": None, "message": "", "variant_label": "", "samples": []},
+    ]})
+    r = report_from_json(old)
+    assert [run.runtime for run in r.runs] == [0.2]
+    assert r.warmups == {}

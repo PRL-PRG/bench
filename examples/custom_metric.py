@@ -19,7 +19,7 @@ import re
 from typing import Iterable
 
 from benchr import (
-    Execution, ExecutionResult, Metric, Sample, Time,
+    ExecutionResult, Metric, Sample, Time,
     bench, run, suite,
 )
 
@@ -36,7 +36,7 @@ class StderrFloat(Metric):
                          unit="s", lower_is_better=True)
 
 
-def succeeded(execution: Execution, pr: ExecutionResult) -> str | None:
+def succeeded(pr: ExecutionResult) -> str | None:
     """Success policy: exit zero AND stdout contains 'OK'.
 
     Returns ``None`` on success, or a failure reason string otherwise.

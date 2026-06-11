@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchr.report.sample import Report
-from benchr.runner.base import (
-    PlannedBenchmark,
-    Runner,
-    _INTERRUPTED,
-    install_sigint_handler,
-)
+from benchr.core.process import install_sigint_handler, interrupted
+from benchr.core.sample import Report
+from benchr.runner.base import PlannedBenchmark, Runner
 
 
 class Sequential(Runner):
@@ -24,10 +20,10 @@ class Sequential(Runner):
         try:
             with install_sigint_handler():
                 for p in planned:
-                    if _INTERRUPTED.is_set():
+                    if interrupted():
                         break
                     self._run_benchmark(p, ctx, report)
-                if _INTERRUPTED.is_set():
+                if interrupted():
                     raise KeyboardInterrupt
             return report
         finally:

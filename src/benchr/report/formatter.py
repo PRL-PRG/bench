@@ -15,8 +15,8 @@ import math
 import statistics
 from pathlib import Path
 
-from benchr.grammar.execution import format_variant
-from benchr.report.sample import Report
+from benchr.core.execution import format_variant
+from benchr.core.sample import Report
 from benchr.report.stats import (
     BenchKey,
     BenchmarkGroup,
@@ -83,11 +83,6 @@ def _group_label(gs: GroupStats | BenchmarkGroup) -> str:
     if gs.suite == gs.benchmark:
         return gs.benchmark
     return f"{gs.suite}/{gs.benchmark}"
-
-
-def _display_name(gs: GroupStats, single_suite: bool) -> str:
-    base = gs.benchmark if single_suite else _group_label(gs)
-    return base + _variant_suffix(gs)
 
 
 def _variant_name(gs: GroupStats) -> str:
@@ -312,7 +307,7 @@ class DefaultSummary(Formatter):
                     continue
                 shown = False
                 for cn in data.comparee_names:
-                    gmr = data.geomeans.get(suite, {}).get(cn, {}).get(mk)
+                    gmr = data.geomeans.get(cn, {}).get(suite, {}).get(mk)
                     if gmr is None:
                         continue
                     if not shown:
@@ -398,7 +393,7 @@ class Compact(Formatter):
         gmr_err: str | None = None
         if self._suite and len(matched) == 1:
             target_mk = next(iter(matched))
-            gmr = data.geomeans.get(self._suite, {}).get(cname, {}).get(target_mk)
+            gmr = data.geomeans.get(cname, {}).get(self._suite, {}).get(target_mk)
         else:
             mrs = [e[1] for e in entries]
             if mrs and all(mr.display_ratio > 0 for mr in mrs):
@@ -418,11 +413,15 @@ class Compact(Formatter):
         out: list[str] = []
         if gmr is not None:
             label = "speedup" if len(matched) == 1 else "improvement"
+            runs_note = (
+                f" ({gmr.runs_per_benchmark} runs)"
+                if gmr.runs_per_benchmark is not None else ""
+            )
             out.append(
                 f"geometric mean {label} vs baseline:"
                 f" {gmr.display_ratio:.{p}f}"
                 f" ± {gmr.sigma:.{p}f}"
-                f" ({gmr.runs_per_benchmark} runs)"
+                f"{runs_note}"
             )
             out.append("")
         elif gmr_err is not None:
@@ -433,7 +432,14 @@ class Compact(Formatter):
         return "\n".join(out)
 
     @staticmethod
-    def _infer_run_count(data: SummaryData, cname: str, bench_ratios, matched) -> int:
+    def _infer_run_count(
+        data: SummaryData,
+        cname: str,
+        bench_ratios: dict[BenchmarkId, dict[MetricKey, MetricRatio]],
+        matched: set[MetricKey],
+    ) -> int | None:
+        """The run count shared by every matched benchmark, or ``None`` when
+        the counts disagree (no honest single number to print)."""
         runs: set[int] = set()
         for gs in data.groups:
             bid: BenchmarkId = (gs.suite, gs.benchmark, gs.variant)
@@ -446,7 +452,7 @@ class Compact(Formatter):
                 bid = (g.suite, g.benchmark, g.variant)
                 if bid in bench_ratios and any(mk in bench_ratios[bid] for mk in matched):
                     runs.add(g.run_counts.successes)
-        return runs.pop() if len(runs) == 1 else 0
+        return runs.pop() if len(runs) == 1 else None
 
     # ----- no baseline ----------------------------------------------
 

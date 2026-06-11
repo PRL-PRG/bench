@@ -13,17 +13,17 @@ round-trip through JSON.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 from cattrs import structure, unstructure
 
-from benchr.grammar.execution import (
+from benchr.core.execution import (
     ExecutionResult,
-    Phase,
     ScheduledExecution,
     Variant,
     format_identifier,
+    record_key,
 )
 
 
@@ -44,8 +44,9 @@ class RunRecord:
     ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
     identifying the matrix cell; ``variant_label`` is its human-readable name.
 
-    ``phase`` is ``"warmup"`` or ``"runs"``. Stats default to excluding
-    warmup; raw outputs (JSON, CSV, dir) keep both.
+    Run numbers are continuous: a benchmark's warmup runs are 1..W, measured
+    runs follow. Records carry no warmup marking — ``Report.warmups`` holds W
+    per benchmark variant, and stats default to dropping the first W runs.
 
     ``returncode`` conventions follow ExecutionResult: ``124`` = timeout,
     ``-1`` = pre-execution failure, any other ``> 0`` = exit code. ``failure``
@@ -58,22 +59,24 @@ class RunRecord:
     benchmark: str
     variant: Variant
     run: int
-    phase: Phase
     command: tuple[str, ...]
     returncode: int
     runtime: float | None = None
     failure: str | None = None
     message: str = ""
     variant_label: str = ""
-    samples: list[Sample] = field(default_factory=list)
+    samples: list[Sample] = field(default_factory=list[Sample])
 
     def is_failure(self) -> bool:
         return self.failure is not None
 
     def identifier(self) -> str:
         return format_identifier(self.suite, self.benchmark, self.variant,
-                                 self.run, self.phase,
-                                 variant_label=self.variant_label)
+                                 self.run, variant_label=self.variant_label)
+
+    def key(self) -> str:
+        """Canonical benchmark-variant key (see ``record_key``)."""
+        return record_key(self.suite, self.benchmark, self.variant)
 
     @staticmethod
     def from_result(
@@ -87,7 +90,6 @@ class RunRecord:
             variant=sched.variant,
             variant_label=sched.variant_label,
             run=sched.run,
-            phase=sched.phase,
             command=sched.execution.command,
             returncode=result.returncode,
             runtime=result.runtime,
@@ -110,41 +112,42 @@ class RunRecord:
 
 def variant_keys(runs: Iterable[RunRecord]) -> list[str]:
     """Stable list of variant-axis names across a stream of runs."""
-    seen: dict[str, None] = {}
-    for r in runs:
-        for k, _ in r.variant:
-            seen.setdefault(k, None)
-    return list(seen)
+    return list(dict.fromkeys(k for r in runs for k, _ in r.variant))
 
 
 @dataclass(slots=True)
 class Report:
-    """The accumulating RunRecords (each carrying its parsed Samples)."""
+    """The accumulating RunRecords (each carrying its parsed Samples).
 
-    runs: list[RunRecord] = field(default_factory=list)
+    ``warmups`` maps a benchmark-variant key (``record_key``) to the number
+    of its leading runs that were warmup — recorded once per variant, not on
+    each record. Stats drop those runs by default.
+    """
+
+    runs: list[RunRecord] = field(default_factory=list[RunRecord])
+    warmups: dict[str, int] = field(default_factory=dict[str, int])
 
     @property
     def failures(self) -> list[RunRecord]:
         return [r for r in self.runs if r.is_failure()]
 
     def metrics(self) -> list[str]:
-        seen: dict[str, None] = {}
-        for r in self.runs:
-            for s in r.samples:
-                seen.setdefault(s.metric, None)
-        return list(seen)
+        """Distinct metric names, first-seen order."""
+        return list(dict.fromkeys(
+            s.metric for r in self.runs for s in r.samples))
 
     def variant_keys(self) -> list[str]:
         return variant_keys(self.runs)
 
-    def record(
-        self,
-        sched: ScheduledExecution,
-        result: ExecutionResult,
-        samples: Iterable[Sample],
-    ) -> None:
-        """Ingest one execution as a single RunRecord with its samples nested."""
-        self.runs.append(RunRecord.from_result(sched, result, samples))
+    def add(self, rec: RunRecord) -> None:
+        """Append one RunRecord."""
+        self.runs.append(rec)
+
+    def warmup(self, key: str, runs: int) -> None:
+        """Note that benchmark-variant ``key``'s (see ``record_key``) first
+        ``runs`` runs were warmup."""
+        if runs:
+            self.warmups[key] = runs
 
 
 # ---------------------------------------------------------------------------
@@ -157,4 +160,9 @@ def report_to_json(report: Report, *, indent: int = 2) -> str:
 
 
 def report_from_json(text: str) -> Report:
-    return structure(json.loads(text), Report)
+    raw = json.loads(text)
+    # Compat: pre-v4 reports stamped each run with a phase; drop their warmup
+    # runs so old baselines still compare correctly. Remove once old baseline
+    # files are retired.
+    raw["runs"] = [r for r in raw["runs"] if r.pop("phase", None) != "warmup"]
+    return structure(raw, Report)

@@ -4,16 +4,19 @@ A ``Suite`` is a frozen value object. It stores *defaults* (command, env,
 policies, metrics, …) next to its member benchmarks; calling a ``.with_*``
 method just sets the suite field — nothing propagates eagerly. Resolution
 happens once, in ``materialize(ctx)``: every benchmark field still holding
-its ``UNSET_*`` null object is filled from the suite, so builder-call order
-never matters — ``Suite("A").with_command(c).add(b)`` equals
+``UNSET`` is filled from the suite, so builder-call order never matters —
+``Suite("A").with_command(c).add(b)`` equals
 ``Suite("A").add(b).with_command(c)``.
+
+Suite defaults are always concrete (except ``command``, which has no sensible
+default); Benchmark fields are all UNSET-able.
 
 Resolution precedence (most specific wins):
 
     benchmark explicit > benchmark axis default > suite default
 
-(The CLI's ``--runs/--warmup`` override is applied later, by the orchestrator,
-on the materialized benchmark list — not by the Suite. See ``benchr.run``.)
+(The CLI's ``--runs/--warmup`` override is applied later, by ``benchr.run()``,
+on the planned benchmark list — not by the Suite.)
 
 Producers:
   ``.add(b)`` / ``.add_all(*bs)``      append benchmarks
@@ -23,6 +26,7 @@ Producers:
   ``.with_command/.with_cwd/.with_env/.with_timeout/.with_metric/``
   ``.with_success/.with_label``        set a suite default
   ``.with_warmup/.with_runs``          set a default warmup/runs policy
+  ``.with_harness()``                  make every benchmark a harness benchmark
   ``.with_matrix(**axes)``             add axes to every benchmark (at materialize)
   ``.add_matrix_skip(...)``            add a skip rule to every benchmark
   ``.filter(pred)``                    keep matching benchmarks (eager — the one
@@ -33,46 +37,54 @@ Producers:
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any
 
 from benchr.grammar.benchmark import (
-    DEFAULT_CWD,
-    EMPTY_ENV,
-    UNSET_COMMAND,
-    UNSET_CWD,
-    UNSET_ENV,
-    UNSET_LABEL,
+    UNSET,
     Benchmark,
-    Command,
     CommandFn,
-    Cwd,
-    Env,
     EnvFn,
     LabelFn,
     PathFn,
     SkipFn,
     SkipRule,
-    _coerce_policy,
-    bench,
+    coerce_command,
+    coerce_cwd,
+    coerce_env,
     default_label,
 )
-from benchr.grammar.execution import (
-    _EMPTY_MAPPING,
+from benchr.core.execution import (
+    EMPTY_MAPPING,
     SuccessFn,
-    UNSET_SUCCESS,
     default_success,
 )
-from benchr.grammar.metric import Metric, Time
-from benchr.grammar.policy import UNSET_POLICY, FixedRuns, StoppingPolicy
+from benchr.core.metric import Metric, Time
+from benchr.core.policy import FixedRuns, StoppingPolicy, coerce_policy
 
 
 # A function the Runner can call to materialize benchmarks given the ctx.
 # Suite.from_files defers discovery to this hook so e.g. paths can depend on
 # ctx.cwd. The Runner / CLI flattens these into concrete benchmarks at run time.
-BenchFactory = Callable[[Any], list[Benchmark]]
+type BenchFactory = Callable[[Any], list[Benchmark]]
+
+
+def _default_cwd(b: Benchmark, ctx: Any) -> Path:
+    """Suite default cwd: the invoking process's cwd, read at schedule time."""
+    return Path.cwd()
+
+
+def _default_env(b: Benchmark, ctx: Any) -> Mapping[str, str]:
+    """Suite default env: empty — the child inherits the OS environment."""
+    return EMPTY_MAPPING
+
+
+def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
+    """Lazy per-key merge: ``base`` first, ``override`` wins (suite ⊕ benchmark)."""
+    return lambda b, ctx: {**base(b, ctx), **override(b, ctx)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,14 +96,15 @@ class Suite:
     factories: tuple[BenchFactory, ...] = ()
 
     # ----- suite defaults (always concrete, except command) ----------
-    command: Command = UNSET_COMMAND  # no sensible default; checked at materialize
-    cwd: Cwd = DEFAULT_CWD
-    env: Env = EMPTY_ENV
+    command: CommandFn = UNSET  # no sensible default; checked at materialize
+    cwd: PathFn = _default_cwd
+    env: EnvFn = _default_env
     timeout: float | None = None  # None = no timeout
     metrics: tuple[Metric, ...] = (Time(),)
     success: SuccessFn = default_success
     warmup: StoppingPolicy = FixedRuns(0)
     runs: StoppingPolicy = FixedRuns(1)
+    harness: bool = False
     label_fn: LabelFn = default_label
 
     # ----- suite-level matrix / skip (applied at materialize) --------
@@ -129,17 +142,17 @@ class Suite:
     # ----- defaults ---------------------------------------------------
 
     def with_command(self, command: Sequence[str] | CommandFn) -> Suite:
-        return dataclasses.replace(self, command=Command(command))
+        return dataclasses.replace(self, command=coerce_command(command))
 
     def with_cwd(self, cwd: str | Path | PathFn) -> Suite:
-        return dataclasses.replace(self, cwd=Cwd(cwd))
+        return dataclasses.replace(self, cwd=coerce_cwd(cwd))
 
     def with_env(self, env: Mapping[str, str] | EnvFn) -> Suite:
         """Set the suite env. At materialize it merges *under* each
         benchmark's own env — the benchmark wins per key."""
-        return dataclasses.replace(self, env=Env(env))
+        return dataclasses.replace(self, env=coerce_env(env))
 
-    def with_timeout(self, timeout: float) -> Suite:
+    def with_timeout(self, timeout: float | None) -> Suite:
         return dataclasses.replace(self, timeout=timeout)
 
     def with_metric(self, *metrics: Metric) -> Suite:
@@ -154,11 +167,18 @@ class Suite:
 
     def with_warmup(self, p: StoppingPolicy | int) -> Suite:
         """Set the default warmup policy."""
-        return dataclasses.replace(self, warmup=_coerce_policy(p))
+        return dataclasses.replace(self, warmup=coerce_policy(p))
 
     def with_runs(self, p: StoppingPolicy | int) -> Suite:
-        """Set the default runs (measure-phase) policy."""
-        return dataclasses.replace(self, runs=_coerce_policy(p))
+        """Set the default policy for the measured runs."""
+        return dataclasses.replace(self, runs=coerce_policy(p))
+
+    def with_harness(self) -> Suite:
+        """Make every contained benchmark a harness benchmark (executed once,
+        iterations parsed from the complete output — see
+        ``Benchmark.with_harness``). There is no per-benchmark opt-out; mixed
+        suites are two suites."""
+        return dataclasses.replace(self, harness=True)
 
     def with_matrix(self, **axes: Sequence[Any]) -> Suite:
         """Declare matrix axes applied to every contained benchmark (replaces
@@ -189,7 +209,7 @@ class Suite:
         if predicate is None and not kwargs:
             return self
         rule = SkipRule(
-            kwargs=MappingProxyType(dict(kwargs)) if kwargs else _EMPTY_MAPPING,
+            kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
             predicate=predicate,
         )
         return dataclasses.replace(self, skips=self.skips + (rule,))
@@ -229,23 +249,33 @@ class Suite:
 
     def _resolve(self, b: Benchmark) -> Benchmark:
         """Fill unset fields from the suite: explicit benchmark value wins,
-        else suite default."""
+        else suite default. ``env`` is the one merging field: the suite env
+        sits under the benchmark's own, benchmark winning per key."""
         resolved = dataclasses.replace(
             b,
-            command=self.command if b.command is UNSET_COMMAND else b.command,
-            cwd=self.cwd if b.cwd is UNSET_CWD else b.cwd,
-            env=self.env if b.env is UNSET_ENV else self.env.merge(b.env),
-            timeout=self.timeout if b.timeout is None else b.timeout,
-            metrics=b.metrics or self.metrics,
-            success=self.success if b.success is UNSET_SUCCESS else b.success,
-            warmup=self.warmup if b.warmup is UNSET_POLICY else b.warmup,
-            runs=self.runs if b.runs is UNSET_POLICY else b.runs,
-            label_fn=self.label_fn if b.label_fn is UNSET_LABEL else b.label_fn,
+            command=self.command if b.command is UNSET else b.command,
+            cwd=self.cwd if b.cwd is UNSET else b.cwd,
+            env=self.env if b.env is UNSET else _merge_env(self.env, b.env),
+            timeout=self.timeout if b.timeout is UNSET else b.timeout,
+            metrics=self.metrics if b.metrics is UNSET else b.metrics,
+            success=self.success if b.success is UNSET else b.success,
+            warmup=self.warmup if b.warmup is UNSET else b.warmup,
+            runs=self.runs if b.runs is UNSET else b.runs,
+            harness=self.harness if b.harness is UNSET else b.harness,
+            label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
         )
-        if resolved.command is UNSET_COMMAND:
+        if resolved.command is UNSET:
             raise ValueError(
                 f"Benchmark {b.name!r} has no command — set one with "
                 f"Benchmark.with_command or Suite.with_command"
+            )
+        if resolved.harness and (resolved.warmup.max_runs() is None
+                                 or resolved.runs.max_runs() is None):
+            raise ValueError(
+                f"Benchmark {b.name!r} is a harness benchmark: it runs once "
+                f"and cannot be stopped mid-flight, so warmup/runs must be "
+                f"bounded counts (no CoefficientOfVariation) — pass them to "
+                f"the harness via the command fn"
             )
         return resolved
 

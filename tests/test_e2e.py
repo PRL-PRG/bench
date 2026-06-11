@@ -31,9 +31,10 @@ def test_e2e_warmup_then_measure():
               .with_metric(FloatPerLine("s").lower_is_better())
               .with_warmup(2)
               .with_runs(2))
-    pairs = _all_samples(Sequential().run(plan([s], None), ctx=None))
-    phases = [r.phase for r, _ in pairs]
-    assert phases == ["warmup", "warmup", "runs", "runs"]
+    report = Sequential().run(plan([s], None), ctx=None)
+    # Continuous numbering; the warmup count is recorded once, not per run.
+    assert [r.run for r in report.runs] == [1, 2, 3, 4]
+    assert report.warmups == {"S/a": 2}
 
 
 def test_e2e_runs_flag_overrides_every_benchmark():
