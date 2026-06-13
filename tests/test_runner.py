@@ -7,6 +7,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from benchr import (
     CompositeReporter,
     CsvReporter,
@@ -15,6 +17,7 @@ from benchr import (
     JsonReporter,
     Parallel,
     Sequential,
+    SuiteMaterializationError,
     Time,
     bench,
     plan,
@@ -429,3 +432,21 @@ def test_plan_accepts_single_suite_and_default_ctx():
     s = suite("s", bench("a").with_command(["true"]))
     report = Sequential().run(plan(s))
     assert len(report.runs) == 1
+
+
+def test_plan_wraps_factory_failure_with_suite_name_and_command_output():
+    err = subprocess.CalledProcessError(
+        1, ["java", "-jar", "x.jar", "--list"], output=b"Error: could not open jar\n"
+    )
+
+    def boom(ctx):
+        raise err
+
+    s = suite("Renaissance Suite").factory(boom)
+    with pytest.raises(SuiteMaterializationError) as ei:
+        plan([s], None)
+
+    msg = str(ei.value)
+    assert "Renaissance Suite" in msg  # which suite failed
+    assert "could not open jar" in msg  # captured subprocess output surfaced
+    assert ei.value.__cause__ is err  # original chained for uncaught tracebacks

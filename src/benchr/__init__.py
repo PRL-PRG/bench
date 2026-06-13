@@ -49,7 +49,12 @@ from benchr.grammar.suite import Suite, suite
 from benchr.grammar.context import Context
 
 # Runners
-from benchr.runner.base import PlannedBenchmark, Runner, plan
+from benchr.runner.base import (
+    PlannedBenchmark,
+    Runner,
+    SuiteMaterializationError,
+    plan,
+)
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -88,6 +93,7 @@ __all__ = [
     "Context",
     # Runners
     "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",
+    "SuiteMaterializationError",
     # Reporters
     "Reporter", "CompositeReporter", "CsvReporter", "JsonReporter", "DirReporter", "SummaryReporter", "ProgressReporter",
     # Formatters

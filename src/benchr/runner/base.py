@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import abc
 import dataclasses
+import subprocess
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,10 +39,7 @@ def split_iterations(samples: list[Sample]) -> list[list[Sample]]:
     for s in samples:
         by_metric.setdefault(s.metric, []).append(s)
     n = max((len(v) for v in by_metric.values()), default=0)
-    return [
-        [v[i] for v in by_metric.values() if i < len(v)]
-        for i in range(n)
-    ]
+    return [[v[i] for v in by_metric.values() if i < len(v)] for i in range(n)]
 
 
 def judge(
@@ -57,9 +55,7 @@ def judge(
     reason = b.success(result)
     if reason is not None and result.failure is None:
         result = dataclasses.replace(result, failure=reason)
-    samples = (
-        list(extract_all(b.metrics, result)) if not result.is_failure() else []
-    )
+    samples = list(extract_all(b.metrics, result)) if not result.is_failure() else []
     return result, samples
 
 
@@ -76,13 +72,38 @@ class PlannedBenchmark:
     benchmark: Benchmark
 
 
+class SuiteMaterializationError(Exception):
+    """A suite's factory failed while building its benchmarks."""
+
+    def __init__(self, suite: str, cause: BaseException) -> None:
+        self.suite = suite
+        self.cause = cause
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        # TODO: replace self.cause with better formatter error message in case of CalledProcessError
+        lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
+        if isinstance(self.cause, subprocess.CalledProcessError):
+            out = self.cause.output or self.cause.stderr
+            if out:
+                text = (
+                    out.decode(errors="replace") if isinstance(out, bytes) else str(out)
+                )
+                lines += ["", text.rstrip()]
+        return "\n".join(lines)
+
+
 def plan(suites: Suite | list[Suite], params: Any = None) -> list[PlannedBenchmark]:
     """Flatten suites + their deferred factories into concrete benchmarks."""
     if isinstance(suites, Suite):
         suites = [suites]
     out: list[PlannedBenchmark] = []
     for s in suites:
-        for b in s.materialize(params):
+        try:
+            materialized = s.materialize(params)
+        except Exception as cause:
+            raise SuiteMaterializationError(s.name, cause) from cause
+        for b in materialized:
             out.append(PlannedBenchmark(suite=s.name, benchmark=b))
     return out
 
@@ -161,9 +182,7 @@ class Runner(abc.ABC):
         self.verbose = verbose
 
     @abc.abstractmethod
-    def run(
-        self, planned: list[PlannedBenchmark], params: Any = None
-    ) -> Report: ...
+    def run(self, planned: list[PlannedBenchmark], params: Any = None) -> Report: ...
 
     # ----- shared pump --------------------------------------------------
 
@@ -201,10 +220,7 @@ class Runner(abc.ABC):
         consecutive_failures = 0
         guard = 0
 
-        bounded = (
-            b.warmup.max_runs() is not None
-            and b.runs.max_runs() is not None
-        )
+        bounded = b.warmup.max_runs() is not None and b.runs.max_runs() is not None
         failure_cap = None if bounded else self.max_consecutive_failures
 
         if interrupted():
@@ -294,9 +310,13 @@ class Runner(abc.ABC):
 
         groups = split_iterations(samples)
         if not groups:
-            no_iter = dataclasses.replace(result, failure=(
-                "no iterations parsed from harness output — use an "
-                "output-parsing metric (FloatPerLine, Regex, Rebench)"))
+            no_iter = dataclasses.replace(
+                result,
+                failure=(
+                    "no iterations parsed from harness output — use an "
+                    "output-parsing metric (FloatPerLine, Regex, Rebench)"
+                ),
+            )
             self._record(report, sched, no_iter, [])
             return
 
@@ -305,11 +325,15 @@ class Runner(abc.ABC):
         assert warmup is not None and runs is not None
         self._warmup(report, sched, warmup)
         for i, group in enumerate(groups, start=1):
-            self._record(report, dataclasses.replace(sched, run=i),
-                         result, group)
+            self._record(report, dataclasses.replace(sched, run=i), result, group)
         if len(groups) < warmup + runs:
-            short = dataclasses.replace(result, failure=(
-                f"harness produced {len(groups)} iterations, "
-                f"expected {warmup + runs}"))
-            self._record(report, dataclasses.replace(sched, run=len(groups) + 1),
-                         short, [])
+            short = dataclasses.replace(
+                result,
+                failure=(
+                    f"harness produced {len(groups)} iterations, "
+                    f"expected {warmup + runs}"
+                ),
+            )
+            self._record(
+                report, dataclasses.replace(sched, run=len(groups) + 1), short, []
+            )

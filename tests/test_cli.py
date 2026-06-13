@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from benchr import run, suite
+
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -132,3 +136,20 @@ def test_bench_two_commands_prints_summary_ranking():
     assert "times lower than" in r.stdout
     # The fastest is named first in the block; sleep 0.01 should be it.
     assert "'sleep 0.01' [elapsed] was" in r.stdout
+
+
+# ----- run(): suite materialization errors --------------------------------
+
+
+def _boom_factory(ctx):
+    raise subprocess.CalledProcessError(1, ["java", "--list"], output=b"jvm exploded\n")
+
+
+def test_run_reports_friendly_materialization_error(capsys):
+    s = suite("My Suite").factory(_boom_factory)
+    with pytest.raises(SystemExit) as ei:
+        run(s, argv=[])
+    assert ei.value.code == 1
+    err = capsys.readouterr().err
+    assert "Failed to materialize suite 'My Suite'" in err
+    assert "jvm exploded" in err  # the failing command's output is surfaced

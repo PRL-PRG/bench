@@ -30,7 +30,12 @@ from benchr.report.reporter import (
 )
 from benchr.core.sample import Report, report_from_json
 from benchr.report.stats import build_summary
-from benchr.runner.base import PlannedBenchmark, Runner, plan
+from benchr.runner.base import (
+    PlannedBenchmark,
+    Runner,
+    SuiteMaterializationError,
+    plan,
+)
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
@@ -82,7 +87,12 @@ def run(
     # also force them onto every planned benchmark (the documented "every
     # benchmark" semantics). Both resolve to FixedRuns(N), so they agree.
     suites = [_apply_suite_policy_overrides(s, cli_args) for s in suites]
-    benchmarks = _apply_cli_policy_overrides(plan(suites, build_params), cli_args)
+    try:
+        planned = plan(suites, build_params)
+    except SuiteMaterializationError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
+    benchmarks = _apply_cli_policy_overrides(planned, cli_args)
     runner = _make_runner(cli_args, reporter)
     try:
         return runner.run(benchmarks, build_params)
