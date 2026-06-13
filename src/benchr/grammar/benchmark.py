@@ -18,9 +18,10 @@ A ``Benchmark`` is a frozen value object. To run one variant the Runner
 drives ``benchmarking_loop`` (see ``benchr.core.loop``) and materializes
 one ``ScheduledExecution`` per slot via ``.schedule()``; parsed samples are
 fed back so stopping policies can observe and decide whether to continue.
-``.expand(ctx)`` produces one *concrete* Benchmark per surviving variant
-(axis values stamped into ``data`` so user callables can read ``b.vm``,
-``b.size`` etc.).
+``.expand()`` produces one *concrete* Benchmark per surviving variant (axis
+values stamped into ``data``). Command/cwd/env callables receive a
+``Context`` and read those values via ``ctx.matrix.vm``; skip/label
+functions receive the Benchmark and read them as ``b.vm``.
 
 Two policies live on a Benchmark: ``warmup`` (samples reported, not fed to
 the runs policy) and ``runs`` (samples reported and fed to the policy that
@@ -36,12 +37,13 @@ from __future__ import annotations
 
 import dataclasses
 import itertools
+import os
 import re
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from benchr.core.execution import (
     EMPTY_MAPPING,
@@ -52,13 +54,17 @@ from benchr.core.execution import (
 )
 from benchr.core.metric import Metric
 from benchr.core.policy import StoppingPolicy, coerce_policy
+from benchr.grammar.context import Context, Matrix
 
+if TYPE_CHECKING:
+    from _typeshed import StrOrBytesPath
 
-# A user-supplied command/cwd/env builder. Receives the variant-stamped
-# benchmark and the ctx (the typed RunContext dataclass).
-type CommandFn = Callable[["Benchmark", Any], Sequence[str]]
-type PathFn = Callable[["Benchmark", Any], Path]
-type EnvFn = Callable[["Benchmark", Any], Mapping[str, str]]
+# A user-supplied command/cwd/env builder. Receives the Context for the
+# benchmark being scheduled (params + the resolved suite/benchmark properties
+# + the variant ``matrix``).
+type CommandFn = Callable[[Context[Any]], Sequence[StrOrBytesPath]]
+type PathFn = Callable[[Context[Any]], Path]
+type EnvFn = Callable[[Context[Any]], Mapping[str, str]]
 
 # A label function turns a variant-stamped benchmark into the human-readable
 # variant identifier shown in reports (e.g. ``"sleep 0.05"``).
@@ -105,30 +111,35 @@ UNSET: Any = _Unset()
 
 
 # ---------------------------------------------------------------------------
-# Field normalizers: accept a static value or a ``(benchmark, ctx) -> value``
-# callable, store a single callable shape so ``schedule()`` never branches.
+# Field normalizers: accept a static value or a ``(ctx) -> value`` callable,
+# store a single callable shape so ``schedule()`` never branches.
 # ---------------------------------------------------------------------------
 
 
-def coerce_command(command: Sequence[str] | CommandFn) -> CommandFn:
+def coerce_command(command: Command) -> CommandFn:
     if callable(command):
         return command
-    static = tuple(command)
-    return lambda b, ctx: static
+    # A bare str/bytes/PathLike is a one-element argv; a Sequence is full argv.
+    static = (
+        (command,)
+        if isinstance(command, (str, bytes, os.PathLike))
+        else tuple(command)
+    )
+    return lambda ctx: static
 
 
 def coerce_cwd(cwd: str | Path | PathFn) -> PathFn:
     if callable(cwd):
         return cwd
     static = Path(cwd)
-    return lambda b, ctx: static
+    return lambda ctx: static
 
 
 def coerce_env(env: Mapping[str, str] | EnvFn) -> EnvFn:
     if callable(env):
         return env
     static = MappingProxyType(dict(env))
-    return lambda b, ctx: static
+    return lambda ctx: static
 
 
 def default_label(b: Benchmark) -> str:
@@ -160,6 +171,8 @@ class SkipRule:
 
 
 _MISSING = object()
+
+type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFn
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +238,7 @@ class Benchmark:
 
     # ----- with_* methods ---------------------------------------------
 
-    def with_command(self, command: Sequence[str] | CommandFn) -> Benchmark:
+    def with_command(self, command: Command) -> Benchmark:
         return dataclasses.replace(self, command=coerce_command(command))
 
     def with_cwd(self, cwd: str | Path | PathFn) -> Benchmark:
@@ -242,7 +255,8 @@ class Benchmark:
     def with_stdin(self, data: bytes | str) -> Benchmark:
         """Feed ``data`` to the process's stdin (str is UTF-8 encoded)."""
         return dataclasses.replace(
-            self, stdin=data.encode() if isinstance(data, str) else data)
+            self, stdin=data.encode() if isinstance(data, str) else data
+        )
 
     def with_metric(self, *metrics: Metric) -> Benchmark:
         """Set (replace) the benchmark's metrics. Pass all of them in one call
@@ -262,7 +276,7 @@ class Benchmark:
     def with_harness(self) -> Benchmark:
         """Mark this benchmark as a *harness*: the command is executed once
         and runs all iterations itself — derive the count in the command fn,
-        e.g. ``b.warmup.max_runs() + b.runs.max_runs()``. Metrics parse the
+        e.g. ``ctx.warmup.max_runs() + ctx.runs.max_runs()``. Metrics parse the
         complete output (one sample per iteration); each iteration becomes
         one run record, the first ``warmup`` of them discarded by stats.
 
@@ -278,8 +292,9 @@ class Benchmark:
 
         Pass every axis in one call: ``b.with_matrix(vm=["v8", "jsc"], size=[100,
         500])`` gives 4 variants (the cartesian product). Axis values are
-        arbitrary; callables (``with_command``, ``add_matrix_skip``) read them as
-        attributes on the variant-stamped benchmark (``b.vm``, ``b.size``).
+        arbitrary; ``with_command``/``with_cwd``/``with_env`` callables read them
+        via ``ctx.matrix.vm``, while ``add_matrix_skip`` predicates receive the
+        benchmark and read them as ``b.vm``.
         """
         for name in axes:
             if name.startswith("_"):
@@ -308,8 +323,10 @@ class Benchmark:
         """
         if predicate is None and not kwargs:
             return self
-        rule = SkipRule(kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
-                        predicate=predicate)
+        rule = SkipRule(
+            kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
+            predicate=predicate,
+        )
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
     def with_label(self, fn: LabelFn) -> Benchmark:
@@ -341,9 +358,9 @@ class Benchmark:
             variant_dict: dict[str, Any] = dict(zip(axis_names, combo))
             stamped_data = dict(self.data) if self.data else {}
             stamped_data.update(variant_dict)
-            canonical = tuple(sorted(
-                ((k, _stringify(v)) for k, v in variant_dict.items())
-            ))
+            canonical = tuple(
+                sorted(((k, _stringify(v)) for k, v in variant_dict.items()))
+            )
             stamped_data[_VARIANT_KEY] = canonical
             variant = dataclasses.replace(self, data=stamped_data, axes=())
 
@@ -373,24 +390,40 @@ class Benchmark:
 
     def schedule(
         self,
-        ctx: Any,
+        params: Any,
         *,
         suite: str,
         run: int,
     ) -> ScheduledExecution:
         """Materialize one ScheduledExecution for ``(suite, run)``.
 
-        Resolves dynamic command/cwd/env callables against ``ctx`` and stamps
-        the current variant onto the result.
+        Builds the benchmark-level ``Context`` from ``params`` and resolves the
+        dynamic command/cwd/env callables against it, stamping the current
+        variant onto the result. Command elements may be ``str``/``bytes``/
+        ``PathLike``; ``os.fsdecode`` normalizes each to ``str``.
         """
         if self.axes:
             raise ValueError(
                 f"Benchmark {self.name!r} still has unexpanded matrix axes "
                 f"{[n for n, _ in self.axes]}; call .expand() first"
             )
-        cmd = tuple(self.command(self, ctx))
-        cwd = Path(self.cwd(self, ctx))
-        env = self.env(self, ctx)
+        ctx = Context(
+            params=params,
+            suite=suite,
+            benchmark=self.name,
+            runs=self.runs,
+            warmup=self.warmup,
+            timeout=self.timeout,
+            metrics=self.metrics,
+            harness=self.harness,
+            success=self.success,
+            matrix=Matrix(
+                {k: v for k, v in self.data.items() if not k.startswith("__")}
+            ),
+        )
+        cmd = tuple(os.fsdecode(a) for a in self.command(ctx))
+        cwd = Path(self.cwd(ctx))
+        env = self.env(ctx)
         variant = self.variant()
         return ScheduledExecution(
             execution=Execution(
@@ -408,16 +441,16 @@ class Benchmark:
         )
 
 
-def _axis_command(b: Benchmark, _ctx: Any) -> Sequence[str]:
-    return list(b.data["command"])
+def _axis_command(ctx: Context[Any]) -> Sequence[str]:
+    return list(ctx.matrix.command)
 
 
-def _axis_cwd(b: Benchmark, _ctx: Any) -> Path:
-    return Path(b.data["cwd"])
+def _axis_cwd(ctx: Context[Any]) -> Path:
+    return Path(ctx.matrix.cwd)
 
 
-def _axis_env(b: Benchmark, _ctx: Any) -> Mapping[str, str]:
-    return dict(b.data["env"])
+def _axis_env(ctx: Context[Any]) -> Mapping[str, str]:
+    return dict(ctx.matrix.env)
 
 
 def _stringify(v: Any) -> str:
@@ -450,8 +483,8 @@ def from_files(
     """Discover files under ``root``; each becomes a Benchmark with ``b.path`` set.
 
     Returns the list eagerly — splat into ``suite(name, *from_files(...))``, or
-    wrap in ``Suite.factory`` when the root depends on ctx
-    (``.factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=...))``).
+    wrap in ``Suite.factory`` when the root depends on the params
+    (``.factory(lambda ctx: from_files(ctx.params.cwd / "benchmarks", pattern=...))``).
     Benchmark name is the path relative to ``root`` without extension
     (forward-slash separated). ``pattern`` is a regex matched against the
     filename via ``re.search``.

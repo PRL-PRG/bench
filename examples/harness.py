@@ -28,9 +28,9 @@ from benchr import FloatPerLine, bench, run, suite
 FAKEVM = Path(__file__).parent / "workloads" / "fakevm.py"
 
 
-def vm_command(b, ctx):
-    n = b.warmup.max_runs() + b.runs.max_runs()
-    return [sys.executable, str(FAKEVM), b.name, "-n", str(n)]
+def vm_command(ctx):
+    n = ctx.warmup.max_runs() + ctx.runs.max_runs()
+    return [sys.executable, str(FAKEVM), str(ctx.benchmark), "-n", str(n)]
 
 
 s = (

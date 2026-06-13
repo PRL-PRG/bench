@@ -18,7 +18,7 @@ def test_e2e_sleep_runs_produce_expected_count():
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
               .with_runs(3))
-    pairs = _all_samples(Sequential().run(plan([s], None), ctx=None))
+    pairs = _all_samples(Sequential().run(plan([s], None), None))
     elapsed = [sm.value for _, sm in pairs if sm.metric == "elapsed"]
     assert len(elapsed) == 3
     assert all(0.01 < v < 0.5 for v in elapsed)
@@ -31,7 +31,7 @@ def test_e2e_warmup_then_measure():
               .with_metric(FloatPerLine("s").lower_is_better())
               .with_warmup(2)
               .with_runs(2))
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     # Continuous numbering; the warmup count is recorded once, not per run.
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
     assert report.warmups == {"S/a": 2}
@@ -61,7 +61,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
               .with_cwd(Path("/tmp"))
               .with_metric(Time())
               .with_runs(3))
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), ctx=None)
+    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
@@ -76,7 +76,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
               .with_metric(Time())
               .with_timeout(0.05)
               .with_runs(1))
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), ctx=None)
+    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 1

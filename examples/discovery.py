@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 
 s = (
     suite("discovered", *from_files(HERE / "workloads", pattern=r"\.py$"))
-    .with_command(lambda b, ctx: ["python3", str(b.path)])
+    .with_command(lambda ctx: ["python3", str(ctx.matrix.path)])
     .with_metric(Time())
     .with_runs(3)
 )

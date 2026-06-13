@@ -69,7 +69,7 @@ class Parallel(Runner):
         )
 
     def run(
-        self, planned: list[PlannedBenchmark], ctx: Any = None
+        self, planned: list[PlannedBenchmark], params: Any = None
     ) -> Report:
         # Validate up front: a flat work queue can only hold runs we can count
         # ahead of time and reorder freely. A harness benchmark is exempt —
@@ -99,7 +99,7 @@ class Parallel(Runner):
             total = 1 if b.harness else warmup_runs + measured
             first: ScheduledExecution | None = None
             for i in range(1, total + 1):
-                sched = b.schedule(ctx, suite=p.suite, run=i)
+                sched = b.schedule(params, suite=p.suite, run=i)
                 if first is None:
                     first = sched
                 work.append((b, sched))

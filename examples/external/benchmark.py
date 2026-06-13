@@ -63,7 +63,7 @@ areWeFast = (
     .add(B("Bounce_nonames_simple", size=35))
     .add(B("Storage", size=100))
     .with_cwd(BENCHMARKS / "areWeFast")
-    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
+    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.size)])
     .with_metric(Rebench())
 )
 
@@ -89,8 +89,8 @@ shootout = (
     .add(_shootout("reversecomplement",      "reversecomplement", 150000))
     .add(_shootout("spectralnorm",           "spectralnorm",     1200))
     .add(_shootout("spectralnorm_math",      "spectralnorm",     1200))
-    .with_cwd(lambda b, ctx: BENCHMARKS / "shootout" / b.subfolder)
-    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.arg)])
+    .with_cwd(lambda ctx: BENCHMARKS / "shootout" / ctx.matrix.subfolder)
+    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.arg)])
     .with_metric(Rebench())
 )
 
@@ -102,7 +102,7 @@ realThing = (
     .add(B("volcano", size=1))
     .add(B("flexclust", size=5))
     .with_cwd(BENCHMARKS / "RealThing")
-    .with_command(lambda b, ctx: [_rscript(ctx), "harness.r", b.name, str(ctx.iterations), str(b.size)])
+    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.size)])
     .with_metric(Rebench())
 )
 
@@ -114,8 +114,8 @@ kaggle = (
     .add(B("london-airbnb"))
     .add(B("placement"))
     .add(B("titanic"))
-    .with_cwd(lambda b, ctx: INPUTS / "kaggle" / b.name)
-    .with_command(lambda b, ctx: [_rscript(ctx), "../../harness.r", b.name, str(ctx.iterations)])
+    .with_cwd(lambda ctx: INPUTS / "kaggle" / str(ctx.benchmark))
+    .with_command(lambda ctx: [_rscript(ctx.params), "../../harness.r", str(ctx.benchmark), str(ctx.params.iterations)])
     .with_metric(Rebench())
 )
 
@@ -124,7 +124,7 @@ recommenderlab = (
     suite("recommenderlab")
     .add(B("recommenderlab"))
     .with_cwd(INPUTS / "recommenderlab")
-    .with_command(lambda b, ctx: [_rscript(ctx), "runner.r"])
+    .with_command(lambda ctx: [_rscript(ctx.params), "runner.r"])
     .with_metric(Rebench())
 )
 

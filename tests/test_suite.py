@@ -12,7 +12,7 @@ def _b(name: str):
 
 
 def _mat(s):
-    return s.materialize(ctx=None)
+    return s.materialize(None)
 
 
 # ----- defaults resolve at materialize ------------------------------------
@@ -32,42 +32,44 @@ def test_runs_preserves_benchmark_override():
 def test_with_command_propagates_when_unset():
     s = suite("S", _b("a")).with_command(["x"])
     b = _mat(s)[0]
-    assert b.command(b, None) == ("x",)
+    assert b.schedule(None, suite="S", run=1).execution.command == ("x",)
 
 
 def test_with_command_order_independent():
     before = suite("S").with_command(["x"]).add(_b("a"))
     after = suite("S").add(_b("a")).with_command(["x"])
     b1, b2 = _mat(before)[0], _mat(after)[0]
-    assert b1.command(b1, None) == b2.command(b2, None) == ("x",)
+    c1 = b1.schedule(None, suite="S", run=1).execution.command
+    c2 = b2.schedule(None, suite="S", run=1).execution.command
+    assert c1 == c2 == ("x",)
 
 
 def test_defaults_reach_factory_benchmarks():
     s = suite("S").with_command(["true"]).with_runs(4).factory(lambda ctx: [bench("f")])
     b = _mat(s)[0]
     assert b.runs == FixedRuns(4)
-    assert b.command(b, None) == ("true",)
+    assert b.schedule(None, suite="S", run=1).execution.command == ("true",)
 
 
 def test_materialize_missing_command_fails_fast():
     with pytest.raises(ValueError, match="no command"):
-        suite("S", _b("a")).materialize(ctx=None)
+        suite("S", _b("a")).materialize(None)
 
 
 def test_with_env_merges():
     a = _b("a").with_command(["true"]).with_env({"X": "1", "Y": "from_b"})
     s = suite("S", a).with_env({"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    env = b.env(b, None)
+    env = b.schedule(None, suite="S", run=1).execution.env
     # benchmark wins for Y
     assert env["X"] == "1" and env["Y"] == "from_b" and env["Z"] == "1"
 
 
 def test_env_merge_both_callable():
-    a = _b("a").with_command(["true"]).with_env(lambda b, ctx: {"X": b.name, "Y": "from_b"})
-    s = suite("S", a).with_env(lambda b, ctx: {"Y": "from_s", "Z": "1"})
+    a = _b("a").with_command(["true"]).with_env(lambda ctx: {"X": ctx.benchmark or "", "Y": "from_b"})
+    s = suite("S", a).with_env(lambda ctx: {"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    assert b.env(b, None) == {"X": "a", "Y": "from_b", "Z": "1"}
+    assert b.schedule(None, suite="S", run=1).execution.env == {"X": "a", "Y": "from_b", "Z": "1"}
 
 
 def test_suite_warmup_respects_explicit_zero():
@@ -123,7 +125,7 @@ def test_from_files(tmp_path: Path):
         suite("X", *from_files(tmp_path, pattern=r"\.lox$"))
         .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(ctx=None))
+    names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "b"]
 
 
@@ -137,7 +139,7 @@ def test_from_files_recursive_with_exclude(tmp_path: Path):
         suite("X", *from_files(tmp_path, pattern=r"\.lox$", exclude={"excl"}))
         .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(ctx=None))
+    names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "sub/nested"]
 
 
@@ -145,10 +147,10 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
     (tmp_path / "p.lox").write_text("")
     s = (
         suite("X")
-        .factory(lambda ctx: from_files(ctx, pattern=r"\.lox$"))
+        .factory(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
         .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(ctx=tmp_path))
+    names = sorted(b.name for b in s.materialize(tmp_path))
     assert names == ["p"]
 
 
@@ -158,27 +160,27 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
 def test_with_matrix_expands_and_stamps_variant():
     s = (
         suite("M", _b("compute")
-              .with_command(lambda b, ctx: ["x", "-" + b.opt])
+              .with_command(lambda ctx: ["x", "-" + ctx.matrix.opt])
               .with_matrix(opt=["O0", "O2"]))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    benchmarks = list(s.materialize(ctx=None))
+    benchmarks = list(s.materialize(None))
     assert len(benchmarks) == 2
     assert sorted(b.opt for b in benchmarks) == ["O0", "O2"]
     # Schedule and check variant is stamped.
-    sched = benchmarks[0].schedule(ctx=None, suite="M", run=1)
+    sched = benchmarks[0].schedule(None, suite="M", run=1)
     assert sched.variant == (("opt", "O0"),)
 
 
 def test_suite_with_matrix_applies_to_all_benchmarks():
     s = (
         suite("M",
-              _b("a").with_command(lambda b, ctx: ["x", b.vm]),
-              _b("b").with_command(lambda b, ctx: ["y", b.vm]))
+              _b("a").with_command(lambda ctx: ["x", ctx.matrix.vm]),
+              _b("b").with_command(lambda ctx: ["y", ctx.matrix.vm]))
         .with_matrix(vm=["v8", "jsc"])
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    bs = list(s.materialize(ctx=None))
+    bs = list(s.materialize(None))
     names_vms = sorted((b.name, b.vm) for b in bs)
     assert names_vms == [("a", "jsc"), ("a", "v8"), ("b", "jsc"), ("b", "v8")]
 
@@ -200,18 +202,18 @@ def test_suite_axis_collision_with_benchmark_axis_raises():
         .with_matrix(vm=["b"])
     )
     with pytest.raises(ValueError, match="already declared"):
-        s.materialize(ctx=None)
+        s.materialize(None)
 
 
 def test_with_skip_kwargs_drops_variant():
     s = (
         suite("M", _b("c")
-              .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
+              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
               .with_matrix(vm=["v8", "jsc"], size=[100, 500])
               .add_matrix_skip(vm="v8", size=500))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    bs = list(s.materialize(ctx=None))
+    bs = list(s.materialize(None))
     assert len(bs) == 3
     assert ("v8", 500) not in {(b.vm, b.size) for b in bs}
 
@@ -219,12 +221,12 @@ def test_with_skip_kwargs_drops_variant():
 def test_with_skip_predicate_drops_variant():
     s = (
         suite("M", _b("c")
-              .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
+              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
               .with_matrix(vm=["v8", "jsc"], size=[100, 500])
               .add_matrix_skip(lambda b: b.vm != "jsc"))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    bs = list(s.materialize(ctx=None))
+    bs = list(s.materialize(None))
     assert all(b.vm == "jsc" for b in bs)
     assert sorted(b.size for b in bs) == [100, 500]
 
@@ -232,7 +234,7 @@ def test_with_skip_predicate_drops_variant():
 def test_suite_skip_unions_with_benchmark_skip():
     s = (
         suite("M", _b("c")
-              .with_command(lambda b, ctx: ["x", b.vm, str(b.size)])
+              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
               .with_matrix(vm=["v8", "jsc"], size=[100, 500])
               .add_matrix_skip(vm="v8", size=500))
         .add_matrix_skip(vm="jsc", size=100)
@@ -244,12 +246,12 @@ def test_suite_skip_unions_with_benchmark_skip():
 def test_with_label_overrides_default():
     s = (
         suite("M", _b("c")
-              .with_command(lambda b, ctx: ["true"])
+              .with_command(lambda ctx: ["true"])
               .with_matrix(arg=["one", "two"])
               .with_label(lambda b: f"<{b.arg}>"))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    bs = list(s.materialize(ctx=None))
+    bs = list(s.materialize(None))
     assert sorted(b.variant_label() for b in bs) == ["<one>", "<two>"]
 
 
@@ -259,8 +261,8 @@ def test_command_axis_default_builder():
         suite("M", _b("c").with_matrix(command=[["echo", "a"], ["echo", "b"]]))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
-    bs = list(s.materialize(ctx=None))
-    scheds = [b.schedule(ctx=None, suite="M", run=1) for b in bs]
+    bs = list(s.materialize(None))
+    scheds = [b.schedule(None, suite="M", run=1) for b in bs]
     assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]
 
 
@@ -270,5 +272,5 @@ def test_command_axis_beats_suite_default():
         .with_command(["echo", "suite"])
     )
     b = _mat(s)[0]
-    sched = b.schedule(ctx=None, suite="M", run=1)
+    sched = b.schedule(None, suite="M", run=1)
     assert sched.execution.command == ("echo", "axis")

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from benchr import (
-    Compact, CompositeReporter, FloatPerLine, SummaryReporter, Time,
+    Compact, CompositeReporter, Context, FloatPerLine, SummaryReporter, Time,
     bench, from_files, max_rss, run, suite,
 )
 
@@ -33,8 +33,8 @@ class LoxParams:
     cwd: Path = HERE                     # script's base dir
 
 
-def lox_cmd(b, ctx: LoxParams):
-    return [str(ctx.lox), str(b.path)]
+def lox_cmd(ctx: Context[LoxParams]):
+    return [str(ctx.params.lox), str(ctx.matrix.path)]
 
 
 def _bench_root(ctx: LoxParams) -> Path:
@@ -43,8 +43,8 @@ def _bench_root(ctx: LoxParams) -> Path:
 
 lox_suite = (
     suite("LoxSuite")
-    .factory(lambda ctx: from_files(_bench_root(ctx), pattern=r"\.lox$", exclude={"zoo_batch"}))
-    .with_cwd(lambda _, ctx: _bench_root(ctx))
+    .factory(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.lox$", exclude={"zoo_batch"}))
+    .with_cwd(lambda ctx: _bench_root(ctx.params))
     .with_command(lox_cmd)
     .with_timeout(20)
     .with_runs(10)
@@ -58,8 +58,8 @@ lox_suite = (
 zoo_suite = (
     suite("ZooBatch")
     .add(bench("zoo_batch", path=Path("zoo_batch.lox")))
-    .with_cwd(lambda _, ctx: _bench_root(ctx))
-    .with_command(lambda b, ctx: [str(ctx.lox), str((_bench_root(ctx) / b.path).name)])
+    .with_cwd(lambda ctx: _bench_root(ctx.params))
+    .with_command(lambda ctx: [str(ctx.params.lox), str((_bench_root(ctx.params) / ctx.matrix.path).name)])
     .with_timeout(12)
     .with_runs(5)
     .with_metric(

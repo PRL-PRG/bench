@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from benchr import (
-    Benchmark, ExecutionResult, Reporter, RunRecord, Time, from_files, run,
+    Context, ExecutionResult, Reporter, RunRecord, Time, from_files, run,
     suite,
 )
 from benchr.report.reporter import console
@@ -116,15 +116,15 @@ def _test_root(ctx: TestParams) -> Path:
     return (ctx.cwd / "tests").resolve()
 
 
-def lox_cmd(b: Benchmark, ctx: TestParams) -> list[str]:
-    return [str(ctx.lox), str(b.path)]
+def lox_cmd(ctx: Context[TestParams]) -> list[str]:
+    return [str(ctx.params.lox), str(ctx.matrix.path)]
 
 
 lox_tests = (
     suite("LoxTests")
-    .factory(lambda ctx: from_files(_test_root(ctx), pattern=r"\.lox$"))
+    .factory(lambda ctx: from_files(_test_root(ctx.params), pattern=r"\.lox$"))
     .with_command(lox_cmd)
-    .with_cwd(lambda _b, ctx: _test_root(ctx))
+    .with_cwd(lambda ctx: _test_root(ctx.params))
     .with_timeout(10)
     .with_metric(Time())
     .with_success(lox_expect)

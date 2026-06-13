@@ -76,13 +76,13 @@ class PlannedBenchmark:
     benchmark: Benchmark
 
 
-def plan(suites: Suite | list[Suite], ctx: Any = None) -> list[PlannedBenchmark]:
+def plan(suites: Suite | list[Suite], params: Any = None) -> list[PlannedBenchmark]:
     """Flatten suites + their deferred factories into concrete benchmarks."""
     if isinstance(suites, Suite):
         suites = [suites]
     out: list[PlannedBenchmark] = []
     for s in suites:
-        for b in s.materialize(ctx):
+        for b in s.materialize(params):
             out.append(PlannedBenchmark(suite=s.name, benchmark=b))
     return out
 
@@ -162,7 +162,7 @@ class Runner(abc.ABC):
 
     @abc.abstractmethod
     def run(
-        self, planned: list[PlannedBenchmark], ctx: Any = None
+        self, planned: list[PlannedBenchmark], params: Any = None
     ) -> Report: ...
 
     # ----- shared pump --------------------------------------------------
@@ -191,11 +191,11 @@ class Runner(abc.ABC):
         print(format_scheduled_verbose(sched, b))
 
     def _run_benchmark(
-        self, planned: PlannedBenchmark, ctx: Any, report: Report
+        self, planned: PlannedBenchmark, params: Any, report: Report
     ) -> None:
         b = planned.benchmark
         if b.harness:
-            self._run_harness(planned, ctx, report)
+            self._run_harness(planned, params, report)
             return
 
         consecutive_failures = 0
@@ -216,7 +216,7 @@ class Runner(abc.ABC):
         except StopIteration:
             return
 
-        sched = b.schedule(ctx, suite=planned.suite, run=run)
+        sched = b.schedule(params, suite=planned.suite, run=run)
 
         if self.verbose:
             self._print_verbose(sched, b)
@@ -257,18 +257,18 @@ class Runner(abc.ABC):
                 # The loop just left warmup: the first ``run`` runs were warmup.
                 self._warmup(report, sched, run)
             run, in_warmup = next_run, next_warmup
-            sched = b.schedule(ctx, suite=planned.suite, run=run)
+            sched = b.schedule(params, suite=planned.suite, run=run)
 
     # ----- harness benchmarks ---------------------------------------------
 
     def _run_harness(
-        self, planned: PlannedBenchmark, ctx: Any, report: Report
+        self, planned: PlannedBenchmark, params: Any, report: Report
     ) -> None:
         """One execution; the harness runs all iterations itself."""
         b = planned.benchmark
         if interrupted():
             return
-        sched = b.schedule(ctx, suite=planned.suite, run=1)
+        sched = b.schedule(params, suite=planned.suite, run=1)
         if self.verbose:
             self._print_verbose(sched, b)
         self._record_harness(b, sched, execute(sched.execution), report)

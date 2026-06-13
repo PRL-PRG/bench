@@ -22,10 +22,10 @@ than VM2 and bigger ``size`` slightly slower.
 from benchr import FloatPerLine, bench, run, suite
 
 
-def cmd(b, ctx):
-    # Axis values reach the callable as attributes on ``b`` (b.vm, b.size).
-    base_ms = 50 if b.vm == "VM2" else 100
-    total_ms = base_ms + b.size // 50
+def cmd(ctx):
+    # Axis values reach the callable via ``ctx.matrix`` (ctx.matrix.vm, …).
+    base_ms = 50 if ctx.matrix.vm == "VM2" else 100
+    total_ms = base_ms + ctx.matrix.size // 50
     return ["sh", "-c", f"sleep {total_ms / 1000.0}; echo {total_ms}"]
 
 

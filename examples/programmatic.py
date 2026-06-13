@@ -27,7 +27,7 @@ s = (
 
 
 if __name__ == "__main__":
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     total = sum(len(r.samples) for r in report.runs)
     print(f"Got {total} samples, {len(report.failures)} failures.")
     for r in report.runs:

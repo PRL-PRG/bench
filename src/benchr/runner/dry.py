@@ -28,25 +28,25 @@ class Dry(Runner):
     """
 
     def run(
-        self, planned: list[PlannedBenchmark], ctx: Any = None
+        self, planned: list[PlannedBenchmark], params: Any = None
     ) -> Report:
         for p in planned:
-            self._print_executions(p, ctx)
+            self._print_executions(p, params)
         return Report()
 
-    def _print_executions(self, p: PlannedBenchmark, ctx: Any) -> None:
+    def _print_executions(self, p: PlannedBenchmark, params: Any) -> None:
         b = p.benchmark
         if b.harness:
-            self._print_one(b.schedule(ctx, suite=p.suite, run=1), b,
+            self._print_one(b.schedule(params, suite=p.suite, run=1), b,
                             marker="[harness]")
             return
         warmup, runs = b.warmup.max_runs(), b.runs.max_runs()
         if warmup is None or runs is None:
-            self._print_one(b.schedule(ctx, suite=p.suite, run=1), b,
+            self._print_one(b.schedule(params, suite=p.suite, run=1), b,
                             marker="[unbounded]")
             return
         for run in range(1, warmup + runs + 1):
-            self._print_one(b.schedule(ctx, suite=p.suite, run=run), b)
+            self._print_one(b.schedule(params, suite=p.suite, run=run), b)
 
     def _print_one(self, sched: ScheduledExecution, benchmark: Benchmark,
                    *, marker: str = "") -> None:

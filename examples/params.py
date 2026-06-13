@@ -15,7 +15,7 @@ Run with defaults, or override:
 
 from dataclasses import dataclass
 
-from benchr import Time, bench, run, suite
+from benchr import Context, Time, bench, run, suite
 
 
 @dataclass
@@ -24,8 +24,8 @@ class Params:
     python: str = "python3"   # --python STR  (default: python3)
 
 
-def cmd(b, ctx: Params):
-    return [ctx.python, "-c", f"sum(range({ctx.n}))"]
+def cmd(ctx: Context[Params]):
+    return [ctx.params.python, "-c", f"sum(range({ctx.params.n}))"]
 
 
 s = suite("params",

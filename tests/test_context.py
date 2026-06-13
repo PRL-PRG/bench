@@ -1,12 +1,17 @@
-"""Dataclass → argparse glue."""
+"""Dataclass → argparse glue, and the Context value object."""
 
 import argparse
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from benchr.grammar.context import add_dataclass_args, build_dataclass
+from benchr.core.execution import default_success
+from benchr.core.metric import Time
+from benchr.core.policy import FixedRuns
+from benchr.grammar.context import Context, Matrix, add_dataclass_args, build_dataclass
 
 
 @dataclass
@@ -66,3 +71,47 @@ def test_dash_to_underscore():
     ns = p.parse_args(["--my-long-name", "y"])
     ctx = build_dataclass(Multi, ns)
     assert ctx.my_long_name == "y"
+
+
+# ----- Context value object -----------------------------------------------
+
+
+def _ctx(**overrides: Any) -> Context[Any]:
+    base: dict[str, Any] = dict(
+        params=None, suite="S", benchmark="b",
+        runs=FixedRuns(3), warmup=FixedRuns(1), timeout=None,
+        metrics=(Time(),), harness=False, success=default_success, matrix=Matrix(),
+    )
+    base.update(overrides)
+    return Context(**base)
+
+
+def test_context_fields():
+    ctx = _ctx(params=_Params(name=Path("/x")), matrix=Matrix({"vm": "v8", "size": 100}))
+    assert ctx.params.name == Path("/x")
+    assert ctx.suite == "S"
+    assert ctx.benchmark == "b"
+    assert ctx.runs.max_runs() == 3
+    assert ctx.warmup.max_runs() == 1
+    # Attribute access, consistent with ctx.params.x and ctx.benchmark.
+    assert ctx.matrix.vm == "v8"
+    assert ctx.matrix.size == 100
+
+
+def test_context_matrix_missing_key_raises_attribute_error():
+    ctx = _ctx(matrix=Matrix({"vm": "v8"}))
+    with pytest.raises(AttributeError):
+        _ = ctx.matrix.nope
+
+
+def test_context_suite_level():
+    ctx = _ctx(benchmark=None, matrix=Matrix())
+    assert ctx.benchmark is None
+    with pytest.raises(AttributeError):
+        _ = ctx.matrix.vm
+
+
+def test_context_is_frozen():
+    ctx = _ctx()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ctx.suite = "X"  # type: ignore[misc]

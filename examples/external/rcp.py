@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import Rebench, from_files, max_rss, run, suite
+from benchr import Context, Rebench, from_files, max_rss, run, suite
 
 
 @dataclass
@@ -30,17 +30,18 @@ class RcpParams:
     iterations: int = 1                   # harness --runs (avoids benchr's reserved --runs)
 
 
-def _cmd(b, ctx: RcpParams):
-    R = ctx.R_HOME / "bin" / "R"
-    harness_bin = ctx.RSH_HOME / "inst" / "benchmarks" / "harness.R"
+def _cmd(ctx: Context[RcpParams]):
+    p = ctx.params
+    R = p.R_HOME / "bin" / "R"
+    harness_bin = p.RSH_HOME / "inst" / "benchmarks" / "harness.R"
     return [
         str(R), "--slave", "--no-restore",
         "-f", str(harness_bin),
         "--args",
-        "--output-dir", str(ctx.output),
-        "--runs", str(ctx.iterations),
+        "--output-dir", str(p.output),
+        "--runs", str(p.iterations),
         "--rcp",
-        str(b.path.with_suffix("")),
+        str(ctx.matrix.path.with_suffix("")),
     ]
 
 
@@ -50,7 +51,7 @@ def _bench_root(ctx: RcpParams) -> Path:
 
 rcp_suite = (
     suite("RCPSuite")
-    .factory(lambda ctx: from_files(_bench_root(ctx), pattern=r"\.R$"))
+    .factory(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
     .with_metric(Rebench(), max_rss())

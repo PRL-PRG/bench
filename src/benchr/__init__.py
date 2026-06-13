@@ -46,6 +46,7 @@ from benchr.grammar.benchmark import (
     from_files,
 )
 from benchr.grammar.suite import Suite, suite
+from benchr.grammar.context import Context
 
 # Runners
 from benchr.runner.base import PlannedBenchmark, Runner, plan
@@ -84,6 +85,7 @@ __all__ = [
     "Benchmark", "bench",
     "default_label", "from_files",
     "Suite", "suite",
+    "Context",
     # Runners
     "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",
     # Reporters

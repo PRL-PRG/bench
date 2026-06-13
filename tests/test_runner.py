@@ -46,7 +46,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
 
 
 def test_sequential_basic():
-    report = Sequential().run(plan([_sleep_suite()], None), ctx=None)
+    report = Sequential().run(plan([_sleep_suite()], None), None)
     assert len(_all_samples(report)) == 4  # 2 benchmarks × 2 runs
 
 
@@ -59,7 +59,7 @@ def test_sequential_three_runs_yields_three_samples():
         .with_metric(FloatPerLine("s").lower_is_better())
         .with_runs(3),
     )
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     pairs = _runs_with_samples(report)
     assert len(pairs) == 3
     assert [r.run for r, _ in pairs] == [1, 2, 3]
@@ -79,7 +79,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
     )
     out = tmp_path / "r.json"
     report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
-        plan([s], None), ctx=None
+        plan([s], None), None
     )
     assert _all_samples(report) == []  # failed runs emit no metrics
     r = report_from_json(out.read_text())
@@ -100,7 +100,7 @@ def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Pa
     )  # unbounded
     out = tmp_path / "r.json"
     report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
-        plan([s], None), ctx=None
+        plan([s], None), None
     )
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
@@ -120,7 +120,7 @@ def test_abort_during_warmup_still_records_warmup_count(tmp_path: Path):
         .with_warmup(CoefficientOfVariation("elapsed"))  # unbounded
         .with_runs(1),
     )
-    report = Sequential(max_consecutive_failures=2).run(plan([s], None), ctx=None)
+    report = Sequential(max_consecutive_failures=2).run(plan([s], None), None)
     # Aborted while warming up: every recorded run was warmup, so stats drop
     # them all (the benchmark surfaces via the Failures block only).
     assert len(report.runs) == 2
@@ -130,10 +130,10 @@ def test_abort_during_warmup_still_records_warmup_count(tmp_path: Path):
 def test_parallel_runs_faster_than_sequential():
     s = _sleep_suite(duration=0.1, runs=2)
     t0 = time.monotonic()
-    Sequential().run(plan([s], None), ctx=None)
+    Sequential().run(plan([s], None), None)
     seq_t = time.monotonic() - t0
     t0 = time.monotonic()
-    Parallel(workers=4).run(plan([s], None), ctx=None)
+    Parallel(workers=4).run(plan([s], None), None)
     par_t = time.monotonic() - t0
     assert par_t < seq_t * 0.7, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
 
@@ -148,7 +148,7 @@ def test_parallel_parallelizable_only_for_bounded_independent():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
         .with_runs(3),
-    ).materialize(ctx=None)[0]
+    ).materialize(None)[0]
     assert P_._parallelizable(fr)
     from benchr import CoefficientOfVariation
 
@@ -158,7 +158,7 @@ def test_parallel_parallelizable_only_for_bounded_independent():
 
 def test_parallel_records_every_run():
     s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks × 3 runs
-    report = Parallel(workers=4).run(plan([s], None), ctx=None)
+    report = Parallel(workers=4).run(plan([s], None), None)
     assert len(_all_samples(report)) == 6
 
 
@@ -175,7 +175,7 @@ def test_parallel_rejects_unbounded_policy():
         .with_runs(CoefficientOfVariation("elapsed")),
     )  # unbounded
     with pytest.raises(ValueError, match="--runs"):
-        Parallel(workers=2).run(plan([s], None), ctx=None)
+        Parallel(workers=2).run(plan([s], None), None)
 
 
 def test_dry_no_subprocess():
@@ -188,7 +188,7 @@ def test_dry_no_subprocess():
         .with_metric(Time())
         .with_runs(5),
     )
-    out = _all_samples(Dry().run(plan([s], None), ctx=None))
+    out = _all_samples(Dry().run(plan([s], None), None))
     assert out == []
 
 
@@ -201,7 +201,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
         .with_metric(Time())
         .with_runs(5),
     )
-    Dry().run(plan([s], None), ctx=None)
+    Dry().run(plan([s], None), None)
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
@@ -220,7 +220,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
         .with_warmup(2)
         .with_runs(3),
     )
-    Dry().run(plan([s], None), ctx=None)
+    Dry().run(plan([s], None), None)
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
@@ -240,7 +240,7 @@ def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
         .with_metric(Time())
         .with_runs(CoefficientOfVariation("elapsed")),
     )
-    Dry().run(plan([s], None), ctx=None)
+    Dry().run(plan([s], None), None)
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 1
@@ -256,7 +256,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
         .with_metric(Time())
         .with_runs(5),
     )
-    Dry(verbose=True).run(plan([s], None), ctx=None)
+    Dry(verbose=True).run(plan([s], None), None)
     out = capsys.readouterr().out
     assert "command:    /bin/echo hi" in out
     assert "cwd:" in out
@@ -267,7 +267,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
 
 
 def test_sequential_quiet_prints_no_block(capsys):
-    Sequential().run(plan([_sleep_suite(runs=1)], None), ctx=None)
+    Sequential().run(plan([_sleep_suite(runs=1)], None), None)
     out = capsys.readouterr().out
     assert "command:" not in out and "plan:" not in out
 
@@ -276,7 +276,7 @@ def test_mixed_reporter_lifecycle(tmp_path: Path):
     json_path = tmp_path / "r.json"
     csv_path = tmp_path / "r.csv"
     sinks = CompositeReporter(JsonReporter(json_path), CsvReporter(csv_path))
-    Sequential(reporter=sinks).run(plan([_sleep_suite(runs=1)], None), ctx=None)
+    Sequential(reporter=sinks).run(plan([_sleep_suite(runs=1)], None), None)
     assert json_path.exists() and csv_path.exists()
     assert json_path.read_text().count('"metric"') >= 2
 
@@ -308,7 +308,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential(reporter=JsonReporter(json_path)).run(plan([s], None), ctx=None)
+        Sequential(reporter=JsonReporter(json_path)).run(plan([s], None), None)
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -344,7 +344,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Parallel(workers=4, reporter=JsonReporter(json_path)).run(plan([s], None), ctx=None)
+        Parallel(workers=4, reporter=JsonReporter(json_path)).run(plan([s], None), None)
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -372,7 +372,7 @@ def test_sigint_kills_shell_wrapped_subtree():
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential().run(plan([s], None), ctx=None)
+        Sequential().run(plan([s], None), None)
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -411,7 +411,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         .with_metric(Time())  # emits one `elapsed` sample on success
         .with_runs(2),
     )
-    report = Sequential(max_consecutive_failures=2).run(plan([s], None), ctx=None)
+    report = Sequential(max_consecutive_failures=2).run(plan([s], None), None)
     samples = _all_samples(report)
     # If the relative path leaked through, every spawn would fail and we'd hit
     # max_consecutive_failures quickly. abspath() in execute() prevents that.
@@ -421,7 +421,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert [smp.metric for smp in report.runs[0].samples] == ["elapsed"]
 
 

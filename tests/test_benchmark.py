@@ -10,7 +10,7 @@ from benchr.grammar.benchmark import UNSET
 
 def _mat(b):
     """Resolve one benchmark against an otherwise-default suite."""
-    return suite("S", b).materialize(ctx=None)[0]
+    return suite("S", b).materialize(None)[0]
 
 
 def _base():
@@ -73,7 +73,7 @@ def test_unresolved_cwd_raises_on_schedule():
 
 def test_unset_raises_on_any_use():
     with pytest.raises(RuntimeError, match="materialize"):
-        UNSET(bench("x"), None)  # calling (command/env/label fns)
+        UNSET(None)  # calling (command/env/label fns)
     with pytest.raises(RuntimeError, match="materialize"):
         UNSET.start()  # attribute access (policies)
     with pytest.raises(RuntimeError, match="materialize"):
@@ -118,5 +118,5 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
          .with_matrix(vm=["v8", "jsc"], size=[100, 500])
          .add_matrix_skip(vm="v8", size=500)
          .add_matrix_skip(vm="jsc", size=100))
-    bs = suite("S", b).materialize(ctx=None)
+    bs = suite("S", b).materialize(None)
     assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}

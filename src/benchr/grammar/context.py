@@ -1,10 +1,13 @@
-"""RunContext: user-defined params materialized from CLI flags.
+"""``Context``: the single object passed to every builder callable, plus the
+user-params-from-CLI glue that feeds it.
 
 Users declare a ``@dataclass`` describing their parameters. ``benchr.run()``
-auto-generates argparse arguments from the field annotations and constructs
-an instance which is passed to every builder lambda as ``ctx``.
+auto-generates argparse arguments from the field annotations and constructs an
+instance. That instance is exposed as ``ctx.params`` on the ``Context`` handed
+to every command/cwd/env callable and suite factory, alongside the resolved
+suite/benchmark properties (see ``Context`` below).
 
-Supported field types: ``str``, ``int``, ``float``, ``bool``, ``Path``,
+Supported param field types: ``str``, ``int``, ``float``, ``bool``, ``Path``,
 ``Optional[T]`` / ``T | None``.
 
 Required vs default:
@@ -18,9 +21,61 @@ import argparse
 import dataclasses
 import types
 import typing
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from benchr.core.execution import SuccessFn
+    from benchr.core.metric import Metric
+    from benchr.core.policy import StoppingPolicy
+
+
+class Matrix:
+    """A benchmark's variant/data payload"""
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: dict[str, Any] | None = None) -> None:
+        self._data = dict(data or {})
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return object.__getattribute__(self, "_data")[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+    def __repr__(self) -> str:
+        return f"Matrix({self._data!r})"
+
+
+@dataclass(frozen=True, slots=True)
+class Context[T]:
+    """Everything a builder callable needs, in one object.
+
+    The single argument passed to every command/cwd/env callable (built in
+    ``Benchmark.schedule``) and to every suite factory (built in
+    ``Suite.materialize``). ``T`` is the user's params ``@dataclass``.
+
+    The level decides what the fields mean:
+
+      - **suite level** (factories): ``benchmark`` is ``None``, ``matrix`` is
+        empty, and the policy/config fields are the *suite defaults* (already
+        reflecting any ``--runs/--warmup`` CLI override).
+      - **benchmark level** (command/cwd/env): ``benchmark`` is the name and the
+        policy/config fields are the *resolved* benchmark's values.
+    """
+
+    params: T
+    suite: str
+    benchmark: str | None
+    runs: StoppingPolicy
+    warmup: StoppingPolicy
+    timeout: float | None
+    metrics: tuple[Metric, ...]
+    harness: bool
+    success: SuccessFn
+    matrix: Matrix
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field

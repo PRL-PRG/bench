@@ -57,6 +57,7 @@ from benchr.grammar.benchmark import (
     coerce_env,
     default_label,
 )
+from benchr.grammar.context import Context, Matrix
 from benchr.core.execution import (
     EMPTY_MAPPING,
     SuccessFn,
@@ -66,25 +67,28 @@ from benchr.core.metric import Metric, Time
 from benchr.core.policy import FixedRuns, StoppingPolicy, coerce_policy
 
 
-# A function the Runner can call to materialize benchmarks given the ctx.
+# A function the Runner can call to materialize benchmarks given the Context.
 # Suite.from_files defers discovery to this hook so e.g. paths can depend on
-# ctx.cwd. The Runner / CLI flattens these into concrete benchmarks at run time.
-type BenchFactory = Callable[[Any], list[Benchmark]]
+# ctx.params. The Runner / CLI flattens these into concrete benchmarks at run time.
+type BenchFactory = Callable[[Context[Any]], list[Benchmark]]
 
 
-def _default_cwd(b: Benchmark, ctx: Any) -> Path:
+def _default_cwd(ctx: Context[Any]) -> Path:
     """Suite default cwd: the invoking process's cwd, read at schedule time."""
     return Path.cwd()
 
 
-def _default_env(b: Benchmark, ctx: Any) -> Mapping[str, str]:
+def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
     """Suite default env: empty — the child inherits the OS environment."""
     return EMPTY_MAPPING
 
 
 def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
     """Lazy per-key merge: ``base`` first, ``override`` wins (suite ⊕ benchmark)."""
-    return lambda b, ctx: {**base(b, ctx), **override(b, ctx)}
+    return lambda ctx: {**base(ctx), **override(ctx)}
+
+
+# TODO: is it better to use tuple[X, ...] instead of list[X] ?
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,9 +127,10 @@ class Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
     def factory(self, fn: BenchFactory) -> Suite:
-        """Register a deferred ``(ctx) -> [Benchmark]`` producer; ``materialize(ctx)``
-        calls it. Wrap ``from_files`` here for ctx-dependent discovery, e.g.
-        ``.factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=...))``."""
+        """Register a deferred ``(ctx: Context) -> [Benchmark]`` producer;
+        ``materialize`` builds the suite-level Context and calls it. Wrap
+        ``from_files`` here for params-dependent discovery, e.g.
+        ``.factory(lambda ctx: from_files(ctx.params.cwd / "benchmarks", pattern=...))``."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
     def filter(self, pred: Callable[[Benchmark], bool]) -> Suite:
@@ -214,14 +219,27 @@ class Suite:
         )
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
-    def materialize(self, ctx: Any) -> list[Benchmark]:
+    def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete (post-expansion, fully resolved) benchmark list.
 
-        Calls deferred factories, applies suite-level axes/skips, expands each
-        benchmark's matrix into one Benchmark per surviving variant, and fills
-        every still-unset field from the suite defaults. After this, benchmarks
-        are fully concrete — runners just read fields.
+        Calls deferred factories (passing a suite-level ``Context`` built from
+        ``params`` and the suite defaults), applies suite-level axes/skips,
+        expands each benchmark's matrix into one Benchmark per surviving
+        variant, and fills every still-unset field from the suite defaults.
+        After this, benchmarks are fully concrete — runners just read fields.
         """
+        ctx = Context(
+            params=params,
+            suite=self.name,
+            benchmark=None,
+            runs=self.runs,
+            warmup=self.warmup,
+            timeout=self.timeout,
+            metrics=self.metrics,
+            harness=self.harness,
+            success=self.success,
+            matrix=Matrix(),
+        )
         collected = list(self.benchmarks)
         for f in self.factories:
             collected.extend(f(ctx))
@@ -269,8 +287,9 @@ class Suite:
                 f"Benchmark {b.name!r} has no command — set one with "
                 f"Benchmark.with_command or Suite.with_command"
             )
-        if resolved.harness and (resolved.warmup.max_runs() is None
-                                 or resolved.runs.max_runs() is None):
+        if resolved.harness and (
+            resolved.warmup.max_runs() is None or resolved.runs.max_runs() is None
+        ):
             raise ValueError(
                 f"Benchmark {b.name!r} is a harness benchmark: it runs once "
                 f"and cannot be stopped mid-flight, so warmup/runs must be "
@@ -283,7 +302,7 @@ class Suite:
     def _wrap_filter(
         factory: BenchFactory, pred: Callable[[Benchmark], bool]
     ) -> BenchFactory:
-        def wrapped(ctx: Any) -> list[Benchmark]:
+        def wrapped(ctx: Context[Any]) -> list[Benchmark]:
             return [b for b in factory(ctx) if pred(b)]
 
         return wrapped

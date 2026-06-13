@@ -13,7 +13,7 @@ class Sequential(Runner):
     """Run benchmarks one at a time, in suite-then-benchmark order."""
 
     def run(
-        self, planned: list[PlannedBenchmark], ctx: Any = None
+        self, planned: list[PlannedBenchmark], params: Any = None
     ) -> Report:
         self.reporter.start([p.benchmark for p in planned])
         report = Report()
@@ -22,7 +22,7 @@ class Sequential(Runner):
                 for p in planned:
                     if interrupted():
                         break
-                    self._run_benchmark(p, ctx, report)
+                    self._run_benchmark(p, params, report)
                 if interrupted():
                     raise KeyboardInterrupt
             return report

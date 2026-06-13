@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from benchr import (
-    Benchmark, CoefficientOfVariation, Dry, FloatPerLine, Parallel, Regex,
+    CoefficientOfVariation, Context, Dry, FloatPerLine, Parallel, Regex,
     Sample, Sequential, Time, bench, plan, run, suite,
 )
 from benchr.runner.base import split_iterations
@@ -60,14 +60,14 @@ def test_split_uneven_groups_stop_contributing():
 
 def test_suite_with_harness_reaches_every_benchmark():
     s = _harness_suite(_echo_lines("1.0"))
-    assert all(b.harness for b in s.materialize(ctx=None))
+    assert all(b.harness for b in s.materialize(None))
 
 
 def test_bench_level_with_harness_in_command_suite():
     s = (suite("S", bench("h").with_command(["true"]).with_harness(),
                bench("c").with_command(["true"]))
          .with_metric(Time()))
-    h, c = s.materialize(ctx=None)
+    h, c = s.materialize(None)
     assert h.harness and not c.harness
 
 
@@ -75,7 +75,7 @@ def test_harness_requires_bounded_policies():
     s = _harness_suite(_echo_lines("1.0")).with_runs(
         CoefficientOfVariation("runtime"))
     with pytest.raises(ValueError, match="bounded"):
-        s.materialize(ctx=None)
+        s.materialize(None)
 
 
 # ----- fan-out ---------------------------------------------------------------
@@ -84,7 +84,7 @@ def test_harness_requires_bounded_policies():
 def test_one_execution_fans_out_into_run_records():
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"),
                        warmup=2, runs=3)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert [r.run for r in report.runs] == [1, 2, 3, 4, 5]
     assert [r.samples[0].value for r in report.runs] == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert report.warmups == {"H/a": 2}
@@ -95,7 +95,7 @@ def test_multi_metric_iterations_pair_up():
     cmd = ["sh", "-c", "echo 't: 1.0 m: 10'; echo 't: 2.0 m: 20'"]
     s = _harness_suite(cmd, runs=2, metric=FloatPerLine("ms"))
     s = s.with_metric(Regex("t", r"t: ([\d.]+)"), Regex("m", r"m: ([\d.]+)"))
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 2
     assert [(smp.metric, smp.value) for smp in report.runs[0].samples] == [
         ("t", 1.0), ("m", 10.0)]
@@ -103,28 +103,28 @@ def test_multi_metric_iterations_pair_up():
 
 def test_failed_execution_is_one_failed_record():
     s = _harness_suite(["sh", "-c", "exit 3"], runs=5)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     assert report.runs[0].failure == "exit code 3"
 
 
 def test_timeout_is_one_failed_record():
     s = _harness_suite(["sleep", "5"], runs=2).with_timeout(0.1)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     assert report.runs[0].returncode == 124
 
 
 def test_no_parsable_output_is_a_loud_failure():
     s = _harness_suite(["sh", "-c", "echo hello"], runs=3)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     assert "no iterations parsed" in (report.runs[0].failure or "")
 
 
 def test_under_delivery_records_trailing_failure():
     s = _harness_suite(_echo_lines("1.0", "2.0"), runs=3)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert [r.run for r in report.runs] == [1, 2, 3]
     assert report.runs[2].failure == "harness produced 2 iterations, expected 3"
     assert len(report.failures) == 1
@@ -132,14 +132,14 @@ def test_under_delivery_records_trailing_failure():
 
 def test_over_delivery_keeps_extra_iterations():
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
-    report = Sequential().run(plan([s], None), ctx=None)
+    report = Sequential().run(plan([s], None), None)
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
     assert report.failures == []
 
 
 def test_runs_flag_reaches_harness_command_fn():
-    def harness_cmd(b: Benchmark, ctx: object) -> list[str]:
-        w, r = b.warmup.max_runs(), b.runs.max_runs()
+    def harness_cmd(ctx: Context[object]) -> list[str]:
+        w, r = ctx.warmup.max_runs(), ctx.runs.max_runs()
         assert w is not None and r is not None  # harness policies are bounded
         return ["sh", "-c", f"seq {w + r}"]
 
@@ -170,7 +170,7 @@ def test_parallel_runs_harness_benchmarks():
         .with_runs(1)
         .with_harness()
     )
-    report = Parallel(workers=2).run(plan([s], None), ctx=None)
+    report = Parallel(workers=2).run(plan([s], None), None)
     by_bench = {}
     for r in report.runs:
         by_bench.setdefault(r.benchmark, []).append(r.samples[0].value)
@@ -180,7 +180,7 @@ def test_parallel_runs_harness_benchmarks():
 
 def test_dry_prints_one_harness_line(capsys):
     s = _harness_suite(_echo_lines("1.0"), warmup=2, runs=3)
-    Dry().run(plan([s], None), ctx=None)
+    Dry().run(plan([s], None), None)
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert len(lines) == 1
     assert lines[0].endswith("[harness]")

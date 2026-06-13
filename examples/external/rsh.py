@@ -25,7 +25,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import bench as B, FloatPerLine, max_rss, run, suite
+from benchr import bench as B, Context, FloatPerLine, max_rss, run, suite
 
 
 _HARNESS_R = r"""
@@ -58,17 +58,17 @@ class RshParams:
     iterations: int = 15                   # rebench: iterations (harness inner loop)
 
 
-def _cmd(b, ctx: RshParams):
+def _cmd(ctx: Context[RshParams]):
     return [
-        str(ctx.Rscript),
-        f"{b.cmd}.r",
-        str(ctx.iterations),
-        str(b.extra_args),
+        str(ctx.params.Rscript),
+        f"{ctx.matrix.cmd}.r",
+        str(ctx.params.iterations),
+        str(ctx.matrix.extra_args),
     ]
 
 
 def _suite_cwd(subdir: str):
-    return lambda _b, ctx: ctx.benchmarks_path / subdir
+    return lambda ctx: ctx.params.benchmarks_path / subdir
 
 
 # ----------------------------------------------------------------------

@@ -68,7 +68,7 @@ def run(
 
     parser = _make_run_parser(params)
     cli_args = parser.parse_args(argv)
-    ctx = build_dataclass(params, cli_args) if params is not None else None
+    build_params = build_dataclass(params, cli_args) if params is not None else None
 
     reporter = reporter or SummaryReporter(formatter=formatter)
     reporter = _build_reporter(
@@ -77,13 +77,28 @@ def run(
         with_progress=not cli_args.dry and not cli_args.quiet,
     )
 
-    benchmarks = _apply_cli_policy_overrides(plan(suites, ctx), cli_args)
+    # Apply --runs/--warmup to the suite defaults *before* materialize, so a
+    # factory's suite-level Context already sees the effective counts; then
+    # also force them onto every planned benchmark (the documented "every
+    # benchmark" semantics). Both resolve to FixedRuns(N), so they agree.
+    suites = [_apply_suite_policy_overrides(s, cli_args) for s in suites]
+    benchmarks = _apply_cli_policy_overrides(plan(suites, build_params), cli_args)
     runner = _make_runner(cli_args, reporter)
     try:
-        return runner.run(benchmarks, ctx)
+        return runner.run(benchmarks, build_params)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         sys.exit(1)
+
+
+def _apply_suite_policy_overrides(suite: Suite, ns: argparse.Namespace) -> Suite:
+    """Override the suite's default runs/warmup policy when --runs / --warmup
+    were given, so factory-level Contexts reflect the effective counts."""
+    if ns.runs is not None:
+        suite = suite.with_runs(FixedRuns(ns.runs))
+    if ns.warmup is not None:
+        suite = suite.with_warmup(FixedRuns(ns.warmup))
+    return suite
 
 
 def _apply_cli_policy_overrides(
@@ -357,7 +372,7 @@ def _run_bench(ns: argparse.Namespace) -> int:
 
     runner = _make_runner(ns, rep)
     try:
-        runner.run(plan([s], None), ctx=None)
+        runner.run(plan([s], None), None)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         return 1
