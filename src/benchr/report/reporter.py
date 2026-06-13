@@ -24,6 +24,7 @@ from benchr.core.execution import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
     ExecutionResult,
+    ScheduledExecution,
 )
 from benchr.core.sample import (
     Report,
@@ -41,18 +42,20 @@ from benchr.report.theme import BENCHR_THEME, console
 class Reporter(abc.ABC):
     """Streaming sink for per-execution results.
 
-    Called by the Runner as ``start(plan)`` once, ``record(rec, result)``
-    per run record, ``finalize()`` once. ``rec`` is the pure-data RunRecord
-    (what serializes); ``result`` is the raw ExecutionResult for sinks that
-    need the full stdout/stderr/rusage. ``plan`` is the flattened list of
-    Benchmarks the runner has materialized from the suites.
+    Called by the Runner as ``start(plan)`` once, ``record(rec)`` per run
+    record, ``process_done(sched, result)`` per OS process completion,
+    ``finalize()`` once. ``plan`` is the flattened list of Benchmarks the
+    runner has materialized from the suites.
     """
 
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
     @abc.abstractmethod
-    def record(self, rec: RunRecord, result: ExecutionResult) -> None: ...
+    def record(self, rec: RunRecord) -> None: ...
+
+    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
+        pass
 
     def warmup(self, key: str, runs: int) -> None:
         """Called once per benchmark variant when its warmup ends: the first
@@ -74,7 +77,7 @@ class _BufferingReporter(Reporter):
         self._report = Report()
         self._lock = threading.Lock()
 
-    def record(self, rec: RunRecord, result: ExecutionResult) -> None:
+    def record(self, rec: RunRecord) -> None:
         with self._lock:
             self._report.add(rec)
 
@@ -93,9 +96,13 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.start(plan)
 
-    def record(self, rec: RunRecord, result: ExecutionResult) -> None:
+    def record(self, rec: RunRecord) -> None:
         for r in self.reporters:
-            r.record(rec, result)
+            r.record(rec)
+
+    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
+        for r in self.reporters:
+            r.process_done(sched, result)
 
     def warmup(self, key: str, runs: int) -> None:
         for r in self.reporters:
@@ -205,23 +212,26 @@ class DirReporter(Reporter):
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def record(self, rec: RunRecord, result: ExecutionResult) -> None:
-        key = (rec.suite, rec.benchmark)
+    def record(self, rec: RunRecord) -> None:
+        pass  # DirReporter writes on process_done, not per-run record
+
+    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
+        key = (sched.suite, sched.benchmark)
         with self._lock:
             self._counters[key] = self._counters.get(key, 0) + 1
             n = self._counters[key]
 
-        run_dir = self.root / rec.suite / rec.benchmark / str(n)
+        run_dir = self.root / sched.suite / sched.benchmark / str(n)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         lines = [
             f"cwd={result.execution.cwd}",
-            f"command={' '.join(rec.command)}",
-            f"run={rec.run}",
+            f"command={' '.join(sched.execution.command)}",
+            f"run={sched.run}",
         ]
-        lines.extend(f"variant[{k}]={v}" for k, v in rec.variant)
-        if rec.variant_label:
-            lines.append(f"variant_label={rec.variant_label}")
+        lines.extend(f"variant[{k}]={v}" for k, v in sched.variant)
+        if sched.variant_label:
+            lines.append(f"variant_label={sched.variant_label}")
         (run_dir / "seq").write_text("\n".join(lines) + "\n")
 
         (run_dir / "stdout").write_text(result.stdout)
@@ -289,7 +299,7 @@ class ProgressReporter(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def record(self, rec: RunRecord, result: ExecutionResult) -> None:
+    def record(self, rec: RunRecord) -> None:
         with self._lock:
             if not rec.is_failure():
                 self._successes += 1

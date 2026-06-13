@@ -109,6 +109,9 @@ class Suite:
     warmup: StoppingPolicy = FixedRuns(0)
     runs: StoppingPolicy = FixedRuns(1)
     harness: bool = False
+    # Suite-level defaults for harness optional fields; benchmark value wins.
+    max_iterations: int | None = None
+    framer: Any = None
     label_fn: LabelFn = default_label
 
     # ----- suite-level matrix / skip (applied at materialize) --------
@@ -178,12 +181,17 @@ class Suite:
         """Set the default policy for the measured runs."""
         return dataclasses.replace(self, runs=coerce_policy(p))
 
-    def with_harness(self) -> Suite:
+    def with_harness(
+        self, max_iterations: int | None = None, framer: Any = None
+    ) -> Suite:
         """Make every contained benchmark a harness benchmark (executed once,
-        iterations parsed from the complete output — see
-        ``Benchmark.with_harness``). There is no per-benchmark opt-out; mixed
-        suites are two suites."""
-        return dataclasses.replace(self, harness=True)
+        streamed and killed on convergence — see ``Benchmark.with_harness``).
+        ``max_iterations`` and ``framer`` are suite-level defaults; a benchmark's
+        own ``with_harness(...)`` values override them. There is no per-benchmark
+        opt-out; mixed suites are two suites."""
+        return dataclasses.replace(
+            self, harness=True, max_iterations=max_iterations, framer=framer
+        )
 
     def with_matrix(self, **axes: Sequence[Any]) -> Suite:
         """Declare matrix axes applied to every contained benchmark (replaces
@@ -239,6 +247,7 @@ class Suite:
             harness=self.harness,
             success=self.success,
             matrix=Matrix(),
+            harness_iterations=None,
         )
         collected = list(self.benchmarks)
         for f in self.factories:
@@ -280,21 +289,14 @@ class Suite:
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,
             harness=self.harness if b.harness is UNSET else b.harness,
+            max_iterations=b.max_iterations if b.max_iterations is not None else self.max_iterations,
+            framer=b.framer if b.framer is not None else self.framer,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
         )
         if resolved.command is UNSET:
             raise ValueError(
                 f"Benchmark {b.name!r} has no command — set one with "
                 f"Benchmark.with_command or Suite.with_command"
-            )
-        if resolved.harness and (
-            resolved.warmup.max_runs() is None or resolved.runs.max_runs() is None
-        ):
-            raise ValueError(
-                f"Benchmark {b.name!r} is a harness benchmark: it runs once "
-                f"and cannot be stopped mid-flight, so warmup/runs must be "
-                f"bounded counts (no CoefficientOfVariation) — pass them to "
-                f"the harness via the command fn"
             )
         return resolved
 

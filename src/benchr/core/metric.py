@@ -1,10 +1,10 @@
 """Metric: ExecutionResult -> Iterable[Sample].
 
-A Metric parses one or more measurements from an ExecutionResult. The Runner
-calls ``extract_all(metrics, result)`` to get the per-execution Samples, which
-the Reporter pairs with the ScheduledExecution identity. Built-in metric
-builders are exported directly from this module — instantiate them as
-``Time()``, ``Regex(...)``, ``FloatPerLine(...)``, etc.
+A Metric parses one or more measurements from an ExecutionResult. Metrics are
+either ``RunMetric`` (per run/iteration) or ``ProcessMetric`` (whole process);
+``extract_run``/``extract_process`` select by kind and ``partition_metrics``
+splits a flat list. Built-in metric builders are exported directly from this
+module — instantiate them as ``Time()``, ``Regex(...)``, ``FloatPerLine(...)``, etc.
 """
 
 from __future__ import annotations
@@ -20,10 +20,25 @@ from benchr.core.execution import ExecutionResult
 from benchr.core.sample import Sample
 
 
-def extract_all(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
-    """Run each metric over one result, concatenating their Samples."""
+def extract_run(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
+    """Run only RunMetric instances over one result."""
     for m in metrics:
-        yield from m.process(result)
+        if isinstance(m, RunMetric):
+            yield from m.process(result)
+
+
+def extract_process(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
+    """Run only ProcessMetric instances over one result."""
+    for m in metrics:
+        if isinstance(m, ProcessMetric):
+            yield from m.process(result)
+
+
+def partition_metrics(metrics: Iterable[Metric]) -> tuple[list[RunMetric], list[ProcessMetric]]:
+    """Split a flat list of metrics into (run_metrics, process_metrics)."""
+    run = [m for m in metrics if isinstance(m, RunMetric)]
+    proc = [m for m in metrics if isinstance(m, ProcessMetric)]
+    return run, proc
 
 
 # ---------------------------------------------------------------------------
@@ -32,25 +47,30 @@ def extract_all(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[
 
 
 class Metric(abc.ABC):
-    """ExecutionResult -> Iterable[Sample]."""
+    """ExecutionResult -> Iterable[Sample]. Shared base; concrete metrics are
+    either RunMetric (per run/iteration) or ProcessMetric (whole process)."""
 
     __slots__ = ()
 
     @abc.abstractmethod
     def process(self, result: ExecutionResult) -> Iterable[Sample]: ...
 
-    def lower_is_better(self) -> Metric:
-        return _Direction(self, True)
-
-    def higher_is_better(self) -> Metric:
-        return _Direction(self, False)
-
     def when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric:
         """Run this metric only when ``predicate(result)`` is true."""
-        return _When(self, predicate)
+        return self._wrap_when(predicate)
+
+    def lower_is_better(self) -> Metric:
+        return self._wrap_direction(True)
+
+    def higher_is_better(self) -> Metric:
+        return self._wrap_direction(False)
+
+    # Subclasses (RunMetric / ProcessMetric) return a wrapper of their own kind.
+    def _wrap_direction(self, lower: bool) -> Metric: ...      # defined on the two bases
+    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: ...
 
 
-class _Direction(Metric):
+class _DirectionMixin:
     __slots__ = ("inner", "lower")
 
     def __init__(self, inner: Metric, lower_is_better: bool):
@@ -62,7 +82,7 @@ class _Direction(Metric):
             yield dataclasses.replace(s, lower_is_better=self.lower)
 
 
-class _When(Metric):
+class _WhenMixin:
     __slots__ = ("inner", "predicate")
 
     def __init__(self, inner: Metric, predicate: Callable[[ExecutionResult], bool]):
@@ -74,12 +94,35 @@ class _When(Metric):
             yield from self.inner.process(result)
 
 
+class RunMetric(Metric):
+    """Fed once per run. Command: the whole process result. Harness: each framed block."""
+    __slots__ = ()
+
+    def _wrap_direction(self, lower: bool) -> Metric: return _RunDirection(self, lower)
+    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: return _RunWhen(self, predicate)
+
+
+class ProcessMetric(Metric):
+    """Fed the whole-process result. Command: folds into the run's samples.
+    Harness: becomes Report.metadata."""
+    __slots__ = ()
+
+    def _wrap_direction(self, lower: bool) -> Metric: return _ProcessDirection(self, lower)
+    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: return _ProcessWhen(self, predicate)
+
+
+class _RunDirection(_DirectionMixin, RunMetric): __slots__ = ()
+class _ProcessDirection(_DirectionMixin, ProcessMetric): __slots__ = ()
+class _RunWhen(_WhenMixin, RunMetric): __slots__ = ()
+class _ProcessWhen(_WhenMixin, ProcessMetric): __slots__ = ()
+
+
 # ---------------------------------------------------------------------------
 # Built-in metrics
 # ---------------------------------------------------------------------------
 
 
-class FloatPerLine(Metric):
+class FloatPerLine(RunMetric):
     """Parse non-empty lines of stdout as floats, emit one sample per line.
 
     ``line`` selects a single 1-based non-empty line (negative counts from the
@@ -125,7 +168,7 @@ class FloatPerLine(Metric):
         return FloatPerLine(self.unit, self.metric, line=i)
 
 
-class Regex(Metric):
+class Regex(RunMetric):
     """Extract metric values via a regex against stdout/stderr."""
 
     type _MatchGroup = str | int
@@ -168,7 +211,7 @@ class Regex(Metric):
                 yield Sample(metric=self.metric, value=value, unit=unit)
 
 
-class Rebench(Metric):
+class Rebench(RunMetric):
     """ReBench log format adapter.
 
     ``optional_prefix: name optional_criterion: iterations=N runtime: V[ms|us]``
@@ -210,7 +253,7 @@ class Rebench(Metric):
                 )
 
 
-class RUsage(Metric):
+class RUsage(ProcessMetric):
     """Emit one sample from a single ``resource.struct_rusage`` field."""
 
     Field = Literal[
@@ -236,7 +279,7 @@ class RUsage(Metric):
         yield Sample(metric=self.metric, value=value, unit=self.unit)
 
 
-class Time(Metric):
+class Time(ProcessMetric):
     """Up to three time samples: ``elapsed`` (wall), ``user``, ``system`` (s)."""
 
     __slots__ = ("elapsed", "user", "system")
@@ -261,7 +304,7 @@ class Time(Metric):
                              unit="s", lower_is_better=True)
 
 
-class Constant(Metric):
+class Constant(ProcessMetric):
     """Always emit a fixed sample (e.g. tag every run with a constant marker)."""
 
     __slots__ = ("metric", "value", "unit", "lower")

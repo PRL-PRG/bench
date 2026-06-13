@@ -50,6 +50,43 @@ def test_json_round_trip():
     assert r2.warmups == {"S/B": 2}
 
 
+from benchr.core.sample import RunResult, RunRecord, Sample
+from benchr.core.execution import Execution, ScheduledExecution
+
+
+def _template():
+    return ScheduledExecution(execution=Execution(command=("x",), cwd=__import__("pathlib").Path("/")),
+                              suite="S", benchmark="b", variant=(), variant_label="", run=1)
+
+
+def test_runrecord_from_run_result_stamps_identity_and_run():
+    rr = RunResult(samples=[Sample("t", 1.0)], returncode=0, runtime=2.0)
+    rec = RunRecord.from_run_result(_template(), 7, rr)
+    assert rec.suite == "S" and rec.benchmark == "b" and rec.run == 7
+    assert rec.runtime == 2.0 and rec.failure is None
+    assert [s.value for s in rec.samples] == [1.0]
+
+
+def test_runrecord_from_run_result_failure_carries_message():
+    rr = RunResult(samples=[], returncode=3, failure="exit code 3", message="boom")
+    rec = RunRecord.from_run_result(_template(), 1, rr)
+    assert rec.is_failure() and rec.message == "boom" and rec.returncode == 3
+
+
+def test_report_metadata_roundtrips_json():
+    from benchr.core.sample import Report, report_to_json, report_from_json
+    r = Report()
+    r.metadata["S/b"] = [Sample("max_rss", 1024.0, unit="kB")]
+    back = report_from_json(report_to_json(r))
+    assert back.metadata["S/b"][0].metric == "max_rss"
+
+
+def test_old_json_without_metadata_structures():
+    from benchr.core.sample import report_from_json
+    r = report_from_json('{"runs": [], "warmups": {}}')
+    assert r.metadata == {}
+
+
 def test_pre_v4_json_drops_warmup_runs():
     import json
 

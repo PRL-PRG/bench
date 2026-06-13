@@ -11,6 +11,7 @@ forever, since SIGINT is delivered to the main thread only).
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import errno
 import os
 import resource
@@ -21,6 +22,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Generator
+from pathlib import Path
 from types import FrameType
 
 from benchr.core.execution import (
@@ -213,3 +215,149 @@ def execute(exe: Execution) -> ExecutionResult:
             _unregister_proc(proc)
         stdout_f.close()
         stderr_f.close()
+
+
+@dataclasses.dataclass
+class LiveProcess:
+    """A spawned-but-not-yet-reaped process writing to named output files."""
+
+    proc: subprocess.Popen[bytes]
+    execution: Execution
+    stdout_path: Path
+    stderr_path: Path
+    _start: float
+    _killed: threading.Event
+    timer: threading.Timer | None = None
+    # The reaper runs exactly once and caches its result. is_alive() polls it
+    # non-blockingly (a harness reader thread tails until the process exits),
+    # finish() reaps blockingly — both go through _reap so the rusage-bearing
+    # wait4 is never lost to a stray poll(). Guarded for the reader thread vs.
+    # finish()/close() racing.
+    _reap_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _reaped: bool = False
+    _waitstatus: int = 0
+    _rusage: resource.struct_rusage | None = None
+
+    def _reap(self, *, blocking: bool) -> bool:
+        """Reap the child once, caching (waitstatus, rusage). Returns True once
+        the process has been reaped. Non-blocking reap returns False while the
+        process is still running."""
+        with self._reap_lock:
+            if self._reaped:
+                return True
+            flags = 0 if blocking else os.WNOHANG
+            while True:
+                try:
+                    pid, waitstatus, rusage = os.wait4(self.proc.pid, flags)
+                except InterruptedError:
+                    continue
+                except OSError as e:
+                    if e.errno == errno.EINTR:
+                        continue
+                    # Already reaped elsewhere (e.g. a stray poll()): fall back
+                    # to the returncode subprocess cached, with no rusage.
+                    self._reaped = True
+                    rc = self.proc.returncode
+                    self._waitstatus = 0 if rc is None else (rc if rc >= 0 else (-rc))
+                    self.proc.returncode = rc if rc is not None else 0
+                    return True
+                if pid == 0:  # WNOHANG: still running
+                    return False
+                self._reaped = True
+                self._waitstatus = waitstatus
+                self._rusage = rusage
+                # Keep subprocess's bookkeeping consistent so its own poll()
+                # won't try to wait on an already-reaped pid.
+                self.proc.returncode = os.waitstatus_to_exitcode(waitstatus)
+                return True
+
+    def is_alive(self) -> bool:
+        return not self._reap(blocking=False)
+
+    def kill(self) -> None:
+        self._killed.set()
+        if self.timer is not None:
+            self.timer.cancel()
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            with contextlib.suppress(ProcessLookupError, OSError):
+                self.proc.kill()
+
+    def finish(self, *, killed: bool = False) -> ExecutionResult:
+        if self.timer is not None:
+            self.timer.cancel()
+        if killed:
+            self.kill()
+        self._reap(blocking=True)
+        waitstatus, rusage = self._waitstatus, self._rusage
+        runtime = time.monotonic() - self._start
+        _unregister_proc(self.proc)
+        stdout = self.stdout_path.read_text(errors="replace")
+        stderr = self.stderr_path.read_text(errors="replace")
+        shutil.rmtree(self.stdout_path.parent, ignore_errors=True)
+        if interrupted():
+            return ExecutionResult(
+                self.execution,
+                os.waitstatus_to_exitcode(waitstatus),
+                stdout,
+                stderr,
+                runtime,
+                rusage,
+                failure="interrupted",
+            )
+        rc = TIMEOUT_RC if self._killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
+        return ExecutionResult(self.execution, rc, stdout, stderr, runtime, rusage)
+
+
+def spawn_streaming(exe: Execution) -> LiveProcess:
+    """Spawn a process writing stdout/stderr to named temp files; return a
+    LiveProcess to be reaped via .finish(). Honors exe.timeout (a Timer kills
+    on expiry; .finish() then reports TIMEOUT_RC).
+
+    Raises FileNotFoundError if the command is not found (caller converts to
+    a failed ExecutionResult if needed).
+    """
+    cmd = list(exe.command)
+    found = shutil.which(cmd[0])
+    if found is None:
+        raise FileNotFoundError(f"Command not found: {cmd[0]}")
+    cmd[0] = os.path.abspath(found)
+
+    d = Path(tempfile.mkdtemp(prefix="benchr-harness-"))
+    out_path, err_path = d / "stdout", d / "stderr"
+    out_f = open(out_path, "wb")
+    err_f = open(err_path, "wb")
+    killed = threading.Event()
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(exe.cwd),
+        env=dict(exe.env) if exe.env else None,
+        stdin=subprocess.PIPE if exe.stdin else None,
+        stdout=out_f,
+        stderr=err_f,
+        shell=False,
+        start_new_session=True,
+    )
+    _register_proc(proc)
+    if exe.stdin and proc.stdin is not None:
+        with contextlib.suppress(BrokenPipeError):
+            proc.stdin.write(exe.stdin)
+            proc.stdin.close()
+    out_f.close()
+    err_f.close()
+
+    start = time.monotonic()
+    live = LiveProcess(proc, exe, out_path, err_path, start, killed)
+
+    if exe.timeout is not None:
+        def _kill() -> None:
+            killed.set()
+            with contextlib.suppress(ProcessLookupError, OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+
+        timer = threading.Timer(exe.timeout, _kill)
+        live.timer = timer
+        timer.start()
+
+    return live

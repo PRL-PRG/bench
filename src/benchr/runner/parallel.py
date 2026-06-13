@@ -1,14 +1,20 @@
 """Parallel runner.
 
-A flat work queue across N workers. Every ``(benchmark, run)`` execution is
-materialized up front and spread across one thread pool — the fastest way to
-get through a batch of tasks.
+Runs up to N benchmark ``Controller``s concurrently — per-benchmark
+parallelism, not per-run. Each benchmark drives its own internal sequential
+feedback loop (or a streaming harness with its own reader thread), so
+convergence-driven (CoV) and order-dependent policies run fine here, each on
+its own worker.
 
 This is the *only* sound use of parallelism in a benchmark tool: wall-clock
 timing under contention is meaningless, so ``Parallel`` is for work where time
 is **not** the metric — test suites (pass/fail), smoke runs ("does everything
-execute"). Convergence-driven (unbounded) or order-dependent policies cannot be
-fanned out and are rejected up front; use ``Sequential`` for those.
+execute"), or just getting through a batch faster.
+
+``--jobs N`` means "up to N benchmarks at once." The shared ``Report`` is
+mutated from worker threads, so both it and the reporter are wrapped in
+lock-guarded proxies to keep concurrent ``add``/``warmup``/``metadata`` writes
+from tearing.
 """
 
 from __future__ import annotations
@@ -17,121 +23,103 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from benchr.grammar.benchmark import Benchmark
-from benchr.core.execution import ExecutionResult, ScheduledExecution
-from benchr.core.process import execute, install_sigint_handler, interrupted
+from benchr.core.process import install_sigint_handler, interrupted
 from benchr.core.sample import Report, RunRecord, Sample
 from benchr.report.reporter import Reporter
-from benchr.runner.base import (
-    PlannedBenchmark,
-    Runner,
-    format_scheduled_verbose,
-    judge,
-)
+from benchr.runner.base import PlannedBenchmark, Runner
+from benchr.runner.controller import Controller
+
+
+class _LockedReport(Report):
+    """Write-only lock-guarded wrapper over a shared ``Report``.
+
+    The Controller never *reads* report state mid-run — it only ``add``s
+    records, marks ``warmup`` counts, and sets one ``metadata`` entry. Guard
+    exactly those three mutation points so concurrent benchmarks can't tear
+    ``Report.runs`` / ``warmups`` / ``metadata``. (Its own inherited slots are
+    unused — all writes delegate to the shared ``report``.)"""
+
+    def __init__(self, report: Report, lock: threading.Lock) -> None:
+        super().__init__()
+        self._report = report
+        self._lock = lock
+
+    def add(self, rec: RunRecord) -> None:
+        with self._lock:
+            self._report.add(rec)
+
+    def warmup(self, key: str, runs: int) -> None:
+        with self._lock:
+            self._report.warmup(key, runs)
+
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        with self._lock:
+            self._report.set_metadata(key, samples)
+
+
+class _LockedReporter(Reporter):
+    """Lock-guarded wrapper over the real reporter.
+
+    Serializes ``record`` / ``process_done`` / ``warmup`` so events from
+    benchmarks running on different workers don't interleave inside a single
+    reporter call (e.g. a ``CompositeReporter`` fan-out). ``start`` /
+    ``finalize`` are called once by ``Parallel`` itself, not per-controller."""
+
+    def __init__(self, reporter: Reporter, lock: threading.Lock) -> None:
+        self._reporter = reporter
+        self._lock = lock
+
+    def record(self, rec: RunRecord) -> None:
+        with self._lock:
+            self._reporter.record(rec)
+
+    def process_done(self, sched: Any, result: Any) -> None:
+        with self._lock:
+            self._reporter.process_done(sched, result)
+
+    def warmup(self, key: str, runs: int) -> None:
+        with self._lock:
+            self._reporter.warmup(key, runs)
 
 
 class Parallel(Runner):
-    """N-worker thread pool over a flat list of executions.
+    """Run up to N benchmark ``Controller``s concurrently on a thread pool.
 
-    Requires every benchmark to use a bounded, order-independent stopping
-    policy (e.g. ``FixedRuns``). Convergence-driven or order-dependent policies
-    are rejected — run those with ``Sequential``, or force a fixed run count
-    with ``--runs N``.
+    Each planned benchmark gets its own ``Controller`` (an internal sequential
+    feedback loop), so any stopping policy — fixed, convergence-driven, or
+    order-dependent — runs fine; ``--jobs N`` just bounds how many run at once.
     """
 
     def __init__(self, workers: int, reporter: Reporter | None = None,
                  **kwargs: Any) -> None:
         super().__init__(reporter, **kwargs)
         self.workers = workers
-        # Guards the shared Report + serializes verbose blocks across workers.
-        self._lock = threading.Lock()
-
-    def _record(
-        self,
-        report: Report,
-        sched: ScheduledExecution,
-        result: ExecutionResult,
-        samples: list[Sample],
-    ) -> None:
-        rec = RunRecord.from_result(sched, result, samples)
-        with self._lock:
-            report.add(rec)
-        # Reporters guard their own state; no need to hold the lock.
-        self.reporter.record(rec, result)
-
-    @staticmethod
-    def _parallelizable(b: Benchmark) -> bool:
-        # Need both: independent (runs can be reordered) AND a known total
-        # (we have to pre-materialize the execution list).
-        return all(
-            p.independent() and p.max_runs() is not None
-            for p in (b.warmup, b.runs)
-        )
 
     def run(
         self, planned: list[PlannedBenchmark], params: Any = None
     ) -> Report:
-        # Validate up front: a flat work queue can only hold runs we can count
-        # ahead of time and reorder freely. A harness benchmark is exempt —
-        # it is a single execution, so there is nothing to reorder.
-        for p in planned:
-            if not p.benchmark.harness and not self._parallelizable(p.benchmark):
-                raise ValueError(
-                    f"Parallel cannot run benchmark {p.benchmark.name!r}: its "
-                    f"stopping policy is unbounded or order-dependent "
-                    f"(e.g. CoefficientOfVariation), so its runs can't be fanned "
-                    f"out across workers. Run it with Sequential, or override "
-                    f"the stopping policy with --runs N (forces FixedRuns)."
-                )
-
         self.reporter.start([p.benchmark for p in planned])
         report = Report()
+        lock = threading.Lock()
+        locked_report = _LockedReport(report, lock)
+        locked_reporter = _LockedReporter(self.reporter, lock)
 
-        # Flatten every (benchmark, run) into one work list; runs are numbered
-        # continuously (warmup 1..W, measured W+1..W+R). A harness benchmark
-        # is one work item: its single execution produces all its records.
-        work: list[tuple[Benchmark, ScheduledExecution]] = []
-        for p in planned:
-            b = p.benchmark
-            # Bounded policies are guaranteed (validation above / materialize).
-            warmup_runs, measured = b.warmup.max_runs(), b.runs.max_runs()
-            assert warmup_runs is not None and measured is not None
-            total = 1 if b.harness else warmup_runs + measured
-            first: ScheduledExecution | None = None
-            for i in range(1, total + 1):
-                sched = b.schedule(params, suite=p.suite, run=i)
-                if first is None:
-                    first = sched
-                work.append((b, sched))
-            if first is not None:
-                if not b.harness:
-                    self._warmup(report, first, warmup_runs)
-                if self.verbose:
-                    with self._lock:
-                        print(format_scheduled_verbose(first, b))
-
-        def _do(item: tuple[Benchmark, ScheduledExecution]):
-            # Don't spawn anything once a Ctrl+C has fired — the kill sweep has
-            # already run, so a process started now would be orphaned.
+        def _one(p: PlannedBenchmark) -> None:
+            # Don't start a benchmark once Ctrl+C has fired — the kill sweep
+            # has already run, so a process started now would be orphaned.
             if interrupted():
-                return None
-            b, sched = item
-            return b, sched, execute(sched.execution)
+                return
+            Controller(
+                locked_reporter,
+                max_runs_per_policy=self.max_runs_per_policy,
+                max_consecutive_failures=self.max_consecutive_failures,
+                verbose=self.verbose,
+            ).run_benchmark(p, params, locked_report)
 
         try:
             with install_sigint_handler():
                 with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                    for out in pool.map(_do, work):
-                        if out is None:
-                            continue
-                        b, sched, result = out
-                        if b.harness:
-                            self._record_harness(b, sched, result, report)
-                            continue
-                        # Same judge+parse step as the sequential pump; a failed
-                        # run emits no metrics, only a RunRecord.
-                        result, samples = judge(b, result)
-                        self._record(report, sched, result, samples)
+                    list(pool.map(_one, planned))
                 if interrupted():
                     raise KeyboardInterrupt
             return report

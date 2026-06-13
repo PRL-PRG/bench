@@ -9,7 +9,36 @@ from benchr import (
     CsvReporter, DirReporter, JsonReporter, CompositeReporter, FloatPerLine, ProgressReporter, Sequential, SummaryReporter,
     Time, bench, plan, report_from_json, suite,
 )
+from benchr.core.execution import Execution, ExecutionResult, ScheduledExecution
+from benchr.core.sample import RunRecord
+from benchr.report.reporter import DirReporter as _DirReporter
 from benchr.report.theme import BENCHR_THEME
+
+
+# ---------------------------------------------------------------------------
+# Task 9: new protocol tests
+# ---------------------------------------------------------------------------
+
+
+def _sched():
+    return ScheduledExecution(Execution(("echo", "hi"), Path("/tmp")), "S", "b", (), "", 1)
+
+
+def test_dirreporter_writes_on_process_done(tmp_path):
+    rep = _DirReporter(tmp_path)
+    rep.start([])
+    res = ExecutionResult(_sched().execution, 0, stdout="hi\n", stderr="", runtime=0.1)
+    rep.process_done(_sched(), res)
+    assert (tmp_path / "S" / "b" / "1" / "stdout").read_text() == "hi\n"
+
+
+def test_record_takes_only_rec(tmp_path):
+    # record(rec) signature: one positional arg
+    rep = _DirReporter(tmp_path)
+    rep.start([])
+    rec = RunRecord("S", "b", (), 1, ("echo", "hi"), 0)
+    rep.record(rec)   # must not raise / must be a no-op for DirReporter output
+    assert not (tmp_path / "S").exists()    # nothing written by record alone
 
 
 def _s():

@@ -141,44 +141,66 @@ def test_parallel_runs_faster_than_sequential():
     assert par_t < seq_t * 0.7, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
 
 
-def test_parallel_parallelizable_only_for_bounded_independent():
-    from benchr.runner.parallel import Parallel as P_
-
-    fr = suite(
-        "S",
-        bench("a")
-        .with_command(["true"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(Time())
-        .with_runs(3),
-    ).materialize(None)[0]
-    assert P_._parallelizable(fr)
-    from benchr import CoefficientOfVariation
-
-    cov_b = fr.with_runs(CoefficientOfVariation("elapsed").at_most(5))
-    assert not P_._parallelizable(cov_b)
-
-
 def test_parallel_records_every_run():
     s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks × 3 runs
     report = Parallel(workers=4).run(plan([s], None), None)
     assert len(_all_samples(report)) == 6
 
 
-def test_parallel_rejects_unbounded_policy():
-    import pytest
+def test_parallel_runs_convergence_benchmarks():
+    # Per-benchmark parallelism: each CoV benchmark drives its own Controller,
+    # so convergence-driven policies run fine under Parallel (the old
+    # "rejects unbounded" rule is gone).
     from benchr import CoefficientOfVariation
 
     s = suite(
         "U",
-        bench("conv")
-        .with_command(["true"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(Time())
-        .with_runs(CoefficientOfVariation("elapsed")),
-    )  # unbounded
-    with pytest.raises(ValueError, match="--runs"):
-        Parallel(workers=2).run(plan([s], None), None)
+        *[
+            bench(f"conv{i}")
+            .with_command(["sh", "-c", "echo 1.0"])
+            .with_cwd(Path("/tmp"))
+            .with_metric(FloatPerLine("s").lower_is_better())
+            .with_runs(
+                CoefficientOfVariation("runtime", threshold=0.5, window=2, min_runs=2)
+            )
+            for i in range(2)
+        ],
+    )
+    report = Parallel(workers=2).run(plan([s], None), None)
+    by_bench = {}
+    for r in report.runs:
+        by_bench.setdefault(r.benchmark, []).append(r)
+    # Both benchmarks produced records and converged (constant 1.0 → CoV 0).
+    assert set(by_bench) == {"conv0", "conv1"}
+    assert all(records for records in by_bench.values())
+    assert report.failures == []
+
+
+def test_parallel_shared_report_not_corrupted_under_concurrency():
+    # Many benchmarks fanned across workers all mutate one shared Report; the
+    # locked wrappers must keep run counts and per-benchmark grouping exact.
+    n_bench, n_runs = 8, 5
+    s = suite(
+        "C",
+        *[
+            bench(f"b{i}")
+            .with_command(["sh", "-c", "echo 1.0"])
+            .with_cwd(Path("/tmp"))
+            .with_metric(FloatPerLine("s").lower_is_better())
+            .with_runs(n_runs)
+            for i in range(n_bench)
+        ],
+    )
+    report = Parallel(workers=4).run(plan([s], None), None)
+    assert len(report.runs) == n_bench * n_runs
+    by_bench = {}
+    for r in report.runs:
+        by_bench.setdefault(r.benchmark, []).append(r)
+    assert set(by_bench) == {f"b{i}" for i in range(n_bench)}
+    assert all(len(records) == n_runs for records in by_bench.values())
+    # Run numbers are 1..n_runs per benchmark, no torn/duplicated entries.
+    for records in by_bench.values():
+        assert sorted(r.run for r in records) == list(range(1, n_runs + 1))
 
 
 def test_dry_no_subprocess():

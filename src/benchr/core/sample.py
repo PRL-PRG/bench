@@ -38,6 +38,21 @@ class Sample:
 
 
 @dataclass(frozen=True, slots=True)
+class RunResult:
+    """Outcome of one run/iteration, identity-free. The Controller stamps
+    identity (suite/benchmark/variant/run) to make a RunRecord."""
+
+    samples: list[Sample]
+    returncode: int = 0
+    runtime: float | None = None
+    failure: str | None = None
+    message: str = ""
+
+    def is_failure(self) -> bool:
+        return self.failure is not None
+
+
+@dataclass(frozen=True, slots=True)
 class RunRecord:
     """One execution: identity + command + outcome + parsed samples.
 
@@ -79,35 +94,31 @@ class RunRecord:
         return record_key(self.suite, self.benchmark, self.variant)
 
     @staticmethod
-    def from_result(
-        sched: ScheduledExecution,
-        result: ExecutionResult,
-        samples: Iterable[Sample] = (),
-    ) -> RunRecord:
+    def from_run_result(template: ScheduledExecution, run: int, rr: RunResult) -> RunRecord:
         return RunRecord(
-            suite=sched.suite,
-            benchmark=sched.benchmark,
-            variant=sched.variant,
-            variant_label=sched.variant_label,
-            run=sched.run,
-            command=sched.execution.command,
-            returncode=result.returncode,
-            runtime=result.runtime,
-            failure=result.failure,
-            message=RunRecord._diagnostic_excerpt(result) if result.is_failure() else "",
-            samples=list(samples),
+            suite=template.suite,
+            benchmark=template.benchmark,
+            variant=template.variant,
+            variant_label=template.variant_label,
+            run=run,
+            command=template.execution.command,
+            returncode=rr.returncode,
+            runtime=rr.runtime,
+            failure=rr.failure,
+            message=rr.message,
+            samples=list(rr.samples),
         )
 
-    @staticmethod
-    def _diagnostic_excerpt(result: ExecutionResult, *, max_len: int = 80) -> str:
-        for text in (result.stderr, result.stdout):
-            if not text:
-                continue
-            for line in reversed(text.splitlines()):
-                stripped = line.strip()
-                if stripped:
-                    return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
-        return "(no output)"
+
+def diagnostic_excerpt(result: ExecutionResult, *, max_len: int = 80) -> str:
+    for text in (result.stderr, result.stdout):
+        if not text:
+            continue
+        for line in reversed(text.splitlines()):
+            stripped = line.strip()
+            if stripped:
+                return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
+    return "(no output)"
 
 
 def variant_keys(runs: Iterable[RunRecord]) -> list[str]:
@@ -126,6 +137,7 @@ class Report:
 
     runs: list[RunRecord] = field(default_factory=list[RunRecord])
     warmups: dict[str, int] = field(default_factory=dict[str, int])
+    metadata: dict[str, list[Sample]] = field(default_factory=dict[str, list[Sample]])
 
     @property
     def failures(self) -> list[RunRecord]:
@@ -149,6 +161,10 @@ class Report:
         if runs:
             self.warmups[key] = runs
 
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        """Set benchmark-variant ``key``'s whole-process metadata samples."""
+        self.metadata[key] = samples
+
 
 # ---------------------------------------------------------------------------
 # JSON serialization
@@ -165,4 +181,5 @@ def report_from_json(text: str) -> Report:
     # runs so old baselines still compare correctly. Remove once old baseline
     # files are retired.
     raw["runs"] = [r for r in raw["runs"] if r.pop("phase", None) != "warmup"]
+    raw.setdefault("metadata", {})
     return structure(raw, Report)

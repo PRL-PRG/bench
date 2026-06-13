@@ -2,13 +2,10 @@
 
 from pathlib import Path
 
-import pytest
-
 from benchr import (
     CoefficientOfVariation, Context, Dry, FloatPerLine, Parallel, Regex,
-    Sample, Sequential, Time, bench, plan, run, suite,
+    Sequential, Time, bench, plan, run, suite,
 )
-from benchr.runner.base import split_iterations
 
 
 def _echo_lines(*values) -> list[str]:
@@ -24,35 +21,6 @@ def _harness_suite(command, *, warmup=0, runs=1, metric=None):
         .with_runs(runs)
         .with_harness()
     )
-
-
-# ----- split_iterations -----------------------------------------------------
-
-
-def _smp(metric: str, value: float) -> Sample:
-    return Sample(metric=metric, value=value, unit="s")
-
-
-def test_split_empty():
-    assert split_iterations([]) == []
-
-
-def test_split_single_metric_one_group_per_sample():
-    groups = split_iterations([_smp("t", 1.0), _smp("t", 2.0)])
-    assert [[s.value for s in g] for g in groups] == [[1.0], [2.0]]
-
-
-def test_split_zips_metrics_positionally():
-    groups = split_iterations(
-        [_smp("t", 1.0), _smp("m", 10.0), _smp("t", 2.0), _smp("m", 20.0)])
-    assert [[(s.metric, s.value) for s in g] for g in groups] == [
-        [("t", 1.0), ("m", 10.0)], [("t", 2.0), ("m", 20.0)]]
-
-
-def test_split_uneven_groups_stop_contributing():
-    groups = split_iterations([_smp("t", 1.0), _smp("t", 2.0), _smp("m", 10.0)])
-    assert [[(s.metric, s.value) for s in g] for g in groups] == [
-        [("t", 1.0), ("m", 10.0)], [("t", 2.0)]]
 
 
 # ----- resolution / validation ----------------------------------------------
@@ -71,11 +39,66 @@ def test_bench_level_with_harness_in_command_suite():
     assert h.harness and not c.harness
 
 
-def test_harness_requires_bounded_policies():
-    s = _harness_suite(_echo_lines("1.0")).with_runs(
-        CoefficientOfVariation("runtime"))
-    with pytest.raises(ValueError, match="bounded"):
-        s.materialize(None)
+
+# ----- max_iterations / harness_iterations (Task 13) -----------------------
+
+
+def test_harness_allows_cov_warmup_with_max_iterations():
+    s = (
+        suite(
+            "H",
+            bench("a")
+            .with_command(lambda ctx: ["sh", "-c", f"seq {ctx.harness_iterations}"])
+            .with_harness(max_iterations=50),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine(""))
+        .with_warmup(CoefficientOfVariation("runtime", min_runs=3, window=2))
+        .with_runs(3)
+    )
+    # materialize must NOT raise now that the bounded constraint is gone
+    [b] = s.materialize(None)
+    assert b.harness and b.max_iterations == 50
+
+
+def test_harness_iterations_exposed_on_context():
+    seen: dict[str, object] = {}
+
+    def cmd(ctx: Context[object]) -> list[str]:
+        seen["n"] = ctx.harness_iterations
+        return ["sh", "-c", "echo 1.0"]
+
+    s = (
+        suite("H", bench("a").with_command(cmd).with_harness(max_iterations=7))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("").lower_is_better())
+        .with_runs(1)
+    )
+    Sequential().run(plan([s], None), None)
+    assert seen["n"] == 7
+
+
+# ----- streaming kill integration (Task 14) ---------------------------------
+
+
+def test_harness_killed_when_policy_converges_before_max_iterations():
+    import time
+
+    # emits constant 1.0 ~20/sec; CoV warmup converges fast, then FixedRuns(2) measured
+    cmd = ["sh", "-c", "for i in $(seq 1000); do echo 1.0; sleep 0.05; done"]
+    s = (
+        suite("H", bench("a").with_command(cmd).with_harness(max_iterations=1000))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("").lower_is_better())
+        .with_warmup(CoefficientOfVariation("runtime", threshold=0.01, window=3, min_runs=3))
+        .with_runs(2)
+    )
+    t = time.monotonic()
+    report = Sequential().run(plan([s], None), None)
+    elapsed = time.monotonic() - t
+    assert len(report.runs) < 50, f"expected early stop, got {len(report.runs)} runs"
+    assert elapsed < 20, f"expected fast kill, took {elapsed:.1f}s"
+    assert report.failures == []
 
 
 # ----- fan-out ---------------------------------------------------------------
@@ -130,10 +153,12 @@ def test_under_delivery_records_trailing_failure():
     assert len(report.failures) == 1
 
 
-def test_over_delivery_keeps_extra_iterations():
+def test_over_delivery_stops_at_policy():
+    # Under streaming, once the runs policy converges the Controller stops/kills
+    # the harness, so extra iterations are not kept.
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
     report = Sequential().run(plan([s], None), None)
-    assert [r.run for r in report.runs] == [1, 2, 3, 4]
+    assert [r.run for r in report.runs] == [1, 2]
     assert report.failures == []
 
 
@@ -154,6 +179,16 @@ def test_runs_flag_reaches_harness_command_fn():
     assert [r.run for r in report.runs] == [1, 2, 3]
     assert report.warmups == {"H/a": 1}
     assert report.failures == []
+
+
+def test_harness_process_metric_lands_in_metadata():
+    s = (suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
+         .with_cwd(Path("/tmp")).with_metric(FloatPerLine("ms"), Time())
+         .with_runs(2).with_harness())
+    report = Sequential().run(plan([s], None), None)
+    # per-iteration samples are FloatPerLine; Time() is whole-process metadata
+    assert all(all(smp.metric != "elapsed" for smp in r.samples) for r in report.runs)
+    assert any(smp.metric == "elapsed" for smp in report.metadata["H/a"])
 
 
 # ----- runners ----------------------------------------------------------------
@@ -185,3 +220,16 @@ def test_dry_prints_one_harness_line(capsys):
     assert len(lines) == 1
     assert lines[0].endswith("[harness]")
     assert "H/a #1" in lines[0]
+
+
+def test_dry_prints_harness_bound_marker(capsys):
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0")).with_harness(max_iterations=50))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_runs(3)
+    )
+    Dry().run(plan([s], None), None)
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    assert len(lines) == 1
+    assert lines[0].endswith("[harness ≤50]")

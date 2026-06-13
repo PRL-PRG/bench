@@ -211,6 +211,12 @@ class Benchmark:
     # Harness benchmarks execute the command ONCE; the harness itself runs
     # all iterations and the metrics parse them from the complete output.
     harness: bool = UNSET
+    # Upper bound on iterations told to the workload (read via ctx.harness_iterations).
+    # None means not set. Not UNSET-based; plain optional with suite-level inheritance.
+    max_iterations: int | None = None
+    # Custom framer (generator that frames the output stream into iterations).
+    # None falls back to line_framer in HarnessSource.
+    framer: Any = None
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = EMPTY_MAPPING
@@ -273,17 +279,23 @@ class Benchmark:
     def with_runs(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, runs=coerce_policy(p))
 
-    def with_harness(self) -> Benchmark:
+    def with_harness(
+        self, max_iterations: int | None = None, framer: Any = None
+    ) -> Benchmark:
         """Mark this benchmark as a *harness*: the command is executed once
-        and runs all iterations itself — derive the count in the command fn,
-        e.g. ``ctx.warmup.max_runs() + ctx.runs.max_runs()``. Metrics parse the
-        complete output (one sample per iteration); each iteration becomes
-        one run record, the first ``warmup`` of them discarded by stats.
+        and streams all iterations — each line (or framed block) becomes one
+        run record. The harness MAY use convergence policies (e.g.
+        CoefficientOfVariation); the runner kills the process mid-flight when
+        the policy converges.
 
-        Requires bounded warmup/runs policies (no CoV — the runner cannot
-        stop a harness mid-flight). ``timeout`` covers the whole process; the
-        output is parsed only after it exits (no live streaming)."""
-        return dataclasses.replace(self, harness=True)
+        ``max_iterations`` is the upper bound the workload is told to run;
+        read in the command fn via ``ctx.harness_iterations``. ``framer`` is
+        a custom generator that frames the output stream into iterations;
+        ``None`` falls back to ``line_framer`` (one non-empty line = one
+        iteration). ``timeout`` covers the whole process."""
+        return dataclasses.replace(
+            self, harness=True, max_iterations=max_iterations, framer=framer
+        )
 
     # ----- matrix / skip / label --------------------------------------
 
@@ -420,6 +432,7 @@ class Benchmark:
             matrix=Matrix(
                 {k: v for k, v in self.data.items() if not k.startswith("__")}
             ),
+            harness_iterations=self.max_iterations,
         )
         cmd = tuple(os.fsdecode(a) for a in self.command(ctx))
         cwd = Path(self.cwd(ctx))

@@ -12,6 +12,7 @@ from benchr.core.execution import (
 from benchr.core.sample import (
     Report,
     RunRecord,
+    RunResult,
     Sample,
     report_from_json,
     report_to_json,
@@ -22,8 +23,10 @@ from benchr.core.metric import (
     Constant,
     FloatPerLine,
     Metric,
+    ProcessMetric,
     Rebench,
     Regex,
+    RunMetric,
     RUsage,
     Time,
     max_rss,
@@ -80,9 +83,10 @@ __all__ = [
     # Atoms
     "Execution", "ExecutionResult", "ScheduledExecution", "Variant", "Verdict",
     "default_success",
-    "Sample", "RunRecord", "Report", "report_from_json", "report_to_json",
+    "Sample", "RunRecord", "RunResult", "Report", "report_from_json", "report_to_json",
     # Metrics
-    "Metric", "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
+    "Metric", "RunMetric", "ProcessMetric",
+    "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
     # Policies
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation", "Custom",

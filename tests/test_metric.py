@@ -3,7 +3,6 @@
 import re
 
 from benchr import Constant, FloatPerLine, Rebench, Regex, Time, max_rss
-from benchr.core.metric import extract_all
 
 from conftest import make_failure, make_rusage, make_success
 
@@ -31,13 +30,6 @@ def test_line_select_last_and_nth():
     assert list(FloatPerLine("s").last_line().process(pr))[0].value == 3
     assert list(FloatPerLine("s").nth(2).process(pr))[0].value == 2
     assert list(FloatPerLine("s").first_line().process(pr))[0].value == 1
-
-
-def test_extract_all_concatenates():
-    pr = make_success(stdout="1\n", runtime=0.5)
-    samples = list(extract_all([FloatPerLine("s"), Time()], pr))
-    metrics = {s.metric for s in samples}
-    assert "runtime" in metrics and "elapsed" in metrics
 
 
 def test_direction_decorator():
@@ -93,3 +85,46 @@ def test_regex_unit_defaults_to_empty():
     m = Regex("n", r"(\d+)")
     samples = list(m.process(make_success(stdout="42\n")))
     assert samples[0].unit == ""
+
+
+# Task 1: RunMetric / ProcessMetric kinds + role-preserving combinators
+from benchr import RunMetric, ProcessMetric, RUsage, FloatPerLine, Rebench
+from benchr.core.metric import partition_metrics
+
+
+def test_builtin_metric_kinds():
+    assert isinstance(Regex("t", r"(\d+)"), RunMetric)
+    assert isinstance(FloatPerLine(), RunMetric)
+    assert isinstance(Rebench(), RunMetric)
+    assert isinstance(Time(), ProcessMetric)
+    assert isinstance(RUsage("ru_maxrss", "m"), ProcessMetric)
+
+
+def test_lower_is_better_preserves_role():
+    assert isinstance(RUsage("ru_maxrss", "m").lower_is_better(), ProcessMetric)
+    assert isinstance(Regex("t", r"(\d+)").lower_is_better(), RunMetric)
+    assert isinstance(max_rss(), ProcessMetric)
+
+
+def test_when_preserves_role():
+    assert isinstance(Time().when(lambda r: True), ProcessMetric)
+    assert isinstance(FloatPerLine().when(lambda r: True), RunMetric)
+
+
+def test_partition_metrics():
+    run, proc = partition_metrics([Regex("t", r"(\d+)"), Time(), max_rss()])
+    assert len(run) == 1 and len(proc) == 2
+
+
+# Task 2: extract_run / extract_process
+def test_extract_run_and_process_filter_by_kind():
+    from benchr.core.metric import extract_run, extract_process
+    from benchr import ExecutionResult, Execution
+    from pathlib import Path
+    res = ExecutionResult(execution=Execution(command=("x",), cwd=Path("/")),
+                          returncode=0, stdout="3.0\n", runtime=1.5,
+                          rusage=None)
+    runs = list(extract_run([FloatPerLine(), Time()], res))
+    procs = list(extract_process([FloatPerLine(), Time()], res))
+    assert [s.metric for s in runs] == ["runtime"]      # FloatPerLine only
+    assert [s.metric for s in procs] == ["elapsed"]      # Time only
