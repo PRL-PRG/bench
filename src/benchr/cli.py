@@ -82,17 +82,13 @@ def run(
         with_progress=not cli_args.dry and not cli_args.quiet,
     )
 
-    # Apply --runs/--warmup to the suite defaults *before* materialize, so a
-    # factory's suite-level Context already sees the effective counts; then
-    # also force them onto every planned benchmark (the documented "every
-    # benchmark" semantics). Both resolve to FixedRuns(N), so they agree.
-    suites = [_apply_suite_policy_overrides(s, cli_args) for s in suites]
     try:
         planned = plan(suites, build_params)
     except SuiteMaterializationError as e:
+        # TODO: there should be a better place for this
         print(e, file=sys.stderr)
         sys.exit(1)
-    benchmarks = _apply_cli_policy_overrides(planned, cli_args)
+    benchmarks = _apply_cli_overrides(planned, cli_args)
     runner = _make_runner(cli_args, reporter)
     try:
         return runner.run(benchmarks, build_params)
@@ -101,21 +97,9 @@ def run(
         sys.exit(1)
 
 
-def _apply_suite_policy_overrides(suite: Suite, ns: argparse.Namespace) -> Suite:
-    """Override the suite's default runs/warmup policy when --runs / --warmup
-    were given, so factory-level Contexts reflect the effective counts."""
-    if ns.runs is not None:
-        suite = suite.with_runs(FixedRuns(ns.runs))
-    if ns.warmup is not None:
-        suite = suite.with_warmup(FixedRuns(ns.warmup))
-    return suite
-
-
-def _apply_cli_policy_overrides(
+def _apply_cli_overrides(
     planned: list[PlannedBenchmark], ns: argparse.Namespace
 ) -> list[PlannedBenchmark]:
-    """Force FixedRuns policies onto every planned benchmark when --runs /
-    --warmup were given on the command line."""
     overrides = {}
     if ns.runs is not None:
         overrides["runs"] = FixedRuns(ns.runs)
