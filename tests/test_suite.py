@@ -185,18 +185,18 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
     assert names_vms == [("a", "jsc"), ("a", "v8"), ("b", "jsc"), ("b", "v8")]
 
 
-def test_suite_axes_append_after_benchmark_axes():
+def test_suite_dimensions_append_after_benchmark_dimensions():
     s = (
         suite("M", _b("a").with_command(["true"]).with_matrix(size=[1, 2]))
         .with_matrix(vm=["v8", "jsc"])
     )
     bs = _mat(s)
     assert len(bs) == 4
-    # Benchmark axes expand first, suite axes after (stamped in that order).
+    # Benchmark dimensions expand first, suite dimensions after (stamped in that order).
     assert [k for k in bs[0].data if not k.startswith("_")] == ["size", "vm"]
 
 
-def test_suite_axis_collision_with_benchmark_axis_raises():
+def test_suite_dimension_collision_with_benchmark_dimension_raises():
     s = (
         suite("M", _b("a").with_command(["true"]).with_matrix(vm=["a"]))
         .with_matrix(vm=["b"])
@@ -255,8 +255,8 @@ def test_with_label_overrides_default():
     assert sorted(b.variant_label() for b in bs) == ["<one>", "<two>"]
 
 
-def test_command_axis_default_builder():
-    """When axis name is `command` and no with_command set, axis value becomes cmd."""
+def test_command_dimension_default_builder():
+    """When dimension name is `command` and no with_command set, dimension value becomes cmd."""
     s = (
         suite("M", _b("c").with_matrix(command=[["echo", "a"], ["echo", "b"]]))
         .with_cwd(Path("/tmp")).with_metric(Time())
@@ -266,11 +266,11 @@ def test_command_axis_default_builder():
     assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]
 
 
-def test_command_axis_beats_suite_default():
+def test_command_dimension_beats_suite_default():
     s = (
-        suite("M", _b("c").with_matrix(command=[["echo", "axis"]]))
+        suite("M", _b("c").with_matrix(command=[["echo", "dim"]]))
         .with_command(["echo", "suite"])
     )
     b = _mat(s)[0]
     sched = b.schedule(None, suite="M", run=1)
-    assert sched.execution.command == ("echo", "axis")
+    assert sched.execution.command == ("echo", "dim")

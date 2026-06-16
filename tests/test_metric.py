@@ -87,28 +87,28 @@ def test_regex_unit_defaults_to_empty():
     assert samples[0].unit == ""
 
 
-# Task 1: RunMetric / ProcessMetric kinds + role-preserving combinators
-from benchr import RunMetric, ProcessMetric, RUsage, FloatPerLine, Rebench
+# The run/process distinction is a `per_process` flag on each metric.
+from benchr import RUsage, FloatPerLine, Rebench
 from benchr.core.metric import partition_metrics
 
 
-def test_builtin_metric_kinds():
-    assert isinstance(Regex("t", r"(\d+)"), RunMetric)
-    assert isinstance(FloatPerLine(), RunMetric)
-    assert isinstance(Rebench(), RunMetric)
-    assert isinstance(Time(), ProcessMetric)
-    assert isinstance(RUsage("ru_maxrss", "m"), ProcessMetric)
+def test_builtin_metric_scopes():
+    assert Regex("t", r"(\d+)").per_process is False
+    assert FloatPerLine().per_process is False
+    assert Rebench().per_process is False
+    assert Time().per_process is True
+    assert RUsage("ru_maxrss", "m").per_process is True
 
 
-def test_lower_is_better_preserves_role():
-    assert isinstance(RUsage("ru_maxrss", "m").lower_is_better(), ProcessMetric)
-    assert isinstance(Regex("t", r"(\d+)").lower_is_better(), RunMetric)
-    assert isinstance(max_rss(), ProcessMetric)
+def test_lower_is_better_preserves_scope():
+    assert RUsage("ru_maxrss", "m").lower_is_better().per_process is True
+    assert Regex("t", r"(\d+)").lower_is_better().per_process is False
+    assert max_rss().per_process is True
 
 
-def test_when_preserves_role():
-    assert isinstance(Time().when(lambda r: True), ProcessMetric)
-    assert isinstance(FloatPerLine().when(lambda r: True), RunMetric)
+def test_when_preserves_scope():
+    assert Time().when(lambda r: True).per_process is True
+    assert FloatPerLine().when(lambda r: True).per_process is False
 
 
 def test_partition_metrics():

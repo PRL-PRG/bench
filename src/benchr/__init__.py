@@ -23,10 +23,8 @@ from benchr.core.metric import (
     Constant,
     FloatPerLine,
     Metric,
-    ProcessMetric,
     Rebench,
     Regex,
-    RunMetric,
     RUsage,
     Time,
     max_rss,
@@ -61,6 +59,7 @@ from benchr.runner.base import (
 from benchr.runner.dry import Dry
 from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
+from benchr.runner.source import BenchmarkMonitor, HarnessHandle, line_monitor
 
 # Reporters
 from benchr.report.reporter import (
@@ -85,7 +84,7 @@ __all__ = [
     "default_success",
     "Sample", "RunRecord", "RunResult", "Report", "report_from_json", "report_to_json",
     # Metrics
-    "Metric", "RunMetric", "ProcessMetric",
+    "Metric",
     "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
     # Policies
     "StoppingPolicy", "PolicyState",
@@ -98,6 +97,7 @@ __all__ = [
     # Runners
     "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",
     "SuiteMaterializationError",
+    "BenchmarkMonitor", "HarnessHandle", "line_monitor",
     # Reporters
     "Reporter", "CompositeReporter", "CsvReporter", "JsonReporter", "DirReporter", "SummaryReporter", "ProgressReporter",
     # Formatters

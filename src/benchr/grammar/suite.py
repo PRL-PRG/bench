@@ -13,7 +13,7 @@ default); Benchmark fields are all UNSET-able.
 
 Resolution precedence (most specific wins):
 
-    benchmark explicit > benchmark axis default > suite default
+    benchmark explicit > benchmark matrix-dimension default > suite default
 
 (The CLI's ``--runs/--warmup`` override is applied later, by ``benchr.run()``,
 on the planned benchmark list — not by the Suite.)
@@ -27,7 +27,7 @@ Producers:
   ``.with_success/.with_label``        set a suite default
   ``.with_warmup/.with_runs``          set a default warmup/runs policy
   ``.with_harness()``                  make every benchmark a harness benchmark
-  ``.with_matrix(**axes)``             add axes to every benchmark (at materialize)
+  ``.with_matrix(**dims)``             add dimensions to every benchmark (at materialize)
   ``.add_matrix_skip(...)``            add a skip rule to every benchmark
   ``.filter(pred)``                    keep matching benchmarks (eager — the one
                                        order-dependent builder; add before filtering)
@@ -111,11 +111,9 @@ class Suite:
     harness: bool = False
     # Suite-level defaults for harness optional fields; benchmark value wins.
     max_iterations: int | None = None
-    framer: Any = None
+    monitor: Any = None
     label_fn: LabelFn = default_label
-
-    # ----- suite-level matrix / skip (applied at materialize) --------
-    axes: tuple[tuple[str, tuple[Any, ...]], ...] = ()
+    matrix: tuple[tuple[str, tuple[Any, ...]], ...] = ()
     skips: tuple[SkipRule, ...] = ()
 
     # ----- producers -------------------------------------------------
@@ -182,30 +180,30 @@ class Suite:
         return dataclasses.replace(self, runs=coerce_policy(p))
 
     def with_harness(
-        self, max_iterations: int | None = None, framer: Any = None
+        self, max_iterations: int | None = None, monitor: Any = None
     ) -> Suite:
         """Make every contained benchmark a harness benchmark (executed once,
         streamed and killed on convergence — see ``Benchmark.with_harness``).
-        ``max_iterations`` and ``framer`` are suite-level defaults; a benchmark's
+        ``max_iterations`` and ``monitor`` are suite-level defaults; a benchmark's
         own ``with_harness(...)`` values override them. There is no per-benchmark
         opt-out; mixed suites are two suites."""
         return dataclasses.replace(
-            self, harness=True, max_iterations=max_iterations, framer=framer
+            self, harness=True, max_iterations=max_iterations, monitor=monitor
         )
 
-    def with_matrix(self, **axes: Sequence[Any]) -> Suite:
-        """Declare matrix axes applied to every contained benchmark (replaces
-        any previously set).
+    def with_matrix(self, **dims: Sequence[Any]) -> Suite:
+        """Declare matrix dimensions applied to every contained benchmark
+        (replaces any previously set).
 
-        Stored on the suite; ``materialize`` appends these axes to each
-        benchmark's own (so per-benchmark axes still compose with suite-level
-        ones). See ``Benchmark.with_matrix``.
+        Stored on the suite; ``materialize`` appends these dimensions to each
+        benchmark's own (so per-benchmark dimensions still compose with
+        suite-level ones). See ``Benchmark.with_matrix``.
         """
-        for name in axes:
+        for name in dims:
             if name.startswith("_"):
-                raise ValueError(f"Axis name {name!r} cannot start with '_'")
+                raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
         return dataclasses.replace(
-            self, axes=tuple((name, tuple(values)) for name, values in axes.items())
+            self, matrix=tuple((name, tuple(values)) for name, values in dims.items())
         )
 
     def add_matrix_skip(
@@ -217,7 +215,7 @@ class Suite:
         """Add a skip rule applied to every contained benchmark.
 
         Same shape as ``Benchmark.add_matrix_skip``: kwargs are AND-matched against
-        axis values, optional ``predicate(bench) -> bool`` for complex cases.
+        dimension values, optional ``predicate(bench) -> bool`` for complex cases.
         """
         if predicate is None and not kwargs:
             return self
@@ -231,7 +229,7 @@ class Suite:
         """Return the concrete (post-expansion, fully resolved) benchmark list.
 
         Calls deferred factories (passing a suite-level ``Context`` built from
-        ``params`` and the suite defaults), applies suite-level axes/skips,
+        ``params`` and the suite defaults), applies suite-level dimensions/skips,
         expands each benchmark's matrix into one Benchmark per surviving
         variant, and fills every still-unset field from the suite defaults.
         After this, benchmarks are fully concrete — runners just read fields.
@@ -261,15 +259,15 @@ class Suite:
     # ----- helpers --------------------------------------------------
 
     def _with_suite_matrix(self, b: Benchmark) -> Benchmark:
-        """Append suite axes after the benchmark's own; union skip rules."""
-        if self.axes:
-            existing = {name for name, _ in b.axes}
-            for name, _ in self.axes:
+        """Append suite matrix dimensions after the benchmark's own; union skip rules."""
+        if self.matrix:
+            existing = {name for name, _ in b.matrix}
+            for name, _ in self.matrix:
                 if name in existing:
                     raise ValueError(
-                        f"Benchmark {b.name!r}: axis {name!r} already declared"
+                        f"Benchmark {b.name!r}: matrix dimension {name!r} already declared"
                     )
-            b = dataclasses.replace(b, axes=b.axes + self.axes)
+            b = dataclasses.replace(b, matrix=b.matrix + self.matrix)
         if self.skips:
             b = dataclasses.replace(b, skips=b.skips + self.skips)
         return b
@@ -289,8 +287,10 @@ class Suite:
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,
             harness=self.harness if b.harness is UNSET else b.harness,
-            max_iterations=b.max_iterations if b.max_iterations is not None else self.max_iterations,
-            framer=b.framer if b.framer is not None else self.framer,
+            max_iterations=b.max_iterations
+            if b.max_iterations is not None
+            else self.max_iterations,
+            monitor=b.monitor if b.monitor is not None else self.monitor,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
         )
         if resolved.command is UNSET:

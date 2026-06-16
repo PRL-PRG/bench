@@ -5,8 +5,8 @@ It carries:
 
   - ``command``/``cwd``/``env`` describing how to invoke the workload (these
     may be variant-aware callables);
-  - a list of *matrix axes* (``.with_matrix(vm=[...], size=[...])``) — the
-    cartesian product of axes produces the *variants* of this benchmark;
+  - a list of *matrix dimensions* (``.with_matrix(vm=[...], size=[...])``) — the
+    cartesian product of dimensions produces the *variants* of this benchmark;
   - optional *skip* rules to drop specific cells;
   - an optional ``label_fn`` that controls how each variant prints.
 
@@ -18,7 +18,7 @@ A ``Benchmark`` is a frozen value object. To run one variant the Runner
 drives ``benchmarking_loop`` (see ``benchr.core.loop``) and materializes
 one ``ScheduledExecution`` per slot via ``.schedule()``; parsed samples are
 fed back so stopping policies can observe and decide whether to continue.
-``.expand()`` produces one *concrete* Benchmark per surviving variant (axis
+``.expand()`` produces one *concrete* Benchmark per surviving variant (dimension
 values stamped into ``data``). Command/cwd/env callables receive a
 ``Context`` and read those values via ``ctx.matrix.vm``; skip/label
 functions receive the Benchmark and read them as ``b.vm``.
@@ -214,16 +214,16 @@ class Benchmark:
     # Upper bound on iterations told to the workload (read via ctx.harness_iterations).
     # None means not set. Not UNSET-based; plain optional with suite-level inheritance.
     max_iterations: int | None = None
-    # Custom framer (generator that frames the output stream into iterations).
-    # None falls back to line_framer in HarnessSource.
-    framer: Any = None
+    # Custom monitor (generator that frames the output stream into iterations).
+    # None falls back to line_monitor in HarnessSource.
+    monitor: Any = None
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = EMPTY_MAPPING
 
-    # Matrix axes (insertion order). Cartesian product across axes produces
-    # this benchmark's variants. Empty tuple = one implicit variant.
-    axes: tuple[tuple[str, tuple[Any, ...]], ...] = ()
+    # Matrix dimensions (insertion order). Cartesian product across dimensions
+    # produces this benchmark's variants. Empty tuple = one implicit variant.
+    matrix: tuple[tuple[str, tuple[Any, ...]], ...] = ()
 
     # Skip rules; a variant is dropped if any rule matches it.
     skips: tuple[SkipRule, ...] = ()
@@ -280,7 +280,7 @@ class Benchmark:
         return dataclasses.replace(self, runs=coerce_policy(p))
 
     def with_harness(
-        self, max_iterations: int | None = None, framer: Any = None
+        self, max_iterations: int | None = None, monitor: Any = None
     ) -> Benchmark:
         """Mark this benchmark as a *harness*: the command is executed once
         and streams all iterations — each line (or framed block) becomes one
@@ -289,30 +289,30 @@ class Benchmark:
         the policy converges.
 
         ``max_iterations`` is the upper bound the workload is told to run;
-        read in the command fn via ``ctx.harness_iterations``. ``framer`` is
+        read in the command fn via ``ctx.harness_iterations``. ``monitor`` is
         a custom generator that frames the output stream into iterations;
-        ``None`` falls back to ``line_framer`` (one non-empty line = one
+        ``None`` falls back to ``line_monitor`` (one non-empty line = one
         iteration). ``timeout`` covers the whole process."""
         return dataclasses.replace(
-            self, harness=True, max_iterations=max_iterations, framer=framer
+            self, harness=True, max_iterations=max_iterations, monitor=monitor
         )
 
     # ----- matrix / skip / label --------------------------------------
 
-    def with_matrix(self, **axes: Sequence[Any]) -> Benchmark:
-        """Declare the matrix axes (replaces any previously set).
+    def with_matrix(self, **dims: Sequence[Any]) -> Benchmark:
+        """Declare the matrix dimensions (replaces any previously set).
 
-        Pass every axis in one call: ``b.with_matrix(vm=["v8", "jsc"], size=[100,
-        500])`` gives 4 variants (the cartesian product). Axis values are
-        arbitrary; ``with_command``/``with_cwd``/``with_env`` callables read them
-        via ``ctx.matrix.vm``, while ``add_matrix_skip`` predicates receive the
-        benchmark and read them as ``b.vm``.
+        Pass every dimension in one call: ``b.with_matrix(vm=["v8", "jsc"],
+        size=[100, 500])`` gives 4 variants (the cartesian product). Dimension
+        values are arbitrary; ``with_command``/``with_cwd``/``with_env`` callables
+        read them via ``ctx.matrix.vm``, while ``add_matrix_skip`` predicates
+        receive the benchmark and read them as ``b.vm``.
         """
-        for name in axes:
+        for name in dims:
             if name.startswith("_"):
-                raise ValueError(f"Axis name {name!r} cannot start with '_'")
+                raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
         return dataclasses.replace(
-            self, axes=tuple((name, tuple(values)) for name, values in axes.items())
+            self, matrix=tuple((name, tuple(values)) for name, values in dims.items())
         )
 
     def add_matrix_skip(
@@ -326,7 +326,7 @@ class Benchmark:
         Two interchangeable styles, combinable in one call:
 
           ``.add_matrix_skip(vm="v8", size=500)``    — drop variants where every
-                                                 named axis equals the given value
+                                                 named dimension equals the given value
           ``.add_matrix_skip(lambda b: b.vm != "jsc")`` — drop variants where the
                                                  predicate returns truthy
 
@@ -354,35 +354,35 @@ class Benchmark:
     def expand(self) -> Iterator[Benchmark]:
         """Yield one concrete Benchmark per surviving cell of the matrix.
 
-        Each yielded benchmark has its axis values stamped into ``data`` (so
-        ``b.vm``, ``b.size`` resolve), has its ``axes`` cleared, and carries
+        Each yielded benchmark has its dimension values stamped into ``data`` (so
+        ``b.vm``, ``b.size`` resolve), has its ``matrix`` cleared, and carries
         a canonical ``variant`` tuple via ``self.variant()``. Defaults for
-        ``command``/``cwd``/``env`` kick in here if an axis is named
+        ``command``/``cwd``/``env`` kick in here if a dimension is named
         ``command``/``cwd``/``env`` and no explicit callable was supplied.
         """
-        if not self.axes:
+        if not self.matrix:
             yield self
             return
 
-        axis_names = [n for n, _ in self.axes]
-        axis_values = [vs for _, vs in self.axes]
-        for combo in itertools.product(*axis_values):
-            variant_dict: dict[str, Any] = dict(zip(axis_names, combo))
+        dim_names = [n for n, _ in self.matrix]
+        dim_values = [vs for _, vs in self.matrix]
+        for combo in itertools.product(*dim_values):
+            variant_dict: dict[str, Any] = dict(zip(dim_names, combo))
             stamped_data = dict(self.data) if self.data else {}
             stamped_data.update(variant_dict)
             canonical = tuple(
                 sorted(((k, _stringify(v)) for k, v in variant_dict.items()))
             )
             stamped_data[_VARIANT_KEY] = canonical
-            variant = dataclasses.replace(self, data=stamped_data, axes=())
+            variant = dataclasses.replace(self, data=stamped_data, matrix=())
 
-            # Apply built-in axis defaults if the user didn't override.
+            # Apply built-in matrix-dimension defaults if the user didn't override.
             if "command" in variant_dict and self.command is UNSET:
-                variant = variant.with_command(_axis_command)
+                variant = variant.with_command(_matrix_command)
             if "cwd" in variant_dict and self.cwd is UNSET:
-                variant = variant.with_cwd(_axis_cwd)
+                variant = variant.with_cwd(_matrix_cwd)
             if "env" in variant_dict and self.env is UNSET:
-                variant = variant.with_env(_axis_env)
+                variant = variant.with_env(_matrix_env)
 
             if any(rule.matches(variant) for rule in self.skips):
                 continue
@@ -414,10 +414,10 @@ class Benchmark:
         variant onto the result. Command elements may be ``str``/``bytes``/
         ``PathLike``; ``os.fsdecode`` normalizes each to ``str``.
         """
-        if self.axes:
+        if self.matrix:
             raise ValueError(
-                f"Benchmark {self.name!r} still has unexpanded matrix axes "
-                f"{[n for n, _ in self.axes]}; call .expand() first"
+                f"Benchmark {self.name!r} still has unexpanded matrix dimensions "
+                f"{[n for n, _ in self.matrix]}; call .expand() first"
             )
         ctx = Context(
             params=params,
@@ -454,15 +454,15 @@ class Benchmark:
         )
 
 
-def _axis_command(ctx: Context[Any]) -> Sequence[str]:
+def _matrix_command(ctx: Context[Any]) -> Sequence[str]:
     return list(ctx.matrix.command)
 
 
-def _axis_cwd(ctx: Context[Any]) -> Path:
+def _matrix_cwd(ctx: Context[Any]) -> Path:
     return Path(ctx.matrix.cwd)
 
 
-def _axis_env(ctx: Context[Any]) -> Mapping[str, str]:
+def _matrix_env(ctx: Context[Any]) -> Mapping[str, str]:
     return dict(ctx.matrix.env)
 
 
@@ -481,7 +481,7 @@ def bench(name: str, **data: Any) -> Benchmark:
     """Build a Benchmark with arbitrary attached data.
 
     ``bench("zoo", path=Path("zoo.lox"))`` makes ``b.path`` available. To add
-    matrix axes use ``.with_matrix(...)``.
+    matrix dimensions use ``.with_matrix(...)``.
     """
     return Benchmark(name=name, data=dict(data) if data else EMPTY_MAPPING)
 

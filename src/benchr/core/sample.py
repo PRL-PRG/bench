@@ -56,7 +56,7 @@ class RunResult:
 class RunRecord:
     """One execution: identity + command + outcome + parsed samples.
 
-    ``variant`` is a canonical (sorted) tuple of ``(axis, value)`` pairs
+    ``variant`` is a canonical (sorted) tuple of ``(dimension, value)`` pairs
     identifying the matrix cell; ``variant_label`` is its human-readable name.
 
     Run numbers are continuous: a benchmark's warmup runs are 1..W, measured
@@ -122,7 +122,7 @@ def diagnostic_excerpt(result: ExecutionResult, *, max_len: int = 80) -> str:
 
 
 def variant_keys(runs: Iterable[RunRecord]) -> list[str]:
-    """Stable list of variant-axis names across a stream of runs."""
+    """Stable list of matrix-dimension names across a stream of runs."""
     return list(dict.fromkeys(k for r in runs for k, _ in r.variant))
 
 

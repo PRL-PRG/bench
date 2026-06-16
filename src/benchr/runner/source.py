@@ -107,7 +107,7 @@ class CommandSource(RunSource):
 
 @dataclasses.dataclass
 class HarnessHandle:
-    """What a framer needs: pid, the growing output path, and liveness."""
+    """What a monitor needs: pid, the growing output path, and liveness."""
 
     pid: int
     output_path: Path
@@ -117,11 +117,11 @@ class HarnessHandle:
         return self._live.is_alive()
 
 
-type Framer = Callable[[HarnessHandle], Iterator[str]]
+type BenchmarkMonitor = Callable[[HarnessHandle], Iterator[str]]
 
 
-def line_framer(handle: HarnessHandle) -> Iterator[str]:
-    """Default framer: one non-empty line of output = one iteration."""
+def line_monitor(handle: HarnessHandle) -> Iterator[str]:
+    """Default monitor: one non-empty line of output = one iteration."""
     with open(handle.output_path) as f:
         while True:
             line = f.readline()
@@ -148,7 +148,7 @@ class HarnessSource(RunSource):
         self._b = planned.benchmark
         self._sched = self._b.schedule(params, suite=planned.suite, run=1)
         self._run_metrics, self._process_metrics = partition_metrics(self._b.metrics)
-        self._framer: Framer = getattr(self._b, "framer", None) or line_framer
+        self._monitor: BenchmarkMonitor = getattr(self._b, "monitor", None) or line_monitor
         self._q: queue.Queue[Any] = queue.Queue()
         self._proc_result: ExecutionResult | None = None
         self._events: list[tuple[ScheduledExecution, ExecutionResult]] = []
@@ -171,7 +171,7 @@ class HarnessSource(RunSource):
         assert self._live is not None
         handle = HarnessHandle(self._live.proc.pid, self._live.stdout_path, self._live)
         try:
-            for block in self._framer(handle):
+            for block in self._monitor(handle):
                 if self._closed.is_set():
                     break
                 result = ExecutionResult(self._sched.execution, 0, stdout=block)

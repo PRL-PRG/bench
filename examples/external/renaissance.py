@@ -8,31 +8,44 @@
 # ///
 """
 
-The renaissance benchmark compating multiple JVMs
+The renaissance benchmark for JVMs.
 
+This is an example of a harness-based benchmark.
+Each renaissance iteration prints a multi-line block:
+
+    ====== mnemonics (functional) [default], iteration 0 started ======
+    GC before operation: completed in 4.812 ms, heap usage 121.567 MB -> 3.935 MB.
+    ====== mnemonics (functional) [default], iteration 0 completed (1575.265 ms) ======
+
+To bring it into benchr, we need to create a benchmark monitor,
+a component which finds individual runs so the run metrics can
+extracts the measurements.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import subprocess
 
 from benchr import (
     Benchmark,
     Context,
+    HarnessHandle,
+    Regex,
     Time,
     bench,
+    line_monitor,
     max_rss,
     run,
     suite,
 )
 
-import subprocess
-
 
 @dataclass
 class Params:
-    java: Path = Path("/usr/bin/java")
-    renaissance: Path = Path("./renaissance-gpl-0.16.1.jar")
+    java: Path = Path("java")
+    renaissance: Path = Path("renaissance-gpl-0.16.1.jar")
 
 
 @dataclass
@@ -67,21 +80,38 @@ def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
     return benchmarks
 
 
+def renaissance_monitor(handle: HarnessHandle) -> Iterator[str]:
+    """Group each iteration's lines (started -> completed) into one block.
+
+    Reuses ``line_monitor`` for the file-tailing; JVM-startup lines before the
+    first ``started`` fall through with an empty buffer and are discarded.
+    """
+    buf: list[str] = []
+    for line in line_monitor(handle):
+        if ", iteration" in line and "started ======" in line:
+            buf = [line]  # new iteration begins
+        elif ", iteration" in line and "completed (" in line:
+            buf.append(line)
+            yield "\n".join(buf)  # iteration done -> emit one block
+            buf = []
+        elif buf:
+            buf.append(line)  # GC / heap lines inside the iteration
+
+
 def make_benchmarks(ctx: Context[Params]) -> list[Benchmark]:
     return [
         bench(rb.name)
         .with_command(
-            lambda ctx: (
-                [
-                    ctx.params.java,
-                    "-jar",
-                    ctx.params.renaissance,
-                    rb.name,
-                    "-r",
-                    str((ctx.warmup.max_runs() or 0) + (ctx.runs.max_runs() or 0)),
-                ]
-            )
+            lambda ctx, name=rb.name: [
+                ctx.params.java,
+                "-jar",
+                ctx.params.renaissance,
+                name,
+                "-r",
+                str(ctx.harness_iterations),
+            ]
         )
+        .with_harness(max_iterations=rb.reps)
         .with_runs(rb.reps)
         for rb in list_benchmarks(ctx.params)
     ]
@@ -90,8 +120,16 @@ def make_benchmarks(ctx: Context[Params]) -> list[Benchmark]:
 renaissance = (
     suite("Renaissance Benchmark Suite")
     .factory(make_benchmarks)
-    .with_harness()
+    .with_harness(monitor=renaissance_monitor)
     .with_metric(
+        Regex(
+            "runtime", r"iteration \d+ completed \(([\d.]+) ms\)", unit="ms"
+        ).lower_is_better(),
+        Regex(
+            "gc_time", r"GC before operation: completed in ([\d.]+) ms", unit="ms"
+        ).lower_is_better(),
+        Regex("heap_before", r"heap usage ([\d.]+) MB", unit="MB"),
+        Regex("heap_after", r"-> ([\d.]+) MB", unit="MB"),
         max_rss(),
         Time(user=True, system=True, elapsed=True),
     )

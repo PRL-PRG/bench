@@ -123,7 +123,7 @@ class CsvReporter(_BufferingReporter):
 
     Schema: ``suite, benchmark, run, <variant_cols...>, metric, value,
     unit, lower_is_better, failure``. Variant columns are the union of every
-    axis observed across all runs (cells absent in a particular run are blank).
+    matrix dimension observed across all runs (cells absent in a particular run are blank).
     All runs appear, warmup included — the per-variant warmup counts live in
     the JSON report's ``warmups`` map, not per row.
 

@@ -1,10 +1,17 @@
 """Metric: ExecutionResult -> Iterable[Sample].
 
-A Metric parses one or more measurements from an ExecutionResult. Metrics are
-either ``RunMetric`` (per run/iteration) or ``ProcessMetric`` (whole process);
-``extract_run``/``extract_process`` select by kind and ``partition_metrics``
-splits a flat list. Built-in metric builders are exported directly from this
-module — instantiate them as ``Time()``, ``Regex(...)``, ``FloatPerLine(...)``, etc.
+Every metric is a frozen dataclass carrying an optional ``direction``
+(lower / higher / none) and an optional ``predicate`` (run only when it holds).
+Concrete metrics implement ``_extract``; the base ``process`` applies the
+predicate (skip when false) and stamps the direction onto each Sample.
+``.lower_is_better()`` / ``.higher_is_better()`` / ``.when(pred)`` return a copy
+with that field set.
+
+Each metric sets ``per_process``: ``False`` (one sample-set per run/iteration)
+or ``True`` (one per whole process). ``extract_run`` / ``extract_process``
+select by it; ``partition_metrics`` splits a flat list. Built-in metric
+builders are exported directly from this module — instantiate them as
+``Time()``, ``Regex(...)``, ``FloatPerLine(...)``, etc.
 """
 
 from __future__ import annotations
@@ -14,31 +21,16 @@ import dataclasses
 import re
 import sys
 from collections.abc import Callable, Iterable, Iterator
-from typing import Literal
+from dataclasses import dataclass
+from typing import ClassVar, Literal, Self
 
 from benchr.core.execution import ExecutionResult
 from benchr.core.sample import Sample
 
-
-def extract_run(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
-    """Run only RunMetric instances over one result."""
-    for m in metrics:
-        if isinstance(m, RunMetric):
-            yield from m.process(result)
-
-
-def extract_process(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
-    """Run only ProcessMetric instances over one result."""
-    for m in metrics:
-        if isinstance(m, ProcessMetric):
-            yield from m.process(result)
-
-
-def partition_metrics(metrics: Iterable[Metric]) -> tuple[list[RunMetric], list[ProcessMetric]]:
-    """Split a flat list of metrics into (run_metrics, process_metrics)."""
-    run = [m for m in metrics if isinstance(m, RunMetric)]
-    proc = [m for m in metrics if isinstance(m, ProcessMetric)]
-    return run, proc
+# None = no direction; True = lower is better; False = higher is better
+# (mirrors Sample.lower_is_better).
+type Direction = bool | None
+type Predicate = Callable[[ExecutionResult], bool]
 
 
 # ---------------------------------------------------------------------------
@@ -46,75 +38,62 @@ def partition_metrics(metrics: Iterable[Metric]) -> tuple[list[RunMetric], list[
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
 class Metric(abc.ABC):
-    """ExecutionResult -> Iterable[Sample]. Shared base; concrete metrics are
-    either RunMetric (per run/iteration) or ProcessMetric (whole process)."""
+    """ExecutionResult -> Samples, plus an optional direction and predicate.
 
-    __slots__ = ()
+    ``per_process`` (set by each concrete metric) decides whether it is fed once
+    per run (``False``) or once per whole process (``True``).
+    """
+
+    per_process: ClassVar[bool]
+
+    direction: Direction = dataclasses.field(default=None, kw_only=True)
+    predicate: Predicate | None = dataclasses.field(default=None, kw_only=True)
 
     @abc.abstractmethod
-    def process(self, result: ExecutionResult) -> Iterable[Sample]: ...
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+        """Parse the raw samples; ``process`` applies direction + predicate."""
 
-    def when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric:
+    def process(self, result: ExecutionResult) -> Iterator[Sample]:
+        if self.predicate is not None and not self.predicate(result):
+            return
+        for s in self._extract(result):
+            if self.direction is None:
+                yield s
+            else:
+                yield dataclasses.replace(s, lower_is_better=self.direction)
+
+    def lower_is_better(self) -> Self:
+        return dataclasses.replace(self, direction=True)
+
+    def higher_is_better(self) -> Self:
+        return dataclasses.replace(self, direction=False)
+
+    def when(self, predicate: Predicate) -> Self:
         """Run this metric only when ``predicate(result)`` is true."""
-        return self._wrap_when(predicate)
-
-    def lower_is_better(self) -> Metric:
-        return self._wrap_direction(True)
-
-    def higher_is_better(self) -> Metric:
-        return self._wrap_direction(False)
-
-    # Subclasses (RunMetric / ProcessMetric) return a wrapper of their own kind.
-    def _wrap_direction(self, lower: bool) -> Metric: ...      # defined on the two bases
-    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: ...
+        return dataclasses.replace(self, predicate=predicate)
 
 
-class _DirectionMixin:
-    __slots__ = ("inner", "lower")
-
-    def __init__(self, inner: Metric, lower_is_better: bool):
-        self.inner = inner
-        self.lower = lower_is_better
-
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
-        for s in self.inner.process(result):
-            yield dataclasses.replace(s, lower_is_better=self.lower)
+def extract_run(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
+    """Run only per-run (``per_process == False``) metrics over one result."""
+    for m in metrics:
+        if not m.per_process:
+            yield from m.process(result)
 
 
-class _WhenMixin:
-    __slots__ = ("inner", "predicate")
-
-    def __init__(self, inner: Metric, predicate: Callable[[ExecutionResult], bool]):
-        self.inner = inner
-        self.predicate = predicate
-
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
-        if self.predicate(result):
-            yield from self.inner.process(result)
+def extract_process(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
+    """Run only per-process (``per_process == True``) metrics over one result."""
+    for m in metrics:
+        if m.per_process:
+            yield from m.process(result)
 
 
-class RunMetric(Metric):
-    """Fed once per run. Command: the whole process result. Harness: each framed block."""
-    __slots__ = ()
-
-    def _wrap_direction(self, lower: bool) -> Metric: return _RunDirection(self, lower)
-    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: return _RunWhen(self, predicate)
-
-
-class ProcessMetric(Metric):
-    """Fed the whole-process result. Command: folds into the run's samples.
-    Harness: becomes Report.metadata."""
-    __slots__ = ()
-
-    def _wrap_direction(self, lower: bool) -> Metric: return _ProcessDirection(self, lower)
-    def _wrap_when(self, predicate: Callable[[ExecutionResult], bool]) -> Metric: return _ProcessWhen(self, predicate)
-
-
-class _RunDirection(_DirectionMixin, RunMetric): __slots__ = ()
-class _ProcessDirection(_DirectionMixin, ProcessMetric): __slots__ = ()
-class _RunWhen(_WhenMixin, RunMetric): __slots__ = ()
-class _ProcessWhen(_WhenMixin, ProcessMetric): __slots__ = ()
+def partition_metrics(metrics: Iterable[Metric]) -> tuple[list[Metric], list[Metric]]:
+    """Split a flat list of metrics into (run_metrics, process_metrics)."""
+    run = [m for m in metrics if not m.per_process]
+    proc = [m for m in metrics if m.per_process]
+    return run, proc
 
 
 # ---------------------------------------------------------------------------
@@ -122,24 +101,26 @@ class _ProcessWhen(_WhenMixin, ProcessMetric): __slots__ = ()
 # ---------------------------------------------------------------------------
 
 
-class FloatPerLine(RunMetric):
-    """Parse non-empty lines of stdout as floats, emit one sample per line.
+@dataclass(frozen=True)
+class FloatPerLine(Metric):
+    """Parse non-empty lines of stdout as floats, one sample per line.
 
     ``line`` selects a single 1-based non-empty line (negative counts from the
     end); ``None`` (the default) parses every non-empty line. A failed run, or a
     ``line`` index out of range, emits nothing.
     """
 
-    __slots__ = ("unit", "metric", "line")
+    per_process = False
 
-    def __init__(self, unit: str = "s", metric: str = "runtime", line: int | None = None):
-        if line == 0:
+    unit: str = "s"
+    metric: str = "runtime"
+    line: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.line == 0:
             raise ValueError("line must be non-zero")
-        self.unit = unit
-        self.metric = metric
-        self.line = line
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure() or not result.stdout:
             return
         lines = [s for s in (ln.strip() for ln in result.stdout.split("\n")) if s]
@@ -155,69 +136,70 @@ class FloatPerLine(RunMetric):
             except ValueError:
                 continue
 
-    def last_line(self) -> "FloatPerLine":
+    def last_line(self) -> Self:
         """Parse only the last non-empty line of stdout."""
-        return FloatPerLine(self.unit, self.metric, line=-1)
+        return dataclasses.replace(self, line=-1)
 
-    def first_line(self) -> "FloatPerLine":
+    def first_line(self) -> Self:
         """Parse only the first non-empty line of stdout."""
-        return FloatPerLine(self.unit, self.metric, line=1)
+        return dataclasses.replace(self, line=1)
 
-    def nth(self, i: int) -> "FloatPerLine":
-        """Parse only the i-th non-empty line of stdout (1-based; negatives count from the end)."""
-        return FloatPerLine(self.unit, self.metric, line=i)
+    def nth(self, i: int) -> Self:
+        """Parse only the i-th non-empty line (1-based; negatives from the end)."""
+        return dataclasses.replace(self, line=i)
 
 
-class Regex(RunMetric):
+@dataclass(frozen=True)
+class Regex(Metric):
     """Extract metric values via a regex against stdout/stderr."""
 
-    type _MatchGroup = str | int
-    type _Output = Literal["stdout", "stderr", "both"]
+    per_process = False
 
-    __slots__ = ("metric", "regex", "output", "match_group", "transform",
-                 "unit", "unit_group")
+    metric: str
+    regex: re.Pattern[str] | str
+    output: Literal["stdout", "stderr", "both"] = dataclasses.field(
+        default="stdout", kw_only=True
+    )
+    match_group: str | int = dataclasses.field(default=1, kw_only=True)
+    transform: Callable[[str], float] = dataclasses.field(default=float, kw_only=True)
+    unit: str = dataclasses.field(default="", kw_only=True)
+    unit_group: str | int | None = dataclasses.field(default=None, kw_only=True)
 
-    def __init__(
-        self,
-        metric: str,
-        regex: re.Pattern[str] | str,
-        *,
-        output: _Output = "stdout",
-        match_group: _MatchGroup = 1,
-        transform: Callable[[str], float] = float,
-        unit: str = "",
-        unit_group: _MatchGroup | None = None,
-    ):
-        self.metric = metric
-        self.regex = re.compile(regex) if isinstance(regex, str) else regex
-        self.output = output
-        self.match_group = match_group
-        self.transform = transform
-        self.unit = unit
-        self.unit_group = unit_group
+    def __post_init__(self) -> None:
+        if isinstance(self.regex, str):
+            object.__setattr__(self, "regex", re.compile(self.regex))
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure():
             return
+        pattern = self.regex
+        assert isinstance(pattern, re.Pattern)  # compiled in __post_init__
         outs: list[str] = []
         if self.output in ("stdout", "both"):
             outs.append(result.stdout or "")
         if self.output in ("stderr", "both"):
             outs.append(result.stderr or "")
         for text in outs:
-            for m in self.regex.finditer(text):
+            for m in pattern.finditer(text):
                 value = self.transform(m.group(self.match_group))
-                unit = m.group(self.unit_group) if self.unit_group is not None else self.unit
+                unit = (
+                    m.group(self.unit_group)
+                    if self.unit_group is not None
+                    else self.unit
+                )
                 yield Sample(metric=self.metric, value=value, unit=unit)
 
 
-class Rebench(RunMetric):
+@dataclass(frozen=True)
+class Rebench(Metric):
     """ReBench log format adapter.
 
     ``optional_prefix: name optional_criterion: iterations=N runtime: V[ms|us]``
     or ``optional_prefix: name: criterion: V<unit>``
     Runtime emitted in ms; non-"total" runtime criteria are ignored.
     """
+
+    per_process = False
 
     _re_runtime = re.compile(
         r"^(?:.*: )?([^\s]+)( [\w\.]+)?: iterations=([0-9]+) "
@@ -230,7 +212,7 @@ class Rebench(RunMetric):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure() or not result.stdout:
             return
         for line in result.stdout.split("\n"):
@@ -253,8 +235,11 @@ class Rebench(RunMetric):
                 )
 
 
-class RUsage(ProcessMetric):
+@dataclass(frozen=True)
+class RUsage(Metric):
     """Emit one sample from a single ``resource.struct_rusage`` field."""
+
+    per_process = True
 
     Field = Literal[
         "ru_utime", "ru_stime", "ru_maxrss", "ru_ixrss", "ru_idrss", "ru_isrss",
@@ -262,14 +247,11 @@ class RUsage(ProcessMetric):
         "ru_msgsnd", "ru_msgrcv", "ru_nsignals", "ru_nvcsw", "ru_nivcsw",
     ]
 
-    __slots__ = ("field", "metric", "unit")
+    field: Field
+    metric: str
+    unit: str = ""
 
-    def __init__(self, field: Field, metric: str, unit: str = ""):
-        self.field = field
-        self.metric = metric
-        self.unit = unit
-
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.rusage is None:
             return
         value = float(getattr(result.rusage, self.field))
@@ -279,45 +261,46 @@ class RUsage(ProcessMetric):
         yield Sample(metric=self.metric, value=value, unit=self.unit)
 
 
-class Time(ProcessMetric):
-    """Up to three time samples: ``elapsed`` (wall), ``user``, ``system`` (s)."""
+@dataclass(frozen=True)
+class Time(Metric):
+    """Up to three time samples: ``elapsed`` (wall), ``user``, ``system`` (s).
 
-    __slots__ = ("elapsed", "user", "system")
+    All are lower-is-better by default; override with ``.higher_is_better()``.
+    """
 
-    def __init__(self, elapsed: bool = True, user: bool = False, system: bool = False):
-        if not (elapsed or user or system):
+    per_process = True
+
+    elapsed: bool = True
+    user: bool = False
+    system: bool = False
+    direction: Direction = dataclasses.field(default=True, kw_only=True)
+
+    def __post_init__(self) -> None:
+        if not (self.elapsed or self.user or self.system):
             raise ValueError("Time() needs at least one of elapsed/user/system")
-        self.elapsed = elapsed
-        self.user = user
-        self.system = system
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if self.elapsed and result.runtime is not None:
-            yield Sample(metric="elapsed", value=result.runtime, unit="s",
-                         lower_is_better=True)
+            yield Sample(metric="elapsed", value=result.runtime, unit="s")
         if result.rusage is not None:
             if self.user:
-                yield Sample(metric="user", value=result.rusage.ru_utime,
-                             unit="s", lower_is_better=True)
+                yield Sample(metric="user", value=result.rusage.ru_utime, unit="s")
             if self.system:
-                yield Sample(metric="system", value=result.rusage.ru_stime,
-                             unit="s", lower_is_better=True)
+                yield Sample(metric="system", value=result.rusage.ru_stime, unit="s")
 
 
-class Constant(ProcessMetric):
+@dataclass(frozen=True)
+class Constant(Metric):
     """Always emit a fixed sample (e.g. tag every run with a constant marker)."""
 
-    __slots__ = ("metric", "value", "unit", "lower")
+    per_process = True
 
-    def __init__(self, metric: str, value: float, unit: str = "", lower_is_better: bool | None = None):
-        self.metric = metric
-        self.value = value
-        self.unit = unit
-        self.lower = lower_is_better
+    metric: str
+    value: float
+    unit: str = ""
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
-        yield Sample(metric=self.metric, value=self.value, unit=self.unit,
-                     lower_is_better=self.lower)
+    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+        yield Sample(metric=self.metric, value=self.value, unit=self.unit)
 
 
 def max_rss() -> Metric:

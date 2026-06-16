@@ -39,9 +39,9 @@ def test_missing_command_raises_on_schedule():
         bench("x").schedule(None, suite="S", run=1)
 
 
-def test_unexpanded_axes_raise_on_schedule():
+def test_unexpanded_matrix_dimensions_raise_on_schedule():
     b = bench("x").with_command(["true"]).with_matrix(vm=["v8", "jsc"])
-    with pytest.raises(ValueError, match="unexpanded matrix axes"):
+    with pytest.raises(ValueError, match="unexpanded matrix dimensions"):
         b.schedule(None, suite="S", run=1)
 
 
@@ -108,9 +108,9 @@ def test_with_metric_takes_several_in_one_call():
     assert len(b.metrics) == 2
 
 
-def test_with_matrix_replaces_axes():
+def test_with_matrix_replaces_dimensions():
     b = bench("x").with_matrix(a=[1]).with_matrix(b=[2])
-    assert [n for n, _ in b.axes] == ["b"]
+    assert [n for n, _ in b.matrix] == ["b"]
 
 
 def test_add_matrix_skip_unions_rules_on_one_benchmark():

@@ -75,7 +75,7 @@ def test_spawn_streaming_finish_killed_marks_timeout_like():
 
 
 def test_spawn_streaming_finish_after_is_alive_polling():
-    # A framer tails by polling is_alive(); that must not reap the child out
+    # A monitor tails by polling is_alive(); that must not reap the child out
     # from under finish()'s rusage-bearing wait4. Poll to completion, then
     # finish() must still return a valid result (with rusage).
     exe = Execution(command=("sh", "-c", "echo a; echo b"), cwd=Path("/tmp"))

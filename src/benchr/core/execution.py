@@ -59,7 +59,7 @@ class ExecutionResult:
     returncode: int
     stdout: str = ""
     stderr: str = ""
-    runtime: float | None = None              # wall-clock seconds
+    runtime: float | None = None  # wall-clock seconds
     rusage: resource.struct_rusage | None = None
     failure: str | None = None
 
@@ -67,7 +67,8 @@ class ExecutionResult:
         return self.failure is not None
 
 
-type Verdict = str | None                     # None = success; str = failure reason
+# TODO: inline the type
+type Verdict = str | None  # None = success; str = failure reason
 type SuccessFn = Callable[[ExecutionResult], Verdict]
 
 
@@ -87,7 +88,7 @@ def default_success(result: ExecutionResult) -> Verdict:
     return None
 
 
-# Canonical matrix-variant identifier: sorted ((axis_name, axis_value), …).
+# Canonical matrix-variant identifier: sorted ((dimension_name, dimension_value), …).
 type Variant = tuple[tuple[str, str], ...]
 
 
@@ -139,7 +140,7 @@ class ScheduledExecution:
     """An Execution plus the (suite, benchmark, run, variant) tag.
 
     ``variant`` is the matrix cell identifier — a canonical (sorted) tuple of
-    ``(axis_name, axis_value)`` pairs. ``variant_label`` is the human-readable
+    ``(dimension_name, dimension_value)`` pairs. ``variant_label`` is the human-readable
     name of the variant (from ``Benchmark.label_fn`` or, by default, the
     formatted ``variant`` tuple). Run numbers are continuous: a benchmark's
     warmup runs are 1..W and its measured runs follow (see ``Report.warmups``).
@@ -153,5 +154,10 @@ class ScheduledExecution:
     run: int = 1
 
     def identifier(self) -> str:
-        return format_identifier(self.suite, self.benchmark, self.variant,
-                                 self.run, variant_label=self.variant_label)
+        return format_identifier(
+            self.suite,
+            self.benchmark,
+            self.variant,
+            self.run,
+            variant_label=self.variant_label,
+        )

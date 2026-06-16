@@ -71,7 +71,7 @@ def _variant_suffix(gs: GroupStats | BenchmarkGroup) -> str:
     """Render the variant portion of a display name.
 
     Prefers the explicit ``variant_label`` (set via ``Benchmark.with_label``);
-    falls back to ``" (k=v, …)"`` for unlabeled axes.
+    falls back to ``" (k=v, …)"`` for unlabeled dimensions.
     """
     if gs.variant_label:
         return f"/{gs.variant_label}"

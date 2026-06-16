@@ -117,12 +117,12 @@ def _strip_markup(s: str) -> str:
     return s.replace("\x00", "[")
 
 
-def _vrun(value: float, *, run: int, label: str, variant_axis: str = "k",
+def _vrun(value: float, *, run: int, label: str, variant_dim: str = "k",
           bench: str = "b", suite: str = "S", metric: str = "elapsed",
           unit: str = "s", lower_is_better: bool | None = True) -> RunRecord:
     return _ok(
         run, bench=bench, suite=suite,
-        variant=((variant_axis, label),),
+        variant=((variant_dim, label),),
         variant_label=label,
         samples=[_smp(metric, value, unit=unit, lower_is_better=lower_is_better)],
     )

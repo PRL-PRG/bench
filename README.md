@@ -166,7 +166,7 @@ set. The full precedence, most specific wins:
         ▲
    bench(...).with_runs(10)               ← per-benchmark explicit value
         ▲
-   with_matrix(command=[...])        ← benchmark axis default (command/cwd/env axes)
+   with_matrix(command=[...])        ← benchmark matrix-dimension default (command/cwd/env dims)
         ▲
    suite(...).with_runs(10)               ← suite default, fills unset benchmarks
 ```
@@ -190,7 +190,7 @@ RunRecord(
 Sample(metric, value, unit, lower_is_better)      # metric data only
 ```
 
-* `variant` is a sorted tuple of `(axis, value)` pairs identifying the
+* `variant` is a sorted tuple of `(dimension, value)` pairs identifying the
   matrix cell (e.g. `(("compiler","gcc"),("opt","O2"))`). Empty tuple when
   the benchmark has no matrix.
 * `variant_label` is the human-readable label of the variant (from
@@ -259,7 +259,7 @@ Path("out2.json").write_text(report_to_json(r))
 CSV (`--csv`) is one row per `(run, sample)` for successful runs, plus one
 row per failed run carrying the failure verdict. The schema is
 `suite, benchmark, run, <variant cols>, metric, value, unit, lower_is_better, failure`
-where variant columns are the **union** of every axis observed across all runs
+where variant columns are the **union** of every matrix dimension observed across all runs
 (cells absent in a particular run are blank). All runs appear, warmup
 included — to drop warmup in external analysis, read `warmups` from the JSON.
 
@@ -383,8 +383,8 @@ factory_demo/tiny #1
 
 ### Matrix — cross-product variants
 
-A benchmark's `.with_matrix(**axes)` declares the axes that vary; the
-cartesian product of axis values produces the *variants* of that benchmark.
+A benchmark's `.with_matrix(**dims)` declares the dimensions that vary; the
+cartesian product of dimension values produces the *variants* of that benchmark.
 Variant values reach `with_command` / `add_matrix_skip` callables as attributes on
 the benchmark (`b.compiler`, `b.opt`).
 
@@ -412,8 +412,8 @@ compile_matrix/compute/compiler=gcc, opt=O2: 0|3 runs
 ...
 ```
 
-Each cell's `RunRecord.variant` carries the axis values so reporters split by
-axis. Ranking in the end-of-run "Summary" compares variants *within* a
+Each cell's `RunRecord.variant` carries the dimension values so reporters split by
+dimension. Ranking in the end-of-run "Summary" compares variants *within* a
 benchmark; cross-benchmark ranking is never emitted (different programs are
 not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
 
