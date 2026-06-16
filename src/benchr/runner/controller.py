@@ -79,7 +79,7 @@ class Controller:
                         f"({self.max_runs_per_policy}); did you forget .at_most(N)?"
                     )
                 try:
-                    rr = source.next(run)
+                    rr = source.next()
                 except StopIteration:
                     self._on_exhausted(
                         report, template, b, run, source, bounded
@@ -155,7 +155,10 @@ class Controller:
                     failure=self._zero_delivery_failure(last),
                 ),
             )
-        elif bounded:
+        elif bounded and (last is None or last.failure is None):
+            # A real failure (process crash / monitor exception) is already
+            # recorded and surfaced via process_done — don't paper over it with
+            # a generic short-delivery message.
             warmup_max, runs_max = b.warmup.max_runs(), b.runs.max_runs()
             assert warmup_max is not None and runs_max is not None
             target = warmup_max + runs_max

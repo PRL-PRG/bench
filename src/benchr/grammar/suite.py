@@ -185,8 +185,10 @@ class Suite:
         """Make every contained benchmark a harness benchmark (executed once,
         streamed and killed on convergence — see ``Benchmark.with_harness``).
         ``max_iterations`` and ``monitor`` are suite-level defaults; a benchmark's
-        own ``with_harness(...)`` values override them. There is no per-benchmark
-        opt-out; mixed suites are two suites."""
+        own ``with_harness(...)`` values override them. Unlike
+        ``Benchmark.with_harness`` (whose defaults are ``UNSET`` = inherit), the
+        suite stores concrete values — it is the inheritance root. There is no
+        per-benchmark opt-out; mixed suites are two suites."""
         return dataclasses.replace(
             self, harness=True, max_iterations=max_iterations, monitor=monitor
         )
@@ -287,10 +289,10 @@ class Suite:
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,
             harness=self.harness if b.harness is UNSET else b.harness,
-            max_iterations=b.max_iterations
-            if b.max_iterations is not None
-            else self.max_iterations,
-            monitor=b.monitor if b.monitor is not None else self.monitor,
+            max_iterations=self.max_iterations
+            if b.max_iterations is UNSET
+            else b.max_iterations,
+            monitor=self.monitor if b.monitor is UNSET else b.monitor,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
         )
         if resolved.command is UNSET:

@@ -25,7 +25,7 @@ def _planned_harness(cmd, metric):
 def test_command_source_yields_run_result_with_all_metrics():
     p = _planned(["sh", "-c", "echo 1.5"], FloatPerLine(""))
     src = make_source(p, None)
-    rr = src.next(1)
+    rr = src.next()
     assert rr.failure is None
     assert any(s.value == 1.5 for s in rr.samples)        # RunMetric
     src.close()
@@ -34,7 +34,7 @@ def test_command_source_yields_run_result_with_all_metrics():
 def test_command_source_failure_sets_verdict_and_no_samples():
     p = _planned(["sh", "-c", "exit 3"], FloatPerLine(""))
     src = make_source(p, None)
-    rr = src.next(1)
+    rr = src.next()
     assert rr.failure == "exit code 3" and rr.samples == []
     events = src.drain_process_events()
     assert len(events) == 1 and events[0][1].returncode == 3
@@ -44,7 +44,7 @@ def test_command_source_failure_sets_verdict_and_no_samples():
 def test_command_source_metadata_is_empty():
     p = _planned(["sh", "-c", "echo 1"], Time())
     src = make_source(p, None)
-    src.next(1)
+    src.next()
     assert src.metadata() == []          # command: process metrics fold into run samples
     src.close()
 
@@ -52,7 +52,7 @@ def test_command_source_metadata_is_empty():
 def test_command_source_process_metrics_fold_into_run_samples():
     p = _planned(["sh", "-c", "echo 1.5"], Time())
     src = make_source(p, None)
-    rr = src.next(1)
+    rr = src.next()
     assert any(s.metric == "elapsed" for s in rr.samples)  # ProcessMetric folds in
     src.close()
 
@@ -71,7 +71,7 @@ def test_harness_source_streams_one_run_per_line():
     got = []
     while True:
         try:
-            got.append(src.next(len(got) + 1))
+            got.append(src.next())
         except StopIteration:
             break
     src.close()
@@ -82,7 +82,7 @@ def test_harness_source_close_kills_long_process():
     import time
     p = _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine(""))
     src = make_source(p, None)
-    first = src.next(1)          # blocks until the first line
+    first = src.next()          # blocks until the first line
     assert first.samples[0].value == 1.0
     t = time.monotonic()
     src.close()                  # must not wait for sleep 30
@@ -98,7 +98,7 @@ def test_harness_source_process_metrics_become_metadata():
     src = make_source(p, None)
     while True:
         try:
-            src.next(1)
+            src.next()
         except StopIteration:
             break
     md = src.metadata()
@@ -112,7 +112,7 @@ def test_harness_source_non_parsing_line_yields_no_runs():
     got = []
     while True:
         try:
-            got.append(src.next(len(got) + 1))
+            got.append(src.next())
         except StopIteration:
             break
     src.close()
@@ -124,7 +124,7 @@ def test_harness_source_nonzero_exit_sets_process_failure():
     src = make_source(p, None)
     while True:
         try:
-            src.next(1)
+            src.next()
         except StopIteration:
             break
     pr = src.process_result()
@@ -137,7 +137,7 @@ def test_harness_source_spawn_failure_is_one_failed_event():
     src = make_source(p, None)
     import pytest
     with pytest.raises(StopIteration):
-        src.next(1)
+        src.next()
     events = src.drain_process_events()
     assert len(events) == 1 and events[0][1].is_failure()
     src.close()
@@ -148,7 +148,7 @@ def test_harness_source_process_result_after_exhaustion():
     src = make_source(p, None)
     while True:
         try:
-            src.next(1)
+            src.next()
         except StopIteration:
             break
     pr = src.process_result()
@@ -163,7 +163,7 @@ def test_harness_source_temp_dir_cleaned_up_after_run():
     tmp_dir = src._live.stdout_path.parent
     while True:
         try:
-            src.next(1)
+            src.next()
         except StopIteration:
             break
     src.close()
@@ -194,7 +194,7 @@ def test_harness_source_done_delivered_even_if_finish_raises():
     def drain():
         while True:
             try:
-                src.next(1)
+                src.next()
             except StopIteration:
                 stop_iteration_seen.set()
                 return

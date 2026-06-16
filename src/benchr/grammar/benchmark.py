@@ -212,11 +212,11 @@ class Benchmark:
     # all iterations and the metrics parse them from the complete output.
     harness: bool = UNSET
     # Upper bound on iterations told to the workload (read via ctx.harness_iterations).
-    # None means not set. Not UNSET-based; plain optional with suite-level inheritance.
-    max_iterations: int | None = None
+    # UNSET inherits the suite default; resolved None means no bound.
+    max_iterations: int | None = UNSET
     # Custom monitor (generator that frames the output stream into iterations).
-    # None falls back to line_monitor in HarnessSource.
-    monitor: Any = None
+    # UNSET inherits the suite default; resolved None falls back to line_monitor.
+    monitor: Any = UNSET
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = EMPTY_MAPPING
@@ -280,7 +280,7 @@ class Benchmark:
         return dataclasses.replace(self, runs=coerce_policy(p))
 
     def with_harness(
-        self, max_iterations: int | None = None, monitor: Any = None
+        self, max_iterations: int | None = UNSET, monitor: Any = UNSET
     ) -> Benchmark:
         """Mark this benchmark as a *harness*: the command is executed once
         and streams all iterations — each line (or framed block) becomes one
@@ -289,10 +289,12 @@ class Benchmark:
         the policy converges.
 
         ``max_iterations`` is the upper bound the workload is told to run;
-        read in the command fn via ``ctx.harness_iterations``. ``monitor`` is
-        a custom generator that frames the output stream into iterations;
-        ``None`` falls back to ``line_monitor`` (one non-empty line = one
-        iteration). ``timeout`` covers the whole process."""
+        read in the command fn via ``ctx.harness_iterations``. ``monitor`` is a
+        custom generator that frames the output stream into iterations. Both
+        default to inheriting the suite; an explicit ``None`` monitor (or an
+        unset suite) falls back to ``line_monitor`` (one non-empty line = one
+        iteration). A monitor that raises marks the run failed with the
+        exception's message. ``timeout`` covers the whole process."""
         return dataclasses.replace(
             self, harness=True, max_iterations=max_iterations, monitor=monitor
         )

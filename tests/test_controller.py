@@ -44,7 +44,7 @@ class _FakeSource(RunSource):
         self._proc_result = proc_result
         self._events = list(events or [])
 
-    def next(self, run):
+    def next(self):
         return next(self._it)
 
     def drain_process_events(self):

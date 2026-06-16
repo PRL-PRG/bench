@@ -32,8 +32,10 @@ class RunSource(abc.ABC):
     """Produces identity-free RunResults for one benchmark-variant."""
 
     @abc.abstractmethod
-    def next(self, run: int) -> RunResult:
-        """Next run's result. Raise StopIteration when exhausted."""
+    def next(self) -> RunResult:
+        """Next run's result. Raise StopIteration when exhausted.
+
+        The source owns its own run sequencing — callers just pull."""
 
     def drain_process_events(self) -> list[tuple[ScheduledExecution, ExecutionResult]]:
         """OS-process completions since the last call (drive process_done)."""
@@ -63,11 +65,15 @@ class CommandSource(RunSource):
         self._params = params
         self._b = planned.benchmark
         self._events: list[tuple[ScheduledExecution, ExecutionResult]] = []
+        self._run = 0
 
-    def next(self, run: int) -> RunResult:
+    def next(self) -> RunResult:
         from benchr.core.process import execute
 
-        sched = self._b.schedule(self._params, suite=self._planned.suite, run=run)
+        self._run += 1
+        sched = self._b.schedule(
+            self._params, suite=self._planned.suite, run=self._run
+        )
         result = execute(sched.execution)
         # Apply the success policy (stamp the failure reason).
         success = self._b.success if self._b.success is not None else default_success
@@ -107,16 +113,24 @@ class CommandSource(RunSource):
 
 @dataclasses.dataclass
 class HarnessHandle:
-    """What a monitor needs: pid, the growing output path, and liveness."""
+    """What a monitor needs: the growing output path and liveness.
 
-    pid: int
-    output_path: Path
+    A read-only view over the internal LiveProcess — it exposes only what a
+    monitor should touch (tail the output, poll liveness), not the
+    reaping/kill internals."""
+
     _live: LiveProcess
+
+    @property
+    def output_path(self) -> Path:
+        return self._live.stdout_path
 
     def is_alive(self) -> bool:
         return self._live.is_alive()
 
 
+# A monitor frames a harness process's output into per-iteration blocks. It may
+# raise to fail the run: the exception's message becomes the failure reason.
 type BenchmarkMonitor = Callable[[HarnessHandle], Iterator[str]]
 
 
@@ -132,7 +146,7 @@ def line_monitor(handle: HarnessHandle) -> Iterator[str]:
             elif handle.is_alive():
                 time.sleep(0.02)
             else:
-                s = line.strip()      # final newline-less remainder
+                s = line.strip()
                 if s:
                     yield s
                 return
@@ -148,7 +162,7 @@ class HarnessSource(RunSource):
         self._b = planned.benchmark
         self._sched = self._b.schedule(params, suite=planned.suite, run=1)
         self._run_metrics, self._process_metrics = partition_metrics(self._b.metrics)
-        self._monitor: BenchmarkMonitor = getattr(self._b, "monitor", None) or line_monitor
+        self._monitor: BenchmarkMonitor = self._b.monitor or line_monitor
         self._q: queue.Queue[Any] = queue.Queue()
         self._proc_result: ExecutionResult | None = None
         self._events: list[tuple[ScheduledExecution, ExecutionResult]] = []
@@ -169,7 +183,8 @@ class HarnessSource(RunSource):
 
     def _read(self) -> None:
         assert self._live is not None
-        handle = HarnessHandle(self._live.proc.pid, self._live.stdout_path, self._live)
+        handle = HarnessHandle(self._live)
+        monitor_failure: str | None = None
         try:
             for block in self._monitor(handle):
                 if self._closed.is_set():
@@ -178,23 +193,36 @@ class HarnessSource(RunSource):
                 samples = list(extract_run(self._run_metrics, result))
                 if samples:
                     self._q.put(RunResult(samples=samples))
+        except Exception as e:
+            # A monitor that raises fails the run; the process is killed below
+            # since nothing is consuming its output anymore.
+            monitor_failure = f"monitor failed: {type(e).__name__}: {e}"
         finally:
             try:
-                killed = self._closed.is_set()
+                killed = self._closed.is_set() or monitor_failure is not None
                 result = self._live.finish(killed=killed)
                 # A harness we killed ourselves on convergence is expected
                 # termination, not a failure — only judge a process that ended
-                # on its own (crash / timeout / clean exhaustion).
-                if not killed:
+                # on its own (crash / timeout / clean exhaustion). A monitor
+                # failure always wins.
+                if monitor_failure is not None:
+                    reason = monitor_failure
+                elif not killed:
                     reason = self._b.success(result)
-                    if reason is not None and result.failure is None:
-                        result = dataclasses.replace(result, failure=reason)
+                else:
+                    reason = None
+                if reason is not None and result.failure is None:
+                    result = dataclasses.replace(result, failure=reason)
                 self._proc_result = result
                 self._events.append((self._sched, self._proc_result))
+                # Record one failed run carrying the monitor's message, on top of
+                # any iterations already streamed out.
+                if monitor_failure is not None:
+                    self._q.put(RunResult(samples=[], failure=monitor_failure))
             finally:
                 self._q.put(_DONE)
 
-    def next(self, run: int) -> RunResult:
+    def next(self) -> RunResult:
         item = self._q.get()
         if item is _DONE:
             raise StopIteration

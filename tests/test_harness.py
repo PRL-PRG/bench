@@ -4,7 +4,7 @@ from pathlib import Path
 
 from benchr import (
     CoefficientOfVariation, Context, Dry, FloatPerLine, Parallel, Regex,
-    Sequential, Time, bench, plan, run, suite,
+    Sequential, Time, bench, line_monitor, plan, run, suite,
 )
 
 
@@ -151,6 +151,46 @@ def test_under_delivery_records_trailing_failure():
     assert [r.run for r in report.runs] == [1, 2, 3]
     assert report.runs[2].failure == "harness produced 2 iterations, expected 3"
     assert len(report.failures) == 1
+
+
+def test_monitor_exception_fails_the_run():
+    def boom(handle):
+        raise RuntimeError("boom")
+
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0", "3.0"))
+              .with_harness(monitor=boom))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_runs(3)
+    )
+    report = Sequential().run(plan([s], None), None)
+    assert len(report.runs) == 1
+    assert len(report.failures) == 1
+    assert "boom" in (report.runs[0].failure or "")
+
+
+def test_monitor_exception_after_delivery_records_one_failed_run():
+    def boom_after_two(handle):
+        n = 0
+        for line in line_monitor(handle):
+            if n >= 2:
+                raise ValueError("bad output")
+            n += 1
+            yield line
+
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0", "3.0", "4.0"))
+              .with_harness(monitor=boom_after_two))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_runs(5)
+    )
+    report = Sequential().run(plan([s], None), None)
+    good = [r for r in report.runs if r.failure is None]
+    assert len(good) == 2
+    assert len(report.failures) == 1
+    assert "bad output" in (report.failures[0].failure or "")
 
 
 def test_over_delivery_stops_at_policy():
