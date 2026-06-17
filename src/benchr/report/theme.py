@@ -24,3 +24,4 @@ BENCHR_THEME = Theme(
 )
 
 console = Console(theme=BENCHR_THEME, highlight=False)
+error_console = Console(stderr=True, theme=BENCHR_THEME, highlight=False)

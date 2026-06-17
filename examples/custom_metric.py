@@ -25,15 +25,22 @@ from benchr import (
 
 
 class StderrFloat(Metric):
-    """Custom Metric: read 'TIME=<float>' from stderr."""
+    """Custom Metric: read 'TIME=<float>' from stderr.
+
+    Implement ``extract`` (not ``process``): the base ``process`` applies the
+    direction set via ``.lower_is_better()`` and any ``.when(...)`` predicate
+    for you. ``per_process`` says whether the metric is fed once per run
+    (``False``) or once per whole process (``True``).
+    """
+
+    per_process = False
 
     _re = re.compile(r"TIME=([0-9.]+)")
 
-    def process(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         m = self._re.search(result.stderr or "")
         if m:
-            yield Sample(metric="custom_time", value=float(m.group(1)),
-                         unit="s", lower_is_better=True)
+            yield Sample(metric="custom_time", value=float(m.group(1)), unit="s")
 
 
 def succeeded(pr: ExecutionResult) -> str | None:
@@ -52,7 +59,7 @@ s = (
     suite("custom",
         bench("with_stderr")
             .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
-            .with_metric(StderrFloat(), Time())
+            .with_metric(StderrFloat().lower_is_better(), Time())
             .with_success(succeeded)
             .with_runs(3)
     )

@@ -8,6 +8,9 @@
 # ///
 """Run a benchmark until the coefficient of variation stabilizes.
 
+Here CoV governs the *measured* runs (``.with_runs``); for CoV as the *warmup*
+policy followed by a fixed measured count, see ``jit_warmup.py``.
+
 Stops as soon as the last 5 runs are within 2% CoV, but always runs at least 5
 and at most 30 times. ``.at_least`` / ``.at_most`` are sugar over the raw
 policy combinators:

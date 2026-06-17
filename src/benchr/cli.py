@@ -1,9 +1,4 @@
-"""benchr CLI: ``bench``, ``run`` (programmatic), ``compare``, ``show``.
-
-The ``run(...)`` function in this module is the main entry point used by
-benchmark scripts. ``benchr`` (the CLI) covers the straightforward benchmarking
-tasks ``benchr bench``, ``benchr compare`` and ``benchr show`` for inspecting
-JSON outputs offline."""
+"""benchr CLI enrty point"""
 
 from __future__ import annotations
 
@@ -11,13 +6,14 @@ import argparse
 import dataclasses
 import sys
 from pathlib import Path
+from typing import Any
 
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
 from benchr.core.metric import Time
 from benchr.core.policy import FixedRuns
 from benchr.grammar.suite import Suite, suite
-from benchr.report.formatter import DefaultSummary, Formatter
+from benchr.report.formatter import DefaultSummary
 from benchr.report.reporter import (
     CompositeReporter,
     CsvReporter,
@@ -28,6 +24,7 @@ from benchr.report.reporter import (
     SummaryReporter,
     console,
 )
+from benchr.utils import print_exception
 from benchr.core.sample import Report, report_from_json
 from benchr.report.stats import build_summary
 from benchr.runner.base import (
@@ -41,32 +38,25 @@ from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
 
 
-# ---------------------------------------------------------------------------
-# run(): the main entry point for benchmark scripts
-# ---------------------------------------------------------------------------
-
-
 def run(
     suites: list[Suite] | Suite,
     *,
     params: type | None = None,
     reporter: Reporter | None = None,
-    formatter: Formatter | None = None,
     argv: list[str] | None = None,
 ) -> Report:
-    """Parse argv, build the ctx, run the benchmark, emit reports.
+    """
+    The entrypoint for benchmarking.
+    Parse argv, build the ctx, run the benchmark, emit reports.
 
-    ``suites`` is one Suite or a list.
-    ``params`` is the user's @dataclass that declares CLI flags. If omitted,
-    no user flags are added and ``ctx = None`` is passed to builders.
-    ``reporter`` overrides the default Summary reporter; output flags
-    (--json/--csv/--dir) are *additional* CompositeReporter sinks alongside.
-    ``formatter`` overrides the default summary formatter (used for the
-    terminal summary; defaults to ``DefaultSummary``).
+    Args:
+        suites: The suite (or list of suites) to run
+        params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to ``None`` if omitted.
+        reporter: The reporter to be used for process the result. Defaults to ``SummaryReporter``
+        argv: The command-line parameters that will be parsed and use to fill the user-defined context.
 
-    Returns the Report the runner accumulated — every Sample plus a RunRecord
-    per execution (so ``report.failures`` is populated) — for callers that want
-    to do follow-up analysis after the side-effecting reporters have run.
+    Returns:
+        The report of running all the benchmarks
     """
     if isinstance(suites, Suite):
         suites = [suites]
@@ -75,21 +65,33 @@ def run(
     cli_args = parser.parse_args(argv)
     build_params = build_dataclass(params, cli_args) if params is not None else None
 
-    reporter = reporter or SummaryReporter(formatter=formatter)
+    return _do_run(suites, cli_args, reporter, build_params)
+
+
+def _do_run(
+    suites: list[Suite],
+    cli_args: argparse.Namespace,
+    reporter: Reporter | None,
+    build_params: Any,
+) -> Report:
+    """Run already-parsed benchmarks: build the reporter, plan the suites,
+    apply CLI overrides and hand off to the runner."""
+    if reporter is None:
+        reporter = SummaryReporter(DefaultSummary())
+
     reporter = _build_reporter(
-        cli_args,
-        reporter,
-        with_progress=not cli_args.dry and not cli_args.quiet,
+        cli_args, reporter, with_progress=not cli_args.no_progress
     )
 
     try:
         planned = plan(suites, build_params)
     except SuiteMaterializationError as e:
-        # TODO: there should be a better place for this
-        print(e, file=sys.stderr)
+        print_exception(e)
         sys.exit(1)
+
     benchmarks = _apply_cli_overrides(planned, cli_args)
     runner = _make_runner(cli_args, reporter)
+
     try:
         return runner.run(benchmarks, build_params)
     except KeyboardInterrupt:
@@ -101,6 +103,7 @@ def _apply_cli_overrides(
     planned: list[PlannedBenchmark], ns: argparse.Namespace
 ) -> list[PlannedBenchmark]:
     overrides = {}
+
     if ns.runs is not None:
         overrides["runs"] = FixedRuns(ns.runs)
     if ns.warmup is not None:
@@ -122,29 +125,34 @@ def _build_reporter(
     *,
     with_progress: bool,
 ) -> Reporter:
-    """Build the live reporter: optional progress, the summary reporter, plus
-    any --json/--csv/--dir sinks, fanned out via CompositeReporter. Wires
-    --compare onto the summary reporter when it is a SummaryReporter."""
     sinks: list[Reporter] = []
     if with_progress:
         sinks.append(ProgressReporter())
+
     sinks.append(summary_reporter)
+
     if ns.json:
         sinks.append(JsonReporter(Path(ns.json)))
+
     if ns.csv:
         sinks.append(CsvReporter(Path(ns.csv)))
+
     if ns.dir:
         sinks.append(DirReporter(Path(ns.dir)))
+
     if ns.compare and isinstance(summary_reporter, SummaryReporter):
         summary_reporter.set_baseline([Path(p) for p in ns.compare])
+
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
 def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
     if ns.dry:
         return Dry(verbose=ns.verbose)
+
     if ns.jobs > 1:
         return Parallel(workers=ns.jobs, reporter=reporter, verbose=ns.verbose)
+
     return Sequential(reporter=reporter, verbose=ns.verbose)
 
 
@@ -154,7 +162,7 @@ def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
 
 
 def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="benchr-script")
+    p = argparse.ArgumentParser(prog="benchr")
     _add_user_params(p, params)
     _add_benchr_flags(p)
     return p
@@ -163,7 +171,7 @@ def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
 def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> None:
     if params is None:
         return
-    group_ = parser.add_argument_group("Script parameters")
+    group_ = parser.add_argument_group("context parameters")
     add_dataclass_args(group_, params)
 
 
@@ -171,6 +179,7 @@ def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
     _add_shared_flags(parser.add_argument_group("benchr flags"))
 
 
+# TODO: fixme the default policy is to complicated
 def _add_shared_flags(
     # argparse exposes no public name for the add_argument_group() return type.
     g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
@@ -178,12 +187,6 @@ def _add_shared_flags(
     runs_default: int | None = None,
     warmup_default: int | None = None,
 ) -> None:
-    """The flag set shared by ``benchr.run()`` scripts and ``benchr bench``.
-
-    A ``None`` default for --runs/--warmup means "no override: each benchmark
-    keeps its own stopping policy" (the script case); ``benchr bench`` passes
-    concrete counts since its ad-hoc benchmarks have no policy of their own.
-    """
     policy_note = "each benchmark's own policy"
     g.add_argument(
         "--runs",
@@ -210,22 +213,20 @@ def _add_shared_flags(
         help="Run up to N benchmarks in parallel (default: 1, sequential).",
     )
     g.add_argument(
-        "--quiet",
-        "-q",
+        "--no-progress",
         action="store_true",
-        help="Suppress the live progress reporter (summary still prints).",
+        help="Suppress the progress bar.",
     )
     g.add_argument(
         "--dry",
         action="store_true",
-        help="Print the planned executions and exit without running anything.",
+        help="Show what shall happen but without running anything.",
     )
     g.add_argument(
         "--verbose",
         "-v",
         action="store_true",
-        help="Echo each benchmark's full command / cwd / env / run plan "
-        "before running it (and the only output under --dry -v).",
+        help="Verbose output.",
     )
     g.add_argument(
         "--json",
@@ -259,7 +260,7 @@ def _add_shared_flags(
 
 
 # ---------------------------------------------------------------------------
-# `benchr` CLI: bench / compare / show
+# `benchr` CLI: bench / compare
 # ---------------------------------------------------------------------------
 
 
@@ -292,19 +293,12 @@ def main(argv: list[str] | None = None) -> int:
     _compare_subparser(
         sub.add_parser(
             "compare",
-            help="Compare JSON reports from prior runs.",
+            help="Summarize or compare JSON reports from prior runs.",
             description=(
                 "Summarize one or more JSON reports and print ratios against the "
                 "first one as a baseline. With a single file, just pretty-prints "
                 "its summary."
             ),
-        )
-    )
-    _show_subparser(
-        sub.add_parser(
-            "show",
-            help="Pretty-print a JSON report.",
-            description="Re-render the summary block of a previously saved JSON report.",
         )
     )
 
@@ -352,6 +346,8 @@ def _run_bench(ns: argparse.Namespace) -> int:
         .with_metric(Time())
         .with_runs(ns.runs)
     )
+
+    # TODO: default like hyperfine - 10 runs or 3 seconds
     if ns.timeout is not None:
         b = b.with_timeout(ns.timeout)
     if ns.warmup > 0:
@@ -359,17 +355,9 @@ def _run_bench(ns: argparse.Namespace) -> int:
     s = suite("bench", b)
 
     metrics = {ns.metric} if ns.metric else None
-    summary_reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
-    rep = _build_reporter(
-        ns, summary_reporter, with_progress=not ns.dry and not ns.quiet
-    )
+    reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
 
-    runner = _make_runner(ns, rep)
-    try:
-        runner.run(plan([s], None), None)
-    except KeyboardInterrupt:
-        console.print("[benchr.failure]Interrupted[/]")
-        return 1
+    _do_run([s], ns, reporter, None)
     return 0
 
 
@@ -402,34 +390,13 @@ def _run_compare(ns: argparse.Namespace) -> int:
         if out:
             console.print(out)
         return 0
+    # TODO: fix - should be all against baseline
+    #
     # First file is the baseline; rest are comparees. Summarize the *last*
     # file ("current") against the baseline, plus all intermediates as
     # additional comparees.
     current = report_from_json(files[-1].read_text())
     data = build_summary(current, files[:-1])
-    out = DefaultSummary(metrics=metrics).format(data)
-    if out:
-        console.print(out)
-    return 0
-
-
-# ----- show ---------------------------------------------------------------
-
-
-def _show_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument("file")
-    p.add_argument("--metric", type=str, default=None)
-    p.set_defaults(_func=_run_show)
-
-
-def _run_show(ns: argparse.Namespace) -> int:
-    path = Path(ns.file)
-    if not path.exists():
-        print(f"Error: file not found: {path}", file=sys.stderr)
-        return 1
-    r = report_from_json(path.read_text())
-    metrics = set(ns.metric.split(",")) if ns.metric else None
-    data = build_summary(r, [])
     out = DefaultSummary(metrics=metrics).format(data)
     if out:
         console.print(out)

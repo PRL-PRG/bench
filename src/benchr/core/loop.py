@@ -1,16 +1,14 @@
-"""benchmarking_loop: the essential core of a benchmark.
+"""benchmarking_loop: the core of a benchmark.
 
 A benchmark, stripped of all mechanism, is a *feedback loop*: observe one
 run's samples, let a stopping policy decide whether to keep going, and note
-where warmup ends. ``benchmarking_loop`` is that loop and nothing else — it
-knows nothing about processes or where observations come from.
+where warmup ends.
 
-Protocol: the generator yields ``(run, in_warmup)`` — "give me observation
-number ``run``; it is (not) a warmup run" — and the caller ``send()``s back
-the parsed Samples (``None`` is treated as an empty observation). Run numbers
-are continuous across warmup and measurement (warmup 1..W, measured W+1..N);
-the caller sees warmup end when ``in_warmup`` flips to False. The generator
-returns when the ``runs`` policy has converged.
+Protocol: the generator yields ``in_warmup`` — True while taking warmup runs,
+False once measuring — and the caller ``send()``s back that run's
+``RunResult``. The caller owns run numbering; it sees warmup end when
+``in_warmup`` flips to False. The generator returns when the ``runs`` policy
+has converged.
 """
 
 from __future__ import annotations
@@ -18,22 +16,24 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from benchr.core.policy import StoppingPolicy
-from benchr.core.sample import Sample
+from benchr.core.sample import RunResult
 
 
 def benchmarking_loop(
     warmup: StoppingPolicy,
     runs: StoppingPolicy,
-) -> Generator[tuple[int, bool], list[Sample] | None, None]:
-    """Yield ``(run, in_warmup)`` slots until both policies converge.
+) -> Generator[bool, RunResult, None]:
+    """Yield ``in_warmup`` per slot until both policies converge.
 
-    Every observation — including an empty one for a failed run — counts:
+    Every observation — including a failed run (empty samples) — counts:
     the active policy observes it and decides.
+
+    Note: the reason we yield in_warmup is that the controller who calls this
+    generator has no way of knowing whether we have already passed the warmup
+    or not (warmup can be a variable-length policy, e.g. CoV).
     """
-    run = 0
     for policy, in_warmup in ((warmup, True), (runs, False)):
         state = policy.start()
-        while not state.converged():
-            run += 1
-            samples = yield (run, in_warmup)
-            state.observe(run, samples or ())
+        while not state.satisfied():
+            result = yield in_warmup
+            state.observe(result)

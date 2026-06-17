@@ -1,8 +1,12 @@
 """Sample, RunRecord, Report, and JSON round-trip."""
 
+import json
+from pathlib import Path
 from typing import Any
 
 from benchr import Report, RunRecord, Sample, report_from_json, report_to_json
+from benchr.core.execution import Execution, ScheduledExecution
+from benchr.core.sample import RunResult
 
 
 def _run(variant=(), **kw) -> RunRecord:
@@ -50,12 +54,8 @@ def test_json_round_trip():
     assert r2.warmups == {"S/B": 2}
 
 
-from benchr.core.sample import RunResult, RunRecord, Sample
-from benchr.core.execution import Execution, ScheduledExecution
-
-
 def _template():
-    return ScheduledExecution(execution=Execution(command=("x",), cwd=__import__("pathlib").Path("/")),
+    return ScheduledExecution(execution=Execution(command=("x",), cwd=Path("/")),
                               suite="S", benchmark="b", variant=(), variant_label="", run=1)
 
 
@@ -74,7 +74,6 @@ def test_runrecord_from_run_result_failure_carries_message():
 
 
 def test_report_metadata_roundtrips_json():
-    from benchr.core.sample import Report, report_to_json, report_from_json
     r = Report()
     r.metadata["S/b"] = [Sample("max_rss", 1024.0, unit="kB")]
     back = report_from_json(report_to_json(r))
@@ -82,14 +81,11 @@ def test_report_metadata_roundtrips_json():
 
 
 def test_old_json_without_metadata_structures():
-    from benchr.core.sample import report_from_json
     r = report_from_json('{"runs": [], "warmups": {}}')
     assert r.metadata == {}
 
 
 def test_pre_v4_json_drops_warmup_runs():
-    import json
-
     old = json.dumps({"runs": [
         {"suite": "S", "benchmark": "B", "variant": [], "run": 1,
          "phase": "warmup", "command": ["x"], "returncode": 0, "runtime": 0.1,

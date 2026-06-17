@@ -1,7 +1,10 @@
 """Formatter output snapshots."""
 
 import re
+from io import StringIO
 from pathlib import Path
+
+from rich.console import Console
 
 from benchr import (
     Compact, DefaultSummary, Report, RunRecord, Sample, report_to_json,
@@ -178,10 +181,6 @@ def test_default_summary_ranking_uses_higher_for_higher_is_better():
 def test_default_summary_unit_label_survives_rich_markup():
     # The "[ms]" unit tag must be escaped, otherwise rich eats it as a
     # markup tag and the rendered summary loses the unit.
-    from io import StringIO
-
-    from rich.console import Console
-
     r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     out = DefaultSummary()(r)
     buf = StringIO()

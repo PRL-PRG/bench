@@ -2,7 +2,7 @@
 
 Every metric is a frozen dataclass carrying an optional ``direction``
 (lower / higher / none) and an optional ``predicate`` (run only when it holds).
-Concrete metrics implement ``_extract``; the base ``process`` applies the
+Concrete metrics implement ``extract``; the base ``process`` applies the
 predicate (skip when false) and stamps the direction onto each Sample.
 ``.lower_is_better()`` / ``.higher_is_better()`` / ``.when(pred)`` return a copy
 with that field set.
@@ -52,13 +52,13 @@ class Metric(abc.ABC):
     predicate: Predicate | None = dataclasses.field(default=None, kw_only=True)
 
     @abc.abstractmethod
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         """Parse the raw samples; ``process`` applies direction + predicate."""
 
     def process(self, result: ExecutionResult) -> Iterator[Sample]:
         if self.predicate is not None and not self.predicate(result):
             return
-        for s in self._extract(result):
+        for s in self.extract(result):
             if self.direction is None:
                 yield s
             else:
@@ -120,7 +120,7 @@ class FloatPerLine(Metric):
         if self.line == 0:
             raise ValueError("line must be non-zero")
 
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure() or not result.stdout:
             return
         lines = [s for s in (ln.strip() for ln in result.stdout.split("\n")) if s]
@@ -169,7 +169,7 @@ class Regex(Metric):
         if isinstance(self.regex, str):
             object.__setattr__(self, "regex", re.compile(self.regex))
 
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure():
             return
         pattern = self.regex
@@ -212,7 +212,7 @@ class Rebench(Metric):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.is_failure() or not result.stdout:
             return
         for line in result.stdout.split("\n"):
@@ -251,7 +251,7 @@ class RUsage(Metric):
     metric: str
     unit: str = ""
 
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if result.rusage is None:
             return
         value = float(getattr(result.rusage, self.field))
@@ -279,7 +279,7 @@ class Time(Metric):
         if not (self.elapsed or self.user or self.system):
             raise ValueError("Time() needs at least one of elapsed/user/system")
 
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
         if self.elapsed and result.runtime is not None:
             yield Sample(metric="elapsed", value=result.runtime, unit="s")
         if result.rusage is not None:
@@ -287,20 +287,6 @@ class Time(Metric):
                 yield Sample(metric="user", value=result.rusage.ru_utime, unit="s")
             if self.system:
                 yield Sample(metric="system", value=result.rusage.ru_stime, unit="s")
-
-
-@dataclass(frozen=True)
-class Constant(Metric):
-    """Always emit a fixed sample (e.g. tag every run with a constant marker)."""
-
-    per_process = True
-
-    metric: str
-    value: float
-    unit: str = ""
-
-    def _extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        yield Sample(metric=self.metric, value=self.value, unit=self.unit)
 
 
 def max_rss() -> Metric:

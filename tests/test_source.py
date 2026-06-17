@@ -1,10 +1,13 @@
 """RunSource: CommandSource (pull) and HarnessSource (streaming push)."""
 
-import pytest
+import threading
+import time
 from pathlib import Path
 
-from benchr import Time, FloatPerLine, bench, suite, plan
-from benchr.runner.source import CommandSource, make_source, RunSource
+import pytest
+
+from benchr import FloatPerLine, Time, bench, plan, suite
+from benchr.runner.source import HarnessSource, make_source
 
 
 def _planned(cmd, metric):
@@ -57,11 +60,6 @@ def test_command_source_process_metrics_fold_into_run_samples():
     src.close()
 
 
-def test_command_source_is_a_run_source():
-    p = _planned(["sh", "-c", "echo 1.5"], FloatPerLine(""))
-    assert isinstance(make_source(p, None), (CommandSource, RunSource))
-
-
 # ----- HarnessSource ------------------------------------------------------
 
 
@@ -79,7 +77,6 @@ def test_harness_source_streams_one_run_per_line():
 
 
 def test_harness_source_close_kills_long_process():
-    import time
     p = _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine(""))
     src = make_source(p, None)
     first = src.next()          # blocks until the first line
@@ -135,7 +132,6 @@ def test_harness_source_nonzero_exit_sets_process_failure():
 def test_harness_source_spawn_failure_is_one_failed_event():
     p = _planned_harness(["definitely-not-a-real-command-xyz"], FloatPerLine(""))
     src = make_source(p, None)
-    import pytest
     with pytest.raises(StopIteration):
         src.next()
     events = src.drain_process_events()
@@ -159,6 +155,8 @@ def test_harness_source_process_result_after_exhaustion():
 def test_harness_source_temp_dir_cleaned_up_after_run():
     p = _planned_harness(["sh", "-c", "echo 1.0; echo 2.0"], FloatPerLine(""))
     src = make_source(p, None)
+    assert isinstance(src, HarnessSource)
+    assert src._live is not None
     # Capture the temp dir before draining — _live exists at this point.
     tmp_dir = src._live.stdout_path.parent
     while True:
@@ -174,21 +172,20 @@ def test_harness_source_temp_dir_cleaned_up_after_run():
 def test_harness_source_done_delivered_even_if_finish_raises():
     """_DONE must reach the queue even when _live.finish() raises, so next()
     raises StopIteration rather than hanging forever."""
-    import threading
-
     p = _planned_harness(["sh", "-c", "echo 1.0"], FloatPerLine(""))
     src = make_source(p, None)
+    assert isinstance(src, HarnessSource)
+    live = src._live
+    assert live is not None
 
-    # Wait for the reader thread to start and the process to be live.
     # Monkeypatch finish() to raise after the reader thread is already running.
-    original_finish = src._live.finish
+    original_finish = live.finish
 
     def _raising_finish(**kwargs):
         raise RuntimeError("injected finish failure")
 
-    src._live.finish = _raising_finish
+    live.finish = _raising_finish
 
-    results = []
     stop_iteration_seen = threading.Event()
 
     def drain():
@@ -203,5 +200,5 @@ def test_harness_source_done_delivered_even_if_finish_raises():
     t.start()
     t.join(timeout=5)
     assert stop_iteration_seen.is_set(), "_DONE was not delivered; next() would have hung"
-    src._live.finish = original_finish  # restore so close() can reap cleanly
+    live.finish = original_finish  # restore so close() can reap cleanly
     src.close()

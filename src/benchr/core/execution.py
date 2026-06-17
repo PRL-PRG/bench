@@ -67,7 +67,6 @@ class ExecutionResult:
         return self.failure is not None
 
 
-# TODO: inline the type
 type Verdict = str | None  # None = success; str = failure reason
 type SuccessFn = Callable[[ExecutionResult], Verdict]
 
@@ -105,14 +104,19 @@ def format_variant(variant: Variant) -> str:
     return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
 
 
+def _bench_head(suite: str, benchmark: str) -> str:
+    """``suite/benchmark``, collapsing the stutter when the two names match
+    (common for one-off CLI runs)."""
+    return benchmark if suite == benchmark else f"{suite}/{benchmark}"
+
+
 def record_key(suite: str, benchmark: str, variant: Variant) -> str:
     """Canonical benchmark-variant key: ``suite/benchmark (k=v, …)``.
 
     Built from the variant tuple (never the cosmetic label) so the runner and
     a deserialized report agree. Keys ``Report.warmups``.
     """
-    head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
-    return f"{head}{format_variant(variant)}"
+    return f"{_bench_head(suite, benchmark)}{format_variant(variant)}"
 
 
 def format_identifier(
@@ -122,12 +126,8 @@ def format_identifier(
     run: int,
     variant_label: str = "",
 ) -> str:
-    """Canonical run label: ``suite/benchmark[/label or (k=v, …)] #run``.
-
-    Collapses ``suite/benchmark`` to a single token when the two names match
-    (common for one-off CLI runs).
-    """
-    head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
+    """Canonical run label: ``suite/benchmark[/label or (k=v, …)] #run``."""
+    head = _bench_head(suite, benchmark)
     if variant_label:
         head = f"{head}/{variant_label}"
     else:

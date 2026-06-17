@@ -81,6 +81,10 @@ class _LockedReporter(Reporter):
         with self._lock:
             self._reporter.warmup(key, runs)
 
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        with self._lock:
+            self._reporter.set_metadata(key, samples)
+
 
 class Parallel(Runner):
     """Run up to N benchmark ``Controller``s concurrently on a thread pool.

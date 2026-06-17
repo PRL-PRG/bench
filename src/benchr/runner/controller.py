@@ -61,19 +61,19 @@ class Controller:
         bounded = b.warmup.max_runs() is not None and b.runs.max_runs() is not None
         failure_cap = None if bounded else self.max_consecutive_failures
         consecutive_failures = 0
-        guard = 0
+        run = 0
 
         loop = benchmarking_loop(b.warmup, b.runs)
         try:
-            run, in_warmup = next(loop)
+            in_warmup = next(loop)
         except StopIteration:
             source.close()
             return
 
         try:
             while True:
-                guard += 1
-                if guard > self.max_runs_per_policy * 2:
+                run += 1
+                if run > self.max_runs_per_policy * 2:
                     raise RuntimeError(
                         f"Benchmark {b.name!r} exceeded max_runs_per_policy backstop "
                         f"({self.max_runs_per_policy}); did you forget .at_most(N)?"
@@ -96,27 +96,28 @@ class Controller:
                     failure_cap is not None and consecutive_failures >= failure_cap
                 ):
                     if in_warmup:
-                        report.warmup(key, run)
-                        self.reporter.warmup(key, run)
+                        self._mark_warmup(report, key, run)
                     return
 
                 try:
-                    next_run, next_warmup = loop.send(rr.samples)
+                    next_warmup = loop.send(rr)
                 except StopIteration:
                     if in_warmup:
-                        report.warmup(key, run)
-                        self.reporter.warmup(key, run)
+                        self._mark_warmup(report, key, run)
                     return
                 if in_warmup and not next_warmup:
-                    report.warmup(key, run)
-                    self.reporter.warmup(key, run)
-                run, in_warmup = next_run, next_warmup
+                    self._mark_warmup(report, key, run)
+                in_warmup = next_warmup
         finally:
             source.close()
             self._flush_process_events(source)
             md = source.metadata()
             if md:
                 report.set_metadata(key, md)
+                self.reporter.set_metadata(key, md)
+                if self.verbose:
+                    dump = ", ".join(f"{s.metric}={s.value}{s.unit}" for s in md)
+                    print(f"{key} metadata: {dump}")
 
     # ----- helpers -----
 
@@ -126,6 +127,11 @@ class Controller:
         rec = RunRecord.from_run_result(template, run, rr)
         report.add(rec)
         self.reporter.record(rec)
+
+    def _mark_warmup(self, report: Report, key: str, run: int) -> None:
+        """Record (once) that this variant's first ``run`` runs were warmup."""
+        report.warmup(key, run)
+        self.reporter.warmup(key, run)
 
     def _flush_process_events(self, source: RunSource) -> None:
         for sched, result in source.drain_process_events():

@@ -235,13 +235,20 @@ get:
       ]
     }
   ],
-  "warmups": {}
+  "warmups": {},
+  "metadata": {}
 }
 ```
 
 `warmups` maps a benchmark-variant key to the number of its leading runs that
 were warmup (only non-zero entries; here none) — that is how a reloaded
 report, e.g. a `--compare` baseline, knows which runs the stats must drop.
+
+`metadata` maps a benchmark-variant key to its whole-process metric samples:
+the per-process metrics (e.g. `Time()`, `max_rss()`) of a *harness* benchmark,
+which measure the single long-running process rather than one iteration. It is
+empty for ordinary runs, where those metrics fold into each run's own samples.
+`benchr … -v` also prints this block after each harness benchmark.
 
 Programmatically:
 
@@ -283,7 +290,7 @@ from benchr import FloatPerLine, Time, max_rss
 ```
 
 Built-in metric builders exported from `benchr`: `Time`, `Regex`,
-`FloatPerLine`, `Rebench`, `RUsage`, `Constant`, `max_rss()`. See
+`FloatPerLine`, `Rebench`, `RUsage`, `max_rss()`. See
 [`src/benchr/core/metric.py`](src/benchr/core/metric.py) for the full
 list and [`examples/custom_metric.py`](examples/custom_metric.py) to
 write your own.
@@ -385,14 +392,16 @@ factory_demo/tiny #1
 
 A benchmark's `.with_matrix(**dims)` declares the dimensions that vary; the
 cartesian product of dimension values produces the *variants* of that benchmark.
-Variant values reach `with_command` / `add_matrix_skip` callables as attributes on
-the benchmark (`b.compiler`, `b.opt`).
+Variant values reach `with_command` / `with_cwd` / `with_env` callables via
+`ctx.matrix` (`ctx.matrix.compiler`, `ctx.matrix.opt`); `add_matrix_skip` /
+`with_label` callables instead receive the variant-stamped benchmark and read
+them as attributes (`b.compiler`, `b.opt`).
 
 ```python
 from benchr import Regex, bench, suite
 
-def cmd(b, ctx):
-    return ["sh", "-c", f"echo {b.compiler}-{b.opt}: $((RANDOM%50+50))"]
+def cmd(ctx):
+    return ["sh", "-c", f"echo {ctx.matrix.compiler}-{ctx.matrix.opt}: $((RANDOM%50+50))"]
 
 suite("compile_matrix")
     .add(
@@ -442,14 +451,15 @@ the root depends on `ctx` (resolved after CLI parsing):
 from benchr import FloatPerLine, from_files, suite
 
 suite("LoxSuite")
-    .factory(lambda ctx: from_files(ctx.cwd / "benchmarks", pattern=r"\.lox$"))
-    .with_command(lambda b, ctx: [str(ctx.lox), str(b.path)])
+    .factory(lambda ctx: from_files(ctx.params.root / "benchmarks", pattern=r"\.lox$"))
+    .with_command(lambda ctx: [str(ctx.params.lox), str(ctx.matrix.path)])
     .with_runs(10)
     .with_metric(FloatPerLine("s").last_line().lower_is_better())
 ```
 
-`b.path` is set on each discovered benchmark; access any user data via
-`benchmark.<attr>`. See [`examples/discovery.py`](examples/discovery.py),
+`path` is set on each discovered benchmark: read it as `ctx.matrix.path` in
+command/cwd/env callables (or `b.path` on the benchmark itself in skip/label
+callables). See [`examples/discovery.py`](examples/discovery.py),
 [`examples/external/lox.py`](examples/external/lox.py),
 [`examples/external/rcp.py`](examples/external/rcp.py).
 
@@ -465,9 +475,9 @@ The harness must be told how many iterations to run; derive the count in the
 command fn from the policies:
 
 ```python
-def vm_command(b, ctx):
-    n = b.warmup.max_runs() + b.runs.max_runs()
-    return [str(ctx.vm), str(b.path), "-n", str(n)]
+def vm_command(ctx):
+    n = ctx.warmup.max_runs() + ctx.runs.max_runs()
+    return [str(ctx.params.vm), str(ctx.matrix.path), "-n", str(n)]
 
 suite("vm", *from_files("benchmarks", pattern=r"\.lox$"))
     .with_command(vm_command)
@@ -550,7 +560,7 @@ from benchr import Sequential, Time, bench, plan, suite
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
      .with_metric(Time()).with_runs(3))
 
-report = Sequential().run(plan([s], None), ctx=None)
+report = Sequential().run(plan([s], None), None)
 for run in report.runs:
     for sample in run.samples:
         print(run.benchmark, run.run, sample.metric, sample.value)
@@ -562,21 +572,22 @@ print("failures:", report.failures)
 ## User parameters (`ctx`)
 
 A script declares CLI flags as a `@dataclass`. `run(..., params=Cls)` builds
-argparse flags from the field annotations and passes a typed instance to every
-builder lambda as `ctx`.
+argparse flags from the field annotations and exposes the typed instance to
+every builder callable as `ctx.params` (on the `Context` passed as the single
+argument).
 
 ```python
 from dataclasses import dataclass
 from pathlib import Path
-from benchr import Time, bench, run, suite
+from benchr import Context, Time, bench, run, suite
 
 @dataclass
 class Params:
     binary: Path             # required  -> --binary PATH
     size: int = 100          # optional  -> --size INT   (default: 100)
 
-def cmd(b, ctx: Params):
-    return [str(ctx.binary), str(ctx.size)]
+def cmd(ctx: Context[Params]):
+    return [str(ctx.params.binary), str(ctx.params.size)]
 
 run(
     suite("s", bench("x")).with_command(cmd).with_metric(Time()),
@@ -598,8 +609,8 @@ benchr bench   [--runs N] [--warmup N] [--timeout T] [--jobs J] [--quiet] [--dry
                [--json F] [--csv F] [--dir D] [--compare base.json ...]
                [--metric M] CMD1 CMD2 ...
 
-benchr compare a.json b.json ...   [--metric m1,m2]   # first file = baseline
-benchr show    out.json            [--metric m]
+benchr compare a.json b.json ...   [--metric m1,m2]   # first file = baseline;
+                                                       # a single file just summarizes
 ```
 
 A benchmark script built with `run(...)` accepts the same benchr flags plus its
@@ -621,7 +632,7 @@ points left.
 ```
 src/benchr/
     __init__.py            public re-exports
-    cli.py                 run() entry point + bench/compare/show
+    cli.py                 run() entry point + bench/compare
     core/                  pure mechanism + pure data; imports nothing from benchr
         execution.py       Execution, ExecutionResult, ScheduledExecution,
                            Variant, TIMEOUT_RC, SPAWN_FAIL_RC

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from benchr import (
+    CoefficientOfVariation,
     CompositeReporter,
     CsvReporter,
     Dry,
@@ -91,8 +92,6 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
 
 
 def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Path):
-    from benchr import CoefficientOfVariation
-
     s = suite(
         "F",
         bench("bad")
@@ -112,8 +111,6 @@ def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Pa
 
 
 def test_abort_during_warmup_still_records_warmup_count(tmp_path: Path):
-    from benchr import CoefficientOfVariation
-
     s = suite(
         "F",
         bench("bad")
@@ -151,8 +148,6 @@ def test_parallel_runs_convergence_benchmarks():
     # Per-benchmark parallelism: each CoV benchmark drives its own Controller,
     # so convergence-driven policies run fine under Parallel (the old
     # "rejects unbounded" rule is gone).
-    from benchr import CoefficientOfVariation
-
     s = suite(
         "U",
         *[
@@ -255,8 +250,6 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
 
 
 def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
-    from benchr import CoefficientOfVariation
-
     s = suite(
         "X",
         bench("a")
@@ -317,8 +310,6 @@ def _no_leftover_sleep_children() -> bool:
 
 
 def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
-    import pytest
-
     s = suite(
         "S",
         bench("slow")
@@ -350,8 +341,6 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
 
 
 def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
-    import pytest
-
     s = suite(
         "S",
         *[
@@ -382,8 +371,6 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
 
 
 def test_sigint_kills_shell_wrapped_subtree():
-    import pytest
-
     s = suite(
         "S",
         bench("wrapped")

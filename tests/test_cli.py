@@ -68,10 +68,10 @@ def test_compare_subcommand(tmp_path: Path):
     assert "Summary" in r.stdout or "better" in r.stdout or "worse" in r.stdout
 
 
-def test_show_subcommand(tmp_path: Path):
+def test_compare_single_file_summarizes(tmp_path: Path):
     out = tmp_path / "out.json"
     _run("bench", "--runs", "2", "--json", str(out), "sleep 0.01")
-    r = _run("show", str(out))
+    r = _run("compare", str(out))
     assert r.returncode == 0, r.stderr
     assert "elapsed" in r.stdout
 
@@ -85,8 +85,8 @@ def test_bench_compare_warns_or_diffs(tmp_path: Path):
     assert "Summary" in r.stdout or "geometric mean" in r.stdout or "better" in r.stdout or "worse" in r.stdout
 
 
-def test_show_missing_file_errors(tmp_path: Path):
-    r = _run("show", str(tmp_path / "nope.json"))
+def test_compare_missing_file_errors(tmp_path: Path):
+    r = _run("compare", str(tmp_path / "nope.json"))
     assert r.returncode == 1
     assert "not found" in r.stderr
 
@@ -97,14 +97,14 @@ def test_bench_help_describes_subcommand():
     assert "Time one or more shell commands" in r.stdout
     # Per-flag descriptions show up:
     assert "Measured run count" in r.stdout
-    assert "Suppress the live progress" in r.stdout
+    assert "Suppress the progress bar" in r.stdout
 
 
-def test_bench_quiet_omits_progress_lines():
-    r = _run("bench", "--quiet", "--runs", "2", "sleep 0.01")
+def test_bench_no_progress_omits_progress_lines():
+    r = _run("bench", "--no-progress", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
     # Plain-progress lines look like "[N|M] bench/sleep 0.01 #X ok".
-    # With --quiet they should not appear.
+    # With --no-progress they should not appear.
     assert "[1|2]" not in r.stdout
     assert "[2|2]" not in r.stdout
     # Summary still prints.
@@ -129,7 +129,7 @@ def test_bench_surfaces_failure_diagnostics():
 
 
 def test_bench_two_commands_prints_summary_ranking():
-    r = _run("bench", "--quiet", "--runs", "3", "sleep 0.01", "sleep 0.05")
+    r = _run("bench", "--no-progress", "--runs", "3", "sleep 0.01", "sleep 0.05")
     assert r.returncode == 0, r.stderr
     assert "Summary" in r.stdout
     assert "was" in r.stdout

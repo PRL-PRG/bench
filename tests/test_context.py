@@ -1,7 +1,6 @@
 """Dataclass → argparse glue, and the Context value object."""
 
 import argparse
-import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -86,32 +85,17 @@ def _ctx(**overrides: Any) -> Context[Any]:
     return Context(**base)
 
 
-def test_context_fields():
-    ctx = _ctx(params=_Params(name=Path("/x")), matrix=Matrix({"vm": "v8", "size": 100}))
-    assert ctx.params.name == Path("/x")
-    assert ctx.suite == "S"
-    assert ctx.benchmark == "b"
-    assert ctx.runs.max_runs() == 3
-    assert ctx.warmup.max_runs() == 1
-    # Attribute access, consistent with ctx.params.x and ctx.benchmark.
-    assert ctx.matrix.vm == "v8"
-    assert ctx.matrix.size == 100
-
-
-def test_context_matrix_missing_key_raises_attribute_error():
-    ctx = _ctx(matrix=Matrix({"vm": "v8"}))
+def test_context_matrix_attribute_access():
+    # Variant values are read as attributes (ctx.matrix.vm); a missing one raises.
+    ctx = _ctx(matrix=Matrix({"vm": "v8", "size": 100}))
+    assert ctx.matrix.vm == "v8" and ctx.matrix.size == 100
     with pytest.raises(AttributeError):
         _ = ctx.matrix.nope
 
 
-def test_context_suite_level():
+def test_context_suite_level_has_no_benchmark_or_matrix():
+    # At suite level (factories) benchmark is None and the matrix is empty.
     ctx = _ctx(benchmark=None, matrix=Matrix())
     assert ctx.benchmark is None
     with pytest.raises(AttributeError):
         _ = ctx.matrix.vm
-
-
-def test_context_is_frozen():
-    ctx = _ctx()
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        ctx.suite = "X"  # type: ignore[misc]

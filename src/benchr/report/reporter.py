@@ -29,6 +29,7 @@ from benchr.core.execution import (
 from benchr.core.sample import (
     Report,
     RunRecord,
+    Sample,
     report_to_json,
 )
 from benchr.report.theme import BENCHR_THEME, console
@@ -64,6 +65,12 @@ class Reporter(abc.ABC):
         drop those runs; streaming reporters may ignore it."""
         pass
 
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        """Called once per harness benchmark variant with its whole-process
+        metric samples (see ``Report.metadata``). Buffering reporters store
+        them so file outputs include them; streaming reporters may ignore it."""
+        pass
+
     def finalize(self) -> None:
         pass
 
@@ -84,6 +91,10 @@ class _BufferingReporter(Reporter):
     def warmup(self, key: str, runs: int) -> None:
         with self._lock:
             self._report.warmup(key, runs)
+
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        with self._lock:
+            self._report.set_metadata(key, samples)
 
 
 class CompositeReporter(Reporter):
@@ -107,6 +118,10 @@ class CompositeReporter(Reporter):
     def warmup(self, key: str, runs: int) -> None:
         for r in self.reporters:
             r.warmup(key, runs)
+
+    def set_metadata(self, key: str, samples: list[Sample]) -> None:
+        for r in self.reporters:
+            r.set_metadata(key, samples)
 
     def finalize(self) -> None:
         for r in self.reporters:

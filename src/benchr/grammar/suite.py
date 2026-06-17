@@ -40,7 +40,6 @@ import dataclasses
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any
 
 from benchr.grammar.benchmark import (
@@ -56,6 +55,8 @@ from benchr.grammar.benchmark import (
     coerce_cwd,
     coerce_env,
     default_label,
+    make_skip_rule,
+    normalize_matrix,
 )
 from benchr.grammar.context import Context, Matrix
 from benchr.core.execution import (
@@ -86,9 +87,6 @@ def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
 def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
     """Lazy per-key merge: ``base`` first, ``override`` wins (suite ⊕ benchmark)."""
     return lambda ctx: {**base(ctx), **override(ctx)}
-
-
-# TODO: is it better to use tuple[X, ...] instead of list[X] ?
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,12 +199,7 @@ class Suite:
         benchmark's own (so per-benchmark dimensions still compose with
         suite-level ones). See ``Benchmark.with_matrix``.
         """
-        for name in dims:
-            if name.startswith("_"):
-                raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
-        return dataclasses.replace(
-            self, matrix=tuple((name, tuple(values)) for name, values in dims.items())
-        )
+        return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
     def add_matrix_skip(
         self,
@@ -219,12 +212,9 @@ class Suite:
         Same shape as ``Benchmark.add_matrix_skip``: kwargs are AND-matched against
         dimension values, optional ``predicate(bench) -> bool`` for complex cases.
         """
-        if predicate is None and not kwargs:
+        rule = make_skip_rule(predicate, kwargs)
+        if rule is None:
             return self
-        rule = SkipRule(
-            kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
-            predicate=predicate,
-        )
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
     def materialize(self, params: Any) -> list[Benchmark]:

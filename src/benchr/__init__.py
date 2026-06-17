@@ -20,7 +20,6 @@ from benchr.core.sample import (
 
 # Metrics
 from benchr.core.metric import (
-    Constant,
     FloatPerLine,
     Metric,
     Rebench,
@@ -33,7 +32,6 @@ from benchr.core.metric import (
 # Stopping policies
 from benchr.core.policy import (
     CoefficientOfVariation,
-    Custom,
     FixedRuns,
     PolicyState,
     StoppingPolicy,
@@ -85,10 +83,10 @@ __all__ = [
     "Sample", "RunRecord", "RunResult", "Report", "report_from_json", "report_to_json",
     # Metrics
     "Metric",
-    "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "Constant", "max_rss",
+    "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "max_rss",
     # Policies
     "StoppingPolicy", "PolicyState",
-    "FixedRuns", "CoefficientOfVariation", "Custom",
+    "FixedRuns", "CoefficientOfVariation",
     # Benchmark / Suite
     "Benchmark", "bench",
     "default_label", "from_files",

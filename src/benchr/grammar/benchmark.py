@@ -175,6 +175,28 @@ _MISSING = object()
 type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFn
 
 
+def normalize_matrix(
+    dims: Mapping[str, Sequence[Any]],
+) -> tuple[tuple[str, tuple[Any, ...]], ...]:
+    """Validate dimension names and freeze ``{name: values}`` into the canonical
+    ``((name, (v, …)), …)`` tuple shared by ``Benchmark`` and ``Suite``."""
+    for name in dims:
+        if name.startswith("_"):
+            raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
+    return tuple((name, tuple(values)) for name, values in dims.items())
+
+
+def make_skip_rule(predicate: SkipFn | None, kwargs: Mapping[str, Any]) -> SkipRule | None:
+    """Build a ``SkipRule`` from a predicate and/or AND-matched kwargs; ``None``
+    when neither is given (the caller then leaves its skip list untouched)."""
+    if predicate is None and not kwargs:
+        return None
+    return SkipRule(
+        kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
+        predicate=predicate,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Benchmark:
     """A named, frozen benchmark.
@@ -310,12 +332,7 @@ class Benchmark:
         read them via ``ctx.matrix.vm``, while ``add_matrix_skip`` predicates
         receive the benchmark and read them as ``b.vm``.
         """
-        for name in dims:
-            if name.startswith("_"):
-                raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
-        return dataclasses.replace(
-            self, matrix=tuple((name, tuple(values)) for name, values in dims.items())
-        )
+        return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
     def add_matrix_skip(
         self,
@@ -335,12 +352,9 @@ class Benchmark:
         Multiple ``.add_matrix_skip(...)`` calls compose as OR (any rule may drop a
         variant).
         """
-        if predicate is None and not kwargs:
+        rule = make_skip_rule(predicate, kwargs)
+        if rule is None:
             return self
-        rule = SkipRule(
-            kwargs=MappingProxyType(dict(kwargs)) if kwargs else EMPTY_MAPPING,
-            predicate=predicate,
-        )
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
     def with_label(self, fn: LabelFn) -> Benchmark:

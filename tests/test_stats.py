@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from benchr import Report, RunRecord, Sample
+from benchr import Report, RunRecord, Sample, report_to_json
 from benchr.report.stats import (
     build_summary, geomean_with_sigma, group,
     metric_ratio, metric_stats, scale_unit,
@@ -146,7 +146,6 @@ def test_build_summary_with_no_baseline():
 
 
 def test_build_summary_with_baseline(tmp_path: Path):
-    from benchr import report_to_json
     baseline = Report(runs=[
         _run(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)
     ])

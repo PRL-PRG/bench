@@ -1,10 +1,12 @@
 """Harness benchmarks: one execution, many run records."""
 
+import time
 from pathlib import Path
 
 from benchr import (
-    CoefficientOfVariation, Context, Dry, FloatPerLine, Parallel, Regex,
-    Sequential, Time, bench, line_monitor, plan, run, suite,
+    CoefficientOfVariation, Context, Dry, FloatPerLine, JsonReporter, Parallel,
+    Regex, Sequential, Time, bench, line_monitor, plan, report_from_json, run,
+    suite,
 )
 
 
@@ -40,7 +42,7 @@ def test_bench_level_with_harness_in_command_suite():
 
 
 
-# ----- max_iterations / harness_iterations (Task 13) -----------------------
+# ----- max_iterations / harness_iterations -----------------------
 
 
 def test_harness_allows_cov_warmup_with_max_iterations():
@@ -78,12 +80,10 @@ def test_harness_iterations_exposed_on_context():
     assert seen["n"] == 7
 
 
-# ----- streaming kill integration (Task 14) ---------------------------------
+# ----- streaming kill integration ---------------------------------
 
 
 def test_harness_killed_when_policy_converges_before_max_iterations():
-    import time
-
     # emits constant 1.0 ~20/sec; CoV warmup converges fast, then FixedRuns(2) measured
     cmd = ["sh", "-c", "for i in $(seq 1000); do echo 1.0; sleep 0.05; done"]
     s = (
@@ -215,7 +215,7 @@ def test_runs_flag_reaches_harness_command_fn():
         .with_runs(5)
         .with_harness()
     )
-    report = run(s, argv=["--runs", "2", "--warmup", "1", "--quiet"])
+    report = run(s, argv=["--runs", "2", "--warmup", "1", "--no-progress"])
     assert [r.run for r in report.runs] == [1, 2, 3]
     assert report.warmups == {"H/a": 1}
     assert report.failures == []
@@ -229,6 +229,18 @@ def test_harness_process_metric_lands_in_metadata():
     # per-iteration samples are FloatPerLine; Time() is whole-process metadata
     assert all(all(smp.metric != "elapsed" for smp in r.samples) for r in report.runs)
     assert any(smp.metric == "elapsed" for smp in report.metadata["H/a"])
+
+
+def test_harness_metadata_reaches_json_file(tmp_path: Path):
+    # Metadata must travel through the Reporter chain to file sinks, not only
+    # the returned Report — otherwise --json drops whole-process metrics.
+    out = tmp_path / "r.json"
+    s = (suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
+         .with_cwd(Path("/tmp")).with_metric(FloatPerLine("ms"), Time())
+         .with_runs(2).with_harness())
+    Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
+    loaded = report_from_json(out.read_text())
+    assert any(smp.metric == "elapsed" for smp in loaded.metadata["H/a"])
 
 
 # ----- runners ----------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Shared test fixtures and helpers for the v2 test suite."""
+"""Shared test fixtures and helpers."""
 
 from pathlib import Path
 from types import SimpleNamespace

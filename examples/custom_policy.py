@@ -9,28 +9,39 @@
 """Writing a custom StoppingPolicy.
 
 Stop as soon as we've seen the value '1' on the ``READY`` metric for three
-consecutive runs. Demonstrates inheriting from ``PolicyState`` and using
-``Custom`` to wrap a state factory.
+consecutive runs. Demonstrates inheriting from ``StoppingPolicy`` (the frozen
+config) and ``PolicyState`` (the per-run observer whose ``observe`` returns
+whether the policy has converged).
 """
 
-from benchr import Custom, PolicyState, Regex, bench, run, suite
+from dataclasses import dataclass
+
+from benchr import PolicyState, Regex, StoppingPolicy, bench, run, suite
 
 
-class ConsecutiveReady(PolicyState):
-    def __init__(self, n: int = 3):
+class _ConsecutiveReadyState(PolicyState):
+    def __init__(self, n: int):
         self.target = n
         self.cur = 0
 
-    def observe(self, run, samples):
-        for s in samples:
+    def observe(self, result):
+        for s in result.samples:
             if s.metric == "READY" and s.value == 1.0:
                 self.cur += 1
                 break
         else:
             self.cur = 0  # reset on a run without READY=1
 
-    def converged(self) -> bool:
+    def satisfied(self):
         return self.cur >= self.target
+
+
+@dataclass(frozen=True)
+class ConsecutiveReady(StoppingPolicy):
+    n: int = 3
+
+    def start(self) -> _ConsecutiveReadyState:
+        return _ConsecutiveReadyState(self.n)
 
 
 # Script "warms up" for a few runs (printing READY=0), then becomes READY.
@@ -49,7 +60,7 @@ s = (
         bench("p")
             .with_command(["bash", "-c", SCRIPT])
             .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
-            .with_runs(Custom(lambda: ConsecutiveReady(n=3)).at_most(20))
+            .with_runs(ConsecutiveReady(n=3).at_most(20))
     )
 )
 

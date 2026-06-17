@@ -1,8 +1,12 @@
 """Metric builtins and combinators."""
 
 import re
+from pathlib import Path
 
-from benchr import Constant, FloatPerLine, Rebench, Regex, Time, max_rss
+from benchr import (
+    Execution, ExecutionResult, FloatPerLine, RUsage, Rebench, Regex, Time, max_rss,
+)
+from benchr.core.metric import extract_process, extract_run, partition_metrics
 
 from conftest import make_failure, make_rusage, make_success
 
@@ -41,9 +45,11 @@ def test_direction_decorator():
 
 
 def test_when_predicate():
-    proc = Constant("x", 1.0).when(lambda pr: pr.stdout == "yes\n")
-    assert list(proc.process(make_success(stdout="yes\n")))
-    assert not list(proc.process(make_success(stdout="no\n")))
+    # .when() gates the whole metric: "2.0" would parse, but the predicate is
+    # false, so it emits nothing.
+    proc = FloatPerLine("s").when(lambda pr: pr.stdout == "1.0\n")
+    assert list(proc.process(make_success(stdout="1.0\n")))
+    assert not list(proc.process(make_success(stdout="2.0\n")))
 
 
 def test_regex_unit_in_pattern_or_arg():
@@ -88,8 +94,6 @@ def test_regex_unit_defaults_to_empty():
 
 
 # The run/process distinction is a `per_process` flag on each metric.
-from benchr import RUsage, FloatPerLine, Rebench
-from benchr.core.metric import partition_metrics
 
 
 def test_builtin_metric_scopes():
@@ -100,13 +104,10 @@ def test_builtin_metric_scopes():
     assert RUsage("ru_maxrss", "m").per_process is True
 
 
-def test_lower_is_better_preserves_scope():
+def test_builder_methods_preserve_scope():
+    # .lower_is_better()/.when() return copies that keep per_process.
     assert RUsage("ru_maxrss", "m").lower_is_better().per_process is True
     assert Regex("t", r"(\d+)").lower_is_better().per_process is False
-    assert max_rss().per_process is True
-
-
-def test_when_preserves_scope():
     assert Time().when(lambda r: True).per_process is True
     assert FloatPerLine().when(lambda r: True).per_process is False
 
@@ -116,14 +117,9 @@ def test_partition_metrics():
     assert len(run) == 1 and len(proc) == 2
 
 
-# Task 2: extract_run / extract_process
 def test_extract_run_and_process_filter_by_kind():
-    from benchr.core.metric import extract_run, extract_process
-    from benchr import ExecutionResult, Execution
-    from pathlib import Path
     res = ExecutionResult(execution=Execution(command=("x",), cwd=Path("/")),
-                          returncode=0, stdout="3.0\n", runtime=1.5,
-                          rusage=None)
+                          returncode=0, stdout="3.0\n", runtime=1.5, rusage=None)
     runs = list(extract_run([FloatPerLine(), Time()], res))
     procs = list(extract_process([FloatPerLine(), Time()], res))
     assert [s.metric for s in runs] == ["runtime"]      # FloatPerLine only

@@ -27,7 +27,6 @@ class _NoopReporter(Reporter):
 # ---------------------------------------------------------------------------
 
 
-# TODO: can we get rid of this class
 @dataclass(slots=True)
 class PlannedBenchmark:
     """A Benchmark associated with the suite name it belongs to."""
@@ -45,7 +44,6 @@ class SuiteMaterializationError(Exception):
         super().__init__(self._format())
 
     def _format(self) -> str:
-        # TODO: replace self.cause with better formatter error message in case of CalledProcessError
         lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
         if isinstance(self.cause, subprocess.CalledProcessError):
             out = self.cause.output or self.cause.stderr

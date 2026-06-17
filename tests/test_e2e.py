@@ -47,7 +47,7 @@ def test_e2e_runs_flag_overrides_every_benchmark():
         bench("b").with_command(["sleep", "0.01"]).with_cwd(Path("/tmp"))
             .with_metric(Time()).with_runs(1),
     )
-    report = run(s, argv=["--runs", "2", "--quiet"])
+    report = run(s, argv=["--runs", "2", "--no-progress"])
     per_bench: dict[str, int] = {}
     for r in report.runs:
         per_bench[r.benchmark] = per_bench.get(r.benchmark, 0) + 1

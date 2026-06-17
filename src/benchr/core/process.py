@@ -111,6 +111,21 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
             raise
 
 
+def _resolve_command(command: tuple[str, ...]) -> list[str]:
+    """Resolve ``argv[0]`` against PATH to an absolute path.
+
+    Raises ``FileNotFoundError`` if the command is not found. The absolute
+    path is taken against the invoker's cwd so that ``Popen(cwd=…)`` doesn't
+    re-resolve a relative executable against the subprocess's own cwd.
+    """
+    cmd = list(command)
+    found = shutil.which(cmd[0])
+    if found is None:
+        raise FileNotFoundError(f"Command not found: {cmd[0]}")
+    cmd[0] = os.path.abspath(found)
+    return cmd
+
+
 def execute(exe: Execution) -> ExecutionResult:
     """Spawn one subprocess and return an ExecutionResult.
 
@@ -118,17 +133,10 @@ def execute(exe: Execution) -> ExecutionResult:
     stdout/stderr, and includes ``rusage`` via ``os.wait4``. Pure mechanism —
     no policy, no reporting.
     """
-    cmd = list(exe.command)
-    found = shutil.which(cmd[0])
-    if found is None:
-        return ExecutionResult(
-            execution=exe,
-            returncode=SPAWN_FAIL_RC,
-            failure=f"Command not found: {cmd[0]}",
-        )
-    # Resolve to absolute against the invoker's cwd so that ``Popen(cwd=…)``
-    # doesn't re-resolve a relative executable against the subprocess's cwd.
-    cmd[0] = os.path.abspath(found)
+    try:
+        cmd = _resolve_command(exe.command)
+    except FileNotFoundError as e:
+        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC, failure=str(e))
 
     stdout_f = tempfile.TemporaryFile()
     stderr_f = tempfile.TemporaryFile()
@@ -318,11 +326,7 @@ def spawn_streaming(exe: Execution) -> LiveProcess:
     Raises FileNotFoundError if the command is not found (caller converts to
     a failed ExecutionResult if needed).
     """
-    cmd = list(exe.command)
-    found = shutil.which(cmd[0])
-    if found is None:
-        raise FileNotFoundError(f"Command not found: {cmd[0]}")
-    cmd[0] = os.path.abspath(found)
+    cmd = _resolve_command(exe.command)
 
     d = Path(tempfile.mkdtemp(prefix="benchr-harness-"))
     out_path, err_path = d / "stdout", d / "stderr"

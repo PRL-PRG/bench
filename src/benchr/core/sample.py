@@ -13,7 +13,6 @@ round-trip through JSON.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from cattrs import structure, unstructure
@@ -121,11 +120,6 @@ def diagnostic_excerpt(result: ExecutionResult, *, max_len: int = 80) -> str:
     return "(no output)"
 
 
-def variant_keys(runs: Iterable[RunRecord]) -> list[str]:
-    """Stable list of matrix-dimension names across a stream of runs."""
-    return list(dict.fromkeys(k for r in runs for k, _ in r.variant))
-
-
 @dataclass(slots=True)
 class Report:
     """The accumulating RunRecords (each carrying its parsed Samples).
@@ -149,7 +143,8 @@ class Report:
             s.metric for r in self.runs for s in r.samples))
 
     def variant_keys(self) -> list[str]:
-        return variant_keys(self.runs)
+        """Stable list of matrix-dimension names across all runs, first-seen order."""
+        return list(dict.fromkeys(k for r in self.runs for k, _ in r.variant))
 
     def add(self, rec: RunRecord) -> None:
         """Append one RunRecord."""

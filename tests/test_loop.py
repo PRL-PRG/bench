@@ -2,23 +2,26 @@
 
 import pytest
 
-from benchr import CoefficientOfVariation, FixedRuns, Sample
+from benchr import CoefficientOfVariation, FixedRuns, RunResult, Sample
 from benchr.grammar.benchmark import UNSET
 from benchr.core.loop import benchmarking_loop
 
 
 def _pump(warmup, runs, fake_value=1.0):
-    """Drive the loop to exhaustion, feeding back one Sample per slot.
-    Returns the list of (run, in_warmup) slots seen."""
+    """Drive the loop to exhaustion, feeding one Sample per slot.
+    Returns the list of (run, in_warmup) slots seen — the caller (this pump)
+    owns run numbering; the loop only reports the phase."""
     out = []
     gen = benchmarking_loop(warmup, runs)
+    run = 0
     try:
-        slot = next(gen)
+        in_warmup = next(gen)
         while True:
-            out.append(slot)
+            run += 1
+            out.append((run, in_warmup))
             s = Sample(metric="runtime", value=fake_value, unit="s",
                        lower_is_better=True)
-            slot = gen.send([s])
+            in_warmup = gen.send(RunResult(samples=[s]))
     except StopIteration:
         pass
     return out
@@ -45,12 +48,13 @@ def test_cov_warmup_then_fixed_measure():
         (1, True), (2, True), (3, True), (4, False), (5, False)]
 
 
-def test_none_send_counts_as_empty_observation():
+def test_empty_result_counts_as_observation():
     gen = benchmarking_loop(FixedRuns(0), FixedRuns(2))
-    assert next(gen) == (1, False)
-    assert gen.send(None) == (2, False)
+    empty = RunResult(samples=[])
+    assert next(gen) is False        # warmup skipped → first measured run
+    assert gen.send(empty) is False  # second measured run
     with pytest.raises(StopIteration):
-        gen.send(None)
+        gen.send(empty)
 
 
 def test_unset_policy_raises():

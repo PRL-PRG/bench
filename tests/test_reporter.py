@@ -15,11 +15,6 @@ from benchr.report.reporter import DirReporter as _DirReporter
 from benchr.report.theme import BENCHR_THEME
 
 
-# ---------------------------------------------------------------------------
-# Task 9: new protocol tests
-# ---------------------------------------------------------------------------
-
-
 def _sched():
     return ScheduledExecution(Execution(("echo", "hi"), Path("/tmp")), "S", "b", (), "", 1)
 
