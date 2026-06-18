@@ -13,8 +13,7 @@ execute"), or just getting through a batch faster.
 
 ``--jobs N`` means "up to N benchmarks at once." The shared ``Report`` is
 mutated from worker threads, so both it and the reporter are wrapped in
-lock-guarded proxies to keep concurrent ``add``/``warmup``/``metadata`` writes
-from tearing.
+lock-guarded proxies to keep concurrent ``add``/``warmup`` writes from tearing.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from benchr.core.process import install_sigint_handler, interrupted
-from benchr.core.sample import Report, RunRecord, Sample
+from benchr.core.sample import Observation, Report, Run
 from benchr.report.reporter import Reporter
 from benchr.runner.base import PlannedBenchmark, Runner
 from benchr.runner.controller import Controller
@@ -33,34 +32,29 @@ from benchr.runner.controller import Controller
 class _LockedReport(Report):
     """Write-only lock-guarded wrapper over a shared ``Report``.
 
-    The Controller never *reads* report state mid-run — it only ``add``s
-    records, marks ``warmup`` counts, and sets one ``metadata`` entry. Guard
-    exactly those three mutation points so concurrent benchmarks can't tear
-    ``Report.runs`` / ``warmups`` / ``metadata``. (Its own inherited slots are
-    unused — all writes delegate to the shared ``report``.)"""
+    The Controller never *reads* report state mid-run — it only ``add``s Runs
+    and marks ``warmup`` counts. Guard those mutation points so concurrent
+    benchmarks can't tear ``Report.runs`` / ``warmups``. (Its own inherited
+    slots are unused — all writes delegate to the shared ``report``.)"""
 
     def __init__(self, report: Report, lock: threading.Lock) -> None:
         super().__init__()
         self._report = report
         self._lock = lock
 
-    def add(self, rec: RunRecord) -> None:
+    def add(self, run: Run) -> None:
         with self._lock:
-            self._report.add(rec)
+            self._report.add(run)
 
-    def warmup(self, key: str, runs: int) -> None:
+    def warmup(self, key: str, observations: int) -> None:
         with self._lock:
-            self._report.warmup(key, runs)
-
-    def set_metadata(self, key: str, samples: list[Sample]) -> None:
-        with self._lock:
-            self._report.set_metadata(key, samples)
+            self._report.warmup(key, observations)
 
 
 class _LockedReporter(Reporter):
     """Lock-guarded wrapper over the real reporter.
 
-    Serializes ``record`` / ``process_done`` / ``warmup`` so events from
+    Serializes ``observation`` / ``run_done`` / ``warmup`` so events from
     benchmarks running on different workers don't interleave inside a single
     reporter call (e.g. a ``CompositeReporter`` fan-out). ``start`` /
     ``finalize`` are called once by ``Parallel`` itself, not per-controller."""
@@ -69,21 +63,17 @@ class _LockedReporter(Reporter):
         self._reporter = reporter
         self._lock = lock
 
-    def record(self, rec: RunRecord) -> None:
+    def observation(self, obs: Observation) -> None:
         with self._lock:
-            self._reporter.record(rec)
+            self._reporter.observation(obs)
 
-    def process_done(self, sched: Any, result: Any) -> None:
+    def run_done(self, run: Run) -> None:
         with self._lock:
-            self._reporter.process_done(sched, result)
+            self._reporter.run_done(run)
 
-    def warmup(self, key: str, runs: int) -> None:
+    def warmup(self, key: str, observations: int) -> None:
         with self._lock:
-            self._reporter.warmup(key, runs)
-
-    def set_metadata(self, key: str, samples: list[Sample]) -> None:
-        with self._lock:
-            self._reporter.set_metadata(key, samples)
+            self._reporter.warmup(key, observations)
 
 
 class Parallel(Runner):

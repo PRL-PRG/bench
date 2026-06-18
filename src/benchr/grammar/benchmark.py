@@ -59,6 +59,8 @@ from benchr.grammar.context import Context, Matrix
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
+    from benchr.runner.source import HarnessMonitor
+
 # A user-supplied command/cwd/env builder. Receives the Context for the
 # benchmark being scheduled (params + the resolved suite/benchmark properties
 # + the variant ``matrix``).
@@ -121,9 +123,7 @@ def coerce_command(command: Command) -> CommandFn:
         return command
     # A bare str/bytes/PathLike is a one-element argv; a Sequence is full argv.
     static = (
-        (command,)
-        if isinstance(command, (str, bytes, os.PathLike))
-        else tuple(command)
+        (command,) if isinstance(command, (str, bytes, os.PathLike)) else tuple(command)
     )
     return lambda ctx: static
 
@@ -186,7 +186,9 @@ def normalize_matrix(
     return tuple((name, tuple(values)) for name, values in dims.items())
 
 
-def make_skip_rule(predicate: SkipFn | None, kwargs: Mapping[str, Any]) -> SkipRule | None:
+def make_skip_rule(
+    predicate: SkipFn | None, kwargs: Mapping[str, Any]
+) -> SkipRule | None:
     """Build a ``SkipRule`` from a predicate and/or AND-matched kwargs; ``None``
     when neither is given (the caller then leaves its skip list untouched)."""
     if predicate is None and not kwargs:
@@ -213,8 +215,7 @@ class Benchmark:
     name: str
 
     # Every inheritable field defaults to UNSET ("inherit the suite's
-    # default") and is resolved away by Suite.materialize(). ``stdin`` is the
-    # exception: it is never inherited.
+    # default") and is resolved away by Suite.materialize().
     command: CommandFn = UNSET
     cwd: PathFn = UNSET
     env: EnvFn = UNSET
@@ -233,12 +234,9 @@ class Benchmark:
     # Harness benchmarks execute the command ONCE; the harness itself runs
     # all iterations and the metrics parse them from the complete output.
     harness: bool = UNSET
-    # Upper bound on iterations told to the workload (read via ctx.harness_iterations).
-    # UNSET inherits the suite default; resolved None means no bound.
-    max_iterations: int | None = UNSET
     # Custom monitor (generator that frames the output stream into iterations).
-    # UNSET inherits the suite default; resolved None falls back to line_monitor.
-    monitor: Any = UNSET
+    # None falls back to line_monitor.
+    monitor: HarnessMonitor | None = UNSET
 
     # User payload; accessible as benchmark.<key>.
     data: Mapping[str, Any] = EMPTY_MAPPING
@@ -301,25 +299,19 @@ class Benchmark:
     def with_runs(self, p: StoppingPolicy | int) -> Benchmark:
         return dataclasses.replace(self, runs=coerce_policy(p))
 
-    def with_harness(
-        self, max_iterations: int | None = UNSET, monitor: Any = UNSET
-    ) -> Benchmark:
+    def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> Benchmark:
         """Mark this benchmark as a *harness*: the command is executed once
         and streams all iterations — each line (or framed block) becomes one
-        run record. The harness MAY use convergence policies (e.g.
+        observation. The harness MAY use convergence policies (e.g.
         CoefficientOfVariation); the runner kills the process mid-flight when
         the policy converges.
 
-        ``max_iterations`` is the upper bound the workload is told to run;
-        read in the command fn via ``ctx.harness_iterations``. ``monitor`` is a
-        custom generator that frames the output stream into iterations. Both
-        default to inheriting the suite; an explicit ``None`` monitor (or an
-        unset suite) falls back to ``line_monitor`` (one non-empty line = one
-        iteration). A monitor that raises marks the run failed with the
-        exception's message. ``timeout`` covers the whole process."""
-        return dataclasses.replace(
-            self, harness=True, max_iterations=max_iterations, monitor=monitor
-        )
+        ``monitor`` is a custom generator that frames the output stream into
+        iterations; it defaults to inheriting the suite, and an explicit
+        ``None`` (or an unset suite) falls back to ``line_monitor`` (one
+        non-empty line = one iteration). A monitor that raises marks the run
+        failed. ``timeout`` covers the whole process."""
+        return dataclasses.replace(self, harness=True, monitor=monitor)
 
     # ----- matrix / skip / label --------------------------------------
 
@@ -448,7 +440,6 @@ class Benchmark:
             matrix=Matrix(
                 {k: v for k, v in self.data.items() if not k.startswith("__")}
             ),
-            harness_iterations=self.max_iterations,
         )
         cmd = tuple(os.fsdecode(a) for a in self.command(ctx))
         cwd = Path(self.cwd(ctx))

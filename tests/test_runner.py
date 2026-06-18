@@ -28,11 +28,11 @@ from benchr import (
 
 
 def _all_samples(report):
-    return [s for r in report.runs for s in r.samples]
+    return [s for r in report.runs for o in r.observations for s in o.samples]
 
 
 def _runs_with_samples(report):
-    return [(r, s) for r in report.runs for s in r.samples]
+    return [(r, s) for r in report.runs for o in r.observations for s in o.samples]
 
 
 def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
@@ -434,7 +434,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
     report = Sequential().run(plan([s], None), None)
-    assert [smp.metric for smp in report.runs[0].samples] == ["elapsed"]
+    assert [smp.metric for o in report.runs[0].observations for smp in o.samples] == ["elapsed"]
 
 
 def test_plan_accepts_single_suite_and_default_ctx():

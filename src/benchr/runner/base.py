@@ -14,12 +14,11 @@ from benchr.core.execution import (
 )
 from benchr.grammar.suite import Suite
 from benchr.report.reporter import Reporter
-from benchr.core.sample import Report, RunRecord
+from benchr.core.sample import Report
 
 
 class _NoopReporter(Reporter):
-    def record(self, rec: RunRecord) -> None:
-        pass
+    pass
 
 
 # ---------------------------------------------------------------------------

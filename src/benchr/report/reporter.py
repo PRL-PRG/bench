@@ -20,18 +20,8 @@ from rich.progress import (
 )
 
 from benchr.grammar.benchmark import Benchmark
-from benchr.core.execution import (
-    SPAWN_FAIL_RC,
-    TIMEOUT_RC,
-    ExecutionResult,
-    ScheduledExecution,
-)
-from benchr.core.sample import (
-    Report,
-    RunRecord,
-    Sample,
-    report_to_json,
-)
+from benchr.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
+from benchr.core.sample import Observation, Report, Run, report_to_json
 from benchr.report.theme import BENCHR_THEME, console
 
 
@@ -41,34 +31,25 @@ from benchr.report.theme import BENCHR_THEME, console
 
 
 class Reporter(abc.ABC):
-    """Streaming sink for per-execution results.
+    """Streaming sink for benchmark progress and results.
 
-    Called by the Runner as ``start(plan)`` once, ``record(rec)`` per run
-    record, ``process_done(sched, result)`` per OS process completion,
-    ``finalize()`` once. ``plan`` is the flattened list of Benchmarks the
-    runner has materialized from the suites.
+    Called by the Runner as ``start(plan)`` once, ``observation(obs)`` per
+    measurement (live progress; ``obs.label`` is the benchmark identifier),
+    ``run_done(run)`` per completed Run (a command run, or a harness's single
+    run), ``warmup(key, n)`` once per variant, and ``finalize()`` once.
     """
 
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
-    @abc.abstractmethod
-    def record(self, rec: RunRecord) -> None: ...
-
-    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
+    def observation(self, obs: Observation) -> None:
         pass
 
-    def warmup(self, key: str, runs: int) -> None:
-        """Called once per benchmark variant when its warmup ends: the first
-        ``runs`` runs were warmup. ``key`` is the canonical benchmark-variant
-        key (see ``record_key``). Buffering reporters note it so stats can
-        drop those runs; streaming reporters may ignore it."""
+    def run_done(self, run: Run) -> None:
         pass
 
-    def set_metadata(self, key: str, samples: list[Sample]) -> None:
-        """Called once per harness benchmark variant with its whole-process
-        metric samples (see ``Report.metadata``). Buffering reporters store
-        them so file outputs include them; streaming reporters may ignore it."""
+    def warmup(self, key: str, observations: int) -> None:
+        """The variant's first ``observations`` observations were warmup."""
         pass
 
     def finalize(self) -> None:
@@ -76,25 +57,20 @@ class Reporter(abc.ABC):
 
 
 class _BufferingReporter(Reporter):
-    """Base for reporters that accumulate a Report in memory and render it at
-    ``finalize()``. Subclasses get a thread-safe ``record`` for free and
-    override ``finalize`` to emit ``self._report``."""
+    """Base for reporters that accumulate a Report and render it at
+    ``finalize()``. Gives subclasses a thread-safe ``run_done``/``warmup``."""
 
     def __init__(self) -> None:
         self._report = Report()
         self._lock = threading.Lock()
 
-    def record(self, rec: RunRecord) -> None:
+    def run_done(self, run: Run) -> None:
         with self._lock:
-            self._report.add(rec)
+            self._report.add(run)
 
-    def warmup(self, key: str, runs: int) -> None:
+    def warmup(self, key: str, observations: int) -> None:
         with self._lock:
-            self._report.warmup(key, runs)
-
-    def set_metadata(self, key: str, samples: list[Sample]) -> None:
-        with self._lock:
-            self._report.set_metadata(key, samples)
+            self._report.warmup(key, observations)
 
 
 class CompositeReporter(Reporter):
@@ -107,21 +83,17 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.start(plan)
 
-    def record(self, rec: RunRecord) -> None:
+    def observation(self, obs: Observation) -> None:
         for r in self.reporters:
-            r.record(rec)
+            r.observation(obs)
 
-    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
+    def run_done(self, run: Run) -> None:
         for r in self.reporters:
-            r.process_done(sched, result)
+            r.run_done(run)
 
-    def warmup(self, key: str, runs: int) -> None:
+    def warmup(self, key: str, observations: int) -> None:
         for r in self.reporters:
-            r.warmup(key, runs)
-
-    def set_metadata(self, key: str, samples: list[Sample]) -> None:
-        for r in self.reporters:
-            r.set_metadata(key, samples)
+            r.warmup(key, observations)
 
     def finalize(self) -> None:
         for r in self.reporters:
@@ -134,17 +106,12 @@ class CompositeReporter(Reporter):
 
 
 class CsvReporter(_BufferingReporter):
-    """Buffer per-execution rows; write CSV on ``finalize()``.
+    """Buffer runs; write CSV on ``finalize()``.
 
-    Schema: ``suite, benchmark, run, <variant_cols...>, metric, value,
-    unit, lower_is_better, failure``. Variant columns are the union of every
-    matrix dimension observed across all runs (cells absent in a particular run are blank).
-    All runs appear, warmup included — the per-variant warmup counts live in
-    the JSON report's ``warmups`` map, not per row.
-
-    One row per Sample for successful runs. Failed runs (which emit no samples)
-    are still represented: one row with blank metric/value/unit and the failure
-    verdict in the ``failure`` column.
+    Schema: ``suite, benchmark, run, <variant_cols...>, metric, value, unit,
+    lower_is_better, failure``. One row per Sample for successful observations;
+    a failed observation (or run) emits one row with blank metric and the
+    failure verdict. All runs appear, warmup included.
     """
 
     def __init__(self, path: Path, *, delimiter: str = ",") -> None:
@@ -163,30 +130,24 @@ class CsvReporter(_BufferingReporter):
             w.writeheader()
             for r in self._report.runs:
                 variant_map = dict(r.variant)
-                base = {
-                    "suite": r.suite,
-                    "benchmark": r.benchmark,
-                    "run": r.run,
-                }
+                base: dict[str, Any] = {"suite": r.suite, "benchmark": r.benchmark,
+                                        "run": r.run}
                 for k in variant_cols:
                     base[k] = variant_map.get(k, "")
-                if r.is_failure():
-                    row = {**base,
-                           "metric": "", "value": "", "unit": "",
-                           "lower_is_better": "",
-                           "failure": r.failure or ""}
-                    w.writerow(row)
-                    continue
-                for s in r.samples:
-                    row = {**base,
-                           "metric": s.metric,
-                           "value": s.value,
-                           "unit": s.unit,
-                           "lower_is_better": (
-                               "" if s.lower_is_better is None else str(s.lower_is_better)
-                           ),
-                           "failure": ""}
-                    w.writerow(row)
+                obs_list = r.observations or [Observation(failure=r.failure)]
+                for obs in obs_list:
+                    failure = obs.failure or (r.failure if not obs.samples else None)
+                    if failure or not obs.samples:
+                        w.writerow({**base, "metric": "", "value": "", "unit": "",
+                                    "lower_is_better": "", "failure": failure or ""})
+                        continue
+                    for s in obs.samples:
+                        w.writerow({**base,
+                                    "metric": s.metric, "value": s.value, "unit": s.unit,
+                                    "lower_is_better": (
+                                        "" if s.lower_is_better is None
+                                        else str(s.lower_is_better)),
+                                    "failure": ""})
 
 
 # ---------------------------------------------------------------------------
@@ -195,15 +156,21 @@ class CsvReporter(_BufferingReporter):
 
 
 class JsonReporter(_BufferingReporter):
-    """Buffer runs in memory, write a single JSON file on finalize()."""
+    """Buffer runs in memory, write a single JSON file on finalize().
 
-    def __init__(self, path: Path) -> None:
+    ``include_output`` keeps each run's stdout/stderr/env in the JSON (off by
+    default — they bloat the file and are rarely needed offline)."""
+
+    def __init__(self, path: Path, *, include_output: bool = False) -> None:
         super().__init__()
         self.path = path
+        self.include_output = include_output
 
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(report_to_json(self._report))
+        self.path.write_text(
+            report_to_json(self._report, include_output=self.include_output)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -212,10 +179,10 @@ class JsonReporter(_BufferingReporter):
 
 
 class DirReporter(Reporter):
-    """Per-execution tree at ``<out>/<suite>/<bench>/<run>/``.
+    """Per-run tree at ``<out>/<suite>/<bench>/<n>/``.
 
-    Files: stdout, stderr, exitcode, rusage, seq (cwd + cmd + info).
-    Run numbers count up per (suite, benchmark) in execution order.
+    Files: stdout, stderr, exitcode, seq (cwd + cmd + info). Directories count
+    up per (suite, benchmark) in completion order.
     """
 
     def __init__(self, root: Path) -> None:
@@ -227,39 +194,28 @@ class DirReporter(Reporter):
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def record(self, rec: RunRecord) -> None:
-        pass  # DirReporter writes on process_done, not per-run record
-
-    def process_done(self, sched: ScheduledExecution, result: ExecutionResult) -> None:
-        key = (sched.suite, sched.benchmark)
+    def run_done(self, run: Run) -> None:
+        key = (run.suite, run.benchmark)
         with self._lock:
             self._counters[key] = self._counters.get(key, 0) + 1
             n = self._counters[key]
 
-        run_dir = self.root / sched.suite / sched.benchmark / str(n)
+        run_dir = self.root / run.suite / run.benchmark / str(n)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         lines = [
-            f"cwd={result.execution.cwd}",
-            f"command={' '.join(sched.execution.command)}",
-            f"run={sched.run}",
+            f"cwd={run.cwd}",
+            f"command={' '.join(run.command)}",
+            f"run={run.run}",
         ]
-        lines.extend(f"variant[{k}]={v}" for k, v in sched.variant)
-        if sched.variant_label:
-            lines.append(f"variant_label={sched.variant_label}")
+        lines.extend(f"variant[{k}]={v}" for k, v in run.variant)
+        if run.variant_label:
+            lines.append(f"variant_label={run.variant_label}")
         (run_dir / "seq").write_text("\n".join(lines) + "\n")
 
-        (run_dir / "stdout").write_text(result.stdout)
-        (run_dir / "stderr").write_text(result.stderr)
-        (run_dir / "exitcode").write_text(f"{result.returncode}\n")
-
-        if result.rusage is not None:
-            ru_lines = [
-                f"{f}={getattr(result.rusage, f)}"
-                for f in dir(result.rusage)
-                if f.startswith("ru_")
-            ]
-            (run_dir / "rusage").write_text("\n".join(ru_lines) + "\n")
+        (run_dir / "stdout").write_text(run.stdout)
+        (run_dir / "stderr").write_text(run.stderr)
+        (run_dir / "exitcode").write_text(f"{run.returncode}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -268,13 +224,13 @@ class DirReporter(Reporter):
 
 
 class ProgressReporter(Reporter):
-    """Live progress over the planned benchmarks.
+    """Live progress over the planned benchmarks, one tick per observation.
 
-    On a terminal, renders a progress bar and clears itself before the SummaryReporter
-    prints. On a non-terminal it falls back to plain one-line-per-sample
-    output. Total is known when every benchmark's policies expose a
-    ``max_runs()``; otherwise displays ``?`` and (on terminals) draws an
-    indeterminate bar. """
+    On a terminal, renders a progress bar and clears itself before the
+    SummaryReporter prints. On a non-terminal it falls back to plain
+    one-line-per-observation output. Total is known when every benchmark's
+    policies expose a ``max_runs()``; otherwise displays ``?``.
+    """
 
     def __init__(self, target_console: Console | None = None) -> None:
         self._console = target_console or console
@@ -314,23 +270,22 @@ class ProgressReporter(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def record(self, rec: RunRecord) -> None:
+    def observation(self, obs: Observation) -> None:
         with self._lock:
-            if not rec.is_failure():
+            if not obs.is_failure():
                 self._successes += 1
             else:
                 self._failures += 1
             if self._progress is not None and self._task_id is not None:
                 self._progress.update(
                     self._task_id,
-                    # Escape so "[runs]" isn't parsed as a rich tag.
-                    description=markup_escape(rec.identifier()),
+                    description=markup_escape(obs.label),
                     failures=self._failures,
                     successes=self._successes,
                 )
                 self._progress.advance(self._task_id)
             else:
-                self._print_plain(rec)
+                self._print_plain(obs)
 
     def finalize(self) -> None:
         if self._progress is not None and self._task_id is not None:
@@ -338,18 +293,14 @@ class ProgressReporter(Reporter):
 
     # ----- helpers ---------------------------------------------------
 
-    def _print_plain(self, rec: RunRecord) -> None:
+    def _print_plain(self, obs: Observation) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
-        if not rec.is_failure():
+        if not obs.is_failure():
             tag = "[benchr.success]ok[/]"
-        elif rec.returncode == TIMEOUT_RC:
-            tag = "[benchr.failure]FAIL timeout[/]"
-        elif rec.returncode == SPAWN_FAIL_RC:
-            tag = f"[benchr.failure]FAIL spawn[/] ({rec.failure or 'unknown'})"
         else:
-            tag = f"[benchr.failure]FAIL exit {rec.returncode}[/]"
-        self._console.print(f"[{n}|{total_str}] {markup_escape(rec.identifier())} {tag}")
+            tag = f"[benchr.failure]FAIL[/] ({obs.failure})"
+        self._console.print(f"[{n}|{total_str}] {markup_escape(obs.label)} {tag}")
 
     @staticmethod
     def _compute_total(plan: list[Benchmark]) -> int | None:
@@ -372,9 +323,7 @@ class SummaryReporter(_BufferingReporter):
 
     Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
     Defaults to ``DefaultSummary``. After the formatter output, appends a
-    ``Failures:`` block listing every failed run (one line per failure)
-    so users can see *why* something failed without having to re-run with
-    ``--dir``.
+    ``Failures:`` block listing every failed run.
     """
 
     def __init__(
@@ -405,7 +354,7 @@ class SummaryReporter(_BufferingReporter):
                 self._console.print("  " + self._failure_line(run))
 
     @staticmethod
-    def _failure_line(run: RunRecord) -> str:
+    def _failure_line(run: Run) -> str:
         if run.returncode == TIMEOUT_RC:
             verdict = f"[benchr.failure]timeout (exit {TIMEOUT_RC})[/]"
         elif run.returncode == SPAWN_FAIL_RC:

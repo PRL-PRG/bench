@@ -9,7 +9,7 @@ from benchr import (
 
 
 def _all_samples(report):
-    return [(r, s) for r in report.runs for s in r.samples]
+    return [(r, s) for r in report.runs for o in r.observations for s in o.samples]
 
 
 def test_e2e_sleep_runs_produce_expected_count():

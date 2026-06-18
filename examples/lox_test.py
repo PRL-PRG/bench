@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from benchr import (
-    Context, ExecutionResult, Reporter, RunRecord, Time, from_files, run,
+    Context, ExecutionResult, Reporter, Run, Time, from_files, run,
     suite,
 )
 from benchr.report.reporter import console
@@ -77,10 +77,10 @@ class LoxTestSummary(Reporter):
         self.failed = 0
         self.failed_tests: list[str] = []
 
-    def record(self, rec: RunRecord) -> None:
-        if rec.is_failure():
+    def run_done(self, run: Run) -> None:
+        if run.is_failure():
             self.failed += 1
-            self.failed_tests.append(f"{rec.suite}/{rec.benchmark}")
+            self.failed_tests.append(f"{run.suite}/{run.benchmark}")
         else:
             self.passed += 1
 

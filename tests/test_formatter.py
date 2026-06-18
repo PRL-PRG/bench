@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.console import Console
 
 from benchr import (
-    Compact, DefaultSummary, Report, RunRecord, Sample, report_to_json,
+    Compact, DefaultSummary, Observation, Report, Run, Sample, report_to_json,
 )
 
 
@@ -19,12 +19,12 @@ def _smp(metric: str = "runtime", value: float = 0.5, unit: str = "s",
 
 def _ok(run: int = 1, *, bench: str = "b", suite: str = "S",
         variant=(), variant_label: str = "",
-        samples: list[Sample] | None = None) -> RunRecord:
-    return RunRecord(
+        samples: list[Sample] | None = None) -> Run:
+    return Run(
         suite=suite, benchmark=bench, variant=variant, run=run,
         command=("x",), returncode=0,
         variant_label=variant_label,
-        samples=list(samples) if samples else [],
+        observations=[Observation(samples=list(samples) if samples else [])],
     )
 
 
@@ -122,7 +122,7 @@ def _strip_markup(s: str) -> str:
 
 def _vrun(value: float, *, run: int, label: str, variant_dim: str = "k",
           bench: str = "b", suite: str = "S", metric: str = "elapsed",
-          unit: str = "s", lower_is_better: bool | None = True) -> RunRecord:
+          unit: str = "s", lower_is_better: bool | None = True) -> Run:
     return _ok(
         run, bench=bench, suite=suite,
         variant=((variant_dim, label),),

@@ -9,31 +9,21 @@ from benchr import (
     CsvReporter, DirReporter, JsonReporter, CompositeReporter, FloatPerLine, ProgressReporter, Sequential, SummaryReporter,
     Time, bench, plan, report_from_json, suite,
 )
-from benchr.core.execution import Execution, ExecutionResult, ScheduledExecution
-from benchr.core.sample import RunRecord
+from benchr.core.sample import Observation, Run
 from benchr.report.reporter import DirReporter as _DirReporter
 from benchr.report.theme import BENCHR_THEME
 
 
-def _sched():
-    return ScheduledExecution(Execution(("echo", "hi"), Path("/tmp")), "S", "b", (), "", 1)
-
-
-def test_dirreporter_writes_on_process_done(tmp_path):
+def test_dirreporter_writes_on_run_done(tmp_path):
     rep = _DirReporter(tmp_path)
     rep.start([])
-    res = ExecutionResult(_sched().execution, 0, stdout="hi\n", stderr="", runtime=0.1)
-    rep.process_done(_sched(), res)
+    run = Run(suite="S", benchmark="b", variant=(), run=1,
+              command=("echo", "hi"), cwd="/tmp",
+              returncode=0, stdout="hi\n", stderr="",
+              observations=[Observation(samples=[])])
+    rep.run_done(run)
     assert (tmp_path / "S" / "b" / "1" / "stdout").read_text() == "hi\n"
-
-
-def test_record_takes_only_rec(tmp_path):
-    # record(rec) signature: one positional arg
-    rep = _DirReporter(tmp_path)
-    rep.start([])
-    rec = RunRecord("S", "b", (), 1, ("echo", "hi"), 0)
-    rep.record(rec)   # must not raise / must be a no-op for DirReporter output
-    assert not (tmp_path / "S").exists()    # nothing written by record alone
+    assert (tmp_path / "S" / "b" / "1" / "exitcode").read_text() == "0\n"
 
 
 def _s():
@@ -60,7 +50,7 @@ def test_json_writer_round_trip(tmp_path: Path):
     out = tmp_path / "r.json"
     Sequential(reporter=JsonReporter(out)).run(plan([_s()], None), None)
     r = report_from_json(out.read_text())
-    all_samples = [s for run in r.runs for s in run.samples]
+    all_samples = [s for run in r.runs for o in run.observations for s in o.samples]
     assert len(all_samples) == 2
     assert all(s.metric == "runtime" for s in all_samples)
 
@@ -184,7 +174,8 @@ def test_progress_plain_marks_failures():
               .with_runs(1))
     Sequential(reporter=ProgressReporter(target_console=c),
                max_consecutive_failures=1).run(plan([s], None), None)
-    assert "FAIL exit 11" in buf.getvalue()
+    text = buf.getvalue()
+    assert "FAIL" in text and "exit code 11" in text
 
 
 def test_progress_plain_escapes_identifier_markup():

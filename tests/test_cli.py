@@ -45,7 +45,8 @@ def test_bench_writes_json(tmp_path: Path):
     assert out.exists()
     data = json.loads(out.read_text())
     assert "runs" in data
-    all_samples = [s for r in data["runs"] for s in r.get("samples", [])]
+    all_samples = [s for r in data["runs"]
+                   for o in r.get("observations", []) for s in o.get("samples", [])]
     assert len(all_samples) >= 2
 
 

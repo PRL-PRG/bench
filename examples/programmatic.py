@@ -28,9 +28,10 @@ s = (
 
 if __name__ == "__main__":
     report = Sequential().run(plan([s], None), None)
-    total = sum(len(r.samples) for r in report.runs)
+    total = sum(len(o.samples) for r in report.runs for o in r.observations)
     print(f"Got {total} samples, {len(report.failures)} failures.")
     for r in report.runs:
-        for sample in r.samples:
-            print(f"  {r.benchmark}#{r.run}: "
-                  f"{sample.metric}={sample.value:.4f}{sample.unit}")
+        for o in r.observations:
+            for sample in o.samples:
+                print(f"  {r.benchmark}#{r.run}: "
+                      f"{sample.metric}={sample.value:.4f}{sample.unit}")

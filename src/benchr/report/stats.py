@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from benchr.core.execution import Variant
-from benchr.core.sample import Report, report_from_json
+from benchr.core.sample import Report, Run, report_from_json
 
 
 type MetricKey = tuple[str, str]                # (metric, unit)
@@ -55,16 +55,17 @@ def group(report: Report, *, name: str = "current",
           include_warmup: bool = False) -> GroupedReport:
     """Reshape a Report for stats/comparison.
 
-    Counts ``report.runs`` into ``run_counts`` and collects per-metric
-    direction annotations. Warmup runs are excluded by default. Benchmarks
-    that only ever failed still appear (zero successes).
+    Flattens every Run's Observations per benchmark variant and collects their
+    samples by (metric, unit). The first ``report.warmups[key]`` observations of
+    a variant are warmup and excluded by default. A run that failed before
+    producing any observation (spawn / zero-delivery) counts as one failure.
+    Benchmarks that only ever failed still appear (zero successes).
     """
     groups: dict[BenchmarkId, BenchmarkGroup] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
+    seen: dict[BenchmarkId, int] = {}  # observations seen per variant (for warmup)
 
-    for r in report.runs:
-        if not include_warmup and r.run <= report.warmups.get(r.key(), 0):
-            continue
+    def ensure(r: Run) -> BenchmarkGroup:
         bid: BenchmarkId = (r.suite, r.benchmark, r.variant)
         g = groups.get(bid)
         if g is None:
@@ -72,15 +73,32 @@ def group(report: Report, *, name: str = "current",
                 suite=r.suite, benchmark=r.benchmark, variant=r.variant)
         if r.variant_label and not g.variant_label:
             g.variant_label = r.variant_label
-        if r.is_failure():
-            g.run_counts.failures += 1
-        else:
-            g.run_counts.successes += 1
-        for s in r.samples:
-            mk = (s.metric, s.unit)
-            if s.lower_is_better is not None:
-                lib[mk] = s.lower_is_better
-            g.metrics.setdefault(mk, []).append(s.value)
+        return g
+
+    for r in report.runs:
+        bid = (r.suite, r.benchmark, r.variant)
+        # A run that failed before producing any observation (spawn /
+        # zero-delivery) is one failure, never warmup.
+        if not r.observations and r.is_failure():
+            ensure(r).run_counts.failures += 1
+            continue
+
+        warmup = report.warmups.get(r.key(), 0)
+        for obs in r.observations:
+            idx = seen.get(bid, 0)
+            seen[bid] = idx + 1
+            if not include_warmup and idx < warmup:
+                continue
+            g = ensure(r)
+            if obs.is_failure():
+                g.run_counts.failures += 1
+            else:
+                g.run_counts.successes += 1
+            for s in obs.samples:
+                mk = (s.metric, s.unit)
+                if s.lower_is_better is not None:
+                    lib[mk] = s.lower_is_better
+                g.metrics.setdefault(mk, []).append(s.value)
 
     return GroupedReport(name=name, groups=list(groups.values()),
                          lower_is_better=lib)

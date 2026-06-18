@@ -21,7 +21,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from benchr.core.sample import RunResult
+from benchr.core.sample import Observation
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ class PolicyState(abc.ABC):
     __slots__ = ()
 
     @abc.abstractmethod
-    def observe(self, result: RunResult) -> None: ...
+    def observe(self, observation: Observation) -> None: ...
 
     @abc.abstractmethod
     def satisfied(self) -> bool: ...
@@ -83,7 +83,7 @@ class _FixedState(PolicyState):
         self.target = target
         self.cur = 0
 
-    def observe(self, result: RunResult) -> None:
+    def observe(self, observation: Observation) -> None:
         self.cur += 1
 
     def satisfied(self) -> bool:
@@ -118,11 +118,11 @@ class _CoVState(PolicyState):
         self.sumsq = 0.0
         self.n_runs = 0
 
-    def observe(self, result: RunResult) -> None:
+    def observe(self, observation: Observation) -> None:
         # CoV tracks one scalar per run. More than one matching sample is
         # ambiguous and would inflate the
         # window / min_runs counters, so reject it loudly.
-        matching = [s.value for s in result.samples if s.metric == self.cfg.metric]
+        matching = [s.value for s in observation.samples if s.metric == self.cfg.metric]
         if len(matching) > 1:
             raise ValueError(
                 f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
@@ -204,9 +204,9 @@ class _PairState(PolicyState):
         self.b = b
         self.op = op
 
-    def observe(self, result: RunResult) -> None:
-        self.a.observe(result)
-        self.b.observe(result)
+    def observe(self, observation: Observation) -> None:
+        self.a.observe(observation)
+        self.b.observe(observation)
 
     def satisfied(self) -> bool:
         return self.op((self.a.satisfied(), self.b.satisfied()))

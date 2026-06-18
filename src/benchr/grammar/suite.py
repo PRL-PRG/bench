@@ -40,7 +40,7 @@ import dataclasses
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from benchr.grammar.benchmark import (
     UNSET,
@@ -66,6 +66,9 @@ from benchr.core.execution import (
 )
 from benchr.core.metric import Metric, Time
 from benchr.core.policy import FixedRuns, StoppingPolicy, coerce_policy
+
+if TYPE_CHECKING:
+    from benchr.runner.source import HarnessMonitor
 
 
 # A function the Runner can call to materialize benchmarks given the Context.
@@ -107,9 +110,8 @@ class Suite:
     warmup: StoppingPolicy = FixedRuns(0)
     runs: StoppingPolicy = FixedRuns(1)
     harness: bool = False
-    # Suite-level defaults for harness optional fields; benchmark value wins.
-    max_iterations: int | None = None
-    monitor: Any = None
+    # Suite-level default for the harness monitor; benchmark value wins.
+    monitor: HarnessMonitor | None = None
     label_fn: LabelFn = default_label
     matrix: tuple[tuple[str, tuple[Any, ...]], ...] = ()
     skips: tuple[SkipRule, ...] = ()
@@ -177,18 +179,16 @@ class Suite:
         """Set the default policy for the measured runs."""
         return dataclasses.replace(self, runs=coerce_policy(p))
 
-    def with_harness(
-        self, max_iterations: int | None = None, monitor: Any = None
-    ) -> Suite:
+    def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
         """Make every contained benchmark a harness benchmark (executed once,
         streamed and killed on convergence — see ``Benchmark.with_harness``).
-        ``max_iterations`` and ``monitor`` are suite-level defaults; a benchmark's
-        own ``with_harness(...)`` values override them. Unlike
-        ``Benchmark.with_harness`` (whose defaults are ``UNSET`` = inherit), the
-        suite stores concrete values — it is the inheritance root. There is no
+        ``monitor`` is a suite-level default; a benchmark's own
+        ``with_harness(...)`` value overrides it. Unlike
+        ``Benchmark.with_harness`` (whose default is ``UNSET`` = inherit), the
+        suite stores a concrete value — it is the inheritance root. There is no
         per-benchmark opt-out; mixed suites are two suites."""
         return dataclasses.replace(
-            self, harness=True, max_iterations=max_iterations, monitor=monitor
+            self, harness=True, monitor=monitor
         )
 
     def with_matrix(self, **dims: Sequence[Any]) -> Suite:
@@ -237,7 +237,6 @@ class Suite:
             harness=self.harness,
             success=self.success,
             matrix=Matrix(),
-            harness_iterations=None,
         )
         collected = list(self.benchmarks)
         for f in self.factories:
@@ -279,9 +278,6 @@ class Suite:
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,
             harness=self.harness if b.harness is UNSET else b.harness,
-            max_iterations=self.max_iterations
-            if b.max_iterations is UNSET
-            else b.max_iterations,
             monitor=self.monitor if b.monitor is UNSET else b.monitor,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
         )

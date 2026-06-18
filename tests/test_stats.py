@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from benchr import Report, RunRecord, Sample, report_to_json
+from benchr import Observation, Report, Run, Sample, report_to_json
 from benchr.report.stats import (
     build_summary, geomean_with_sigma, group,
     metric_ratio, metric_stats, scale_unit,
@@ -17,17 +17,21 @@ def _smp(metric: str, value: float, *, unit: str = "s",
 
 def _run(run: int = 1, *, returncode: int = 0, failure: str | None = None,
          bench: str = "b", suite: str = "S",
-         samples: list[Sample] | None = None) -> RunRecord:
-    return RunRecord(
+         samples: list[Sample] | None = None) -> Run:
+    obs = Observation(samples=list(samples) if samples else [])
+    return Run(
         suite=suite, benchmark=bench, variant=(), run=run,
         command=("x",), returncode=returncode, failure=failure,
         message="boom" if failure else "",
-        samples=list(samples) if samples else [],
+        observations=[obs],
     )
 
 
-def _fail(run: int, **kw) -> RunRecord:
-    return _run(run, returncode=7, failure="boom", **kw)
+def _fail(run: int, *, bench: str = "b", suite: str = "S") -> Run:
+    return Run(
+        suite=suite, benchmark=bench, variant=(), run=run, command=("x",),
+        returncode=7, failure="boom", message="boom",
+        observations=[Observation(failure="boom")])
 
 
 def test_group_excludes_warmup_by_default():
@@ -69,9 +73,7 @@ def test_all_failed_benchmark_still_appears():
 
 
 def test_group_excludes_failures_in_warmup():
-    r = Report(runs=[
-        _run(1, returncode=1, failure="x"),
-    ], warmups={"S/b": 1})
+    r = Report(runs=[_fail(1)], warmups={"S/b": 1})
     g = group(r)
     assert g.groups == []
 
@@ -131,7 +133,6 @@ def test_geomean_with_sigma():
     r2 = metric_ratio(bl2, cur2)
     assert r1 is not None and r2 is not None
     geo, _ = geomean_with_sigma([r1, r2])
-    # speedup 2× × 0.5× → geomean 1.0
     assert abs(geo - 1.0) < 1e-9
 
 
@@ -159,7 +160,6 @@ def test_build_summary_with_baseline(tmp_path: Path):
     assert data.baseline is not None
     assert "current" in data.ratios
     ratios = data.ratios["current"]
-    # one benchmark, one metric, ratio = 2.0 speedup
     only_id = next(iter(ratios))
     r = ratios[only_id][("runtime", "s")]
     assert abs(r.display_ratio - 2.0) < 1e-9

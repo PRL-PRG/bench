@@ -102,16 +102,16 @@ def make_benchmarks(ctx: Context[Params]) -> list[Benchmark]:
     return [
         bench(rb.name)
         .with_command(
-            lambda ctx, name=rb.name: [
+            lambda ctx, name=rb.name, reps=rb.reps: [
                 ctx.params.java,
                 "-jar",
                 ctx.params.renaissance,
                 name,
                 "-r",
-                str(ctx.harness_iterations),
+                str(reps),
             ]
         )
-        .with_harness(max_iterations=rb.reps)
+        .with_harness()
         .with_runs(rb.reps)
         for rb in list_benchmarks(ctx.params)
     ]

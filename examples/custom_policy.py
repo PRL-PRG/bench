@@ -24,8 +24,8 @@ class _ConsecutiveReadyState(PolicyState):
         self.target = n
         self.cur = 0
 
-    def observe(self, result):
-        for s in result.samples:
+    def observe(self, observation):
+        for s in observation.samples:
             if s.metric == "READY" and s.value == 1.0:
                 self.cur += 1
                 break

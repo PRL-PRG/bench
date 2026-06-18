@@ -1,25 +1,26 @@
-"""Sample, RunRecord, Report, and JSON round-trip."""
+"""Sample, Observation, Run, Report, and JSON round-trip."""
 
-import json
-from pathlib import Path
 from typing import Any
 
-from benchr import Report, RunRecord, Sample, report_from_json, report_to_json
-from benchr.core.execution import Execution, ScheduledExecution
-from benchr.core.sample import RunResult
-
-
-def _run(variant=(), **kw) -> RunRecord:
-    base: dict[str, Any] = dict(
-        suite="S", benchmark="B", variant=variant, run=1,
-        command=("./bench",), returncode=0, runtime=0.1,
-    )
-    base.update(kw)
-    return RunRecord(**base)
+from benchr import Observation, Report, Run, Sample, report_from_json, report_to_json
 
 
 def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:
     return Sample(metric=metric, value=value, unit=unit, lower_is_better=lower_is_better)
+
+
+def _obs(*samples: Sample, failure: str | None = None) -> Observation:
+    return Observation(samples=list(samples), failure=failure)
+
+
+def _run(variant=(), observations=None, **kw) -> Run:
+    base: dict[str, Any] = dict(
+        suite="S", benchmark="B", variant=variant, run=1,
+        command=("./bench",), returncode=0, runtime=0.1,
+        observations=observations if observations is not None else [_obs(_smp())],
+    )
+    base.update(kw)
+    return Run(**base)
 
 
 def test_variant_keys_orders_first_seen():
@@ -33,19 +34,23 @@ def test_variant_keys_orders_first_seen():
 
 def test_metrics_distinct():
     r = Report(runs=[
-        _run(samples=[_smp(metric="x"), _smp(metric="y")]),
-        _run(samples=[_smp(metric="x")]),
+        _run(observations=[_obs(_smp(metric="x"), _smp(metric="y"))]),
+        _run(observations=[_obs(_smp(metric="x"))]),
     ])
     assert r.metrics() == ["x", "y"]
 
 
+def test_observation_can_fail():
+    o = Observation(failure="bad extraction")
+    assert o.is_failure() and o.samples == []
+
+
 def test_json_round_trip():
     r = Report(runs=[
-        _run(samples=[_smp(), _smp(metric="max_rss", value=2048, unit="kB")]),
-        RunRecord(
-            suite="S", benchmark="B", variant=(("opt", "O2"),), run=3,
+        _run(observations=[_obs(_smp(), _smp(metric="max_rss", value=2048, unit="kB"))]),
+        Run(suite="S", benchmark="B", variant=(("opt", "O2"),), run=3,
             command=("./bench", "--opt"), returncode=7, failure="exit 7", message="boom",
-        ),
+            observations=[_obs(failure="exit 7")]),
     ], warmups={"S/B": 2})
     text = report_to_json(r)
     r2 = report_from_json(text)
@@ -54,46 +59,22 @@ def test_json_round_trip():
     assert r2.warmups == {"S/B": 2}
 
 
-def _template():
-    return ScheduledExecution(execution=Execution(command=("x",), cwd=Path("/")),
-                              suite="S", benchmark="b", variant=(), variant_label="", run=1)
+def test_json_excludes_output_by_default():
+    r = Report(runs=[_run(stdout="big-out", stderr="big-err", env={"X": "1"})])
+    text = report_to_json(r)
+    assert "big-out" not in text and "big-err" not in text
+    back = report_from_json(text)
+    assert back.runs[0].stdout == "" and back.runs[0].stderr == "" and back.runs[0].env == {}
 
 
-def test_runrecord_from_run_result_stamps_identity_and_run():
-    rr = RunResult(samples=[Sample("t", 1.0)], returncode=0, runtime=2.0)
-    rec = RunRecord.from_run_result(_template(), 7, rr)
-    assert rec.suite == "S" and rec.benchmark == "b" and rec.run == 7
-    assert rec.runtime == 2.0 and rec.failure is None
-    assert [s.value for s in rec.samples] == [1.0]
+def test_json_includes_output_when_requested():
+    r = Report(runs=[_run(stdout="big-out", stderr="big-err")])
+    text = report_to_json(r, include_output=True)
+    assert "big-out" in text and "big-err" in text
+    assert report_from_json(text).runs[0].stdout == "big-out"
 
 
-def test_runrecord_from_run_result_failure_carries_message():
-    rr = RunResult(samples=[], returncode=3, failure="exit code 3", message="boom")
-    rec = RunRecord.from_run_result(_template(), 1, rr)
-    assert rec.is_failure() and rec.message == "boom" and rec.returncode == 3
-
-
-def test_report_metadata_roundtrips_json():
-    r = Report()
-    r.metadata["S/b"] = [Sample("max_rss", 1024.0, unit="kB")]
-    back = report_from_json(report_to_json(r))
-    assert back.metadata["S/b"][0].metric == "max_rss"
-
-
-def test_old_json_without_metadata_structures():
-    r = report_from_json('{"runs": [], "warmups": {}}')
-    assert r.metadata == {}
-
-
-def test_pre_v4_json_drops_warmup_runs():
-    old = json.dumps({"runs": [
-        {"suite": "S", "benchmark": "B", "variant": [], "run": 1,
-         "phase": "warmup", "command": ["x"], "returncode": 0, "runtime": 0.1,
-         "failure": None, "message": "", "variant_label": "", "samples": []},
-        {"suite": "S", "benchmark": "B", "variant": [], "run": 1,
-         "phase": "runs", "command": ["x"], "returncode": 0, "runtime": 0.2,
-         "failure": None, "message": "", "variant_label": "", "samples": []},
-    ]})
-    r = report_from_json(old)
-    assert [run.runtime for run in r.runs] == [0.2]
-    assert r.warmups == {}
+def test_failures_are_failed_runs():
+    r = Report(runs=[_run(), _run(returncode=1, failure="exit 1",
+                                  observations=[_obs(failure="exit 1")])])
+    assert len(r.failures) == 1 and r.failures[0].returncode == 1

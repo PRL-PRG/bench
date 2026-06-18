@@ -7,8 +7,7 @@ A dry run shows the plan's *upper bound*: bounded policies enumerate runs
 stop earlier on real observations). Unbounded policies (e.g.
 CoefficientOfVariation) have no bound to enumerate, so they print one line
 with an ``[unbounded]`` marker. A harness benchmark is one execution, so it
-prints one line with a ``[harness]`` marker — ``[harness ≤N]`` when a
-``max_iterations`` bound is set.
+prints one line with a ``[harness]`` marker.
 """
 
 from __future__ import annotations
@@ -38,13 +37,8 @@ class Dry(Runner):
     def _print_executions(self, p: PlannedBenchmark, params: Any) -> None:
         b = p.benchmark
         if b.harness:
-            marker = (
-                f"[harness ≤{b.max_iterations}]"
-                if b.max_iterations is not None
-                else "[harness]"
-            )
             self._print_one(b.schedule(params, suite=p.suite, run=1), b,
-                            marker=marker)
+                            marker="[harness]")
             return
         warmup, runs = b.warmup.max_runs(), b.runs.max_runs()
         if warmup is None or runs is None:

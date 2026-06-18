@@ -62,11 +62,8 @@ class Context[T]:
       - **suite level** (factories): ``benchmark`` is ``None``, ``matrix`` is
         empty, and the policy/config fields are the *suite defaults* (already
         reflecting any ``--runs/--warmup`` CLI override).
-        ``harness_iterations`` is ``None`` at suite level.
       - **benchmark level** (command/cwd/env): ``benchmark`` is the name and the
         policy/config fields are the *resolved* benchmark's values.
-        ``harness_iterations`` is the upper bound passed to
-        ``Benchmark.with_harness(max_iterations=...)``.
     """
 
     params: T
@@ -79,10 +76,6 @@ class Context[T]:
     harness: bool
     success: SuccessFn
     matrix: Matrix
-    # Upper bound on iterations the harness workload is told to run; None if not
-    # set. Read via ctx.harness_iterations in harness command fns. Set at
-    # benchmark level (Benchmark.schedule); None at suite level.
-    harness_iterations: int | None = None
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field
