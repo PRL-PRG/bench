@@ -4,7 +4,6 @@
 from benchr.core.execution import (
     Execution,
     ExecutionResult,
-    ScheduledExecution,
     Variant,
     Verdict,
     default_success,
@@ -40,6 +39,8 @@ from benchr.core.policy import (
 # Benchmark / Suite
 from benchr.grammar.benchmark import (
     Benchmark,
+    BenchmarkFactory,
+    Dynamic,
     bench,
     default_label,
     from_files,
@@ -49,7 +50,6 @@ from benchr.grammar.context import Context
 
 # Runners
 from benchr.runner.base import (
-    PlannedBenchmark,
     Runner,
     SuiteMaterializationError,
     plan,
@@ -78,7 +78,7 @@ from benchr.cli import main, run
 
 __all__ = [
     # Atoms
-    "Execution", "ExecutionResult", "ScheduledExecution", "Variant", "Verdict",
+    "Execution", "ExecutionResult", "Variant", "Verdict",
     "default_success",
     "Sample", "Observation", "Run", "Report", "report_from_json", "report_to_json",
     # Metrics
@@ -88,12 +88,12 @@ __all__ = [
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation",
     # Benchmark / Suite
-    "Benchmark", "bench",
+    "Benchmark", "BenchmarkFactory", "Dynamic", "bench",
     "default_label", "from_files",
     "Suite", "suite",
     "Context",
     # Runners
-    "Runner", "Sequential", "Parallel", "Dry", "plan", "PlannedBenchmark",
+    "Runner", "Sequential", "Parallel", "Dry", "plan",
     "SuiteMaterializationError",
     "HarnessMonitor", "HarnessHandle", "line_monitor",
     # Reporters

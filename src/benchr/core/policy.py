@@ -1,16 +1,19 @@
 """StoppingPolicy: decides when to stop taking runs.
 
-Life-cycle: The benchmarking loop first calls ``start`` which produces a
-stateful ``PolicyState``. For each execution it calls ``observe(run, samples)``
-to feed that run's samples and ``satisfied()`` to check whether the policy has
-converged. ``satisfied()`` is also checked up front, so a policy that converges
-before any run (e.g. ``FixedRuns(0)``) takes no runs at all.
+Life-cycle: The benchmarking loop first calls `start` which produces a
+stateful `PolicyState`. For each execution it calls `observe(run, samples)`
+to feed that run's samples and `satisfied()` to check whether the policy has
+converged. `satisfied()` is also checked up front, so a policy that converges
+before any run (e.g. `FixedRuns(0)`) takes no runs at all.
 
 Combinators:
-    a & b   satisfied iff both are satisfied
-    a | b   satisfied iff either is satisfied
-    a.at_least(n)   == a & FixedRuns(n)
-    a.at_most(n)    == a | FixedRuns(n)
+
+```text
+a & b           satisfied iff both are satisfied
+a | b           satisfied iff either is satisfied
+a.at_least(n)   == a & FixedRuns(n)
+a.at_most(n)    == a | FixedRuns(n)
+```
 """
 
 from __future__ import annotations
@@ -49,7 +52,7 @@ class StoppingPolicy(abc.ABC):
 
     def max_runs(self) -> int | None:
         """Upper bound on the number of runs this policy will permit.
-        ``None`` means unbounded by this policy."""
+        `None` means unbounded by this policy."""
         return None
 
 
@@ -91,7 +94,7 @@ class _FixedState(PolicyState):
 
 
 def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
-    """Accept the ``int`` shorthand for a stopping policy: ``n`` = FixedRuns(n)."""
+    """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
     return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
 
 
@@ -185,7 +188,7 @@ class _Or(StoppingPolicy):
 
     def max_runs(self) -> int | None:
         # Stops as soon as either converges → at most the earlier of the two.
-        # Treat ``None`` as Inf, an unbounded child can't tighten the bound.
+        # Treat `None` as Inf, an unbounded child can't tighten the bound.
         a, b = self.a.max_runs(), self.b.max_runs()
         if a is None:
             return b

@@ -1,16 +1,16 @@
 """Sample, Observation, Run, Report: the data model over benchmark execution.
 
-A ``Run`` is one process execution — its identity, command, outcome
-(returncode / runtime / failure / stdout / stderr) and the ``Observation``s
-measured during it. An ``Observation`` is one measurement point: a bag of
-``Sample``s (possibly several metrics) plus an optional per-observation failure.
+A `Run` is one process execution — its identity, command, outcome
+(returncode / runtime / failure / stdout / stderr) and the `Observation`s
+measured during it. An `Observation` is one measurement point: a bag of
+`Sample`s (possibly several metrics) plus an optional per-observation failure.
 A command benchmark yields one Run with one Observation; a harness yields one
-Run with many. A ``Report`` is the collection of Runs; it summarizes by
+Run with many. A `Report` is the collection of Runs; it summarizes by
 flattening every observation's samples per metric.
 
-All are pure data and round-trip through JSON. ``stdout``/``stderr``/``env`` are
+All are pure data and round-trip through JSON. `stdout`/`stderr`/`env` are
 kept on a Run for live reporters but excluded from JSON by default (see
-``report_to_json``).
+`report_to_json`).
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ class Observation:
     """One measurement point: samples (possibly multi-metric) + optional failure.
 
     A failed observation — extraction produced nothing it expected, or the
-    harness flagged the iteration — carries ``failure`` and usually no samples;
-    the run proceeds to the next observation. ``label`` is the benchmark-variant
+    harness flagged the iteration — carries `failure` and usually no samples;
+    the run proceeds to the next observation. `label` is the benchmark-variant
     display identifier, carried for live progress reporting.
     """
 
@@ -55,15 +55,15 @@ class Observation:
 class Run:
     """One process execution: identity + command + outcome + observations.
 
-    ``command``/``cwd``/``env`` are the execution inputs; ``returncode`` /
-    ``runtime`` / ``failure`` / ``message`` / ``stdout`` / ``stderr`` the
-    outcome; ``observations`` the measurements taken during the run (command: 1;
-    harness: N). ``run`` is the run's index within its variant (command runs are
+    `command`/`cwd`/`env` are the execution inputs; `returncode` /
+    `runtime` / `failure` / `message` / `stdout` / `stderr` the
+    outcome; `observations` the measurements taken during the run (command: 1;
+    harness: N). `run` is the run's index within its variant (command runs are
     numbered 1..N; a harness is a single run).
 
-    ``returncode`` conventions follow ExecutionResult: ``124`` = timeout, ``-1``
-    = pre-execution failure. ``message`` is the last non-empty stderr/stdout line
-    on failure. ``stdout``/``stderr``/``env`` are not serialized to JSON by
+    `returncode` conventions follow ExecutionResult: `124` = timeout, `-1`
+    = pre-execution failure. `message` is the last non-empty stderr/stdout line
+    on failure. `stdout`/`stderr`/`env` are not serialized to JSON by
     default.
     """
 
@@ -91,7 +91,7 @@ class Run:
                                  self.run, variant_label=self.variant_label)
 
     def key(self) -> str:
-        """Canonical benchmark-variant key (see ``record_key``)."""
+        """Canonical benchmark-variant key (see `record_key`)."""
         return record_key(self.suite, self.benchmark, self.variant)
 
 
@@ -111,7 +111,7 @@ def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
 class Report:
     """The accumulating Runs, each carrying its Observations.
 
-    ``warmups`` maps a benchmark-variant key (``record_key``) to the number of
+    `warmups` maps a benchmark-variant key (`record_key`) to the number of
     its leading *observations* that were warmup — recorded once per variant.
     Stats drop those observations by default.
     """
@@ -140,7 +140,7 @@ class Report:
         self.runs.append(run)
 
     def warmup(self, key: str, observations: int) -> None:
-        """Note that benchmark-variant ``key``'s first ``observations`` were warmup."""
+        """Note that benchmark-variant `key`'s first `observations` were warmup."""
         if observations:
             self.warmups[key] = observations
 
@@ -153,8 +153,8 @@ _OUTPUT_FIELDS = ("stdout", "stderr", "env")
 
 
 def report_to_json(report: Report, *, indent: int = 2, include_output: bool = False) -> str:
-    """Serialize a Report. ``stdout``/``stderr``/``env`` are dropped unless
-    ``include_output`` (they bloat the file and are rarely needed offline)."""
+    """Serialize a Report. `stdout`/`stderr`/`env` are dropped unless
+    `include_output` (they bloat the file and are rarely needed offline)."""
     raw = unstructure(report)
     if not include_output:
         for run in raw.get("runs", []):

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from benchr import (
-    Execution, ExecutionResult, ScheduledExecution,
+    Execution, ExecutionResult,
 )
 
 
@@ -19,18 +19,6 @@ def make_execution(**overrides: Any) -> Execution:
     )
     defaults.update(overrides)
     return Execution(**defaults)
-
-
-def make_sched(**overrides: Any) -> ScheduledExecution:
-    defaults: dict[str, Any] = dict(
-        execution=make_execution(),
-        suite="S",
-        benchmark="B",
-        variant=(),
-        run=1,
-    )
-    defaults.update(overrides)
-    return ScheduledExecution(**defaults)
 
 
 def make_success(stdout: str = "", stderr: str = "", runtime: float = 1.0,

@@ -1,4 +1,4 @@
-"""``python -m benchr`` entry point."""
+"""`python -m benchr` entry point."""
 
 import sys
 

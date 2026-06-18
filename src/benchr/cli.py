@@ -27,8 +27,8 @@ from benchr.report.reporter import (
 from benchr.utils import print_exception
 from benchr.core.sample import Report, report_from_json
 from benchr.report.stats import build_summary
+from benchr.grammar.benchmark import Benchmark
 from benchr.runner.base import (
-    PlannedBenchmark,
     Runner,
     SuiteMaterializationError,
     plan,
@@ -51,8 +51,8 @@ def run(
 
     Args:
         suites: The suite (or list of suites) to run
-        params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to ``None`` if omitted.
-        reporter: The reporter to be used for process the result. Defaults to ``SummaryReporter``
+        params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
+        reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
         argv: The command-line parameters that will be parsed and use to fill the user-defined context.
 
     Returns:
@@ -100,8 +100,8 @@ def _do_run(
 
 
 def _apply_cli_overrides(
-    planned: list[PlannedBenchmark], ns: argparse.Namespace
-) -> list[PlannedBenchmark]:
+    planned: list[Benchmark], ns: argparse.Namespace
+) -> list[Benchmark]:
     overrides = {}
 
     if ns.runs is not None:
@@ -110,12 +110,7 @@ def _apply_cli_overrides(
         overrides["warmup"] = FixedRuns(ns.warmup)
 
     if overrides:
-        planned = [
-            dataclasses.replace(
-                p, benchmark=dataclasses.replace(p.benchmark, **overrides)
-            )
-            for p in planned
-        ]
+        planned = [dataclasses.replace(b, **overrides) for b in planned]
     return planned
 
 

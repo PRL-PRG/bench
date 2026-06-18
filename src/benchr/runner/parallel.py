@@ -1,19 +1,19 @@
 """Parallel runner.
 
-Runs up to N benchmark ``Controller``s concurrently — per-benchmark
+Runs up to N benchmark `Controller`s concurrently — per-benchmark
 parallelism, not per-run. Each benchmark drives its own internal sequential
 feedback loop (or a streaming harness with its own reader thread), so
 convergence-driven (CoV) and order-dependent policies run fine here, each on
 its own worker.
 
 This is the *only* sound use of parallelism in a benchmark tool: wall-clock
-timing under contention is meaningless, so ``Parallel`` is for work where time
+timing under contention is meaningless, so `Parallel` is for work where time
 is **not** the metric — test suites (pass/fail), smoke runs ("does everything
 execute"), or just getting through a batch faster.
 
-``--jobs N`` means "up to N benchmarks at once." The shared ``Report`` is
+`--jobs N` means "up to N benchmarks at once." The shared `Report` is
 mutated from worker threads, so both it and the reporter are wrapped in
-lock-guarded proxies to keep concurrent ``add``/``warmup`` writes from tearing.
+lock-guarded proxies to keep concurrent `add`/`warmup` writes from tearing.
 """
 
 from __future__ import annotations
@@ -24,18 +24,19 @@ from typing import Any
 
 from benchr.core.process import install_sigint_handler, interrupted
 from benchr.core.sample import Observation, Report, Run
+from benchr.grammar.benchmark import Benchmark
 from benchr.report.reporter import Reporter
-from benchr.runner.base import PlannedBenchmark, Runner
+from benchr.runner.base import Runner
 from benchr.runner.controller import Controller
 
 
 class _LockedReport(Report):
-    """Write-only lock-guarded wrapper over a shared ``Report``.
+    """Write-only lock-guarded wrapper over a shared `Report`.
 
-    The Controller never *reads* report state mid-run — it only ``add``s Runs
-    and marks ``warmup`` counts. Guard those mutation points so concurrent
-    benchmarks can't tear ``Report.runs`` / ``warmups``. (Its own inherited
-    slots are unused — all writes delegate to the shared ``report``.)"""
+    The Controller never *reads* report state mid-run — it only `add`s Runs
+    and marks `warmup` counts. Guard those mutation points so concurrent
+    benchmarks can't tear `Report.runs` / `warmups`. (Its own inherited
+    slots are unused — all writes delegate to the shared `report`.)"""
 
     def __init__(self, report: Report, lock: threading.Lock) -> None:
         super().__init__()
@@ -54,10 +55,10 @@ class _LockedReport(Report):
 class _LockedReporter(Reporter):
     """Lock-guarded wrapper over the real reporter.
 
-    Serializes ``observation`` / ``run_done`` / ``warmup`` so events from
+    Serializes `observation` / `run_done` / `warmup` so events from
     benchmarks running on different workers don't interleave inside a single
-    reporter call (e.g. a ``CompositeReporter`` fan-out). ``start`` /
-    ``finalize`` are called once by ``Parallel`` itself, not per-controller."""
+    reporter call (e.g. a `CompositeReporter` fan-out). `start` /
+    `finalize` are called once by `Parallel` itself, not per-controller."""
 
     def __init__(self, reporter: Reporter, lock: threading.Lock) -> None:
         self._reporter = reporter
@@ -77,11 +78,11 @@ class _LockedReporter(Reporter):
 
 
 class Parallel(Runner):
-    """Run up to N benchmark ``Controller``s concurrently on a thread pool.
+    """Run up to N benchmark `Controller`s concurrently on a thread pool.
 
-    Each planned benchmark gets its own ``Controller`` (an internal sequential
+    Each planned benchmark gets its own `Controller` (an internal sequential
     feedback loop), so any stopping policy — fixed, convergence-driven, or
-    order-dependent — runs fine; ``--jobs N`` just bounds how many run at once.
+    order-dependent — runs fine; `--jobs N` just bounds how many run at once.
     """
 
     def __init__(self, workers: int, reporter: Reporter | None = None,
@@ -90,15 +91,15 @@ class Parallel(Runner):
         self.workers = workers
 
     def run(
-        self, planned: list[PlannedBenchmark], params: Any = None
+        self, planned: list[Benchmark], params: Any = None
     ) -> Report:
-        self.reporter.start([p.benchmark for p in planned])
+        self.reporter.start(planned)
         report = Report()
         lock = threading.Lock()
         locked_report = _LockedReport(report, lock)
         locked_reporter = _LockedReporter(self.reporter, lock)
 
-        def _one(p: PlannedBenchmark) -> None:
+        def _one(p: Benchmark) -> None:
             # Don't start a benchmark once Ctrl+C has fired — the kill sweep
             # has already run, so a process started now would be orphaned.
             if interrupted():
@@ -108,7 +109,7 @@ class Parallel(Runner):
                 max_runs_per_policy=self.max_runs_per_policy,
                 max_consecutive_failures=self.max_consecutive_failures,
                 verbose=self.verbose,
-            ).run_benchmark(p, params, locked_report)
+            ).run_benchmark(p, locked_report)
 
         try:
             with install_sigint_handler():

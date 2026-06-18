@@ -36,7 +36,7 @@ def _drain(src):
 
 
 def test_command_source_yields_observation_with_all_metrics():
-    src = make_source(_planned(["sh", "-c", "echo 1.5"], FloatPerLine("")), None)
+    src = make_source(_planned(["sh", "-c", "echo 1.5"], FloatPerLine("")))
     obs = src.next()
     assert obs.failure is None
     assert any(s.value == 1.5 for s in obs.samples)
@@ -45,7 +45,7 @@ def test_command_source_yields_observation_with_all_metrics():
 
 
 def test_command_source_failure_sets_verdict_and_no_samples():
-    src = make_source(_planned(["sh", "-c", "exit 3"], FloatPerLine("")), None)
+    src = make_source(_planned(["sh", "-c", "exit 3"], FloatPerLine("")))
     obs = src.next()
     assert obs.failure == "exit code 3" and obs.samples == []
     runs = src.close()
@@ -53,7 +53,7 @@ def test_command_source_failure_sets_verdict_and_no_samples():
 
 
 def test_command_source_process_metrics_fold_into_one_observation():
-    src = make_source(_planned(["sh", "-c", "echo 1.5"], Time()), None)
+    src = make_source(_planned(["sh", "-c", "echo 1.5"], Time()))
     obs = src.next()
     # Time (process metric) folds into the command's single observation.
     assert any(s.metric == "elapsed" for s in obs.samples)
@@ -65,8 +65,7 @@ def test_command_source_process_metrics_fold_into_one_observation():
 
 def test_harness_source_streams_one_observation_per_line():
     src = make_source(
-        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0; echo 3.0"], FloatPerLine("")),
-        None)
+        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0; echo 3.0"], FloatPerLine("")))
     got = _drain(src)
     src.close()
     assert [o.samples[0].value for o in got] == [1.0, 2.0, 3.0]
@@ -74,8 +73,7 @@ def test_harness_source_streams_one_observation_per_line():
 
 def test_harness_source_close_kills_long_process():
     src = make_source(
-        _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine("")),
-        None)
+        _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine("")))
     first = src.next()          # blocks until the first line
     assert first.samples[0].value == 1.0
     t = time.monotonic()
@@ -88,7 +86,7 @@ def test_harness_process_metrics_become_trailing_observation():
          .with_cwd(Path("/tmp"))
          .with_metric(FloatPerLine(""), Time())
          .with_runs(2).with_harness())
-    src = make_source(plan([s], None)[0], None)
+    src = make_source(plan([s], None)[0])
     _drain(src)
     run = src.close()[0]
     # FloatPerLine -> 2 per-iteration observations; Time -> a trailing
@@ -99,14 +97,14 @@ def test_harness_process_metrics_become_trailing_observation():
 
 def test_harness_source_non_parsing_line_yields_no_observation():
     # A line that parses to zero samples is not a measured iteration.
-    src = make_source(_planned_harness(["sh", "-c", "echo hello"], FloatPerLine("")), None)
+    src = make_source(_planned_harness(["sh", "-c", "echo hello"], FloatPerLine("")))
     got = _drain(src)
     src.close()
     assert got == []
 
 
 def test_harness_source_nonzero_exit_sets_run_failure():
-    src = make_source(_planned_harness(["sh", "-c", "exit 3"], FloatPerLine("")), None)
+    src = make_source(_planned_harness(["sh", "-c", "exit 3"], FloatPerLine("")))
     _drain(src)
     run = src.close()[0]
     assert run.failure == "exit code 3" and run.returncode == 3
@@ -114,7 +112,7 @@ def test_harness_source_nonzero_exit_sets_run_failure():
 
 def test_harness_source_spawn_failure_is_one_failed_run():
     src = make_source(
-        _planned_harness(["definitely-not-a-real-command-xyz"], FloatPerLine("")), None)
+        _planned_harness(["definitely-not-a-real-command-xyz"], FloatPerLine("")))
     with pytest.raises(StopIteration):
         src.next()
     runs = src.close()
@@ -123,8 +121,7 @@ def test_harness_source_spawn_failure_is_one_failed_run():
 
 def test_harness_source_clean_exit_run_succeeds():
     src = make_source(
-        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0; exit 0"], FloatPerLine("")),
-        None)
+        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0; exit 0"], FloatPerLine("")))
     _drain(src)
     run = src.close()[0]
     assert run.returncode == 0 and run.failure is None
@@ -132,7 +129,7 @@ def test_harness_source_clean_exit_run_succeeds():
 
 def test_harness_source_temp_dir_cleaned_up_after_run():
     src = make_source(
-        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0"], FloatPerLine("")), None)
+        _planned_harness(["sh", "-c", "echo 1.0; echo 2.0"], FloatPerLine("")))
     assert isinstance(src, HarnessSource)
     assert src._live is not None
     tmp_dir = src._live.stdout_path.parent
@@ -145,7 +142,7 @@ def test_harness_source_temp_dir_cleaned_up_after_run():
 def test_harness_source_done_delivered_even_if_finish_raises():
     """_DONE must reach the queue even when _live.finish() raises, so next()
     raises StopIteration rather than hanging forever."""
-    src = make_source(_planned_harness(["sh", "-c", "echo 1.0"], FloatPerLine("")), None)
+    src = make_source(_planned_harness(["sh", "-c", "echo 1.0"], FloatPerLine("")))
     assert isinstance(src, HarnessSource)
     live = src._live
     assert live is not None

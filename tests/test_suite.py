@@ -32,23 +32,21 @@ def test_runs_preserves_benchmark_override():
 def test_with_command_propagates_when_unset():
     s = suite("S", _b("a")).with_command(["x"])
     b = _mat(s)[0]
-    assert b.schedule(None, suite="S", run=1).execution.command == ("x",)
+    assert b.execution.command == ("x",)
 
 
 def test_with_command_order_independent():
     before = suite("S").with_command(["x"]).add(_b("a"))
     after = suite("S").add(_b("a")).with_command(["x"])
     b1, b2 = _mat(before)[0], _mat(after)[0]
-    c1 = b1.schedule(None, suite="S", run=1).execution.command
-    c2 = b2.schedule(None, suite="S", run=1).execution.command
-    assert c1 == c2 == ("x",)
+    assert b1.execution.command == b2.execution.command == ("x",)
 
 
 def test_defaults_reach_factory_benchmarks():
     s = suite("S").with_command(["true"]).with_runs(4).factory(lambda ctx: [bench("f")])
     b = _mat(s)[0]
     assert b.runs == FixedRuns(4)
-    assert b.schedule(None, suite="S", run=1).execution.command == ("true",)
+    assert b.execution.command == ("true",)
 
 
 def test_materialize_missing_command_fails_fast():
@@ -60,7 +58,7 @@ def test_with_env_merges():
     a = _b("a").with_command(["true"]).with_env({"X": "1", "Y": "from_b"})
     s = suite("S", a).with_env({"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    env = b.schedule(None, suite="S", run=1).execution.env
+    env = b.execution.env
     # benchmark wins for Y
     assert env["X"] == "1" and env["Y"] == "from_b" and env["Z"] == "1"
 
@@ -69,7 +67,7 @@ def test_env_merge_both_callable():
     a = _b("a").with_command(["true"]).with_env(lambda ctx: {"X": ctx.benchmark or "", "Y": "from_b"})
     s = suite("S", a).with_env(lambda ctx: {"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    assert b.schedule(None, suite="S", run=1).execution.env == {"X": "a", "Y": "from_b", "Z": "1"}
+    assert b.execution.env == {"X": "a", "Y": "from_b", "Z": "1"}
 
 
 def test_suite_warmup_respects_explicit_zero():
@@ -104,8 +102,8 @@ def test_suite_with_label_propagates_and_respects_override():
         .with_command(["true"]).with_label(suite_label)
     )
     resolved = _mat(s)
-    assert resolved[0].label_fn is suite_label
-    assert resolved[1].label_fn is bench_label
+    assert resolved[0].variant_label == "suite"
+    assert resolved[1].variant_label == "bench"
 
 
 # ----- producers -----------------------------------------------------------
@@ -167,9 +165,8 @@ def test_with_matrix_expands_and_stamps_variant():
     benchmarks = list(s.materialize(None))
     assert len(benchmarks) == 2
     assert sorted(b.opt for b in benchmarks) == ["O0", "O2"]
-    # Schedule and check variant is stamped.
-    sched = benchmarks[0].schedule(None, suite="M", run=1)
-    assert sched.variant == (("opt", "O0"),)
+    # The variant is stamped on the resolved benchmark.
+    assert benchmarks[0].variant == (("opt", "O0"),)
 
 
 def test_suite_with_matrix_applies_to_all_benchmarks():
@@ -252,7 +249,7 @@ def test_with_label_overrides_default():
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(None))
-    assert sorted(b.variant_label() for b in bs) == ["<one>", "<two>"]
+    assert sorted(b.variant_label for b in bs) == ["<one>", "<two>"]
 
 
 def test_command_dimension_default_builder():
@@ -262,8 +259,7 @@ def test_command_dimension_default_builder():
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(None))
-    scheds = [b.schedule(None, suite="M", run=1) for b in bs]
-    assert sorted(s.execution.command for s in scheds) == [("echo", "a"), ("echo", "b")]
+    assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]
 
 
 def test_command_dimension_beats_suite_default():
@@ -272,5 +268,4 @@ def test_command_dimension_beats_suite_default():
         .with_command(["echo", "suite"])
     )
     b = _mat(s)[0]
-    sched = b.schedule(None, suite="M", run=1)
-    assert sched.execution.command == ("echo", "dim")
+    assert b.execution.command == ("echo", "dim")

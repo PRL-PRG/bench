@@ -1,9 +1,10 @@
-"""Execution / ExecutionResult / ScheduledExecution shape."""
+"""Execution / ExecutionResult shape and run identifiers."""
 
 import time
 from pathlib import Path
 
-from benchr import Execution, ExecutionResult, ScheduledExecution
+from benchr import Execution, ExecutionResult
+from benchr.core.execution import format_identifier
 from benchr.core.process import spawn_streaming
 
 
@@ -16,14 +17,8 @@ def test_execution_result_failure():
     assert f.stdout == "" and f.stderr == "" and f.runtime is None
 
 
-def test_scheduled_execution_identifier():
-    sched = ScheduledExecution(
-        execution=Execution(command=("x",), cwd=Path("/tmp")),
-        suite="S", benchmark="B",
-        variant=(("opt", "O2"), ("cc", "gcc")),
-        run=3,
-    )
-    s = sched.identifier()
+def test_format_identifier():
+    s = format_identifier("S", "B", (("opt", "O2"), ("cc", "gcc")), 3)
     assert s == "S/B (opt=O2, cc=gcc) #3"
 
 

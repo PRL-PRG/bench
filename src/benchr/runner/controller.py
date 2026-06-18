@@ -2,26 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from benchr.core.loop import benchmarking_loop
 from benchr.core.process import interrupted
 from benchr.core.sample import Report
+from benchr.grammar.benchmark import Benchmark
 from benchr.report.reporter import Reporter
-from benchr.runner.base import PlannedBenchmark
 from benchr.runner.source import make_source
 
 
 class Controller:
-    """Drive ``benchmarking_loop`` over one benchmark-variant's RunSource.
+    """Drive `benchmarking_loop` over one benchmark-variant's RunSource.
 
-    Pull one ``Observation`` per slot (each carries its display ``label``), feed
-    the stopping policy, count warmup observations, and ``close()`` the source on
+    Pull one `Observation` per slot (each carries its display `label`), feed
+    the stopping policy, count warmup observations, and `close()` the source on
     convergence (which kills a running harness and returns the assembled
-    ``Run``(s)). The Controller records those runs and marks the variant's
+    `Run`(s)). The Controller records those runs and marks the variant's
     warmup. It never schedules — the source owns scheduling and spawning.
 
-    ``max_consecutive_failures`` only applies when policies are *unbounded*:
+    `max_consecutive_failures` only applies when policies are *unbounded*:
     bounded policies already cap the count, so the failure cap would only mask a
     legitimately short run.
     """
@@ -39,14 +37,11 @@ class Controller:
         self.max_consecutive_failures = max_consecutive_failures
         self.verbose = verbose
 
-    def run_benchmark(
-        self, planned: PlannedBenchmark, params: Any, report: Report
-    ) -> None:
-        b = planned.benchmark
+    def run_benchmark(self, b: Benchmark, report: Report) -> None:
         if interrupted():
             return
 
-        source = make_source(planned, params, verbose=self.verbose)
+        source = make_source(b, verbose=self.verbose)
 
         bounded = b.warmup.max_runs() is not None and b.runs.max_runs() is not None
         failure_cap = None if bounded else self.max_consecutive_failures

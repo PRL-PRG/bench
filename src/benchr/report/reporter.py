@@ -33,10 +33,10 @@ from benchr.report.theme import BENCHR_THEME, console
 class Reporter(abc.ABC):
     """Streaming sink for benchmark progress and results.
 
-    Called by the Runner as ``start(plan)`` once, ``observation(obs)`` per
-    measurement (live progress; ``obs.label`` is the benchmark identifier),
-    ``run_done(run)`` per completed Run (a command run, or a harness's single
-    run), ``warmup(key, n)`` once per variant, and ``finalize()`` once.
+    Called by the Runner as `start(plan)` once, `observation(obs)` per
+    measurement (live progress; `obs.label` is the benchmark identifier),
+    `run_done(run)` per completed Run (a command run, or a harness's single
+    run), `warmup(key, n)` once per variant, and `finalize()` once.
     """
 
     def start(self, plan: list[Benchmark]) -> None:
@@ -49,7 +49,7 @@ class Reporter(abc.ABC):
         pass
 
     def warmup(self, key: str, observations: int) -> None:
-        """The variant's first ``observations`` observations were warmup."""
+        """The variant's first `observations` observations were warmup."""
         pass
 
     def finalize(self) -> None:
@@ -58,7 +58,7 @@ class Reporter(abc.ABC):
 
 class _BufferingReporter(Reporter):
     """Base for reporters that accumulate a Report and render it at
-    ``finalize()``. Gives subclasses a thread-safe ``run_done``/``warmup``."""
+    `finalize()`. Gives subclasses a thread-safe `run_done`/`warmup`."""
 
     def __init__(self) -> None:
         self._report = Report()
@@ -106,10 +106,10 @@ class CompositeReporter(Reporter):
 
 
 class CsvReporter(_BufferingReporter):
-    """Buffer runs; write CSV on ``finalize()``.
+    """Buffer runs; write CSV on `finalize()`.
 
-    Schema: ``suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, failure``. One row per Sample for successful observations;
+    Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
+    lower_is_better, failure`. One row per Sample for successful observations;
     a failed observation (or run) emits one row with blank metric and the
     failure verdict. All runs appear, warmup included.
     """
@@ -158,7 +158,7 @@ class CsvReporter(_BufferingReporter):
 class JsonReporter(_BufferingReporter):
     """Buffer runs in memory, write a single JSON file on finalize().
 
-    ``include_output`` keeps each run's stdout/stderr/env in the JSON (off by
+    `include_output` keeps each run's stdout/stderr/env in the JSON (off by
     default — they bloat the file and are rarely needed offline)."""
 
     def __init__(self, path: Path, *, include_output: bool = False) -> None:
@@ -179,7 +179,7 @@ class JsonReporter(_BufferingReporter):
 
 
 class DirReporter(Reporter):
-    """Per-run tree at ``<out>/<suite>/<bench>/<n>/``.
+    """Per-run tree at `<out>/<suite>/<bench>/<n>/`.
 
     Files: stdout, stderr, exitcode, seq (cwd + cmd + info). Directories count
     up per (suite, benchmark) in completion order.
@@ -229,7 +229,7 @@ class ProgressReporter(Reporter):
     On a terminal, renders a progress bar and clears itself before the
     SummaryReporter prints. On a non-terminal it falls back to plain
     one-line-per-observation output. Total is known when every benchmark's
-    policies expose a ``max_runs()``; otherwise displays ``?``.
+    policies expose a `max_runs()`; otherwise displays `?`.
     """
 
     def __init__(self, target_console: Console | None = None) -> None:
@@ -321,9 +321,9 @@ class ProgressReporter(Reporter):
 class SummaryReporter(_BufferingReporter):
     """Buffer runs; format on finalize().
 
-    Takes an optional ``formatter`` (any callable ``(Report, baseline=...) -> str``).
-    Defaults to ``DefaultSummary``. After the formatter output, appends a
-    ``Failures:`` block listing every failed run.
+    Takes an optional `formatter` (any callable `(Report, baseline=...) -> str`).
+    Defaults to `DefaultSummary`. After the formatter output, appends a
+    `Failures:` block listing every failed run.
     """
 
     def __init__(

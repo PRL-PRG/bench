@@ -1,14 +1,14 @@
-"""``Context``: the single object passed to every builder callable, plus the
+"""`Context`: the single object passed to every builder callable, plus the
 user-params-from-CLI glue that feeds it.
 
-Users declare a ``@dataclass`` describing their parameters. ``benchr.run()``
+Users declare a `@dataclass` describing their parameters. `benchr.run()`
 auto-generates argparse arguments from the field annotations and constructs an
-instance. That instance is exposed as ``ctx.params`` on the ``Context`` handed
+instance. That instance is exposed as `ctx.params` on the `Context` handed
 to every command/cwd/env callable and suite factory, alongside the resolved
-suite/benchmark properties (see ``Context`` below).
+suite/benchmark properties (see `Context` below).
 
-Supported param field types: ``str``, ``int``, ``float``, ``bool``, ``Path``,
-``Optional[T]`` / ``T | None``.
+Supported param field types: `str`, `int`, `float`, `bool`, `Path`,
+`Optional[T]` / `T | None`.
 
 Required vs default:
   - field with no default              → required argument
@@ -54,15 +54,15 @@ class Context[T]:
     """Everything a builder callable needs, in one object.
 
     The single argument passed to every command/cwd/env callable (built in
-    ``Benchmark.schedule``) and to every suite factory (built in
-    ``Suite.materialize``). ``T`` is the user's params ``@dataclass``.
+    `Benchmark.schedule`) and to every suite factory (built in
+    `Suite.materialize`). `T` is the user's params `@dataclass`.
 
     The level decides what the fields mean:
 
-      - **suite level** (factories): ``benchmark`` is ``None``, ``matrix`` is
+      - **suite level** (factories): `benchmark` is `None`, `matrix` is
         empty, and the policy/config fields are the *suite defaults* (already
-        reflecting any ``--runs/--warmup`` CLI override).
-      - **benchmark level** (command/cwd/env): ``benchmark`` is the name and the
+        reflecting any `--runs/--warmup` CLI override).
+      - **benchmark level** (command/cwd/env): `benchmark` is the name and the
         policy/config fields are the *resolved* benchmark's values.
     """
 
@@ -88,11 +88,11 @@ def add_dataclass_args(
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
     dc: type,
 ) -> None:
-    """Generate ``--<name>`` arguments from a dataclass's fields."""
+    """Generate `--<name>` arguments from a dataclass's fields."""
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")
-    # Resolve string annotations (``from __future__ import annotations`` makes
-    # every ``f.type`` a string); fall back to the raw field types if the
+    # Resolve string annotations (`from __future__ import annotations` makes
+    # every `f.type` a string); fall back to the raw field types if the
     # forward refs can't be resolved.
     try:
         hints = typing.get_type_hints(dc)

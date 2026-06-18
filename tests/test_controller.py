@@ -64,7 +64,7 @@ def _planned(runs, *, warmup=0):
 
 def _patch(monkeypatch, obs, closed):
     monkeypatch.setattr("benchr.runner.controller.make_source",
-                        lambda p, params, verbose=False: _FakeSource(obs, closed))
+                        lambda b, verbose=False: _FakeSource(obs, closed))
 
 
 def test_records_run_per_slot_and_always_closes(monkeypatch):
@@ -72,7 +72,7 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     _patch(monkeypatch, [_obs(i) for i in range(1, 4)], closed)
     rep = _Collect()
     report = Report()
-    Controller(rep).run_benchmark(_planned(FixedRuns(3)), None, report)
+    Controller(rep).run_benchmark(_planned(FixedRuns(3)), report)
 
     assert [r.run for r in report.runs] == [1, 2, 3]
     assert [r.observations[0].samples[0].value for r in report.runs] == [1.0, 2.0, 3.0]
@@ -87,7 +87,7 @@ def test_stops_when_policy_converges(monkeypatch):
     closed = []
     _patch(monkeypatch, [_obs(1) for _ in range(10)], closed)
     report = Report()
-    Controller(_Collect()).run_benchmark(_planned(FixedRuns(2)), None, report)
+    Controller(_Collect()).run_benchmark(_planned(FixedRuns(2)), report)
 
     assert len(report.runs) == 2
     assert closed == [True]
@@ -99,7 +99,7 @@ def test_warmup_boundary_recorded_once(monkeypatch):
     _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
     rep = _Collect()
     report = Report()
-    Controller(rep).run_benchmark(_planned(FixedRuns(3), warmup=2), None, report)
+    Controller(rep).run_benchmark(_planned(FixedRuns(3), warmup=2), report)
 
     assert len(report.runs) == 5
     assert report.warmups == {"S/b": 2}

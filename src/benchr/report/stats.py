@@ -1,7 +1,7 @@
 """Grouping, statistics, ratios, geometric means.
 
-By default ``group(report)`` excludes each benchmark variant's warmup runs —
-the first ``report.warmups[key]`` runs — from the groups (and therefore from
+By default `group(report)` excludes each benchmark variant's warmup runs —
+the first `report.warmups[key]` runs — from the groups (and therefore from
 stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep every run.
 """
 
@@ -56,7 +56,7 @@ def group(report: Report, *, name: str = "current",
     """Reshape a Report for stats/comparison.
 
     Flattens every Run's Observations per benchmark variant and collects their
-    samples by (metric, unit). The first ``report.warmups[key]`` observations of
+    samples by (metric, unit). The first `report.warmups[key]` observations of
     a variant are warmup and excluded by default. A run that failed before
     producing any observation (spawn / zero-delivery) counts as one failure.
     Benchmarks that only ever failed still appear (zero successes).

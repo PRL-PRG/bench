@@ -1,11 +1,14 @@
 """Formatters: turn a Report (or pre-computed SummaryData) into a string.
 
 The Reporter sinks (CsvReporter/JsonReporter/DirReporter) handle raw output; Formatters are for
-human-readable summaries. They are pure: ``format(report, baseline=...) -> str``.
+human-readable summaries. They are pure: `format(report, baseline=...) -> str`.
 
 Built-ins:
-    DefaultSummary   per-benchmark stats + per-suite geomean comparison
-    Compact          one-line-per-benchmark (good for commit messages)
+
+```text
+DefaultSummary   per-benchmark stats + per-suite geomean comparison
+Compact          one-line-per-benchmark (good for commit messages)
+```
 """
 
 from __future__ import annotations
@@ -70,8 +73,8 @@ def _count_markup(rc: RunCounts) -> str:
 def _variant_suffix(gs: GroupStats | BenchmarkGroup) -> str:
     """Render the variant portion of a display name.
 
-    Prefers the explicit ``variant_label`` (set via ``Benchmark.with_label``);
-    falls back to ``" (k=v, …)"`` for unlabeled dimensions.
+    Prefers the explicit `variant_label` (set via `Benchmark.with_label`);
+    falls back to `" (k=v, …)"` for unlabeled dimensions.
     """
     if gs.variant_label:
         return f"/{gs.variant_label}"
@@ -438,7 +441,7 @@ class Compact(Formatter):
         bench_ratios: dict[BenchmarkId, dict[MetricKey, MetricRatio]],
         matched: set[MetricKey],
     ) -> int | None:
-        """The run count shared by every matched benchmark, or ``None`` when
+        """The run count shared by every matched benchmark, or `None` when
         the counts disagree (no honest single number to print)."""
         runs: set[int] = set()
         for gs in data.groups:

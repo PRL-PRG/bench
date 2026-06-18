@@ -3,8 +3,8 @@
 Also home to the Ctrl+C machinery: every live benchmark subprocess is
 tracked so a SIGINT can kill the whole subtree (each child runs in its own
 process group) before the CLI exits. Without this, Python's
-KeyboardInterrupt only unblocks the main thread's ``os.wait4`` and leaves
-the children orphaned (and parallel worker threads stuck in ``wait4``
+KeyboardInterrupt only unblocks the main thread's `os.wait4` and leaves
+the children orphaned (and parallel worker threads stuck in `wait4`
 forever, since SIGINT is delivered to the main thread only).
 """
 
@@ -72,7 +72,7 @@ def install_sigint_handler() -> Generator[None]:
     """Install a SIGINT handler that kills tracked subprocesses and restores
     the previous handler so a second Ctrl+C is a hard exit.
 
-    No-op when called off the main thread (Python only allows ``signal.signal``
+    No-op when called off the main thread (Python only allows `signal.signal`
     in the main thread). Library callers running a runner inside their own
     worker thread get the previous behavior.
     """
@@ -99,7 +99,7 @@ def install_sigint_handler() -> Generator[None]:
 
 
 def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
-    """``os.wait4`` that retries on EINTR (the SIGINT itself wakes wait4)."""
+    """`os.wait4` that retries on EINTR (the SIGINT itself wakes wait4)."""
     while True:
         try:
             return os.wait4(pid, 0)
@@ -112,10 +112,10 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
 
 
 def _resolve_command(command: tuple[str, ...]) -> list[str]:
-    """Resolve ``argv[0]`` against PATH to an absolute path.
+    """Resolve `argv[0]` against PATH to an absolute path.
 
-    Raises ``FileNotFoundError`` if the command is not found. The absolute
-    path is taken against the invoker's cwd so that ``Popen(cwd=…)`` doesn't
+    Raises `FileNotFoundError` if the command is not found. The absolute
+    path is taken against the invoker's cwd so that `Popen(cwd=…)` doesn't
     re-resolve a relative executable against the subprocess's own cwd.
     """
     cmd = list(command)
@@ -129,8 +129,8 @@ def _resolve_command(command: tuple[str, ...]) -> list[str]:
 def execute(exe: Execution) -> ExecutionResult:
     """Spawn one subprocess and return an ExecutionResult.
 
-    Honors ``exe.timeout`` (returncode ``TIMEOUT_RC`` on timeout), captures
-    stdout/stderr, and includes ``rusage`` via ``os.wait4``. Pure mechanism —
+    Honors `exe.timeout` (returncode `TIMEOUT_RC` on timeout), captures
+    stdout/stderr, and includes `rusage` via `os.wait4`. Pure mechanism —
     no policy, no reporting.
     """
     try:
@@ -151,8 +151,8 @@ def execute(exe: Execution) -> ExecutionResult:
             stderr=stderr_f,
             shell=False,
             # Put the child in its own process group so a Ctrl+C handler can
-            # kill the whole subtree via ``os.killpg`` (matters for shell
-            # wrappers like ``sh -c "..."`` that spawn the real workload).
+            # kill the whole subtree via `os.killpg` (matters for shell
+            # wrappers like `sh -c "..."` that spawn the real workload).
             start_new_session=True,
         )
         _register_proc(proc)
@@ -165,7 +165,7 @@ def execute(exe: Execution) -> ExecutionResult:
 
         starttime = time.monotonic()
         # A Timer kills the process on timeout while the main thread blocks on
-        # ``wait4(pid, 0)`` — so ``runtime`` reflects the exact moment the
+        # `wait4(pid, 0)` — so `runtime` reflects the exact moment the
         # process exited (no busy-wait poll granularity inflating timed runs).
         killed = threading.Event()
         timer: threading.Timer | None = None

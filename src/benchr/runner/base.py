@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import abc
 import subprocess
-from dataclasses import dataclass
 from typing import Any
 
 from benchr.grammar.benchmark import Benchmark
 from benchr.core.execution import (
-    ScheduledExecution,
     default_success,
+    format_identifier,
 )
 from benchr.grammar.suite import Suite
 from benchr.report.reporter import Reporter
@@ -24,14 +23,6 @@ class _NoopReporter(Reporter):
 # ---------------------------------------------------------------------------
 # Plan builder (Suite list -> flat Benchmark list)
 # ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class PlannedBenchmark:
-    """A Benchmark associated with the suite name it belongs to."""
-
-    suite: str
-    benchmark: Benchmark
 
 
 class SuiteMaterializationError(Exception):
@@ -54,48 +45,45 @@ class SuiteMaterializationError(Exception):
         return "\n".join(lines)
 
 
-def plan(suites: Suite | list[Suite], params: Any = None) -> list[PlannedBenchmark]:
-    """Flatten suites + their deferred factories into concrete benchmarks."""
+def plan(suites: Suite | list[Suite], params: Any = None) -> list[Benchmark]:
+    """Flatten suites + their deferred factories into resolved benchmarks."""
     if isinstance(suites, Suite):
         suites = [suites]
-    out: list[PlannedBenchmark] = []
+    out: list[Benchmark] = []
     for s in suites:
         try:
-            materialized = s.materialize(params)
+            out.extend(s.materialize(params))
         except Exception as cause:
             raise SuiteMaterializationError(s.name, cause) from cause
-        for b in materialized:
-            out.append(PlannedBenchmark(suite=s.name, benchmark=b))
     return out
 
 
-def format_scheduled_verbose(sched: ScheduledExecution, benchmark: Benchmark) -> str:
-    """Dump a ScheduledExecution + benchmark plan as a deterministic text block.
+def format_benchmark_verbose(b: Benchmark, run: int) -> str:
+    """Dump a resolved Benchmark plan as a deterministic text block.
 
-    One header (``sched.identifier()``) followed by every field of
-    ``ScheduledExecution`` (and its nested ``Execution``) plus the benchmark's
-    metric/success/plan summary. Every line printed every time — no
-    conditional fields.
+    One header (the run identifier) followed by every field of the resolved
+    `Execution` plus the benchmark's metric/success/variant summary. Every line
+    printed every time — no conditional fields.
     """
-    e = sched.execution
+    e = b.execution
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(type(m).__name__ for m in benchmark.metrics)
+    metric_str = ", ".join(type(m).__name__ for m in b.metrics)
     success_str = (
         "<default>"
-        if benchmark.success is default_success
-        else getattr(benchmark.success, "__name__", repr(benchmark.success))
+        if b.success is default_success
+        else getattr(b.success, "__name__", repr(b.success))
     )
-    variant_str = dict(sched.variant) if sched.variant else {}
-    label_str = sched.variant_label or "<none>"
+    variant_str = dict(b.variant) if b.variant else {}
+    label_str = b.variant_label or "<none>"
 
     return "\n".join(
         [
-            sched.identifier(),
-            f"  suite:      {sched.suite}",
-            f"  benchmark:  {sched.benchmark}",
-            f"  run:        {sched.run}",
+            format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
+            f"  suite:      {b.suite}",
+            f"  benchmark:  {b.name}",
+            f"  run:        {run}",
             f"  command:    {' '.join(e.command)}",
             f"  cwd:        {e.cwd}",
             f"  env:        {{{env_str}}}",
@@ -115,14 +103,14 @@ def format_scheduled_verbose(sched: ScheduledExecution, benchmark: Benchmark) ->
 
 
 class Runner(abc.ABC):
-    """Abstract runner: drives a set of planned benchmarks to a ``Report``.
+    """Abstract runner: drives a set of planned benchmarks to a `Report`.
 
-    Concrete runners (``Sequential``, ``Parallel``) drive one ``Controller``
-    per benchmark; ``Dry`` just enumerates the plan. ``run()`` returns the
-    accumulated ``Report``.
+    Concrete runners (`Sequential`, `Parallel`) drive one `Controller`
+    per benchmark; `Dry` just enumerates the plan. `run()` returns the
+    accumulated `Report`.
 
-    ``max_runs_per_policy`` is a defensive backstop for non-converging custom
-    policies. ``max_consecutive_failures`` silently aborts a benchmark whose
+    `max_runs_per_policy` is a defensive backstop for non-converging custom
+    policies. `max_consecutive_failures` silently aborts a benchmark whose
     runs keep failing — surface that fact in the report rather than retrying
     forever. Bump it for flaky benchmarks; set high for purely-success suites.
     """
@@ -141,4 +129,4 @@ class Runner(abc.ABC):
         self.verbose = verbose
 
     @abc.abstractmethod
-    def run(self, planned: list[PlannedBenchmark], params: Any = None) -> Report: ...
+    def run(self, planned: list[Benchmark], params: Any = None) -> Report: ...
