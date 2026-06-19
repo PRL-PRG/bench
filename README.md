@@ -76,66 +76,62 @@ See [`examples/`](examples/) for one runnable script per capability.
 
 A benchmark run is a pipeline. The blocks below are the things you build
 (`Suite`, `Benchmark` — the builder grammar in `benchr.grammar`) and the things
-a run produces (`RunRecord`, `Sample`, `Report` — pure data in `benchr.core`,
-so Reports round-trip cleanly through JSON). Every pipeline step below except
-`Benchmark.schedule()` and the final reporting lives in `benchr.core`; see
-[Module layout](#module-layout) for the one-line layering rule.
+a run produces (`Run`, `Observation`, `Sample`, `Report` — pure data in
+`benchr.core`, so Reports round-trip cleanly through JSON). Everything except
+the final reporting lives in `benchr.core`; see [Module layout](#module-layout)
+for the one-line layering rule.
 
-* `Suite`: a named collection of benchmarks
+* `Suite`: a named collection of benchmarks plus the defaults they inherit
 * `Benchmark`: command + cwd + env + metrics + stopping policy + variants
-* `RunRecord`: one execution identity with outcome (failure or list of samples)
+* `Run`: one process execution — identity + outcome + its `Observation`s
+* `Observation`: one measurement point — a bag of `Sample`s (+ optional failure)
 * `Sample`: one metric value
-* `Report`: `[RunRecord]`, JSON round-trippable
+* `Report`: `[Run]` + per-variant warmup counts, JSON round-trippable
 
 ### Pipeline
 
 ```
-   benchmarking_loop          ← yields (run, in_warmup) slots until the policies converge
-        │
+   plan(suites, params)       ← Suite.materialize → BenchmarkSpec.create:
+        │                        resolve the matrix + fill every UNSET field
         ▼
-   Benchmark.schedule()       ← materializes one ScheduledExecution per slot
-        │
+   [Benchmark]                ← fully-resolved variants (Execution + metrics + policies)
+        │                        a Runner drives one Controller per Benchmark
         ▼
-   ScheduledExecution         ← (Execution, suite, benchmark, run, variant)
-        │
+   benchmarking_loop(warmup, runs)   ← yields in_warmup per slot until both policies converge
+        │                        the Controller pulls one Observation per slot from a RunSource
         ▼
-   execute()                  ← the only step that spawns a process
+   RunSource.next()
+     ├─ CommandSource  → execute() spawns one process per observation
+     └─ HarnessSource  → one process; a monitor frames its output into observations
         │
         ▼
    ExecutionResult            ← stdout, stderr, returncode, runtime, rusage
-        │
-        ▼
-   judge()                    ← SuccessFn → Verdict (None = ok, str = failure)
-        │
+        │                        Benchmark.success(result) → Verdict (None = ok, str = failure)
    ┌────┴────────┐
    ▼             ▼
- failure       success
-   │             │ Metric.process()
-   │             ▼
-   │           [Sample]
+ failure       success → Metric.process() → [Sample]
    │             │
    └─────┬───────┘
          ▼
-   RunRecord(identity, outcome, samples)
-         │
+   Observation(samples, failure, label)
+         │                        the source assembles observations into Run(s) on close()
          ▼
-   StoppingPolicy.observe(run, samples)
-         │
+   Run(identity, outcome, [Observation])   ← command: 1 observation; harness: N
+         │                        Controller → StoppingPolicy.observe(obs) + Report.add(run)
          ▼ not converged → next slot
-         │
          ▼ converged
      Report  →  Reporter (stream) + Formatter (final summary)
 ```
 
 A *harness* benchmark (`.with_harness()`, see below) takes a shortcut through
-the same pipeline: one `execute()`, then the metrics parse the **complete**
-output and each iteration's samples become one `RunRecord`.
+the same pipeline: one long-running process, then a monitor frames its output
+into many `Observation`s — all belonging to a single `Run`.
 
-A **failed run still produces a `RunRecord`** (with `failure` set, empty
-`samples`). That's why a failing benchmark appears in the summary as `3|0 runs`
-(3 failures, 0 successes) with the reason listed in a `Failures:` block — no
-fake metrics poisoning the stats. `.with_runs(N)` means "N attempts", so a crashing
-benchmark stops after N runs rather than retrying.
+A **failed run still produces a `Run`** (with `failure` set and an empty
+`Observation`). That's why a failing benchmark appears in the summary as
+`3|0 runs` (3 failures, 0 successes) with the reason listed in a `Failures:`
+block — no fake metrics poisoning the stats. `.with_runs(N)` means "N
+attempts", so a crashing benchmark stops after N runs rather than retrying.
 
 ### Suite vs Benchmark — who overrides whom
 
@@ -174,20 +170,26 @@ set. The full precedence, most specific wins:
 Other CLI flags (`--json`, `--csv`, `--dir`, `--compare`) are **additive**: they
 attach extra output sinks alongside whatever reporter the script configured.
 
-### RunRecord and Sample
+### Run, Observation, and Sample
 
-The single abstraction the runner produces is `RunRecord`. Each `RunRecord`
-carries identity + outcome + nested `Sample`s:
+The runner produces `Run`s. Each `Run` carries identity + outcome + a list of
+`Observation`s, and each `Observation` holds the `Sample`s measured at one
+point:
 
 ```python
-RunRecord(
-    suite, benchmark, variant, run,               # identity
-    command, returncode, runtime, failure, message,  # outcome
-    variant_label,
-    samples: list[Sample],                        # parsed metrics (empty on failure)
+Run(
+    suite, benchmark, variant, variant_label, run,   # identity
+    command, cwd, returncode, runtime, failure, message,  # outcome
+    observations: list[Observation],                 # command: 1; harness: N
 )
 
-Sample(metric, value, unit, lower_is_better)      # metric data only
+Observation(
+    samples: list[Sample],     # parsed metrics (empty on failure)
+    failure,                   # None, or the reason this observation failed
+    label,                     # display identifier, for live progress
+)
+
+Sample(metric, value, unit, lower_is_better)         # metric data only
 ```
 
 * `variant` is a sorted tuple of `(dimension, value)` pairs identifying the
@@ -195,16 +197,17 @@ Sample(metric, value, unit, lower_is_better)      # metric data only
   the benchmark has no matrix.
 * `variant_label` is the human-readable label of the variant (from
   `Benchmark.with_label(...)`, or the formatted `variant` tuple otherwise).
-* run numbers are **continuous**: a benchmark's warmup runs are `1..W`,
-  measured runs follow. Records carry no warmup marking — `Report.warmups`
-  maps each benchmark variant to its `W` once, and stats drop those runs.
-  Every run appears in JSON/CSV/dir outputs.
+* observation numbers are **continuous**: a variant's warmup observations come
+  first, measured ones follow. Records carry no warmup marking — `Report.warmups`
+  maps each benchmark variant to its warmup count once, and stats drop those
+  leading observations. Every run appears in JSON/CSV/dir outputs.
 * `Sample.lower_is_better` is set by the Metric — `True` for runtime, `False`
   for throughput, `None` when not comparable.
 
-Every execution yields one `RunRecord`. A *successful* run carries one or more
-`Sample`s (one per metric the Metric emitted); a failed run carries an empty
-`samples` list and a non-None `failure`.
+A command benchmark yields one `Run` with a single `Observation`; a harness
+yields one `Run` with many. A *successful* observation carries one or more
+`Sample`s (one per metric emitted); a failed one carries no samples and a
+non-None `failure`.
 
 ### Serialization
 
@@ -218,37 +221,44 @@ get:
       "suite": "factory_demo",
       "benchmark": "tiny",
       "variant": [],
+      "variant_label": "",
       "run": 1,
       "command": ["python3", "-c", "sum(range(1000))"],
+      "cwd": "/home/user/benchr",
       "returncode": 0,
       "runtime": 0.014422666048631072,
       "failure": null,
       "message": "",
-      "variant_label": "",
-      "samples": [
+      "observations": [
         {
-          "metric": "elapsed",
-          "value": 0.014422666048631072,
-          "unit": "s",
-          "lower_is_better": true
+          "samples": [
+            {
+              "metric": "elapsed",
+              "value": 0.014422666048631072,
+              "unit": "s",
+              "lower_is_better": true
+            }
+          ],
+          "failure": null,
+          "label": "tiny #1"
         }
       ]
     }
   ],
-  "warmups": {},
-  "metadata": {}
+  "warmups": {}
 }
 ```
 
-`warmups` maps a benchmark-variant key to the number of its leading runs that
-were warmup (only non-zero entries; here none) — that is how a reloaded
-report, e.g. a `--compare` baseline, knows which runs the stats must drop.
+Each `Run` carries its `observations` (a command benchmark has exactly one per
+run, a harness many). A run's `stdout`/`stderr`/`env` are kept in memory for
+live reporters but excluded from JSON by default — they bloat the file and are
+rarely needed offline — which is why they don't appear above (pass
+`include_output=True` to `report_to_json` to keep them).
 
-`metadata` maps a benchmark-variant key to its whole-process metric samples:
-the per-process metrics (e.g. `Time()`, `max_rss()`) of a *harness* benchmark,
-which measure the single long-running process rather than one iteration. It is
-empty for ordinary runs, where those metrics fold into each run's own samples.
-`benchr … -v` also prints this block after each harness benchmark.
+`warmups` maps a benchmark-variant key to the number of its leading
+*observations* that were warmup (only non-zero entries; here none) — that is
+how a reloaded report, e.g. a `--compare` baseline, knows which observations
+the stats must drop.
 
 Programmatically:
 
@@ -257,21 +267,22 @@ from benchr import report_from_json, report_to_json
 
 r = report_from_json(Path("out.json").read_text())
 for run in r.runs:
-    for s in run.samples:
-        print(run.benchmark, run.run, s.metric, s.value)
+    for obs in run.observations:
+        for s in obs.samples:
+            print(run.benchmark, run.run, s.metric, s.value)
 print("failures:", r.failures)
 Path("out2.json").write_text(report_to_json(r))
 ```
 
-CSV (`--csv`) is one row per `(run, sample)` for successful runs, plus one
-row per failed run carrying the failure verdict. The schema is
+CSV (`--csv`) is one row per `Sample` for successful observations, plus one
+row per failed observation/run carrying the failure verdict. The schema is
 `suite, benchmark, run, <variant cols>, metric, value, unit, lower_is_better, failure`
 where variant columns are the **union** of every matrix dimension observed across all runs
 (cells absent in a particular run are blank). All runs appear, warmup
 included — to drop warmup in external analysis, read `warmups` from the JSON.
 
 DirReporter (`--dir`) writes a per-execution tree
-(`<suite>/<bench>/<run>/{stdout,stderr,exitcode,rusage,seq}`).
+(`<suite>/<bench>/<n>/{stdout,stderr,exitcode,seq}`).
 
 ### Metric — output → metrics
 
@@ -306,21 +317,22 @@ enough runs have been collected. The split is deliberate:
 
   ```python
   state = policy.start()
-  while not state.converged():
-      run += 1
-      samples = execute_and_parse(...)        # [] on failure
-      state.observe(run, samples)
+  while not state.satisfied():
+      obs = observe_one(...)        # an Observation (empty samples on failure)
+      state.observe(obs)
   ```
 
 This keeps benchmarks immutable while each *run* of a benchmark gets its own
 live state. Built-in policies:
 
-* **`FixedRuns(n)`** — converge after `n` runs (success or failure).
+* **`FixedRuns(n)`** — converge after `n` observations (success or failure).
   Bounded, parallel-safe.
 * **`CoefficientOfVariation(metric, threshold=0.02, window=5, min_runs=10)`** —
   converge once the rolling stdev/mean of `metric` over the last `window` runs
   drops below `threshold`. Unbounded, sequential.
-* **`Custom(state_factory)`** — wrap any `() -> PolicyState`.
+* **Custom** — subclass `StoppingPolicy` (the frozen config, returns a
+  `PolicyState` from `start()`) and `PolicyState` (the per-observation
+  observer); see [`examples/custom_policy.py`](examples/custom_policy.py).
 
 Combinators:
 
@@ -350,17 +362,19 @@ the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
 
 * **`Sequential`** — one benchmark at a time, runs in order. The default, and
   the only sound choice when wall-clock time is the metric (no contention).
-* **`Parallel(workers)`** — flattens every `(benchmark, run)` into one work
-  queue and spreads it across `n` workers. For work where time is *not* the
-  metric — test suites (pass/fail), smoke runs. Requires *bounded* and
-  *order-independent* policies (e.g. `FixedRuns`); convergence-driven or
-  order-dependent policies are rejected — use `Sequential`, or force a run
-  count with `--runs N`.
+* **`Parallel(workers)`** — runs up to `workers` benchmarks concurrently, one
+  `Controller` per benchmark (per-*benchmark* parallelism, not per-run). Each
+  benchmark still drives its own sequential feedback loop, so any policy —
+  fixed, convergence-driven, or order-dependent — works unchanged. This is the
+  one sound use of parallelism in a benchmark tool: wall-clock timing under
+  contention is meaningless, so use it only for work where time is *not* the
+  metric — test suites (pass/fail), smoke runs, or getting through a batch
+  faster. `--jobs N` bounds how many benchmarks run at once.
 * **`Dry`** — enumerate and print what *would* run; no subprocess.
-  `--dry -v` dumps every field of the `ScheduledExecution`.
+  `--dry -v` dumps every field of the resolved `Benchmark`/`Execution`.
 
 Harness benchmarks run in all three: `Parallel` treats one as a single work
-item (one execution), so harness benchmarks and variants fan out across
+item (one process), so harness benchmarks and variants fan out across
 workers; `Dry` prints one `[harness]`-marked line.
 
 A runner executes a flat list of planned benchmarks, not suites: call
@@ -421,7 +435,7 @@ compile_matrix/compute/compiler=gcc, opt=O2: 0|3 runs
 ...
 ```
 
-Each cell's `RunRecord.variant` carries the dimension values so reporters split by
+Each cell's `Run.variant` carries the dimension values so reporters split by
 dimension. Ranking in the end-of-run "Summary" compares variants *within* a
 benchmark; cross-benchmark ranking is never emitted (different programs are
 not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
@@ -562,8 +576,9 @@ s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
 
 report = Sequential().run(plan([s], None), None)
 for run in report.runs:
-    for sample in run.samples:
-        print(run.benchmark, run.run, sample.metric, sample.value)
+    for obs in run.observations:
+        for sample in obs.samples:
+            print(run.benchmark, run.run, sample.metric, sample.value)
 print("failures:", report.failures)
 ```
 
@@ -605,7 +620,7 @@ Supported field types: `str`, `int`, `float`, `bool` (→ `--flag/--no-flag`),
 ## CLI reference
 
 ```
-benchr bench   [--runs N] [--warmup N] [--timeout T] [--jobs J] [--quiet] [--dry] [-v]
+benchr bench   [--runs N] [--warmup N] [--timeout T] [--jobs J] [--no-progress] [--dry] [-v]
                [--json F] [--csv F] [--dir D] [--compare base.json ...]
                [--metric M] CMD1 CMD2 ...
 
@@ -618,7 +633,7 @@ own `@dataclass` flags:
 
 ```
 python my_bench.py [--<user params>] [--runs N] [--warmup N] [--jobs J]
-                   [--quiet] [--dry] [-v] [--json F] [--csv F] [--dir D]
+                   [--no-progress] [--dry] [-v] [--json F] [--csv F] [--dir D]
                    [--compare base.json ...]
 ```
 
@@ -634,15 +649,15 @@ src/benchr/
     __init__.py            public re-exports
     cli.py                 run() entry point + bench/compare
     core/                  pure mechanism + pure data; imports nothing from benchr
-        execution.py       Execution, ExecutionResult, ScheduledExecution,
+        execution.py       Execution, ExecutionResult, Verdict,
                            Variant, TIMEOUT_RC, SPAWN_FAIL_RC
-        process.py         execute() + SIGINT machinery
+        process.py         execute() + spawn_streaming() + SIGINT machinery
         metric.py          Metric + combinators + Time/Regex/FloatPerLine/…
         policy.py          StoppingPolicy, FixedRuns, CoV, combinators
         loop.py            benchmarking_loop — the pure feedback core
-        sample.py          Sample, RunRecord, Report, JSON round-trip
+        sample.py          Sample, Observation, Run, Report, JSON round-trip
     grammar/               builder sugar on top of core
-        benchmark.py       Benchmark + schedule(), UNSET
+        benchmark.py       BenchmarkSpec (template) + Benchmark (resolved), UNSET
         suite.py           Suite + matrix + from_files
         context.py         @dataclass -> argparse glue
     report/
@@ -651,7 +666,9 @@ src/benchr/
         reporter.py        streaming sinks (CompositeReporter, CsvReporter, JsonReporter, …)
         theme.py           rich theme + shared Console
     runner/
-        base.py            plan(), judge(), Runner base + the loop driver
+        base.py            plan(), Runner base, the verbose plan dump
+        controller.py      the per-benchmark feedback loop driver
+        source.py          CommandSource / HarnessSource (spawn + assemble Runs)
         sequential.py / parallel.py / dry.py
 ```
 

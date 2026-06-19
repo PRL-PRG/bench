@@ -26,7 +26,7 @@ from benchr.core.execution import (
     format_identifier,
 )
 from benchr.core.metric import extract_process, extract_run, partition_metrics
-from benchr.core.process import LiveProcess, spawn_streaming
+from benchr.core.process import LiveProcess, execute, spawn_streaming
 from benchr.core.sample import Observation, Run, diagnostic_excerpt
 from benchr.grammar.benchmark import Benchmark
 from benchr.runner.base import format_benchmark_verbose
@@ -63,8 +63,6 @@ class CommandSource(RunSource):
         self._runs: list[Run] = []
 
     def next(self) -> Observation:
-        from benchr.core.process import execute
-
         self._run += 1
         b = self._b
         if self._verbose and self._run == 1:

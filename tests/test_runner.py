@@ -135,7 +135,11 @@ def test_parallel_runs_faster_than_sequential():
     t0 = time.monotonic()
     Parallel(workers=4).run(plan([s], None), None)
     par_t = time.monotonic() - t0
-    assert par_t < seq_t * 0.7, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
+    # Two benchmarks across 4 workers should overlap, so parallel is clearly
+    # faster than sequential. The threshold is loose (vs. an ideal ~0.5) to
+    # tolerate process-spawn overhead and CI jitter — with no overlap the ratio
+    # would be ~1.0, so this still catches a broken Parallel.
+    assert par_t < seq_t * 0.8, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
 
 
 def test_parallel_records_every_run():

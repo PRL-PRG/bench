@@ -30,3 +30,10 @@ venv = ".venv"
 pythonVersion = "3.12"
 include = ["src", "tests", "examples"]
 strict = ["src"]
+
+[dependency-groups]
+docs = [
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.4",
+    "ruff>=0.15.17",
+]

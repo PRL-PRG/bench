@@ -157,11 +157,9 @@ def execute(exe: Execution) -> ExecutionResult:
         )
         _register_proc(proc)
         if exe.stdin and proc.stdin is not None:
-            try:
+            with contextlib.suppress(BrokenPipeError):
                 proc.stdin.write(exe.stdin)
                 proc.stdin.close()
-            except BrokenPipeError:
-                pass
 
         starttime = time.monotonic()
         # A Timer kills the process on timeout while the main thread blocks on

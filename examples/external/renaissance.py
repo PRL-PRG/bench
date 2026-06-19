@@ -135,4 +135,5 @@ renaissance = (
     )
 )
 
-run(renaissance, params=Params)
+if __name__ == "__main__":
+    run(renaissance, params=Params)

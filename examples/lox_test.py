@@ -6,12 +6,17 @@
 # [tool.uv.sources]
 # benchr = { path = "..", editable = true }
 # ///
-"""Lox test runner.
+"""Custom Reporter: a pass/fail test runner that sets the process exit code.
 
-Treats each ``.lox`` file under ``ctx.cwd/tests`` as a test: success is
-"stdout matches the ``// expect: <line>`` comments embedded in the source."
-Drives benchr's Sequential runner with a custom success policy and a
-custom Reporter that counts pass/fail and exits non-zero on any failure.
+Treats each ``.lox`` file under ``ctx.cwd/tests`` as a test and drives benchr's
+Sequential runner with a custom ``Reporter`` that counts pass/fail and exits
+non-zero on any failure — the test-runner shape, distinct from a *timing* run.
+Success is "stdout matches the ``// expect: <line>`` comments in the source",
+expressed as a ``.with_success`` policy; see ``custom_metric.py`` for the
+custom-metric/success mechanics in isolation.
+
+Needs a real Lox interpreter, like the ``external/`` examples; for a
+*benchmarking* (rather than testing) Lox config see ``external/lox.py``.
 
 Usage:
     ./lox_test.py --lox /path/to/lox-interpreter [--cwd .]

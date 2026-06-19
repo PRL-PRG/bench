@@ -16,7 +16,7 @@ re-check the exit status.
 """
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 from benchr import (
     ExecutionResult, Metric, Sample, Time,

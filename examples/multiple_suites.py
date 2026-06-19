@@ -6,7 +6,11 @@
 # [tool.uv.sources]
 # benchr = { path = "..", editable = true }
 # ///
-"""Two suites with different metrics; per-suite formatter via filter."""
+"""Two suites with different metrics; a per-suite Compact summary each.
+
+Each suite gets its own ``SummaryReporter`` whose ``Compact`` formatter is
+scoped with ``suite=...``; a ``CompositeReporter`` fans the run out to both.
+"""
 
 from benchr import Compact, CompositeReporter, SummaryReporter, Time, bench, run, suite
 

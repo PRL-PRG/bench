@@ -1,4 +1,4 @@
-"""benchr CLI enrty point"""
+"""benchr CLI entry point."""
 
 from __future__ import annotations
 
@@ -174,7 +174,6 @@ def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
     _add_shared_flags(parser.add_argument_group("benchr flags"))
 
 
-# TODO: fixme the default policy is to complicated
 def _add_shared_flags(
     # argparse exposes no public name for the add_argument_group() return type.
     g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
@@ -242,7 +241,7 @@ def _add_shared_flags(
         type=str,
         default=None,
         metavar="DIR",
-        help="Write a per-execution tree (stdout/stderr/exitcode/rusage) under DIR.",
+        help="Write a per-execution tree (stdout/stderr/exitcode/seq) under DIR.",
     )
     g.add_argument(
         "--compare",
@@ -342,7 +341,9 @@ def _run_bench(ns: argparse.Namespace) -> int:
         .with_runs(ns.runs)
     )
 
-    # TODO: default like hyperfine - 10 runs or 3 seconds
+    # NOTE: `bench` defaults to a fixed 10 runs (set above). A time-bounded
+    # default (hyperfine-style "10 runs or 3 seconds") would need a duration
+    # stopping policy; not implemented.
     if ns.timeout is not None:
         b = b.with_timeout(ns.timeout)
     if ns.warmup > 0:
@@ -385,8 +386,6 @@ def _run_compare(ns: argparse.Namespace) -> int:
         if out:
             console.print(out)
         return 0
-    # TODO: fix - should be all against baseline
-    #
     # First file is the baseline; rest are comparees. Summarize the *last*
     # file ("current") against the baseline, plus all intermediates as
     # additional comparees.

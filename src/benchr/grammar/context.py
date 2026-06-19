@@ -54,8 +54,9 @@ class Context[T]:
     """Everything a builder callable needs, in one object.
 
     The single argument passed to every command/cwd/env callable (built in
-    `Benchmark.schedule`) and to every suite factory (built in
-    `Suite.materialize`). `T` is the user's params `@dataclass`.
+    `BenchmarkSpec._resolve_cell` when a variant is resolved) and to every
+    suite factory (built in `Suite.materialize`). `T` is the user's params
+    `@dataclass`.
 
     The level decides what the fields mean:
 

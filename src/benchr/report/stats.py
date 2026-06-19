@@ -274,7 +274,9 @@ class SummaryData:
         default_factory=dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]])
 
 
-def _all_ratios(baseline: GroupedReport, comparee: GroupedReport):
+def _all_ratios(
+    baseline: GroupedReport, comparee: GroupedReport
+) -> dict[BenchmarkId, dict[MetricKey, MetricRatio]]:
     lib: dict[MetricKey, bool] = {}
     lib.update(baseline.lower_is_better)
     lib.update(comparee.lower_is_better)

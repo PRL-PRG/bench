@@ -9,7 +9,7 @@
 """Lox: two suites sharing a base; per-suite formatter.
 
 Demonstrates:
-- ``.factory(lambda ctx: from_files(...))`` discovery + ``.filter``
+- ``.factory(lambda ctx: from_files(..., exclude={...}))`` discovery.
 - Multiple suites, each with its own metrics.
 - Per-suite Compact summary via CompositeReporter reporters.
 - Typed ``LoxParams`` dataclass for CLI flags.

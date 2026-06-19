@@ -6,7 +6,7 @@ import abc
 import csv
 import threading
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.markup import escape as markup_escape
@@ -23,6 +23,9 @@ from benchr.grammar.benchmark import Benchmark
 from benchr.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
 from benchr.core.sample import Observation, Report, Run, report_to_json
 from benchr.report.theme import BENCHR_THEME, console
+
+if TYPE_CHECKING:
+    from benchr.report.formatter import Formatter
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +331,7 @@ class SummaryReporter(_BufferingReporter):
 
     def __init__(
         self,
-        formatter: Any | None = None,
+        formatter: Formatter | None = None,
         *,
         baseline: list[Path] | None = None,
         target_console: Console | None = None,

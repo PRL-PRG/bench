@@ -10,8 +10,9 @@
 
 Stop as soon as we've seen the value '1' on the ``READY`` metric for three
 consecutive runs. Demonstrates inheriting from ``StoppingPolicy`` (the frozen
-config) and ``PolicyState`` (the per-run observer whose ``observe`` returns
-whether the policy has converged).
+config that returns a fresh ``PolicyState`` from ``start()``) and
+``PolicyState`` (the per-observation observer: ``observe`` records each
+observation, ``satisfied`` reports whether the policy has converged).
 """
 
 from dataclasses import dataclass

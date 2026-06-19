@@ -1,10 +1,10 @@
 """StoppingPolicy: decides when to stop taking runs.
 
 Life-cycle: The benchmarking loop first calls `start` which produces a
-stateful `PolicyState`. For each execution it calls `observe(run, samples)`
-to feed that run's samples and `satisfied()` to check whether the policy has
-converged. `satisfied()` is also checked up front, so a policy that converges
-before any run (e.g. `FixedRuns(0)`) takes no runs at all.
+stateful `PolicyState`. For each slot it calls `observe(observation)` to feed
+that observation and `satisfied()` to check whether the policy has converged.
+`satisfied()` is also checked up front, so a policy that converges before any
+run (e.g. `FixedRuns(0)`) takes no runs at all.
 
 Combinators:
 
