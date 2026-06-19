@@ -1,4 +1,4 @@
-"""BenchmarkFactory: builders, create()/materialize, Dynamic fields."""
+"""BenchmarkSpec: builders, create()/materialize, Dynamic fields."""
 
 from pathlib import Path
 

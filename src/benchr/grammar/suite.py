@@ -50,7 +50,7 @@ from typing import TYPE_CHECKING, Any
 from benchr.grammar.benchmark import (
     UNSET,
     Benchmark,
-    BenchmarkFactory,
+    BenchmarkSpec,
     CommandFn,
     EnvFn,
     LabelFn,
@@ -83,7 +83,7 @@ if TYPE_CHECKING:
 # Context. Suite.from_files defers discovery to this hook so e.g. paths can
 # depend on ctx.params. The Runner / CLI flattens these into concrete
 # benchmarks at run time.
-type BenchFactory = Callable[[Context[Any]], list[BenchmarkFactory]]
+type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkSpec]]
 
 
 def _default_cwd(ctx: Context[Any]) -> Path:
@@ -106,8 +106,8 @@ class Suite:
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
-    benchmarks: tuple[BenchmarkFactory, ...] = ()
-    factories: tuple[BenchFactory, ...] = ()
+    benchmarks: tuple[BenchmarkSpec, ...] = ()
+    factories: tuple[BenchmarkFactory, ...] = ()
 
     # ----- suite defaults (always concrete, except command) ----------
     command: CommandFn = UNSET  # no sensible default; checked at materialize
@@ -130,20 +130,20 @@ class Suite:
     def with_name(self, name: str) -> Suite:
         return dataclasses.replace(self, name=name)
 
-    def add(self, b: BenchmarkFactory) -> Suite:
+    def add(self, b: BenchmarkSpec) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + (b,))
 
-    def add_all(self, *bs: BenchmarkFactory) -> Suite:
+    def add_all(self, *bs: BenchmarkSpec) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
-    def factory(self, fn: BenchFactory) -> Suite:
+    def factory(self, fn: BenchmarkFactory) -> Suite:
         """Register a deferred `(ctx: Context) -> [Benchmark]` producer;
         `materialize` builds the suite-level Context and calls it. Wrap
         `from_files` here for params-dependent discovery, e.g.
         `.factory(lambda ctx: from_files(ctx.params.cwd / "benchmarks", pattern=...))`."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
-    def filter(self, pred: Callable[[BenchmarkFactory], bool]) -> Suite:
+    def filter(self, pred: Callable[[BenchmarkSpec], bool]) -> Suite:
         """Keep only benchmarks for which `pred(b)` is truthy. Wraps any
         deferred factories so the filter also applies post-discovery.
 
@@ -258,7 +258,7 @@ class Suite:
 
     # ----- helpers --------------------------------------------------
 
-    def _with_suite_matrix(self, b: BenchmarkFactory) -> BenchmarkFactory:
+    def _with_suite_matrix(self, b: BenchmarkSpec) -> BenchmarkSpec:
         """Append suite matrix dimensions after the benchmark's own; union skip rules."""
         if self.matrix:
             for name in self.matrix:
@@ -273,7 +273,7 @@ class Suite:
             b = dataclasses.replace(b, skips=b.skips + self.skips)
         return b
 
-    def _resolve(self, b: BenchmarkFactory) -> BenchmarkFactory:
+    def _resolve(self, b: BenchmarkSpec) -> BenchmarkSpec:
         """Fill unset fields from the suite: explicit benchmark value wins, then
         a matrix-dimension default (for command/cwd/env), then the suite default.
         `env` is the one merging field: the suite env sits under the benchmark's
@@ -313,15 +313,15 @@ class Suite:
         if resolved.command is UNSET:
             raise ValueError(
                 f"Benchmark {b.name!r} has no command — set one with "
-                f"BenchmarkFactory.with_command or Suite.with_command"
+                f"BenchmarkSpec.with_command or Suite.with_command"
             )
         return resolved
 
     @staticmethod
     def _wrap_filter(
-        factory: BenchFactory, pred: Callable[[BenchmarkFactory], bool]
-    ) -> BenchFactory:
-        def wrapped(ctx: Context[Any]) -> list[BenchmarkFactory]:
+        factory: BenchmarkFactory, pred: Callable[[BenchmarkSpec], bool]
+    ) -> BenchmarkFactory:
+        def wrapped(ctx: Context[Any]) -> list[BenchmarkSpec]:
             return [b for b in factory(ctx) if pred(b)]
 
         return wrapped
@@ -332,6 +332,6 @@ class Suite:
 # ---------------------------------------------------------------------------
 
 
-def suite(name: str, *benchmarks: BenchmarkFactory) -> Suite:
+def suite(name: str, *benchmarks: BenchmarkSpec) -> Suite:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""
     return Suite(name=name, benchmarks=tuple(benchmarks))

@@ -2,7 +2,7 @@
 
 Two types live here:
 
-  - `BenchmarkFactory` — the *template* returned by `bench()`. It carries the
+  - `BenchmarkSpec` — the *template* returned by `bench()`. It carries the
     builder state: `command`/`cwd`/`env`, the inheritable config
     (timeout/stdin/metrics/success/warmup/runs/harness/monitor), a set of
     *matrix dimensions* (`.with_matrix(vm=[...], size=[...])`) whose cartesian
@@ -11,7 +11,7 @@ Two types live here:
     object meaning "inherit the suite's default"; `Suite` fills those in.
 
   - `Benchmark` — one fully *resolved* variant produced by
-    `BenchmarkFactory.create()`. Its `command`/`cwd`/`env`/`timeout`/`stdin`
+    `BenchmarkSpec.create()`. Its `command`/`cwd`/`env`/`timeout`/`stdin`
     are frozen into a plain `Execution`; its `variant`/`variant_label` are
     computed; the behavioral config (success/warmup/runs/metrics/monitor) is
     carried as concrete objects. The runner consumes these directly — no
@@ -70,7 +70,7 @@ type LabelFn = Callable[[Benchmark], str]
 
 # A skip predicate. Returning truthy drops the variant. Predicate receives the
 # variant-stamped factory cell so it can read `b.vm`, `b.size`, etc.
-type SkipFn = Callable[[BenchmarkFactory], bool]
+type SkipFn = Callable[[BenchmarkSpec], bool]
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ def normalize_matrix(
     dims: Mapping[str, Sequence[Any]],
 ) -> Mapping[str, tuple[Any, ...]]:
     """Validate dimension names and freeze `{name: values}` into the canonical
-    `{name: (v, …)}` mapping shared by `BenchmarkFactory` and `Suite`."""
+    `{name: (v, …)}` mapping shared by `BenchmarkSpec` and `Suite`."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -218,7 +218,7 @@ def make_skip_rule(
 
 
 @dataclass(frozen=True, slots=True)
-class BenchmarkFactory:
+class BenchmarkSpec:
     """A benchmark *template*: a builder-style API configuring a workload that
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
@@ -264,18 +264,18 @@ class BenchmarkFactory:
 
     # ----- with_* methods ---------------------------------------------
 
-    def with_command(self, command: Command | Dynamic[Any]) -> BenchmarkFactory:
+    def with_command(self, command: Command | Dynamic[Any]) -> BenchmarkSpec:
         return dataclasses.replace(self, command=coerce_command(command))
 
-    def with_cwd(self, cwd: str | Path | PathFn | Dynamic[Path]) -> BenchmarkFactory:
+    def with_cwd(self, cwd: str | Path | PathFn | Dynamic[Path]) -> BenchmarkSpec:
         return dataclasses.replace(self, cwd=coerce_cwd(cwd))
 
     def with_env(
         self, env: Mapping[str, str] | EnvFn | Dynamic[Mapping[str, str]]
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         return dataclasses.replace(self, env=coerce_env(env))
 
-    def with_timeout(self, timeout: Settable[float | None]) -> BenchmarkFactory:
+    def with_timeout(self, timeout: Settable[float | None]) -> BenchmarkSpec:
         """Set the per-run timeout in seconds (`None` = explicitly no timeout,
         overriding any suite default). Accepts a `(ctx) -> float | None`
         builder or a `Dynamic`."""
@@ -283,7 +283,7 @@ class BenchmarkFactory:
 
     def with_stdin(
         self, data: bytes | str | Callable[[Context[Any]], bytes] | Dynamic[bytes]
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         """Feed `data` to the process's stdin (str is UTF-8 encoded). Accepts a
         `(ctx) -> bytes` builder or a `Dynamic`."""
         return dataclasses.replace(
@@ -298,7 +298,7 @@ class BenchmarkFactory:
         *metrics: Metric
         | Callable[[Context[Any]], tuple[Metric, ...]]
         | Dynamic[tuple[Metric, ...]],
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         """Set (replace) the benchmark's metrics. Pass them statically
         (`with_metric(m1, m2, …)`), or a single `(ctx) -> (m, …)` builder /
         `Dynamic` for per-variant metrics."""
@@ -311,7 +311,7 @@ class BenchmarkFactory:
                 return dataclasses.replace(self, metrics=Dynamic(only))
         return dataclasses.replace(self, metrics=cast("tuple[Metric, ...]", metrics))
 
-    def with_success(self, fn: SuccessFn | Dynamic[SuccessFn]) -> BenchmarkFactory:
+    def with_success(self, fn: SuccessFn | Dynamic[SuccessFn]) -> BenchmarkSpec:
         """Override the success policy (returns a failure reason, or None). A
         bare function is the policy; wrap a `(ctx) -> SuccessFn` in `Dynamic`
         for per-variant selection."""
@@ -319,17 +319,17 @@ class BenchmarkFactory:
 
     def with_warmup(
         self, p: int | Settable[StoppingPolicy]
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         return dataclasses.replace(self, warmup=_coerce_value(p, coerce_policy))
 
     def with_runs(
         self, p: int | Settable[StoppingPolicy]
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         return dataclasses.replace(self, runs=_coerce_value(p, coerce_policy))
 
     def with_harness(
         self, monitor: HarnessMonitor | None | Dynamic[HarnessMonitor | None] = UNSET
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         """Mark this benchmark as a *harness*: the command is executed once and
         streams all iterations — each line (or framed block) becomes one
         observation. The harness MAY use convergence policies; the runner kills
@@ -343,7 +343,7 @@ class BenchmarkFactory:
 
     # ----- matrix / skip / label --------------------------------------
 
-    def with_matrix(self, **dims: Sequence[Any]) -> BenchmarkFactory:
+    def with_matrix(self, **dims: Sequence[Any]) -> BenchmarkSpec:
         """Declare the matrix dimensions (replaces any previously set).
 
         Pass every dimension in one call: `b.with_matrix(vm=["v8", "jsc"],
@@ -359,7 +359,7 @@ class BenchmarkFactory:
         predicate: SkipFn | None = None,
         /,
         **kwargs: Any,
-    ) -> BenchmarkFactory:
+    ) -> BenchmarkSpec:
         """Add a rule that drops variants.
         Multiple `.add_matrix_skip(...)` calls compose as OR (any rule may drop a
         variant).
@@ -369,7 +369,7 @@ class BenchmarkFactory:
             return self
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
-    def with_label(self, fn: LabelFn | Dynamic[LabelFn]) -> BenchmarkFactory:
+    def with_label(self, fn: LabelFn | Dynamic[LabelFn]) -> BenchmarkSpec:
         """Override how each variant's label renders in reports.
 
         `fn` receives the resolved benchmark, e.g.
@@ -472,7 +472,7 @@ class BenchmarkFactory:
 @dataclass(frozen=True, slots=True)
 class Benchmark:
     """One fully-resolved benchmark variant: plain execution data plus the
-    behavioral config the runner needs. Produced by `BenchmarkFactory.create`.
+    behavioral config the runner needs. Produced by `BenchmarkSpec.create`.
     """
 
     suite: str
@@ -518,13 +518,13 @@ def _stringify(v: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def bench(name: str, **data: Any) -> BenchmarkFactory:
-    """Build a BenchmarkFactory with arbitrary attached data.
+def bench(name: str, **data: Any) -> BenchmarkSpec:
+    """Build a BenchmarkSpec with arbitrary attached data.
 
     `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available. To add
     matrix dimensions use `.with_matrix(...)`.
     """
-    return BenchmarkFactory(name=name, data=dict(data) if data else EMPTY_MAPPING)
+    return BenchmarkSpec(name=name, data=dict(data) if data else EMPTY_MAPPING)
 
 
 def from_files(
@@ -533,7 +533,7 @@ def from_files(
     pattern: str | None = None,
     recursive: bool = True,
     exclude: set[str] | None = None,
-) -> list[BenchmarkFactory]:
+) -> list[BenchmarkSpec]:
     """Discover files under `root`; each becomes a factory with `b.path` set.
 
     Returns the list eagerly — splat into `suite(name, *from_files(...))`, or
@@ -546,7 +546,7 @@ def from_files(
     compiled = re.compile(pattern) if pattern else None
     exclude_set = exclude or set()
     r = Path(root)
-    out: list[BenchmarkFactory] = []
+    out: list[BenchmarkSpec] = []
     if r.is_dir():
         entries = (
             (Path(d) / fn for d, _, fns in r.walk() for fn in fns)

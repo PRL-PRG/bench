@@ -39,7 +39,7 @@ from benchr.core.policy import (
 # Benchmark / Suite
 from benchr.grammar.benchmark import (
     Benchmark,
-    BenchmarkFactory,
+    BenchmarkSpec,
     Dynamic,
     bench,
     default_label,
@@ -88,7 +88,7 @@ __all__ = [
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation",
     # Benchmark / Suite
-    "Benchmark", "BenchmarkFactory", "Dynamic", "bench",
+    "Benchmark", "BenchmarkSpec", "Dynamic", "bench",
     "default_label", "from_files",
     "Suite", "suite",
     "Context",

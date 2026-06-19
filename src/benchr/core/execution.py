@@ -3,7 +3,7 @@
 An Execution is a description of how to start one subprocess: command,
 working directory, environment, optional timeout, optional stdin payload.
 It carries no benchmark-level identity (suite/benchmark/run) — that
-metadata lives on the resolved `Benchmark` (`BenchmarkFactory.create`) that
+metadata lives on the resolved `Benchmark` (`BenchmarkSpec.create`) that
 embeds it, and on the `Run` emitted afterward.
 """
 
