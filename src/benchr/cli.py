@@ -248,8 +248,8 @@ def _add_shared_flags(
         action="append",
         default=None,
         metavar="JSON",
-        help="Compare against a baseline JSON report (repeat to add more; "
-        "first is the baseline, last is the current run).",
+        help="Compare against a baseline JSON report (repeat to add more)."
+        "First is the baseline.",
     )
 
 
@@ -325,10 +325,10 @@ def _bench_subparser(p: argparse.ArgumentParser) -> None:
         metavar="NAME",
         help="Metric to highlight in the comparison summary (default: elapsed).",
     )
-    p.set_defaults(_func=_run_bench)
+    p.set_defaults(_func=_cmd_bench)
 
 
-def _run_bench(ns: argparse.Namespace) -> int:
+def _cmd_bench(ns: argparse.Namespace) -> int:
     import shlex
 
     argvs = [tuple(shlex.split(cmd)) for cmd in ns.commands]
@@ -368,10 +368,10 @@ def _compare_subparser(p: argparse.ArgumentParser) -> None:
         default=None,
         help="Comma-separated metric filter (e.g. runtime,max_rss)",
     )
-    p.set_defaults(_func=_run_compare)
+    p.set_defaults(_func=_cmd_compare)
 
 
-def _run_compare(ns: argparse.Namespace) -> int:
+def _cmd_compare(ns: argparse.Namespace) -> int:
     files = [Path(f) for f in ns.files]
     for f in files:
         if not f.exists():
@@ -386,6 +386,7 @@ def _run_compare(ns: argparse.Namespace) -> int:
         if out:
             console.print(out)
         return 0
+    # TODO: why do we need current - the idea is that first is a baseline to which we compare the other ones?
     # First file is the baseline; rest are comparees. Summarize the *last*
     # file ("current") against the baseline, plus all intermediates as
     # additional comparees.

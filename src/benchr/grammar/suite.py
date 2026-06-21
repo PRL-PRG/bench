@@ -196,9 +196,7 @@ class Suite:
         `Benchmark.with_harness` (whose default is `UNSET` = inherit), the
         suite stores a concrete value — it is the inheritance root. There is no
         per-benchmark opt-out; mixed suites are two suites."""
-        return dataclasses.replace(
-            self, harness=True, monitor=monitor
-        )
+        return dataclasses.replace(self, harness=True, monitor=monitor)
 
     def with_matrix(self, **dims: Sequence[Any]) -> Suite:
         """Declare matrix dimensions applied to every contained benchmark
@@ -278,6 +276,9 @@ class Suite:
         a matrix-dimension default (for command/cwd/env), then the suite default.
         `env` is the one merging field: the suite env sits under the benchmark's
         own (or its matrix default), benchmark winning per key."""
+
+        # TODO: this seems to complicated
+        # The command, env, cwd are set outside of the matrix
         if b.command is not UNSET:
             command = b.command
         elif "command" in b.matrix:
@@ -296,6 +297,7 @@ class Suite:
             env = _merge_env(self.env, matrix_env)
         else:
             env = self.env
+
         resolved = dataclasses.replace(
             b,
             command=command,

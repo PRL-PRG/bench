@@ -35,6 +35,8 @@ class SuiteMaterializationError(Exception):
 
     def _format(self) -> str:
         lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
+
+        # FIXME: there must be a better way to do this
         if isinstance(self.cause, subprocess.CalledProcessError):
             out = self.cause.output or self.cause.stderr
             if out:
@@ -45,6 +47,8 @@ class SuiteMaterializationError(Exception):
         return "\n".join(lines)
 
 
+# TODO: this should be private API
+# TODO: it should only take list[Suite]
 def plan(suites: Suite | list[Suite], params: Any = None) -> list[Benchmark]:
     """Flatten suites + their deferred factories into resolved benchmarks."""
     if isinstance(suites, Suite):
@@ -59,12 +63,7 @@ def plan(suites: Suite | list[Suite], params: Any = None) -> list[Benchmark]:
 
 
 def format_benchmark_verbose(b: Benchmark, run: int) -> str:
-    """Dump a resolved Benchmark plan as a deterministic text block.
-
-    One header (the run identifier) followed by every field of the resolved
-    `Execution` plus the benchmark's metric/success/variant summary. Every line
-    printed every time — no conditional fields.
-    """
+    """Dump a resolved Benchmark plan as a deterministic text block."""
     e = b.execution
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"

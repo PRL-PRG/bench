@@ -317,14 +317,10 @@ class BenchmarkSpec:
         for per-variant selection."""
         return dataclasses.replace(self, success=fn)
 
-    def with_warmup(
-        self, p: int | Settable[StoppingPolicy]
-    ) -> BenchmarkSpec:
+    def with_warmup(self, p: int | Settable[StoppingPolicy]) -> BenchmarkSpec:
         return dataclasses.replace(self, warmup=_coerce_value(p, coerce_policy))
 
-    def with_runs(
-        self, p: int | Settable[StoppingPolicy]
-    ) -> BenchmarkSpec:
+    def with_runs(self, p: int | Settable[StoppingPolicy]) -> BenchmarkSpec:
         return dataclasses.replace(self, runs=_coerce_value(p, coerce_policy))
 
     def with_harness(
@@ -395,9 +391,7 @@ class BenchmarkSpec:
             return
         for combo in itertools.product(*self.matrix.values()):
             chosen = dict(zip(names, combo))
-            variant = tuple(
-                sorted((k, _stringify(v)) for k, v in chosen.items())
-            )
+            variant = tuple(sorted((k, _stringify(v)) for k, v in chosen.items()))
             cell = dataclasses.replace(
                 self,
                 data=MappingProxyType({**self.data, **chosen}),
@@ -471,10 +465,9 @@ class BenchmarkSpec:
 
 @dataclass(frozen=True, slots=True)
 class Benchmark:
-    """One fully-resolved benchmark variant: plain execution data plus the
-    behavioral config the runner needs. Produced by `BenchmarkSpec.create`.
-    """
+    """One fully-resolved benchmark variant."""
 
+    # TODO: move the defaults into suite
     suite: str
     name: str
     execution: Execution
