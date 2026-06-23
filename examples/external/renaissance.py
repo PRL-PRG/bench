@@ -29,7 +29,7 @@ import re
 import subprocess
 
 from benchr import (
-    BenchmarkSpec,
+    BenchmarkBuilder,
     Context,
     HarnessHandle,
     Regex,
@@ -98,7 +98,7 @@ def renaissance_monitor(handle: HarnessHandle) -> Iterator[str]:
             buf.append(line)  # GC / heap lines inside the iteration
 
 
-def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkSpec]:
+def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkBuilder]:
     return [
         bench(rb.name)
         .with_command(

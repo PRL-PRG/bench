@@ -39,8 +39,7 @@ from benchr.core.policy import (
 # Benchmark / Suite
 from benchr.grammar.benchmark import (
     Benchmark,
-    BenchmarkSpec,
-    Dynamic,
+    BenchmarkBuilder,
     bench,
     default_label,
     from_files,
@@ -74,7 +73,7 @@ from benchr.report.reporter import (
 from benchr.report.formatter import Compact, DefaultSummary, Formatter
 
 # CLI
-from benchr.cli import main, run
+from benchr.cli import Benchr, main, run
 
 __all__ = [
     # Atoms
@@ -88,7 +87,7 @@ __all__ = [
     "StoppingPolicy", "PolicyState",
     "FixedRuns", "CoefficientOfVariation",
     # Benchmark / Suite
-    "Benchmark", "BenchmarkSpec", "Dynamic", "bench",
+    "Benchmark", "BenchmarkBuilder", "bench",
     "default_label", "from_files",
     "Suite", "suite",
     "Context",
@@ -101,5 +100,5 @@ __all__ = [
     # Formatters
     "Formatter", "DefaultSummary", "Compact",
     # CLI
-    "run", "main",
+    "Benchr", "run", "main",
 ]

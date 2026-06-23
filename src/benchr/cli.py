@@ -5,13 +5,13 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from benchr.grammar.benchmark import bench
 from benchr.grammar.context import add_dataclass_args, build_dataclass
 from benchr.core.metric import Time
-from benchr.core.policy import FixedRuns
 from benchr.grammar.suite import Suite, suite
 from benchr.report.formatter import DefaultSummary
 from benchr.report.reporter import (
@@ -27,7 +27,6 @@ from benchr.report.reporter import (
 from benchr.utils import print_exception
 from benchr.core.sample import Report, report_from_json
 from benchr.report.stats import build_summary
-from benchr.grammar.benchmark import Benchmark
 from benchr.runner.base import (
     Runner,
     SuiteMaterializationError,
@@ -38,8 +37,61 @@ from benchr.runner.parallel import Parallel
 from benchr.runner.sequential import Sequential
 
 
+# TODO: should be just Any -> list[Suite]
+type SuiteFactory = Callable[[Any], Suite | list[Suite]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Benchr:
+    """Top-level run container: static suites + deferred suite factories.
+
+    Mirrors `Suite` one level up. A `Suite` combines static benchmarks with
+    `.factory` producers and resolves them at `materialize`; a `Benchr` combines
+    static suites with `.factory` producers and resolves them at `run`. Because
+    factories run *after* CLI parsing, suite discovery can depend on `params`
+    (e.g. globbing a directory passed via `--spec-root`) without the script
+    parsing argv itself.
+    """
+
+    suites: tuple[Suite, ...] = ()
+    factories: tuple[SuiteFactory, ...] = ()
+    params: type | None = None
+    reporter: Reporter | None = None
+
+    def add_suite(self, s: Suite) -> Benchr:
+        """Register a suite."""
+        return dataclasses.replace(self, suites=self.suites + (s,))
+
+    def add_suites(self, *ss: Suite) -> Benchr:
+        """Register several suites."""
+        return dataclasses.replace(self, suites=self.suites + ss)
+
+    def factory(self, fn: SuiteFactory) -> Benchr:
+        """Register a deferred `(params) -> Suite | [Suite]` producer.
+
+        Resolved at `run` once params are parsed. Its suites are appended after
+        any manually added ones.
+        """
+        return dataclasses.replace(self, factories=self.factories + (fn,))
+
+    def run(self, argv: list[str] | None = None) -> Report:
+        """Parse argv, resolve factories, run every collected suite."""
+        parser = _make_run_parser(self.params)
+        cli_args = parser.parse_args(argv)
+        build_params = (
+            build_dataclass(self.params, cli_args) if self.params is not None else None
+        )
+
+        collected = list(self.suites)
+        for f in self.factories:
+            produced = f(build_params)
+            collected.extend([produced] if isinstance(produced, Suite) else produced)
+
+        return _do_run(collected, cli_args, self.reporter, build_params)
+
+
 def run(
-    suites: list[Suite] | Suite,
+    suites: Suite | list[Suite] | SuiteFactory,
     *,
     params: type | None = None,
     reporter: Reporter | None = None,
@@ -50,7 +102,10 @@ def run(
     Parse argv, build the ctx, run the benchmark, emit reports.
 
     Args:
-        suites: The suite (or list of suites) to run
+        suites: The suite(s) to run. Either a `Suite`, a list of `Suite`, or a
+            deferred `(params) -> Suite | [Suite]` producer that is called after
+            CLI parsing (for suite discovery that depends on `params`). To
+            combine static and discovered suites, build a `Benchr` directly.
         params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
         reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
         argv: The command-line parameters that will be parsed and use to fill the user-defined context.
@@ -58,14 +113,15 @@ def run(
     Returns:
         The report of running all the benchmarks
     """
-    if isinstance(suites, Suite):
-        suites = [suites]
+    app = Benchr(params=params, reporter=reporter)
+    if callable(suites):  # a Suite / list is never callable
+        app = app.factory(suites)
+    elif isinstance(suites, Suite):
+        app = app.add_suite(suites)
+    else:
+        app = app.add_suites(*suites)
 
-    parser = _make_run_parser(params)
-    cli_args = parser.parse_args(argv)
-    build_params = build_dataclass(params, cli_args) if params is not None else None
-
-    return _do_run(suites, cli_args, reporter, build_params)
+    return app.run(argv)
 
 
 def _do_run(
@@ -89,29 +145,13 @@ def _do_run(
         print_exception(e)
         sys.exit(1)
 
-    benchmarks = _apply_cli_overrides(planned, cli_args)
     runner = _make_runner(cli_args, reporter)
 
     try:
-        return runner.run(benchmarks, build_params)
+        return runner.run(planned, build_params)
     except KeyboardInterrupt:
         console.print("[benchr.failure]Interrupted[/]")
         sys.exit(1)
-
-
-def _apply_cli_overrides(
-    planned: list[Benchmark], ns: argparse.Namespace
-) -> list[Benchmark]:
-    overrides = {}
-
-    if ns.runs is not None:
-        overrides["runs"] = FixedRuns(ns.runs)
-    if ns.warmup is not None:
-        overrides["warmup"] = FixedRuns(ns.warmup)
-
-    if overrides:
-        planned = [dataclasses.replace(b, **overrides) for b in planned]
-    return planned
 
 
 def _build_reporter(
@@ -159,7 +199,7 @@ def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
 def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="benchr")
     _add_user_params(p, params)
-    _add_benchr_flags(p)
+    _add_runtime_flags(p.add_argument_group("benchr flags"))
     return p
 
 
@@ -170,34 +210,10 @@ def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> No
     add_dataclass_args(group_, params)
 
 
-def _add_benchr_flags(parser: argparse.ArgumentParser) -> None:
-    _add_shared_flags(parser.add_argument_group("benchr flags"))
-
-
-def _add_shared_flags(
+def _add_runtime_flags(
     # argparse exposes no public name for the add_argument_group() return type.
     g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
-    *,
-    runs_default: int | None = None,
-    warmup_default: int | None = None,
 ) -> None:
-    policy_note = "each benchmark's own policy"
-    g.add_argument(
-        "--runs",
-        type=int,
-        default=runs_default,
-        metavar="N",
-        help="Measured run count for every benchmark (default: "
-        f"{runs_default if runs_default is not None else policy_note}).",
-    )
-    g.add_argument(
-        "--warmup",
-        type=int,
-        default=warmup_default,
-        metavar="N",
-        help="Warmup runs executed but excluded from stats (default: "
-        f"{warmup_default if warmup_default is not None else policy_note}).",
-    )
     g.add_argument(
         "--jobs",
         "-j",
@@ -310,7 +326,21 @@ def _bench_subparser(p: argparse.ArgumentParser) -> None:
         metavar="CMD",
         help="One or more shell commands to benchmark (each split with shlex).",
     )
-    _add_shared_flags(p, runs_default=10, warmup_default=0)
+    _add_runtime_flags(p)
+    p.add_argument(
+        "--runs",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Measured run count for every command (default: 10).",
+    )
+    p.add_argument(
+        "--warmup",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Warmup runs executed but excluded from stats (default: 0).",
+    )
     p.add_argument(
         "--timeout",
         type=float,
@@ -335,13 +365,14 @@ def _cmd_bench(ns: argparse.Namespace) -> int:
     b = (
         bench("bench")
         .with_matrix(command=argvs)
+        .with_command(lambda ctx: list(ctx.matrix.command))
         .with_label(lambda bb: " ".join(bb.data["command"]))
         .with_cwd(Path.cwd())
         .with_metric(Time())
         .with_runs(ns.runs)
     )
 
-    # NOTE: `bench` defaults to a fixed 10 runs (set above). A time-bounded
+    # TODO: `bench` defaults to a fixed 10 runs (set above). A time-bounded
     # default (hyperfine-style "10 runs or 3 seconds") would need a duration
     # stopping policy; not implemented.
     if ns.timeout is not None:

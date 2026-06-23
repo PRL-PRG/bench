@@ -1,31 +1,23 @@
 """Benchmark grammar: a builder template and the resolved instances it produces.
 
-Two types live here:
+`BenchmarkBuilder` is the chainable spec returned by `bench()`; `Benchmark` is
+one fully *resolved* variant produced by `BenchmarkBuilder.create()`. The
+builder leaves every inheritable field as the `UNSET` null object ("inherit the
+suite's default", filled in by `Suite`); the resolved benchmark carries concrete
+objects and a frozen `Execution`, which the runner consumes directly — no
+callables left to evaluate.
 
-  - `BenchmarkSpec` — the *template* returned by `bench()`. It carries the
-    builder state: `command`/`cwd`/`env`, the inheritable config
-    (timeout/stdin/metrics/success/warmup/runs/harness/monitor), a set of
-    *matrix dimensions* (`.with_matrix(vm=[...], size=[...])`) whose cartesian
-    product defines the variants, optional *skip* rules, a `label_fn`, and
-    arbitrary `data`. Every inheritable field defaults to the `UNSET` null
-    object meaning "inherit the suite's default"; `Suite` fills those in.
+Every configurable field is set either as a static value or as a
+`Build[T]` = `(ctx) -> value` builder, resolved once per variant at `create()`
+time (a setter wraps a static value via `const`; a callable is taken as the
+builder). The three fields whose value is *itself* a callable —
+`success`/`monitor`/`label_fn` — are value-only (no per-variant builder), so a
+bare callable passed to them is never ambiguous.
 
-  - `Benchmark` — one fully *resolved* variant produced by
-    `BenchmarkSpec.create()`. Its `command`/`cwd`/`env`/`timeout`/`stdin`
-    are frozen into a plain `Execution`; its `variant`/`variant_label` are
-    computed; the behavioral config (success/warmup/runs/metrics/monitor) is
-    carried as concrete objects. The runner consumes these directly — no
-    further resolution, no callables to evaluate.
-
-Symmetry: every configurable field may be set either as a static value or as a
-`(ctx) -> value` builder, resolved once per variant at `create()` time. For
-command/cwd/env and the plain-valued fields (timeout/stdin/metrics/warmup/runs)
-a bare callable is auto-detected as a builder. For the fields whose value is
-*itself* a function (success/monitor/label_fn) a bare callable is the value;
-wrap it in `Dynamic(fn)` to make it a per-variant builder.
-
-Within a benchmark, variants are what get compared in the end-of-run Summary;
-comparison across different benchmarks is meaningless and is never emitted.
+`create()` expands the matrix (cartesian product of the declared dimensions),
+drops skipped cells, and resolves every field against the variant `Context` in
+a single pass. Variants within a benchmark are what the end-of-run Summary
+compares; comparison across different benchmarks is never emitted.
 """
 
 from __future__ import annotations
@@ -45,11 +37,10 @@ from benchr.core.execution import (
     Execution,
     SuccessFn,
     Variant,
-    default_success,
     format_variant,
 )
 from benchr.core.metric import Metric
-from benchr.core.policy import FixedRuns, StoppingPolicy, coerce_policy
+from benchr.core.policy import StoppingPolicy, coerce_policy
 from benchr.grammar.context import Context, Matrix
 
 if TYPE_CHECKING:
@@ -57,54 +48,29 @@ if TYPE_CHECKING:
 
     from benchr.runner.source import HarnessMonitor
 
-# A user-supplied command/cwd/env builder. Receives the Context for the
-# benchmark being created (params + the resolved suite/benchmark properties
-# + the variant `matrix`).
-type CommandFn = Callable[[Context[Any]], Sequence[StrOrBytesPath]]
-type PathFn = Callable[[Context[Any]], Path]
-type EnvFn = Callable[[Context[Any]], Mapping[str, str]]
+# A field builder: a `(ctx) -> value` resolved once per variant at create()
+# time. The single concept for "value or function": a setter accepts `T |
+# Build[T]` — a callable is the builder, anything else is the static value
+# (wrapped). The three callable-valued fields (success/monitor/label_fn) are
+# value-only, so a bare callable is never ambiguous.
+type Build[T] = Callable[[Context[Any]], T]
+
+# command/cwd/env are always stored as a builder (a static value is wrapped).
+type CommandFn = Build[Sequence[StrOrBytesPath]]
+type PathFn = Build[Path]
+type EnvFn = Build[Mapping[str, str]]
 
 # A label function turns a resolved benchmark into the human-readable variant
-# identifier shown in reports (e.g. `"sleep 0.05"`).
+# identifier shown in reports (e.g. `"sleep 0.05"`). It takes the resolved
+# Benchmark (not a Context) because labels reflect the resolved execution.
 type LabelFn = Callable[[Benchmark], str]
 
 # A skip predicate. Returning truthy drops the variant. Predicate receives the
 # variant-stamped factory cell so it can read `b.vm`, `b.size`, etc.
-type SkipFn = Callable[[BenchmarkSpec], bool]
+type SkipFn = Callable[[BenchmarkBuilder], bool]
 
 
-# ---------------------------------------------------------------------------
-# Dynamic: marks a field value as a `(ctx) -> value` builder, resolved once per
-# variant at create() time. `Dyn[T]` is the "static value or builder" union.
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class Dynamic[T]:
-    """Wrap a `(ctx) -> value` so a field is resolved per variant at create()."""
-
-    fn: Callable[[Context[Any]], T]
-
-
-# A stored field value: a static `T` or a `Dynamic` builder.
-type Dyn[T] = T | Dynamic[T]
-# What a plain-valued `with_*` setter accepts: a static `T`, a bare
-# `(ctx) -> T` builder (auto-detected), or an explicit `Dynamic[T]`.
-type Settable[T] = T | Callable[[Context[Any]], T] | Dynamic[T]
-
-
-# ---------------------------------------------------------------------------
-# UNSET: the one null object meaning "inherit the suite's default".
-#
-# Every inheritable factory field defaults to it; `Suite._resolve` swaps in the
-# suite's value. Any use of an unresolved field — calling it, reading an
-# attribute, truth-testing it — raises instead of guessing.
-# ---------------------------------------------------------------------------
-
-_UNSET_MSG = (
-    "benchmark field is unset (it inherits the suite's default) — resolve "
-    "the factory via Suite.materialize() before use"
-)
+_UNSET_MSG = "benchmark field is unset"
 
 
 class _Unset:
@@ -128,57 +94,24 @@ class _Unset:
 UNSET: Any = _Unset()
 
 
-def _resolve_dynamic(value: Any, ctx: Context[Any]) -> Any:
-    """Resolve a static-or-`Dynamic` field against `ctx`."""
-    if isinstance(value, Dynamic):
-        return cast("Callable[[Context[Any]], Any]", value.fn)(ctx)
-    return value
+def const(value: Any) -> Build[Any]:
+    """Wrap a static value as a constant builder."""
+    return lambda _ctx: value
 
 
-def _static_or(value: Any, default: Any) -> Any:
-    """`value` if it is a plain static, else `default` (used to fill the
-    preliminary Context's config slots, which a config builder must not read)."""
-    return default if isinstance(value, Dynamic) else value
+def to_argv(command: Any) -> tuple[Any, ...]:
+    """A bare str/bytes/PathLike is a one-element argv; a Sequence is full argv."""
+    if isinstance(command, (str, bytes, os.PathLike)):
+        return (command,)
+    return tuple(command)
 
 
-def _coerce_value(value: Any, static: Callable[[Any], Any]) -> Any:
-    """Plain-valued field: a bare callable is auto-detected as a builder; a
-    static value is run through `static` (type coercion)."""
-    if isinstance(value, Dynamic):
-        return cast(Any, value)
+def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Build[Any]:
+    """Coerce a setter argument into a `Build[T]`: a callable is the builder as
+    is; anything else is the static value, normalized once and wrapped."""
     if callable(value):
-        return Dynamic(value)
-    return static(value)
-
-
-def coerce_command(command: Command | Dynamic[Sequence[StrOrBytesPath]]) -> CommandFn:
-    if isinstance(command, Dynamic):
-        return command.fn
-    if callable(command):
-        return command
-    # A bare str/bytes/PathLike is a one-element argv; a Sequence is full argv.
-    static = (
-        (command,) if isinstance(command, (str, bytes, os.PathLike)) else tuple(command)
-    )
-    return lambda _: static
-
-
-def coerce_cwd(cwd: str | Path | PathFn | Dynamic[Path]) -> PathFn:
-    if isinstance(cwd, Dynamic):
-        return cwd.fn
-    if callable(cwd):
-        return cwd
-    static = Path(cwd)
-    return lambda _: static
-
-
-def coerce_env(env: Mapping[str, str] | EnvFn | Dynamic[Mapping[str, str]]) -> EnvFn:
-    if isinstance(env, Dynamic):
-        return env.fn
-    if callable(env):
-        return env
-    static = dict(env)
-    return lambda _: static
+        return cast("Build[Any]", value)
+    return const(normalize(value))
 
 
 def default_label(b: Benchmark) -> str:
@@ -193,7 +126,7 @@ def normalize_matrix(
     dims: Mapping[str, Sequence[Any]],
 ) -> Mapping[str, tuple[Any, ...]]:
     """Validate dimension names and freeze `{name: values}` into the canonical
-    `{name: (v, …)}` mapping shared by `BenchmarkSpec` and `Suite`."""
+    `{name: (v, …)}` mapping shared by `BenchmarkBuilder` and `Suite`."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -218,14 +151,13 @@ def make_skip_rule(
 
 
 @dataclass(frozen=True, slots=True)
-class BenchmarkSpec:
-    """A benchmark *template*: a builder-style API configuring a workload that
+class BenchmarkBuilder:
+    """A benchmark *spec*: a builder-style API configuring a workload that
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
-    `data` holds arbitrary user-supplied keyword args, readable as attributes
-    (`b.path`, `b.size`) via the `__getattr__` hook below — used by skip/label
-    callables. Every inheritable field defaults to `UNSET` ("inherit the suite's
-    default") and is filled by `Suite._resolve`.
+    `data` holds arbitrary user-supplied keyword args, readable as attributes.
+    Every inheritable field defaults to `UNSET` ("inherit the suite's
+    default").
     """
 
     name: str
@@ -233,24 +165,21 @@ class BenchmarkSpec:
     command: CommandFn = UNSET
     cwd: PathFn = UNSET
     env: EnvFn = UNSET
-    timeout: Dyn[float | None] = UNSET
-    stdin: Dyn[bytes | None] = None  # None = no stdin (never inherited)
-    metrics: Dyn[tuple[Metric, ...]] = UNSET
-    success: Dyn[SuccessFn] = UNSET
-    warmup: Dyn[StoppingPolicy] = UNSET
-    runs: Dyn[StoppingPolicy] = UNSET
+    timeout: Build[float | None] = UNSET
+    stdin: Build[bytes | None] = const(None)  # None = no stdin (never inherited)
+    metrics: Build[tuple[Metric, ...]] = UNSET
+    success: SuccessFn = UNSET
+    warmup: Build[StoppingPolicy] = UNSET
+    runs: Build[StoppingPolicy] = UNSET
     harness: bool = UNSET
-    monitor: Dyn[HarnessMonitor | None] = UNSET
+    monitor: HarnessMonitor | None = UNSET
 
     data: Mapping[str, Any] = EMPTY_MAPPING
     matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
 
-    # Skip rules; a variant is dropped if any rule matches it.
     skips: tuple[SkipFn, ...] = ()
 
-    # Variant-label function turning the resolved benchmark into the label
-    # shown in reports.
-    label_fn: Dyn[LabelFn] = UNSET
+    label_fn: LabelFn = UNSET
 
     # ----- attribute access into data ---------------------------------
 
@@ -264,89 +193,75 @@ class BenchmarkSpec:
 
     # ----- with_* methods ---------------------------------------------
 
-    def with_command(self, command: Command | Dynamic[Any]) -> BenchmarkSpec:
-        return dataclasses.replace(self, command=coerce_command(command))
+    def with_command(self, command: Command) -> BenchmarkBuilder:
+        return dataclasses.replace(self, command=as_build(command, to_argv))
 
-    def with_cwd(self, cwd: str | Path | PathFn | Dynamic[Path]) -> BenchmarkSpec:
-        return dataclasses.replace(self, cwd=coerce_cwd(cwd))
+    def with_cwd(self, cwd: str | Path | PathFn) -> BenchmarkBuilder:
+        return dataclasses.replace(self, cwd=as_build(cwd, Path))
 
-    def with_env(
-        self, env: Mapping[str, str] | EnvFn | Dynamic[Mapping[str, str]]
-    ) -> BenchmarkSpec:
-        return dataclasses.replace(self, env=coerce_env(env))
+    def with_env(self, env: Mapping[str, str] | EnvFn) -> BenchmarkBuilder:
+        return dataclasses.replace(self, env=as_build(env, dict))
 
-    def with_timeout(self, timeout: Settable[float | None]) -> BenchmarkSpec:
+    def with_timeout(
+        self, timeout: float | None | Build[float | None]
+    ) -> BenchmarkBuilder:
         """Set the per-run timeout in seconds (`None` = explicitly no timeout,
-        overriding any suite default). Accepts a `(ctx) -> float | None`
-        builder or a `Dynamic`."""
-        return dataclasses.replace(self, timeout=_coerce_value(timeout, lambda v: v))
+        overriding any suite default). Accepts a `(ctx) -> float | None` builder."""
+        return dataclasses.replace(self, timeout=as_build(timeout))
 
-    def with_stdin(
-        self, data: bytes | str | Callable[[Context[Any]], bytes] | Dynamic[bytes]
-    ) -> BenchmarkSpec:
+    def with_stdin(self, data: bytes | str | Build[bytes]) -> BenchmarkBuilder:
         """Feed `data` to the process's stdin (str is UTF-8 encoded). Accepts a
-        `(ctx) -> bytes` builder or a `Dynamic`."""
+        `(ctx) -> bytes` builder."""
         return dataclasses.replace(
             self,
-            stdin=_coerce_value(
-                data, lambda d: d.encode() if isinstance(d, str) else d
-            ),
+            stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
         )
 
     def with_metric(
-        self,
-        *metrics: Metric
-        | Callable[[Context[Any]], tuple[Metric, ...]]
-        | Dynamic[tuple[Metric, ...]],
-    ) -> BenchmarkSpec:
+        self, *metrics: Metric | Build[tuple[Metric, ...]]
+    ) -> BenchmarkBuilder:
         """Set (replace) the benchmark's metrics. Pass them statically
-        (`with_metric(m1, m2, …)`), or a single `(ctx) -> (m, …)` builder /
-        `Dynamic` for per-variant metrics."""
-        items: tuple[Any, ...] = metrics
-        if len(items) == 1:
-            only = items[0]
-            if isinstance(only, Dynamic):
-                return dataclasses.replace(self, metrics=cast(Any, only))
-            if callable(only):
-                return dataclasses.replace(self, metrics=Dynamic(only))
-        return dataclasses.replace(self, metrics=cast("tuple[Metric, ...]", metrics))
+        (`with_metric(m1, m2, …)`), or a single `(ctx) -> (m, …)` builder for
+        per-variant metrics."""
+        if len(metrics) == 1 and callable(metrics[0]):
+            build = metrics[0]
+        else:
+            ms = cast("tuple[Metric, ...]", metrics)
+            build = const(ms)
+        return dataclasses.replace(self, metrics=build)
 
-    def with_success(self, fn: SuccessFn | Dynamic[SuccessFn]) -> BenchmarkSpec:
-        """Override the success policy (returns a failure reason, or None). A
-        bare function is the policy; wrap a `(ctx) -> SuccessFn` in `Dynamic`
-        for per-variant selection."""
+    def with_success(self, fn: SuccessFn) -> BenchmarkBuilder:
+        """Override the success policy (returns a failure reason, or None)."""
         return dataclasses.replace(self, success=fn)
 
-    def with_warmup(self, p: int | Settable[StoppingPolicy]) -> BenchmarkSpec:
-        return dataclasses.replace(self, warmup=_coerce_value(p, coerce_policy))
+    def with_warmup(
+        self, p: int | StoppingPolicy | Build[StoppingPolicy]
+    ) -> BenchmarkBuilder:
+        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
 
-    def with_runs(self, p: int | Settable[StoppingPolicy]) -> BenchmarkSpec:
-        return dataclasses.replace(self, runs=_coerce_value(p, coerce_policy))
+    def with_runs(
+        self, p: int | StoppingPolicy | Build[StoppingPolicy]
+    ) -> BenchmarkBuilder:
+        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
 
     def with_harness(
-        self, monitor: HarnessMonitor | None | Dynamic[HarnessMonitor | None] = UNSET
-    ) -> BenchmarkSpec:
+        self, monitor: HarnessMonitor | None = UNSET
+    ) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
         streams all iterations — each line (or framed block) becomes one
-        observation. The harness MAY use convergence policies; the runner kills
-        the process mid-flight when the policy converges.
+        observation.
 
-        `monitor` frames the output stream into iterations; it defaults to
-        inheriting the suite, and an explicit `None` (or an unset suite) falls
-        back to `line_monitor`. A bare monitor is the value; wrap a
-        `(ctx) -> monitor` in `Dynamic` for per-variant selection."""
+        `monitor` frames the output stream into iterations."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
     # ----- matrix / skip / label --------------------------------------
 
-    def with_matrix(self, **dims: Sequence[Any]) -> BenchmarkSpec:
+    def with_matrix(self, **dims: Sequence[Any]) -> BenchmarkBuilder:
         """Declare the matrix dimensions (replaces any previously set).
 
         Pass every dimension in one call: `b.with_matrix(vm=["v8", "jsc"],
         size=[100, 500])` gives 4 variants (the cartesian product). Dimension
-        values are arbitrary; `with_command`/`with_cwd`/`with_env` callables
-        read them via `ctx.matrix.vm`, while `add_matrix_skip` predicates
-        receive the factory and read them as `b.vm`.
+        values are arbitrary.
         """
         return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
@@ -355,35 +270,25 @@ class BenchmarkSpec:
         predicate: SkipFn | None = None,
         /,
         **kwargs: Any,
-    ) -> BenchmarkSpec:
-        """Add a rule that drops variants.
-        Multiple `.add_matrix_skip(...)` calls compose as OR (any rule may drop a
-        variant).
-        """
+    ) -> BenchmarkBuilder:
+        """Add a rule that drops variants. Multiple calls compose as OR."""
         rule = make_skip_rule(predicate, kwargs)
         if rule is None:
             return self
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
-    def with_label(self, fn: LabelFn | Dynamic[LabelFn]) -> BenchmarkSpec:
-        """Override how each variant's label renders in reports.
-
-        `fn` receives the resolved benchmark, e.g.
-        `with_label(lambda b: " ".join(b.execution.command))`.
-        """
+    def with_label(self, fn: LabelFn) -> BenchmarkBuilder:
+        """Override how each variant's label renders in reports."""
         return dataclasses.replace(self, label_fn=fn)
 
     # ----- creation ----------------------------------------------------
 
     def create(self, params: Any, *, suite: str) -> Iterator[Benchmark]:
-        """Yield one fully-resolved `Benchmark` per surviving variant cell.
+        """Yield one fully-resolved `Benchmark`.
 
         Expands the matrix (cartesian product), drops cells matched by any skip
         rule (before any builder runs), then resolves every field against the
-        variant `Context`. Config builders (timeout/metrics/warmup/runs/…) are
-        resolved first — they may read `ctx.params` and the variant, not each
-        other — so the full `Context` carries resolved policies for command/
-        cwd/env builders (e.g. a harness command reading `ctx.runs`).
+        variant `Context`.
         """
         names = list(self.matrix)
         if not names:
@@ -402,102 +307,64 @@ class BenchmarkSpec:
             yield cell._resolve_cell(params, suite, variant)
 
     def _resolve_cell(self, params: Any, suite: str, variant: Variant) -> Benchmark:
-        mat = Matrix(dict(self.data))
-        # Phase 1: resolve config against a preliminary ctx (config builders may
-        # read params/variant, not sibling config — the unresolved slots below
-        # are placeholders).
-        prelim = Context(
+        """Resolve every field for one variant in a single pass: every builder
+        sees the same `Context` (params + the suite/benchmark names + this
+        variant's matrix values). No field reads another's resolved value."""
+        ctx: Context[Any] = Context(
             params=params,
             suite=suite,
             benchmark=self.name,
-            runs=_static_or(self.runs, FixedRuns(1)),
-            warmup=_static_or(self.warmup, FixedRuns(0)),
-            timeout=_static_or(self.timeout, None),
-            metrics=_static_or(self.metrics, ()),
-            harness=_static_or(self.harness, False),
-            success=_static_or(self.success, default_success),
-            matrix=mat,
-        )
-        runs = _resolve_dynamic(self.runs, prelim)
-        warmup = _resolve_dynamic(self.warmup, prelim)
-        timeout = _resolve_dynamic(self.timeout, prelim)
-        metrics = _resolve_dynamic(self.metrics, prelim)
-        harness = _resolve_dynamic(self.harness, prelim)
-        success = _resolve_dynamic(self.success, prelim)
-
-        # Phase 2: full ctx with resolved config for command/cwd/env/stdin.
-        ctx = Context(
-            params=params,
-            suite=suite,
-            benchmark=self.name,
-            runs=runs,
-            warmup=warmup,
-            timeout=timeout,
-            metrics=metrics,
-            harness=harness,
-            success=success,
-            matrix=mat,
+            matrix=Matrix(dict(self.data)),
         )
         env = self.env(ctx)
         execution = Execution(
             command=tuple(os.fsdecode(a) for a in self.command(ctx)),
             cwd=Path(self.cwd(ctx)),
             env=env if env else EMPTY_MAPPING,
-            timeout=timeout,
-            stdin=_resolve_dynamic(self.stdin, ctx),
+            timeout=self.timeout(ctx),
+            stdin=self.stdin(ctx),
         )
         b = Benchmark(
             suite=suite,
             name=self.name,
             execution=execution,
             variant=variant,
-            metrics=metrics,
-            success=success,
-            warmup=warmup,
-            runs=runs,
-            harness=harness,
-            monitor=_resolve_dynamic(self.monitor, ctx),
+            metrics=self.metrics(ctx),
+            success=self.success,
+            warmup=self.warmup(ctx),
+            runs=self.runs(ctx),
+            harness=self.harness,
+            monitor=self.monitor,
             data=self.data,
         )
-        label_fn = _resolve_dynamic(self.label_fn, ctx)
-        return dataclasses.replace(b, variant_label=label_fn(b))
+        return dataclasses.replace(b, variant_label=self.label_fn(b))
 
 
 @dataclass(frozen=True, slots=True)
 class Benchmark:
     """One fully-resolved benchmark variant."""
 
-    # TODO: move the defaults into suite
     suite: str
     name: str
     execution: Execution
-    variant: Variant = ()
+    variant: Variant
+    metrics: tuple[Metric, ...]
+    success: SuccessFn
+    warmup: StoppingPolicy
+    runs: StoppingPolicy
+    harness: bool
+    monitor: HarnessMonitor | None
+    data: Mapping[str, Any]
+    # Filled by a follow-up `dataclasses.replace` once the benchmark exists
+    # (the label fn needs the resolved Benchmark), so it keeps a default and
+    # sits last.
     variant_label: str = ""
-    metrics: tuple[Metric, ...] = ()
-    success: SuccessFn = default_success
-    warmup: StoppingPolicy = FixedRuns(0)
-    runs: StoppingPolicy = FixedRuns(1)
-    harness: bool = False
-    monitor: HarnessMonitor | None = None
-    data: Mapping[str, Any] = EMPTY_MAPPING
 
     def __getattr__(self, name: str) -> Any:
         data = object.__getattribute__(self, "data")
         if name in data:
             return data[name]
         raise AttributeError(name)
-
-
-def matrix_command(ctx: Context[Any]) -> Sequence[str]:
-    return list(ctx.matrix.command)
-
-
-def matrix_cwd(ctx: Context[Any]) -> Path:
-    return Path(ctx.matrix.cwd)
-
-
-def matrix_env(ctx: Context[Any]) -> Mapping[str, str]:
-    return dict(ctx.matrix.env)
 
 
 def _stringify(v: Any) -> str:
@@ -511,13 +378,13 @@ def _stringify(v: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def bench(name: str, **data: Any) -> BenchmarkSpec:
-    """Build a BenchmarkSpec with arbitrary attached data.
+def bench(name: str, **data: Any) -> BenchmarkBuilder:
+    """Build a BenchmarkBuilder with arbitrary attached data.
 
     `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available. To add
     matrix dimensions use `.with_matrix(...)`.
     """
-    return BenchmarkSpec(name=name, data=dict(data) if data else EMPTY_MAPPING)
+    return BenchmarkBuilder(name=name, data=dict(data) if data else EMPTY_MAPPING)
 
 
 def from_files(
@@ -526,20 +393,12 @@ def from_files(
     pattern: str | None = None,
     recursive: bool = True,
     exclude: set[str] | None = None,
-) -> list[BenchmarkSpec]:
-    """Discover files under `root`; each becomes a factory with `b.path` set.
-
-    Returns the list eagerly — splat into `suite(name, *from_files(...))`, or
-    wrap in `Suite.factory` when the root depends on the params
-    (`.factory(lambda ctx: from_files(ctx.params.cwd / "benchmarks", pattern=...))`).
-    Factory name is the path relative to `root` without extension
-    (forward-slash separated). `pattern` is a regex matched against the
-    filename via `re.search`.
-    """
+) -> list[BenchmarkBuilder]:
+    """Discover files under `root`; each becomes a factory with `b.path` set."""
     compiled = re.compile(pattern) if pattern else None
     exclude_set = exclude or set()
     r = Path(root)
-    out: list[BenchmarkSpec] = []
+    out: list[BenchmarkBuilder] = []
     if r.is_dir():
         entries = (
             (Path(d) / fn for d, _, fns in r.walk() for fn in fns)

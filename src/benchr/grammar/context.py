@@ -23,12 +23,7 @@ import types
 import typing
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from benchr.core.execution import SuccessFn
-    from benchr.core.metric import Metric
-    from benchr.core.policy import StoppingPolicy
+from typing import Any
 
 
 class Matrix:
@@ -53,29 +48,19 @@ class Matrix:
 class Context[T]:
     """Everything a builder callable needs, in one object.
 
-    The single argument passed to every command/cwd/env callable (built in
-    `BenchmarkSpec._resolve_cell` when a variant is resolved) and to every
-    suite factory (built in `Suite.materialize`). `T` is the user's params
+    The single argument passed to every command/cwd/env/timeout/runs/… builder
+    (built per variant in `BenchmarkBuilder._resolve_cell`) and to every suite
+    factory (built in `Suite.materialize`). `T` is the user's params
     `@dataclass`.
 
-    The level decides what the fields mean:
-
-      - **suite level** (factories): `benchmark` is `None`, `matrix` is
-        empty, and the policy/config fields are the *suite defaults* (already
-        reflecting any `--runs/--warmup` CLI override).
-      - **benchmark level** (command/cwd/env): `benchmark` is the name and the
-        policy/config fields are the *resolved* benchmark's values.
+    At suite level (factories) `benchmark` is `None` and `matrix` is empty; at
+    benchmark level `benchmark` is the name and `matrix` carries the variant's
+    dimension values (read as attributes, e.g. `ctx.matrix.size`).
     """
 
     params: T
     suite: str
     benchmark: str | None
-    runs: StoppingPolicy
-    warmup: StoppingPolicy
-    timeout: float | None
-    metrics: tuple[Metric, ...]
-    harness: bool
-    success: SuccessFn
     matrix: Matrix
 
 

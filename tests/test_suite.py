@@ -1,6 +1,7 @@
 """Suite: lazy defaults, resolution, matrix, from_files, filter, materialize."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -27,6 +28,52 @@ def test_runs_preserves_benchmark_override():
     a = _b("a").with_runs(FixedRuns(5))
     s = suite("S", a, _b("b")).with_command(["true"]).with_runs(10)
     assert [b.runs for b in _mat(s)] == [FixedRuns(5), FixedRuns(10)]
+
+
+# ----- suite defaults accept (ctx) -> value builders ----------------------
+
+
+def test_with_runs_accepts_ctx_callable():
+    s = (suite("S", _b("a"))
+         .with_command(["true"])
+         .with_runs(lambda ctx: FixedRuns(ctx.params.n)))
+    b = s.materialize(SimpleNamespace(n=4))[0]
+    assert b.runs == FixedRuns(4)
+
+
+def test_with_warmup_accepts_ctx_callable():
+    s = (suite("S", _b("a"))
+         .with_command(["true"])
+         .with_warmup(lambda ctx: FixedRuns(ctx.params.w)))
+    b = s.materialize(SimpleNamespace(w=2))[0]
+    assert b.warmup == FixedRuns(2)
+
+
+def test_with_timeout_accepts_ctx_callable():
+    s = (suite("S", _b("a"))
+         .with_command(["true"])
+         .with_timeout(lambda ctx: float(ctx.params.t)))
+    b = s.materialize(SimpleNamespace(t=30))[0]
+    assert b.execution.timeout == 30.0
+
+
+def test_with_metric_accepts_ctx_callable():
+    m = Time()
+    s = (suite("S", _b("a"))
+         .with_command(["true"])
+         .with_metric(lambda ctx: (m,)))
+    b = s.materialize(None)[0]
+    assert b.metrics == (m,)
+
+
+def test_suite_callable_runs_still_loses_to_benchmark_override():
+    a = _b("a").with_runs(FixedRuns(5))
+    s = (suite("S", a, _b("b"))
+         .with_command(["true"])
+         .with_runs(lambda ctx: FixedRuns(ctx.params.n)))
+    assert [b.runs for b in s.materialize(SimpleNamespace(n=9))] == [
+        FixedRuns(5), FixedRuns(9),
+    ]
 
 
 def test_with_command_propagates_when_unset():
@@ -110,9 +157,13 @@ def test_suite_with_label_propagates_and_respects_override():
 
 
 def test_filter():
-    s = suite("S", _b("keep_me"), _b("skip"), _b("keep_too"))
-    out = s.filter(lambda b: "skip" not in b.name)
-    assert [b.name for b in out.benchmarks] == ["keep_me", "keep_too"]
+    # Deferred: applies after expansion (per-variant) and is order-independent
+    # (added before the benchmark it filters).
+    s = (suite("S")
+         .filter(lambda b: b.size != 500)
+         .add(_b("c").with_matrix(size=[100, 500]))
+         .with_command(["true"]).with_cwd(Path("/tmp")).with_metric(Time()))
+    assert sorted(b.size for b in _mat(s)) == [100]
 
 
 def test_from_files(tmp_path: Path):
@@ -252,20 +303,12 @@ def test_with_label_overrides_default():
     assert sorted(b.variant_label for b in bs) == ["<one>", "<two>"]
 
 
-def test_command_dimension_default_builder():
-    """When dimension name is `command` and no with_command set, dimension value becomes cmd."""
+def test_command_via_matrix_builder():
+    """Per-variant command is wired explicitly via a builder reading ctx.matrix."""
     s = (
-        suite("M", _b("c").with_matrix(command=[["echo", "a"], ["echo", "b"]]))
+        suite("M", _b("c").with_matrix(cmd=[["echo", "a"], ["echo", "b"]])
+              .with_command(lambda ctx: list(ctx.matrix.cmd)))
         .with_cwd(Path("/tmp")).with_metric(Time())
     )
     bs = list(s.materialize(None))
     assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]
-
-
-def test_command_dimension_beats_suite_default():
-    s = (
-        suite("M", _b("c").with_matrix(command=[["echo", "dim"]]))
-        .with_command(["echo", "suite"])
-    )
-    b = _mat(s)[0]
-    assert b.execution.command == ("echo", "dim")

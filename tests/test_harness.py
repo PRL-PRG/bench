@@ -4,8 +4,8 @@ import time
 from pathlib import Path
 
 from benchr import (
-    CoefficientOfVariation, Context, Dry, FloatPerLine, JsonReporter, Parallel,
-    Regex, Sequential, Time, bench, line_monitor, plan, report_from_json, run,
+    CoefficientOfVariation, Dry, FloatPerLine, JsonReporter, Parallel,
+    Regex, Sequential, Time, bench, line_monitor, plan, report_from_json,
     suite,
 )
 
@@ -170,26 +170,6 @@ def test_over_delivery_stops_at_policy():
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     assert len(report.runs[0].observations) == 2
-    assert report.failures == []
-
-
-def test_runs_flag_reaches_harness_command_fn():
-    def harness_cmd(ctx: Context[object]) -> list[str]:
-        w, r = ctx.warmup.max_runs(), ctx.runs.max_runs()
-        assert w is not None and r is not None  # harness policies are bounded
-        return ["sh", "-c", f"seq {w + r}"]
-
-    s = (
-        suite("H", bench("a").with_command(harness_cmd))
-        .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("").lower_is_better())
-        .with_runs(5)
-        .with_harness()
-    )
-    report = run(s, argv=["--runs", "2", "--warmup", "1", "--no-progress"])
-    assert len(report.runs) == 1
-    assert len(report.runs[0].observations) == 3   # 1 warmup + 2 measured
-    assert report.warmups == {"H/a": 1}
     assert report.failures == []
 
 

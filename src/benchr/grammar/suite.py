@@ -8,17 +8,14 @@ happens once, in `materialize(ctx)`: every benchmark field still holding
 `Suite("A").with_command(c).add(b)` equals
 `Suite("A").add(b).with_command(c)`.
 
-Suite defaults are always concrete (except `command`, which has no sensible
-default); Benchmark fields are all UNSET-able.
+Suite defaults are always set (except `command`, which has no sensible
+default); benchmark fields are all `UNSET`-able (they inherit the suite).
 
 Resolution precedence (most specific wins):
 
 ```text
-benchmark explicit > benchmark matrix-dimension default > suite default
+benchmark explicit > suite default
 ```
-
-(The CLI's `--runs/--warmup` override is applied later, by `benchr.run()`,
-on the planned benchmark list — not by the Suite.)
 
 Producers:
 
@@ -32,8 +29,8 @@ Producers:
 .with_harness()              make every benchmark a harness benchmark
 .with_matrix(**dims)         add dimensions to every benchmark (at materialize)
 .add_matrix_skip(...)        add a skip rule to every benchmark
-.filter(pred)                keep matching benchmarks (eager — the one
-                             order-dependent builder; add before filtering)
+.filter(pred)                keep matching resolved benchmarks (deferred to
+                             materialize; order-independent, per-variant)
 .with_name(new_name)         rename
 ```
 """
@@ -45,26 +42,24 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from benchr.grammar.benchmark import (
     UNSET,
     Benchmark,
-    BenchmarkSpec,
+    BenchmarkBuilder,
+    Build,
     CommandFn,
     EnvFn,
     LabelFn,
     PathFn,
     SkipFn,
-    coerce_command,
-    coerce_cwd,
-    coerce_env,
+    as_build,
+    const,
     default_label,
     make_skip_rule,
-    matrix_command,
-    matrix_cwd,
-    matrix_env,
     normalize_matrix,
+    to_argv,
 )
 from benchr.grammar.context import Context, Matrix
 from benchr.core.execution import (
@@ -79,11 +74,7 @@ if TYPE_CHECKING:
     from benchr.runner.source import HarnessMonitor
 
 
-# A function the Runner can call to produce benchmark templates given the
-# Context. Suite.from_files defers discovery to this hook so e.g. paths can
-# depend on ctx.params. The Runner / CLI flattens these into concrete
-# benchmarks at run time.
-type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkSpec]]
+type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
 
 
 def _default_cwd(ctx: Context[Any]) -> Path:
@@ -106,73 +97,81 @@ class Suite:
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
-    benchmarks: tuple[BenchmarkSpec, ...] = ()
+    benchmarks: tuple[BenchmarkBuilder, ...] = ()
     factories: tuple[BenchmarkFactory, ...] = ()
 
-    # ----- suite defaults (always concrete, except command) ----------
+    # ----- suite defaults --------------------------------------------
+    # Each is the inheritance root for benchmarks that leave the field UNSET.
+    # command/cwd/env and the policy/config fields are stored as `Build`
+    # builders (a static default is wrapped via `const`); success/monitor/
+    # label_fn/harness are value-only.
     command: CommandFn = UNSET  # no sensible default; checked at materialize
     cwd: PathFn = _default_cwd
     env: EnvFn = _default_env
-    timeout: float | None = None  # None = no timeout
-    metrics: tuple[Metric, ...] = (Time(),)
+    timeout: Build[float | None] = const(None)  # None = no timeout
+    metrics: Build[tuple[Metric, ...]] = const((Time(),))
     success: SuccessFn = default_success
-    warmup: StoppingPolicy = FixedRuns(0)
-    runs: StoppingPolicy = FixedRuns(1)
+    warmup: Build[StoppingPolicy] = const(FixedRuns(0))
+    runs: Build[StoppingPolicy] = const(FixedRuns(1))
     harness: bool = False
     # Suite-level default for the harness monitor; benchmark value wins.
     monitor: HarnessMonitor | None = None
     label_fn: LabelFn = default_label
     matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
+    filters: tuple[Callable[[Benchmark], bool], ...] = ()
 
     # ----- producers -------------------------------------------------
 
     def with_name(self, name: str) -> Suite:
         return dataclasses.replace(self, name=name)
 
-    def add(self, b: BenchmarkSpec) -> Suite:
+    def add(self, b: BenchmarkBuilder) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + (b,))
 
-    def add_all(self, *bs: BenchmarkSpec) -> Suite:
+    def add_all(self, *bs: BenchmarkBuilder) -> Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
     def factory(self, fn: BenchmarkFactory) -> Suite:
         """Register a deferred `(ctx: Context) -> [Benchmark]` producer;
-        `materialize` builds the suite-level Context and calls it. Wrap
-        `from_files` here for params-dependent discovery, e.g.
-        `.factory(lambda ctx: from_files(ctx.params.cwd / "benchmarks", pattern=...))`."""
+        that wwill be called when suite materializes."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
-    def filter(self, pred: Callable[[BenchmarkSpec], bool]) -> Suite:
-        """Keep only benchmarks for which `pred(b)` is truthy. Wraps any
-        deferred factories so the filter also applies post-discovery.
+    def filter(self, pred: Callable[[Benchmark], bool]) -> Suite:
+        """Keep only the resolved benchmarks for which `pred(b)` is truthy.
 
-        Note: filtering is eager over the benchmarks present now — benchmarks
-        `add`-ed afterwards are not filtered.
+        Applied once, at the end of `materialize`, to every fully-resolved
+        variant — so it is order-independent (it sees benchmarks added before
+        or after this call) and can filter individual matrix variants.
         """
-        kept = tuple(b for b in self.benchmarks if pred(b))
-        new_factories = tuple(Suite._wrap_filter(fn, pred) for fn in self.factories)
-        return dataclasses.replace(self, benchmarks=kept, factories=new_factories)
+        return dataclasses.replace(self, filters=self.filters + (pred,))
 
     # ----- defaults ---------------------------------------------------
 
     def with_command(self, command: Sequence[str] | CommandFn) -> Suite:
-        return dataclasses.replace(self, command=coerce_command(command))
+        return dataclasses.replace(self, command=as_build(command, to_argv))
 
     def with_cwd(self, cwd: str | Path | PathFn) -> Suite:
-        return dataclasses.replace(self, cwd=coerce_cwd(cwd))
+        return dataclasses.replace(self, cwd=as_build(cwd, Path))
 
     def with_env(self, env: Mapping[str, str] | EnvFn) -> Suite:
-        """Set the suite env. At materialize it merges *under* each
-        benchmark's own env — the benchmark wins per key."""
-        return dataclasses.replace(self, env=coerce_env(env))
+        return dataclasses.replace(self, env=as_build(env, dict))
 
-    def with_timeout(self, timeout: float | None) -> Suite:
-        return dataclasses.replace(self, timeout=timeout)
+    def with_timeout(self, timeout: float | None | Build[float | None]) -> Suite:
+        return dataclasses.replace(self, timeout=as_build(timeout))
 
-    def with_metric(self, *metrics: Metric) -> Suite:
-        """Set (replace) the suite's default metrics — initially `(Time(),)`."""
-        return dataclasses.replace(self, metrics=tuple(metrics))
+    def with_metric(
+        self, *metrics: Metric | Build[tuple[Metric, ...]]
+    ) -> Suite:
+        """Set (replace) the suite's default metrics — initially `(Time(),)`.
+        Pass them statically (`with_metric(m1, m2, …)`), or a single
+        `(ctx) -> (m, …)` builder for per-variant metrics."""
+        if len(metrics) == 1 and callable(metrics[0]):
+            build = metrics[0]
+        else:
+            ms = cast("tuple[Metric, ...]", metrics)
+            build = const(ms)
+        return dataclasses.replace(self, metrics=build)
 
     def with_success(self, fn: SuccessFn) -> Suite:
         return dataclasses.replace(self, success=fn)
@@ -180,31 +179,28 @@ class Suite:
     def with_label(self, fn: LabelFn) -> Suite:
         return dataclasses.replace(self, label_fn=fn)
 
-    def with_warmup(self, p: StoppingPolicy | int) -> Suite:
+    def with_warmup(
+        self, p: int | StoppingPolicy | Build[StoppingPolicy]
+    ) -> Suite:
         """Set the default warmup policy."""
-        return dataclasses.replace(self, warmup=coerce_policy(p))
+        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
 
-    def with_runs(self, p: StoppingPolicy | int) -> Suite:
+    def with_runs(
+        self, p: int | StoppingPolicy | Build[StoppingPolicy]
+    ) -> Suite:
         """Set the default policy for the measured runs."""
-        return dataclasses.replace(self, runs=coerce_policy(p))
+        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
 
     def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
-        """Make every contained benchmark a harness benchmark (executed once,
-        streamed and killed on convergence — see `Benchmark.with_harness`).
-        `monitor` is a suite-level default; a benchmark's own
-        `with_harness(...)` value overrides it. Unlike
-        `Benchmark.with_harness` (whose default is `UNSET` = inherit), the
-        suite stores a concrete value — it is the inheritance root. There is no
-        per-benchmark opt-out; mixed suites are two suites."""
+        """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
     def with_matrix(self, **dims: Sequence[Any]) -> Suite:
         """Declare matrix dimensions applied to every contained benchmark
-        (replaces any previously set).
 
-        Stored on the suite; `materialize` appends these dimensions to each
-        benchmark's own (so per-benchmark dimensions still compose with
-        suite-level ones). See `Benchmark.with_matrix`.
+        When materialized,these dimensions are appended to each
+        benchmark's own (a per-benchmark dimensions compose with
+        suite-level ones).
         """
         return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
@@ -216,8 +212,7 @@ class Suite:
     ) -> Suite:
         """Add a skip rule applied to every contained benchmark.
 
-        Same shape as `Benchmark.add_matrix_skip`: kwargs are AND-matched against
-        dimension values, optional `predicate(bench) -> bool` for complex cases.
+        kwargs are AND-matched against dimension values, optional predicate for complex cases.
         """
         rule = make_skip_rule(predicate, kwargs)
         if rule is None:
@@ -225,24 +220,12 @@ class Suite:
         return dataclasses.replace(self, skips=self.skips + (rule,))
 
     def materialize(self, params: Any) -> list[Benchmark]:
-        """Return the concrete (fully resolved) benchmark list.
+        """Return the concrete fully resolved benchmark list."""
 
-        Calls deferred factories (passing a suite-level `Context` built from
-        `params` and the suite defaults), applies suite-level dimensions/skips,
-        fills every still-unset field from the suite defaults, and expands each
-        template's matrix into one resolved `Benchmark` per surviving variant.
-        After this, benchmarks are fully concrete — runners just read fields.
-        """
-        ctx = Context(
+        ctx: Context[Any] = Context(
             params=params,
             suite=self.name,
             benchmark=None,
-            runs=self.runs,
-            warmup=self.warmup,
-            timeout=self.timeout,
-            metrics=self.metrics,
-            harness=self.harness,
-            success=self.success,
             matrix=Matrix(),
         )
         collected = list(self.benchmarks)
@@ -252,12 +235,12 @@ class Suite:
         for b in collected:
             resolved = self._resolve(self._with_suite_matrix(b))
             out.extend(resolved.create(params, suite=self.name))
+        for pred in self.filters:
+            out = [b for b in out if pred(b)]
         return out
 
-    # ----- helpers --------------------------------------------------
-
-    def _with_suite_matrix(self, b: BenchmarkSpec) -> BenchmarkSpec:
-        """Append suite matrix dimensions after the benchmark's own; union skip rules."""
+    def _with_suite_matrix(self, b: BenchmarkBuilder) -> BenchmarkBuilder:
+        """Append suite matrix dimensions after the benchmark's own and union skip rules."""
         if self.matrix:
             for name in self.matrix:
                 if name in b.matrix:
@@ -271,32 +254,14 @@ class Suite:
             b = dataclasses.replace(b, skips=b.skips + self.skips)
         return b
 
-    def _resolve(self, b: BenchmarkSpec) -> BenchmarkSpec:
-        """Fill unset fields from the suite: explicit benchmark value wins, then
-        a matrix-dimension default (for command/cwd/env), then the suite default.
-        `env` is the one merging field: the suite env sits under the benchmark's
-        own (or its matrix default), benchmark winning per key."""
+    def _resolve(self, b: BenchmarkBuilder) -> BenchmarkBuilder:
+        """Fill unset fields from the suite: explicit benchmark value wins,
+        otherwise the suite default. `env` is the one merging field: the suite
+        env sits under the benchmark's own, benchmark winning per key."""
 
-        # TODO: this seems to complicated
-        # The command, env, cwd are set outside of the matrix
-        if b.command is not UNSET:
-            command = b.command
-        elif "command" in b.matrix:
-            command = matrix_command
-        else:
-            command = self.command
-        if b.cwd is not UNSET:
-            cwd = b.cwd
-        elif "cwd" in b.matrix:
-            cwd = matrix_cwd
-        else:
-            cwd = self.cwd
-        if b.env is not UNSET:
-            env = _merge_env(self.env, b.env)
-        elif "env" in b.matrix:
-            env = _merge_env(self.env, matrix_env)
-        else:
-            env = self.env
+        command = b.command if b.command is not UNSET else self.command
+        cwd = b.cwd if b.cwd is not UNSET else self.cwd
+        env = _merge_env(self.env, b.env) if b.env is not UNSET else self.env
 
         resolved = dataclasses.replace(
             b,
@@ -315,18 +280,9 @@ class Suite:
         if resolved.command is UNSET:
             raise ValueError(
                 f"Benchmark {b.name!r} has no command — set one with "
-                f"BenchmarkSpec.with_command or Suite.with_command"
+                f"BenchmarkBuilder.with_command or Suite.with_command"
             )
         return resolved
-
-    @staticmethod
-    def _wrap_filter(
-        factory: BenchmarkFactory, pred: Callable[[BenchmarkSpec], bool]
-    ) -> BenchmarkFactory:
-        def wrapped(ctx: Context[Any]) -> list[BenchmarkSpec]:
-            return [b for b in factory(ctx) if pred(b)]
-
-        return wrapped
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +290,6 @@ class Suite:
 # ---------------------------------------------------------------------------
 
 
-def suite(name: str, *benchmarks: BenchmarkSpec) -> Suite:
+def suite(name: str, *benchmarks: BenchmarkBuilder) -> Suite:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""
     return Suite(name=name, benchmarks=tuple(benchmarks))

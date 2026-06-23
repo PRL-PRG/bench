@@ -4,7 +4,7 @@ from pathlib import Path
 
 from benchr import (
     FloatPerLine, JsonReporter, Sequential, Time, bench,
-    plan, report_from_json, run, suite,
+    plan, report_from_json, suite,
 )
 
 
@@ -35,23 +35,6 @@ def test_e2e_warmup_then_measure():
     # Continuous numbering; the warmup count is recorded once, not per run.
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
     assert report.warmups == {"S/a": 2}
-
-
-def test_e2e_runs_flag_overrides_every_benchmark():
-    # --runs N is applied by the cli orchestrator to the materialized plan, so
-    # it replaces each benchmark's own measure count (here 5 and 1) with 2.
-    s = suite(
-        "S",
-        bench("a").with_command(["sleep", "0.01"]).with_cwd(Path("/tmp"))
-            .with_metric(Time()).with_runs(5),
-        bench("b").with_command(["sleep", "0.01"]).with_cwd(Path("/tmp"))
-            .with_metric(Time()).with_runs(1),
-    )
-    report = run(s, argv=["--runs", "2", "--no-progress"])
-    per_bench: dict[str, int] = {}
-    for r in report.runs:
-        per_bench[r.benchmark] = per_bench.get(r.benchmark, 0) + 1
-    assert sorted(per_bench.values()) == [2, 2]
 
 
 def test_e2e_command_not_found_marks_failure(tmp_path: Path):

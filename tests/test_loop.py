@@ -58,5 +58,5 @@ def test_empty_observation_counts():
 
 
 def test_unset_policy_raises():
-    with pytest.raises(RuntimeError, match="materialize"):
+    with pytest.raises(RuntimeError, match="unset"):
         next(benchmarking_loop(UNSET, FixedRuns(1)))

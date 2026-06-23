@@ -1,10 +1,10 @@
-"""BenchmarkSpec: builders, create()/materialize, Dynamic fields."""
+"""BenchmarkBuilder: builders, create()/materialize, per-variant builder fields."""
 
 from pathlib import Path
 
 import pytest
 
-from benchr import Dynamic, FixedRuns, FloatPerLine, Time, bench, suite
+from benchr import FixedRuns, FloatPerLine, Time, bench, suite
 from benchr.grammar.benchmark import UNSET
 
 
@@ -23,9 +23,10 @@ def _base():
 
 
 def test_runs_sugar_equivalent_to_fixed_runs():
-    a = _base().with_runs(3)
-    b = _base().with_runs(FixedRuns(3))
-    assert a.runs == b.runs
+    # `.runs` is stored as a builder now, so compare the resolved values.
+    a = _mat(_base().with_runs(3))
+    b = _mat(_base().with_runs(FixedRuns(3)))
+    assert a.runs == b.runs == FixedRuns(3)
 
 
 def test_materialize_stamps_identity():
@@ -62,16 +63,16 @@ def test_policy_defaults_resolve_via_suite():
 def test_unresolved_cwd_raises_on_create():
     # never materialized: command set but cwd/env still UNSET
     b = bench("x").with_command(["true"])
-    with pytest.raises(RuntimeError, match="materialize"):
+    with pytest.raises(RuntimeError, match="unset"):
         list(b.create(None, suite="s"))
 
 
 def test_unset_raises_on_any_use():
-    with pytest.raises(RuntimeError, match="materialize"):
+    with pytest.raises(RuntimeError, match="unset"):
         UNSET(None)  # calling (command/env/label fns)
-    with pytest.raises(RuntimeError, match="materialize"):
+    with pytest.raises(RuntimeError, match="unset"):
         UNSET.start()  # attribute access (policies)
-    with pytest.raises(RuntimeError, match="materialize"):
+    with pytest.raises(RuntimeError, match="unset"):
         bool(UNSET)  # truth-testing (harness flag)
 
 
@@ -116,45 +117,23 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
     assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}
 
 
-# ----- Dynamic (per-variant) fields ---------------------------------------
+# ----- builder (per-variant) fields ---------------------------------------
 
 
-def test_dynamic_value_field_resolved_per_variant():
+def test_value_field_bare_callable_resolved_per_variant():
     b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
          .with_matrix(size=[100, 200])
-         .with_timeout(Dynamic(lambda ctx: ctx.matrix.size / 1000)))
-    bs = suite("S", b).materialize(None)
-    assert {x.execution.timeout for x in bs} == {0.1, 0.2}
-
-
-def test_value_field_bare_callable_auto_detected_as_builder():
-    b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
-         .with_matrix(size=[100])
          .with_timeout(lambda ctx: ctx.matrix.size / 1000))
     bs = suite("S", b).materialize(None)
-    assert bs[0].execution.timeout == 0.1
+    assert {x.execution.timeout for x in bs} == {0.1, 0.2}
 
 
 def test_dynamic_runs_resolved_per_variant():
     b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
          .with_matrix(n=[2, 5])
-         .with_runs(Dynamic(lambda ctx: FixedRuns(ctx.matrix.n))))
+         .with_runs(lambda ctx: FixedRuns(ctx.matrix.n)))
     bs = suite("S", b).materialize(None)
     assert {x.runs.max_runs() for x in bs} == {2, 5}
-
-
-def test_dynamic_success_selected_per_variant():
-    def strict(_r):
-        return "bad"
-
-    def loose(_r):
-        return None
-
-    b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
-         .with_matrix(mode=["strict", "loose"])
-         .with_success(Dynamic(lambda ctx: strict if ctx.matrix.mode == "strict" else loose)))
-    by_mode = {x.mode: x.success for x in suite("S", b).materialize(None)}
-    assert by_mode["strict"] is strict and by_mode["loose"] is loose
 
 
 def test_behavior_field_bare_callable_is_the_value_not_a_builder():

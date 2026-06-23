@@ -4,11 +4,12 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from benchr import run, suite
+from benchr import Benchr, Time, bench, run, suite
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -154,3 +155,56 @@ def test_run_reports_friendly_materialization_error(capsys):
     err = capsys.readouterr().err
     assert "Failed to materialize suite 'My Suite'" in err
     assert "jvm exploded" in err  # the failing command's output is surfaced
+
+
+# ----- run(): suite discovery via factory ---------------------------------
+
+
+def _trivial(suite_name: str, bench_name: str = "b"):
+    return suite(
+        suite_name,
+        bench(bench_name)
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+
+
+@dataclass
+class _Params:
+    label: str = "x"
+
+
+def test_run_callable_factory_receives_parsed_params():
+    # The discovery callable is invoked after CLI parsing with the params
+    # instance, so it sees the flag value the user passed.
+    seen: dict[str, str] = {}
+
+    def discover(p: _Params):
+        seen["label"] = p.label
+        return _trivial("S")
+
+    report = run(discover, params=_Params, argv=["--label", "hello", "--no-progress"])
+    assert seen["label"] == "hello"
+    assert {r.suite for r in report.runs} == {"S"}
+
+
+def test_benchr_combines_static_and_discovered_suites():
+    static = _trivial("Static")
+
+    def discover(_p):
+        return [_trivial("Disc")]
+
+    report = Benchr().add_suite(static).factory(discover).run(argv=["--no-progress"])
+    assert {r.suite for r in report.runs} == {"Static", "Disc"}
+
+
+def test_run_callable_factory_may_return_a_single_suite():
+    report = run(lambda _p: _trivial("One"), argv=["--no-progress"])
+    assert {r.suite for r in report.runs} == {"One"}
+
+
+def test_run_still_accepts_a_list_of_suites():
+    report = run([_trivial("A"), _trivial("B")], argv=["--no-progress"])
+    assert {r.suite for r in report.runs} == {"A", "B"}

@@ -7,9 +7,6 @@ from typing import Any
 
 import pytest
 
-from benchr.core.execution import default_success
-from benchr.core.metric import Time
-from benchr.core.policy import FixedRuns
 from benchr.grammar.context import Context, Matrix, add_dataclass_args, build_dataclass
 
 
@@ -77,9 +74,7 @@ def test_dash_to_underscore():
 
 def _ctx(**overrides: Any) -> Context[Any]:
     base: dict[str, Any] = dict(
-        params=None, suite="S", benchmark="b",
-        runs=FixedRuns(3), warmup=FixedRuns(1), timeout=None,
-        metrics=(Time(),), harness=False, success=default_success, matrix=Matrix(),
+        params=None, suite="S", benchmark="b", matrix=Matrix(),
     )
     base.update(overrides)
     return Context(**base)
