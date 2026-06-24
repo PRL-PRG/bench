@@ -37,3 +37,4 @@ docs = [
     "mkdocstrings[python]>=1.0.4",
     "ruff>=0.15.17",
 ]
+schema = ["pydantic>=2.9"]

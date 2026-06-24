@@ -1,4 +1,4 @@
-.PHONY: check check-types test docs docs-serve format
+.PHONY: check check-types test docs docs-serve format schema
 
 check: check-types test
 
@@ -16,5 +16,8 @@ docs:
 
 docs-serve:
 	uv run --group docs mkdocs serve
+
+schema:
+	uv run --group schema python scripts/generate_schema.py
 
 
