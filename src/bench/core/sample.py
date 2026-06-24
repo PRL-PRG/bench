@@ -1,17 +1,4 @@
-"""Sample, Observation, Run, Report: the data model over benchmark execution.
-
-A `Run` is one process execution: its identity, command, outcome
-(returncode / runtime / failure / stdout / stderr) and the `Observation`s
-measured during it. An `Observation` is one measurement point: a bag of
-`Sample`s (possibly several metrics) plus an optional per-observation failure.
-A command benchmark yields one Run with one Observation, a harness yields one
-Run with many. A `Report` is the collection of Runs. It summarizes by
-flattening every observation's samples per metric.
-
-All are pure data and round-trip through JSON. `stdout`/`stderr`/`env` are
-kept on a Run for live reporters but excluded from JSON by default (see
-`report_to_json`).
-"""
+"""The data model over benchmark execution."""
 
 from __future__ import annotations
 
@@ -39,13 +26,11 @@ class Observation:
 
     A failed observation (extraction produced nothing it expected, or the
     harness flagged the iteration) carries `failure` and usually no samples,
-    and the run proceeds to the next observation. `label` is the benchmark-variant
-    display identifier, carried for live progress reporting.
+    and the run proceeds to the next observation.
     """
 
     samples: list[Sample] = field(default_factory=list[Sample])
     failure: str | None = None
-    label: str = ""
 
     def is_failure(self) -> bool:
         return self.failure is not None
@@ -53,19 +38,7 @@ class Observation:
 
 @dataclass(frozen=True, slots=True)
 class Run:
-    """One process execution: identity + command + outcome + observations.
-
-    `command`/`cwd`/`env` are the execution inputs. `returncode` /
-    `runtime` / `failure` / `message` / `stdout` / `stderr` the
-    outcome. `observations` the measurements taken during the run (command: 1,
-    harness: N). `run` is the run's index within its variant (command runs are
-    numbered 1..N, a harness is a single run).
-
-    `returncode` conventions follow ExecutionResult: `124` = timeout, `-1`
-    = pre-execution failure. `message` is the last non-empty stderr/stdout line
-    on failure. `stdout`/`stderr`/`env` are not serialized to JSON by
-    default.
-    """
+    """One process execution: identity + command + outcome + observations."""
 
     suite: str
     benchmark: str
@@ -116,8 +89,8 @@ def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
 class Report:
     """The accumulating Runs, each carrying its Observations.
 
-    `warmups` maps a benchmark-variant key (`record_key`) to the number of
-    its leading *observations* that were warmup, recorded once per variant.
+    `warmups` maps a benchmark-variant key to the number of
+    its leading observations that were warmup, recorded once per variant.
     Stats drop those observations by default.
     """
 

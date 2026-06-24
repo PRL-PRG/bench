@@ -1,18 +1,11 @@
 """Benchmark grammar: a builder template and the resolved instances it produces.
 
-`BenchmarkBuilder` is the chainable spec returned by `bench()`. `Benchmark` is
-one fully *resolved* variant produced by `BenchmarkBuilder.create()`. The
-builder leaves every inheritable field as the `UNSET` null object ("inherit the
-suite's default", filled in by `Suite`). The resolved benchmark carries concrete
-objects and a frozen `Execution`, which the runner consumes directly, with no
-callables left to evaluate.
+`BenchmarkBuilder` is the builder for `Benchmark`, one fully resolved variant. The
+builder leaves every inheritable field unset. The resolved benchmark carries concrete
+objects and a frozen `Execution`, which can be run.
 
-Every configurable field is set either as a static value or as a
-`Build[T]` = `(ctx) -> value` builder, resolved once per variant at `create()`
-time (a setter wraps a static value via `const`, and a callable is taken as the
-builder). The three fields whose value is *itself* a callable
-(`success`/`monitor`/`label_fn`) are value-only (no per-variant builder), so a
-bare callable passed to them is never ambiguous.
+Every configurable field is set either as a static value or as a `Build[T]` =
+`(ctx) -> value` builder, resolved once per variant.
 
 `create()` expands the matrix (cartesian product of the declared dimensions),
 drops skipped cells, and resolves every field against the variant `Context` in
@@ -51,11 +44,9 @@ if TYPE_CHECKING:
 # A field builder: a `(ctx) -> value` resolved once per variant at create()
 # time. The single concept for "value or function": a setter accepts `T |
 # Build[T]`, where a callable is the builder and anything else is the static
-# value (wrapped). The three callable-valued fields (success/monitor/label_fn)
-# are value-only, so a bare callable is never ambiguous.
+# value (wrapped).
 type Build[T] = Callable[[Context[Any]], T]
 
-# command/cwd/env are always stored as a builder (a static value is wrapped).
 type CommandFn = Build[Sequence[StrOrBytesPath]]
 type PathFn = Build[Path]
 type EnvFn = Build[Mapping[str, str]]
@@ -156,8 +147,8 @@ class BenchmarkBuilder:
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
     `data` holds arbitrary user-supplied keyword args, readable as attributes.
-    Every inheritable field defaults to `UNSET` ("inherit the suite's
-    default").
+    Every inheritable field defaults to unset and so it will inherit the suite's
+    default unless explicitely set.
     """
 
     name: str
@@ -184,8 +175,6 @@ class BenchmarkBuilder:
     # ----- attribute access into data ---------------------------------
 
     def __getattr__(self, name: str) -> Any:
-        # __getattr__ is only called when normal lookup fails, safe to use even
-        # with slots.
         data = object.__getattribute__(self, "data")
         if name in data:
             return data[name]
@@ -205,13 +194,9 @@ class BenchmarkBuilder:
     def with_timeout(
         self, timeout: float | None | Build[float | None]
     ) -> BenchmarkBuilder:
-        """Set the per-run timeout in seconds (`None` = explicitly no timeout,
-        overriding any suite default). Accepts a `(ctx) -> float | None` builder."""
         return dataclasses.replace(self, timeout=as_build(timeout))
 
     def with_stdin(self, data: bytes | str | Build[bytes]) -> BenchmarkBuilder:
-        """Feed `data` to the process's stdin (str is UTF-8 encoded). Accepts a
-        `(ctx) -> bytes` builder."""
         return dataclasses.replace(
             self,
             stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
@@ -220,9 +205,6 @@ class BenchmarkBuilder:
     def with_metric(
         self, *metrics: Metric | Build[tuple[Metric, ...]]
     ) -> BenchmarkBuilder:
-        """Set (replace) the benchmark's metrics. Pass them statically
-        (`with_metric(m1, m2, ...)`), or a single `(ctx) -> (m, ...)` builder for
-        per-variant metrics."""
         if len(metrics) == 1 and callable(metrics[0]):
             build = metrics[0]
         else:

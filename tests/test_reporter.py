@@ -143,7 +143,7 @@ def test_summary_appends_failures_block_with_diagnostic():
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
-    Sequential(reporter=rep, max_consecutive_failures=1).run(plan([s], None), None)
+    Sequential(reporter=rep).run(plan([s], None), None)
     rep.finalize()
     text = buf.getvalue()
     assert "Failures:" in text
@@ -163,7 +163,7 @@ def test_summary_failures_block_handles_spawn_failure():
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
-    Sequential(reporter=rep, max_consecutive_failures=1).run(plan([s], None), None)
+    Sequential(reporter=rep).run(plan([s], None), None)
     rep.finalize()
     text = buf.getvalue()
     assert "spawn failed" in text
@@ -219,7 +219,7 @@ def test_progress_plain_marks_failures():
         .with_runs(1),
     )
     Sequential(
-        reporter=ProgressReporter(target_console=c), max_consecutive_failures=1
+        reporter=ProgressReporter(target_console=c)
     ).run(plan([s], None), None)
     text = buf.getvalue()
     assert "FAIL" in text and "exit code 11" in text
@@ -252,6 +252,6 @@ def test_summary_failure_line_escapes_identifier_markup():
         .with_runs(1),
     )
     Sequential(
-        reporter=SummaryReporter(target_console=c), max_consecutive_failures=1
+        reporter=SummaryReporter(target_console=c)
     ).run(plan([s], None), None)
     assert "[v1]" in buf.getvalue()

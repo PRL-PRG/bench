@@ -39,7 +39,7 @@ class Reporter(abc.ABC):
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
-    def observation(self, obs: Observation) -> None:
+    def observation(self, obs: Observation, label: str) -> None:
         pass
 
     def run_done(self, run: Run) -> None:
@@ -80,9 +80,9 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.start(plan)
 
-    def observation(self, obs: Observation) -> None:
+    def observation(self, obs: Observation, label: str) -> None:
         for r in self.reporters:
-            r.observation(obs)
+            r.observation(obs, label)
 
     def run_done(self, run: Run) -> None:
         for r in self.reporters:
@@ -288,7 +288,7 @@ class ProgressReporter(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def observation(self, obs: Observation) -> None:
+    def observation(self, obs: Observation, label: str) -> None:
         with self._lock:
             if not obs.is_failure():
                 self._successes += 1
@@ -297,13 +297,13 @@ class ProgressReporter(Reporter):
             if self._progress is not None and self._task_id is not None:
                 self._progress.update(
                     self._task_id,
-                    description=markup_escape(obs.label),
+                    description=markup_escape(label),
                     failures=self._failures,
                     successes=self._successes,
                 )
                 self._progress.advance(self._task_id)
             else:
-                self._print_plain(obs)
+                self._print_plain(obs, label)
 
     def finalize(self) -> None:
         if self._progress is not None and self._task_id is not None:
@@ -311,14 +311,14 @@ class ProgressReporter(Reporter):
 
     # ----- helpers ---------------------------------------------------
 
-    def _print_plain(self, obs: Observation) -> None:
+    def _print_plain(self, obs: Observation, label: str) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
         if not obs.is_failure():
             tag = "[bench.success]ok[/]"
         else:
             tag = f"[bench.failure]FAIL[/] ({obs.failure})"
-        self._console.print(f"[{n}|{total_str}] {markup_escape(obs.label)} {tag}")
+        self._console.print(f"[{n}|{total_str}] {markup_escape(label)} {tag}")
 
     @staticmethod
     def _compute_total(plan: list[Benchmark]) -> int | None:

@@ -46,17 +46,7 @@ class Matrix:
 
 @dataclass(frozen=True, slots=True)
 class Context[T]:
-    """Everything a builder callable needs, in one object.
-
-    The single argument passed to every command/cwd/env/timeout/runs/... builder
-    (built per variant in `BenchmarkBuilder._resolve_cell`) and to every suite
-    factory (built in `Suite.materialize`). `T` is the user's params
-    `@dataclass`.
-
-    At suite level (factories) `benchmark` is `None` and `matrix` is empty. At
-    benchmark level `benchmark` is the name and `matrix` carries the variant's
-    dimension values (read as attributes, e.g. `ctx.matrix.size`).
-    """
+    """Context for the benchmark builder callable `with_*(lambda ctx: )` methods."""
 
     params: T
     suite: str
@@ -69,6 +59,7 @@ class Context[T]:
 _MISSING = object()
 
 
+# TODO: should be private?
 def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
@@ -77,9 +68,6 @@ def add_dataclass_args(
     """Generate `--<name>` arguments from a dataclass's fields."""
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")
-    # Resolve string annotations (`from __future__ import annotations` makes
-    # every `f.type` a string). Fall back to the raw field types if the
-    # forward refs can't be resolved.
     try:
         hints = typing.get_type_hints(dc)
     except Exception:

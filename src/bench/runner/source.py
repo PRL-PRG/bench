@@ -1,11 +1,11 @@
 """RunSource: produces Observations and assembles Runs for one benchmark-variant.
 
-CommandSource spawns one process per observation (pull): each observation is a
-finished Run with a single Observation. HarnessSource spawns one long-running
-process and frames its output into many Observations (push), all belonging to a
-single Run, killable via close(). The Controller drives either uniformly: it
-pulls Observations (driving the stopping policy) and, when done, collects the
-assembled Run(s) via `runs()`.
+`CommandSource` spawns one process per observation (pull): each observation is a
+finished Run with a single `Observation`. `HarnessSource` spawns one long-running
+process and frames its output into many `Observation`s (push), all belonging to a
+single `Run`, killable via close(). The `Controller` drives either uniformly: it
+pulls `Observation`s (driving the stopping policy) and, when done, collects the
+assembled `Run`(s) via `runs()`.
 """
 
 from __future__ import annotations
@@ -35,22 +35,24 @@ from bench.runner.base import format_benchmark_verbose
 class RunSource(abc.ABC):
     """Produces Observations and assembles Runs for one benchmark-variant.
 
-    Two-method surface: pull `Observation`s with `next()` (each carries a
-    display `label`), then `close()` to release resources and get the
-    assembled `Run`(s). A command yields one Run per observation. A harness
-    yields one Run holding all its observations.
+    Two-method surface: pull `(Observation, label)` pairs with `next()` (the
+    label is the benchmark-variant display identifier, for live progress only),
+    then `close()` to release resources and get the assembled `Run`(s). A
+    command yields one `Run` per observation. A harness yields one `Run`
+    holding all its observations.
     """
 
     @abc.abstractmethod
-    def next(self) -> Observation:
-        """Next observation. Raise StopIteration when exhausted.
+    def next(self) -> tuple[Observation, str]:
+        """Next observation and its display label. Raise `StopIteration` when
+        exhausted.
 
         The source owns its own sequencing, callers just pull."""
 
     @abc.abstractmethod
     def close(self) -> list[Run]:
         """Release resources (kill a running harness) and return the assembled
-        Run(s)."""
+        `Run`(s)."""
 
 
 class CommandSource(RunSource):
@@ -62,7 +64,7 @@ class CommandSource(RunSource):
         self._run = 0
         self._runs: list[Run] = []
 
-    def next(self) -> Observation:
+    def next(self) -> tuple[Observation, str]:
         self._run += 1
         b = self._b
         if self._verbose and self._run == 1:
@@ -78,15 +80,15 @@ class CommandSource(RunSource):
             b.suite, b.name, b.variant, self._run, b.variant_label
         )
         if result.is_failure():
-            obs = Observation(samples=[], failure=result.failure, label=label)
+            obs = Observation(samples=[], failure=result.failure)
             message = diagnostic_excerpt(result.stdout, result.stderr)
         else:
-            # For a command, the process IS the run: run and process metrics
-            # both fold into this run's single observation.
+            # For a command, the process is the run.
+            # Run and process metrics both fold into this single observation.
             samples = list(extract_run(b.metrics, result)) + list(
                 extract_process(b.metrics, result)
             )
-            obs = Observation(samples=samples, label=label)
+            obs = Observation(samples=samples)
             message = ""
 
         ex = b.execution
@@ -109,7 +111,7 @@ class CommandSource(RunSource):
                 observations=[obs],
             )
         )
-        return obs
+        return obs, label
 
     def close(self) -> list[Run]:
         return self._runs
@@ -163,10 +165,7 @@ def line_monitor(handle: HarnessHandle) -> Iterator[str]:
 
 _DONE = object()
 
-_ZERO_DELIVERY = (
-    "no iterations parsed from harness output — use an "
-    "output-parsing metric (FloatPerLine, Regex, Rebench)"
-)
+_ZERO_DELIVERY = "no iterations parsed from harness output"
 
 
 class HarnessSource(RunSource):
@@ -199,8 +198,6 @@ class HarnessSource(RunSource):
         self._reader.start()
 
     def _finalize_process(self) -> None:
-        """Reap the process, judge it, and stamp `_proc_result` (robust to
-        `finish()` raising)."""
         assert self._live is not None
         killed = self._closed.is_set() or self._monitor_failure is not None
         try:
@@ -235,7 +232,7 @@ class HarnessSource(RunSource):
                 samples = list(extract_run(self._run_metrics, frame))
                 # A framed block that parses to nothing is not an iteration.
                 if samples:
-                    self._q.put(Observation(samples=samples, label=self._label))
+                    self._q.put(Observation(samples=samples))
         except Exception as e:
             # A monitor that raises fails the run. The process is killed below
             # since nothing is consuming its output anymore.
@@ -246,12 +243,12 @@ class HarnessSource(RunSource):
             finally:
                 self._q.put(_DONE)
 
-    def next(self) -> Observation:
+    def next(self) -> tuple[Observation, str]:
         item = self._q.get()
         if item is _DONE:
             raise StopIteration
         self._taken.append(item)
-        return item
+        return item, self._label
 
     def close(self) -> list[Run]:
         self._closed.set()
@@ -265,16 +262,14 @@ class HarnessSource(RunSource):
         if self._reader is not None:
             self._reader.join(timeout=5)
         result = self._proc_result
-        assert result is not None  # set in __init__ (spawn fail) or _read finally
+        assert result is not None
 
         observations = list(self._taken)
         # Whole-process metrics become a trailing observation on the run.
         if not result.is_failure():
             proc_samples = list(extract_process(self._process_metrics, result))
             if proc_samples:
-                observations.append(
-                    Observation(samples=proc_samples, label=self._label)
-                )
+                observations.append(Observation(samples=proc_samples))
 
         run_failure = result.failure  # process verdict or monitor failure
         # Clean-but-empty delivery: nothing parsed from the harness output.

@@ -19,8 +19,6 @@ class Sequential(Runner):
         report = Report()
         controller = Controller(
             self.reporter,
-            max_runs_per_policy=self.max_runs_per_policy,
-            max_consecutive_failures=self.max_consecutive_failures,
             verbose=self.verbose,
         )
         try:

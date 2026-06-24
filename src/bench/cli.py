@@ -43,15 +43,7 @@ type SuiteFactory = Callable[[Any], list[Suite]]
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Bench:
-    """Top-level run container: static suites + deferred suite factories.
-
-    Mirrors `Suite` one level up. A `Suite` combines static benchmarks with
-    `.factory` producers and resolves them at `materialize`. A `Bench` combines
-    static suites with `.factory` producers and resolves them at `run`. Because
-    factories run *after* CLI parsing, suite discovery can depend on `params`
-    (e.g. globbing a directory passed via `--spec-root`) without the script
-    parsing argv itself.
-    """
+    """Top-level run container: static suites + deferred suite factories."""
 
     suites: tuple[Suite, ...] = ()
     factories: tuple[SuiteFactory, ...] = ()
@@ -324,7 +316,7 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         "commands",
         nargs="+",
         metavar="CMD",
-        help="One or more shell commands to benchmark (each split with shlex).",
+        help="One or more shell commands to benchmark.",
     )
     _add_runtime_flags(p)
     p.add_argument(
@@ -332,35 +324,35 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         type=int,
         default=10,
         metavar="N",
-        help="Max measured runs per command (with --time, whichever comes first; default: 10).",
+        help="Max measured runs per command (default: %(default)s).",
     )
     p.add_argument(
         "--time",
         type=float,
         default=3.0,
         metavar="SECONDS",
-        help="Stop measuring after SECONDS, or after --runs, whichever comes first; 0 disables (default: 3.0).",
+        help="Stop measuring after SECONDS, or after --runs, whichever comes first. 0 disables (default: %(default)s).",
     )
     p.add_argument(
         "--warmup",
         type=int,
         default=0,
         metavar="N",
-        help="Warmup runs executed but excluded from stats (default: 0).",
+        help="Warmup runs executed but excluded from stats (default: %(default)s).",
     )
     p.add_argument(
         "--timeout",
         type=float,
         default=None,
         metavar="SECONDS",
-        help="Kill a run that takes longer than SECONDS (treated as a failure).",
+        help="Kill a run that takes longer than SECONDS (default: %(default)s).",
     )
     p.add_argument(
         "--metric",
         type=str,
         default="elapsed",
         metavar="NAME",
-        help="Metric to highlight in the comparison summary (default: elapsed).",
+        help="Metric to highlight in the comparison summary (default: %(default)s).",
     )
     p.set_defaults(_func=_cmd_run)
 
@@ -369,17 +361,15 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     import shlex
 
     argvs = [tuple(shlex.split(cmd)) for cmd in ns.commands]
-    # Default: stop at --runs or --time, whichever comes first (--time 0 disables).
-    runs_policy = (
-        FixedRuns(ns.runs) | MaxDuration(ns.time)
-        if ns.time and ns.time > 0
-        else FixedRuns(ns.runs)
-    )
+    runs_policy = FixedRuns(ns.runs)
+    if ns.time and ns.time > 0:
+        runs_policy |= MaxDuration(ns.time)
+
     b = (
         bench("run")
         .with_matrix(command=argvs)
         .with_command(lambda ctx: list(ctx.matrix.command))
-        .with_label(lambda bb: " ".join(bb.data["command"]))
+        .with_label(lambda b: " ".join(b.data["command"]))
         .with_cwd(Path.cwd())
         .with_metric(Time())
         .with_runs(runs_policy)

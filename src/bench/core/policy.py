@@ -1,11 +1,4 @@
-"""StoppingPolicy: decides when to stop taking runs.
-
-Life-cycle: The benchmarking loop first calls `start` which produces a
-stateful `PolicyState`. For each slot it calls `observe(observation)` to feed
-that observation and `satisfied()` to check whether the policy has converged.
-`satisfied()` is also checked up front, so a policy that converges before any
-run (e.g. `FixedRuns(0)`) takes no runs at all.
-"""
+"""StoppingPolicy: decides when to stop taking runs."""
 
 from __future__ import annotations
 
@@ -17,11 +10,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from bench.core.sample import Observation
-
-
-# ---------------------------------------------------------------------------
-# Bases
-# ---------------------------------------------------------------------------
 
 
 class StoppingPolicy(abc.ABC):
@@ -87,11 +75,7 @@ class _FixedState(PolicyState):
 
 @dataclass(frozen=True, slots=True)
 class MaxDuration(StoppingPolicy):
-    """Stop once `seconds` of wall-clock time have elapsed since the policy started.
-
-    Count-unbounded (`max_runs()` is `None`), so pair it with a count cap, e.g.
-    `FixedRuns(n) | MaxDuration(s)`, for harnesses or a finite progress total.
-    """
+    """Stop once `seconds` of wall-clock time have elapsed since the policy started."""
 
     seconds: float
 
@@ -173,11 +157,6 @@ class _CoVState(PolicyState):
         # Var = (E[X^2] - E[X]^2) * n / (n-1)   (Bessel correction)
         var = max((self.sumsq / n) - mean * mean, 0.0) * n / (n - 1)
         return math.sqrt(var) / abs(mean) <= cfg.threshold
-
-
-# ---------------------------------------------------------------------------
-# Combinators
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,21 +1,10 @@
 """Suite: a named collection of Benchmarks plus the defaults they inherit.
 
-A `Suite` is a frozen value object. It stores *defaults* (command, env,
-policies, metrics, ...) next to its member benchmarks. Calling a `.with_*`
-method just sets the suite field, and nothing propagates eagerly. Resolution
-happens once, in `materialize(ctx)`: every benchmark field still holding
-`UNSET` is filled from the suite, so builder-call order never matters, and
-`Suite("A").with_command(c).add(b)` equals
-`Suite("A").add(b).with_command(c)`.
-
-Suite defaults are always set (except `command`, which has no sensible
-default). Benchmark fields are all `UNSET`-able (they inherit the suite).
-
-Resolution precedence (most specific wins):
-
-```text
-benchmark explicit > suite default
-```
+It stores defaults (command, env, policies, metrics, ...) next to its member
+benchmarks. Calling a `.with_*` method just sets the suite field, and nothing
+propagates eagerly. Resolution happens once, in `materialize(ctx)`: every
+unset benchmark field is filled from the suite, so builder-call
+order never matters.
 """
 
 from __future__ import annotations
@@ -260,11 +249,6 @@ class Suite:
                 f"BenchmarkBuilder.with_command or Suite.with_command"
             )
         return resolved
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
 
 
 def suite(name: str, *benchmarks: BenchmarkBuilder) -> Suite:

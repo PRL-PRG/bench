@@ -31,13 +31,6 @@ from bench.runner.controller import Controller
 
 
 class _LockedReport(Report):
-    """Write-only lock-guarded wrapper over a shared `Report`.
-
-    The Controller never *reads* report state mid-run. It only `add`s Runs
-    and marks `warmup` counts. Guard those mutation points so concurrent
-    benchmarks can't tear `Report.runs` / `warmups`. (Its own inherited
-    slots are unused, all writes delegate to the shared `report`.)"""
-
     def __init__(self, report: Report, lock: threading.Lock) -> None:
         super().__init__()
         self._report = report
@@ -53,20 +46,13 @@ class _LockedReport(Report):
 
 
 class _LockedReporter(Reporter):
-    """Lock-guarded wrapper over the real reporter.
-
-    Serializes `observation` / `run_done` / `warmup` so events from
-    benchmarks running on different workers don't interleave inside a single
-    reporter call (e.g. a `CompositeReporter` fan-out). `start` /
-    `finalize` are called once by `Parallel` itself, not per-controller."""
-
     def __init__(self, reporter: Reporter, lock: threading.Lock) -> None:
         self._reporter = reporter
         self._lock = lock
 
-    def observation(self, obs: Observation) -> None:
+    def observation(self, obs: Observation, label: str) -> None:
         with self._lock:
-            self._reporter.observation(obs)
+            self._reporter.observation(obs, label)
 
     def run_done(self, run: Run) -> None:
         with self._lock:
@@ -78,12 +64,7 @@ class _LockedReporter(Reporter):
 
 
 class Parallel(Runner):
-    """Run up to N benchmark `Controller`s concurrently on a thread pool.
-
-    Each planned benchmark gets its own `Controller` (an internal sequential
-    feedback loop), so any stopping policy (fixed, convergence-driven, or
-    order-dependent) runs fine. `--jobs N` just bounds how many run at once.
-    """
+    """Run up to N benchmark `Controller`s concurrently on a thread pool."""
 
     def __init__(
         self, workers: int, reporter: Reporter | None = None, **kwargs: Any
@@ -105,8 +86,6 @@ class Parallel(Runner):
                 return
             Controller(
                 locked_reporter,
-                max_runs_per_policy=self.max_runs_per_policy,
-                max_consecutive_failures=self.max_consecutive_failures,
                 verbose=self.verbose,
             ).run_benchmark(p, locked_report)
 

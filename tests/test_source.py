@@ -36,9 +36,10 @@ def _drain(src):
     out = []
     while True:
         try:
-            out.append(src.next())
+            obs, _ = src.next()
         except StopIteration:
             break
+        out.append(obs)
     return out
 
 
@@ -47,16 +48,16 @@ def _drain(src):
 
 def test_command_source_yields_observation_with_all_metrics():
     src = make_source(_planned(["sh", "-c", "echo 1.5"], FloatPerLine("")))
-    obs = src.next()
+    obs, label = src.next()
     assert obs.failure is None
     assert any(s.value == 1.5 for s in obs.samples)
-    assert "S/b" in obs.label  # carried for live progress
+    assert "S/b" in label  # carried for live progress
     src.close()
 
 
 def test_command_source_failure_sets_verdict_and_no_samples():
     src = make_source(_planned(["sh", "-c", "exit 3"], FloatPerLine("")))
-    obs = src.next()
+    obs, _ = src.next()
     assert obs.failure == "exit code 3" and obs.samples == []
     runs = src.close()
     assert (
@@ -66,7 +67,7 @@ def test_command_source_failure_sets_verdict_and_no_samples():
 
 def test_command_source_process_metrics_fold_into_one_observation():
     src = make_source(_planned(["sh", "-c", "echo 1.5"], Time()))
-    obs = src.next()
+    obs, _ = src.next()
     # Time (process metric) folds into the command's single observation.
     assert any(s.metric == "elapsed" for s in obs.samples)
     src.close()
@@ -88,7 +89,7 @@ def test_harness_source_close_kills_long_process():
     src = make_source(
         _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine(""))
     )
-    first = src.next()  # blocks until the first line
+    first, _ = src.next()  # blocks until the first line
     assert first.samples[0].value == 1.0
     t = time.monotonic()
     src.close()  # must not wait for sleep 30

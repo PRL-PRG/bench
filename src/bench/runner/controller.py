@@ -31,28 +31,20 @@ def benchmarking_loop(
 class Controller:
     """Drive `benchmarking_loop` over one benchmark-variant's RunSource.
 
-    Pull one `Observation` per slot (each carries its display `label`), feed
+    Pull one `(Observation, label)` per slot, feed
     the stopping policy, count warmup observations, and `close()` the source on
     convergence (which kills a running harness and returns the assembled
     `Run`(s)). The Controller records those runs and marks the variant's
     warmup. It never schedules. The source owns scheduling and spawning.
-
-    `max_consecutive_failures` only applies when policies are *unbounded*:
-    bounded policies already cap the count, so the failure cap would only mask a
-    legitimately short run.
     """
 
     def __init__(
         self,
         reporter: Reporter,
         *,
-        max_runs_per_policy: int = 10_000,
-        max_consecutive_failures: int = 5,
         verbose: bool = False,
     ) -> None:
         self.reporter = reporter
-        self.max_runs_per_policy = max_runs_per_policy
-        self.max_consecutive_failures = max_consecutive_failures
         self.verbose = verbose
 
     def run_benchmark(self, b: Benchmark, report: Report) -> None:
@@ -61,11 +53,7 @@ class Controller:
 
         source = make_source(b, verbose=self.verbose)
 
-        bounded = b.warmup.max_runs() is not None and b.runs.max_runs() is not None
-        failure_cap = None if bounded else self.max_consecutive_failures
-        consecutive_failures = 0
         warmup_obs = 0
-        count = 0
 
         loop = benchmarking_loop(b.warmup, b.runs)
         try:
@@ -75,26 +63,15 @@ class Controller:
 
         try:
             while in_warmup is not None:
-                count += 1
-                if count > self.max_runs_per_policy * 2:
-                    raise RuntimeError(
-                        f"Benchmark {b.name!r} exceeded max_runs_per_policy backstop "
-                        f"({self.max_runs_per_policy}); did you forget .at_most(N)?"
-                    )
                 try:
-                    obs = source.next()
+                    obs, label = source.next()
                 except StopIteration:
                     break
 
-                self.reporter.observation(obs)
+                self.reporter.observation(obs, label)
                 if in_warmup:
                     warmup_obs += 1
-                consecutive_failures = (
-                    0 if not obs.is_failure() else consecutive_failures + 1
-                )
-                if interrupted() or (
-                    failure_cap is not None and consecutive_failures >= failure_cap
-                ):
+                if interrupted():
                     break
 
                 try:

@@ -18,11 +18,13 @@ from bench.runner.source import RunSource
 class _Collect(Reporter):
     def __init__(self):
         self.observations = []
+        self.labels = []
         self.runs = []
         self.warmups = []
 
-    def observation(self, obs):
+    def observation(self, obs, label):
         self.observations.append(obs)
+        self.labels.append(label)
 
     def run_done(self, run):
         self.runs.append(run)
@@ -40,10 +42,10 @@ class _FakeSource(RunSource):
         self._closed = closed
         self._taken: list[Observation] = []
 
-    def next(self) -> Observation:
+    def next(self) -> tuple[Observation, str]:
         obs = next(self._it)
         self._taken.append(obs)
-        return obs
+        return obs, "S/b"
 
     def close(self) -> list[Run]:
         self._closed.append(True)
@@ -61,7 +63,7 @@ class _FakeSource(RunSource):
 
 
 def _obs(value: float) -> Observation:
-    return Observation(samples=[Sample("t", float(value))], label="S/b")
+    return Observation(samples=[Sample("t", float(value))])
 
 
 def _planned(runs, *, warmup=0):
@@ -94,7 +96,7 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     assert [r.observations[0].samples[0].value for r in report.runs] == [1.0, 2.0, 3.0]
     assert len(rep.runs) == 3
     assert len(rep.observations) == 3
-    assert rep.observations[0].label == "S/b"
+    assert rep.labels[0] == "S/b"
     assert closed == [True]
 
 

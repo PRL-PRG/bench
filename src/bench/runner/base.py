@@ -36,7 +36,7 @@ class SuiteMaterializationError(Exception):
     def _format(self) -> str:
         lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
 
-        # Only subprocess failures carry capturable output worth surfacing.
+        # TODO: the idea is that only subprocess failures carry capturable output worth surfacing to user
         if isinstance(self.cause, subprocess.CalledProcessError):
             out = self.cause.output or self.cause.stderr
             if out:
@@ -59,7 +59,6 @@ def plan(suites: list[Suite], params: Any = None) -> list[Benchmark]:
 
 
 def format_benchmark_verbose(b: Benchmark, run: int) -> str:
-    """Dump a resolved Benchmark plan as a deterministic text block."""
     e = b.execution
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
@@ -98,29 +97,15 @@ def format_benchmark_verbose(b: Benchmark, run: int) -> str:
 
 
 class Runner(abc.ABC):
-    """Abstract runner: drives a set of planned benchmarks to a `Report`.
-
-    Concrete runners (`Sequential`, `Parallel`) drive one `Controller`
-    per benchmark. `Dry` just enumerates the plan. `run()` returns the
-    accumulated `Report`.
-
-    `max_runs_per_policy` is a defensive backstop for non-converging custom
-    policies. `max_consecutive_failures` silently aborts a benchmark whose
-    runs keep failing, surface that fact in the report rather than retrying
-    forever. Bump it for flaky benchmarks. Set high for purely-success suites.
-    """
+    """Abstract runner: drives a set of benchmarks to a `Report`."""
 
     def __init__(
         self,
         reporter: Reporter | None = None,
         *,
-        max_runs_per_policy: int = 10_000,
-        max_consecutive_failures: int = 5,
         verbose: bool = False,
     ) -> None:
         self.reporter = reporter or _NoopReporter()
-        self.max_runs_per_policy = max_runs_per_policy
-        self.max_consecutive_failures = max_consecutive_failures
         self.verbose = verbose
 
     @abc.abstractmethod

@@ -71,8 +71,7 @@ def test_sequential_three_runs_yields_three_samples():
 
 def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path: Path):
     # Bounded policy (FixedRuns) IS the contract: a crashing benchmark must
-    # still complete N attempts. The consecutive-failure cap exists only as a
-    # backstop for unbounded policies.
+    # still complete N attempts.
     s = suite(
         "F",
         bench("bad")
@@ -82,49 +81,11 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         .with_runs(10),
     )
     out = tmp_path / "r.json"
-    report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
-        plan([s], None), None
-    )
+    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     assert _all_samples(report) == []  # failed runs emit no metrics
     r = report_from_json(out.read_text())
     assert len(r.failures) == 10
     assert all(f.returncode != 0 for f in r.failures)
-
-
-def test_sequential_aborts_unbounded_policy_on_consecutive_failures(tmp_path: Path):
-    s = suite(
-        "F",
-        bench("bad")
-        .with_command(["false"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(Time())
-        .with_runs(CoefficientOfVariation("elapsed")),
-    )  # unbounded
-    out = tmp_path / "r.json"
-    report = Sequential(reporter=JsonReporter(out), max_consecutive_failures=3).run(
-        plan([s], None), None
-    )
-    assert _all_samples(report) == []
-    r = report_from_json(out.read_text())
-    assert len(r.failures) == 3
-    assert all(f.returncode != 0 for f in r.failures)
-
-
-def test_abort_during_warmup_still_records_warmup_count(tmp_path: Path):
-    s = suite(
-        "F",
-        bench("bad")
-        .with_command(["false"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(Time())
-        .with_warmup(CoefficientOfVariation("elapsed"))  # unbounded
-        .with_runs(1),
-    )
-    report = Sequential(max_consecutive_failures=2).run(plan([s], None), None)
-    # Aborted while warming up: every recorded run was warmup, so stats drop
-    # them all (the benchmark surfaces via the Failures block only).
-    assert len(report.runs) == 2
-    assert report.warmups == {"F/bad": 2}
 
 
 def test_parallel_runs_faster_than_sequential():
@@ -427,10 +388,10 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         .with_metric(Time())  # emits one `elapsed` sample on success
         .with_runs(2),
     )
-    report = Sequential(max_consecutive_failures=2).run(plan([s], None), None)
+    report = Sequential().run(plan([s], None), None)
     samples = _all_samples(report)
-    # If the relative path leaked through, every spawn would fail and we'd hit
-    # max_consecutive_failures quickly. abspath() in execute() prevents that.
+    # If the relative path leaked through, every spawn would fail.
+    # abspath() in execute() prevents that.
     assert len(samples) == 2
     assert all(s.metric == "elapsed" for s in samples)
 
