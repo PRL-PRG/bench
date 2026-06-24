@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from benchr import FixedRuns, FloatPerLine, Time, bench, suite
-from benchr.grammar.benchmark import UNSET
+from bench import FixedRuns, FloatPerLine, Time, bench, suite
+from bench.grammar.benchmark import UNSET
 
 
 def _mat(b):

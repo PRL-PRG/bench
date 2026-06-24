@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchr.core.process import install_sigint_handler, interrupted
-from benchr.core.sample import Report
-from benchr.grammar.benchmark import Benchmark
-from benchr.runner.base import Runner
-from benchr.runner.controller import Controller
+from bench.core.process import install_sigint_handler, interrupted
+from bench.core.sample import Report
+from bench.grammar.benchmark import Benchmark
+from bench.runner.base import Runner
+from bench.runner.controller import Controller
 
 
 class Sequential(Runner):

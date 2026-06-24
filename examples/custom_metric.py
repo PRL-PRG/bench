@@ -1,15 +1,15 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Writing a custom Metric and a custom success policy.
 
 A real benchmark prints a fixed string to stdout and a metric to stderr.
-The Metric parses the value; the success policy (``.with_success``)
+The Metric parses the value. The success policy (``.with_success``)
 decides whether a run counts as successful. The Runner only calls
 ``process`` on a run it judged successful, so the Metric never has to
 re-check the exit status.
@@ -18,7 +18,7 @@ re-check the exit status.
 import re
 from collections.abc import Iterable
 
-from benchr import (
+from bench import (
     ExecutionResult, Metric, Sample, Time,
     bench, run, suite,
 )

@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "../..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
 """RCP: programmatic suite construction.
 
@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import Context, Rebench, from_files, max_rss, run, suite
+from bench import Context, Rebench, from_files, max_rss, run, suite
 
 
 @dataclass
@@ -27,7 +27,7 @@ class RcpParams:
     R_HOME: Path                          # R installation root
     output: Path = Path(tempfile.gettempdir()) / "rcp"
     path_filter: str = ""
-    iterations: int = 1                   # harness --runs (avoids benchr's reserved --runs)
+    iterations: int = 1                   # harness --runs (avoids bench's reserved --runs)
 
 
 def _cmd(ctx: Context[RcpParams]):

@@ -1,17 +1,9 @@
 """Metric: ExecutionResult -> Iterable[Sample].
 
 Every metric is a frozen dataclass carrying an optional `direction`
-(lower / higher / none) and an optional `predicate` (run only when it holds).
-Concrete metrics implement `extract`; the base `process` applies the
-predicate (skip when false) and stamps the direction onto each Sample.
-`.lower_is_better()` / `.higher_is_better()` / `.when(pred)` return a copy
-with that field set.
-
-Each metric sets `per_process`: `False` (one sample-set per run/iteration)
-or `True` (one per whole process). `extract_run` / `extract_process`
-select by it; `partition_metrics` splits a flat list. Built-in metric
-builders are exported directly from this module — instantiate them as
-`Time()`, `Regex(...)`, `FloatPerLine(...)`, etc.
+and an optional `predicate`. Concrete metrics implement `extract`.
+The base `process` applies the predicate and stamps the direction
+onto each Sample.
 """
 
 from __future__ import annotations
@@ -24,10 +16,10 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import ClassVar, Literal, Self
 
-from benchr.core.execution import ExecutionResult
-from benchr.core.sample import Sample
+from bench.core.execution import ExecutionResult
+from bench.core.sample import Sample
 
-# None = no direction; True = lower is better; False = higher is better
+# None = no direction, True = lower is better, False = higher is better
 # (mirrors Sample.lower_is_better).
 type Direction = bool | None
 type Predicate = Callable[[ExecutionResult], bool]
@@ -53,7 +45,7 @@ class Metric(abc.ABC):
 
     @abc.abstractmethod
     def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        """Parse the raw samples; `process` applies direction + predicate."""
+        """Parse the raw samples. `process` applies direction + predicate."""
 
     def process(self, result: ExecutionResult) -> Iterator[Sample]:
         if self.predicate is not None and not self.predicate(result):
@@ -106,7 +98,7 @@ class FloatPerLine(Metric):
     """Parse non-empty lines of stdout as floats, one sample per line.
 
     `line` selects a single 1-based non-empty line (negative counts from the
-    end); `None` (the default) parses every non-empty line. A failed run, or a
+    end). `None` (the default) parses every non-empty line. A failed run, or a
     `line` index out of range, emits nothing.
     """
 
@@ -145,7 +137,7 @@ class FloatPerLine(Metric):
         return dataclasses.replace(self, line=1)
 
     def nth(self, i: int) -> Self:
-        """Parse only the i-th non-empty line (1-based; negatives from the end)."""
+        """Parse only the i-th non-empty line (1-based, negatives from the end)."""
         return dataclasses.replace(self, line=i)
 
 
@@ -196,7 +188,7 @@ class Rebench(Metric):
 
     `optional_prefix: name optional_criterion: iterations=N runtime: V[ms|us]`
     or `optional_prefix: name: criterion: V<unit>`
-    Runtime emitted in ms; non-"total" runtime criteria are ignored.
+    Runtime emitted in ms. Non-"total" runtime criteria are ignored.
     """
 
     per_process = False
@@ -265,7 +257,7 @@ class RUsage(Metric):
 class Time(Metric):
     """Up to three time samples: `elapsed` (wall), `user`, `system` (s).
 
-    All are lower-is-better by default; override with `.higher_is_better()`.
+    All are lower-is-better by default, override with `.higher_is_better()`.
     """
 
     per_process = True

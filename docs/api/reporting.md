@@ -5,12 +5,12 @@ build on.
 
 ## Reporter sinks
 
-::: benchr.report.reporter
+::: bench.report.reporter
 
 ## Formatters
 
-::: benchr.report.formatter
+::: bench.report.formatter
 
 ## Statistics
 
-::: benchr.report.stats
+::: bench.report.stats

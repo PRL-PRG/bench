@@ -6,7 +6,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-from benchr import (
+from bench import (
     Compact, DefaultSummary, Observation, Report, Run, Sample, report_to_json,
 )
 
@@ -33,7 +33,7 @@ def test_default_summary_no_baseline():
     out = DefaultSummary()(r)
     assert "S/b" in out
     assert "3" in out and "runs" in out
-    assert "runtime" in out and "ms" in out  # 0.5s → scaled to 500ms
+    assert "runtime" in out and "ms" in out  # 0.5s -> scaled to 500ms
 
 
 def test_compact_no_baseline_lists_benchmarks():
@@ -72,7 +72,7 @@ def test_compact_omits_run_count_when_inconsistent(tmp_path: Path):
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
-    # a has 3 runs, b has 5 — no single honest count to print.
+    # a has 3 runs, b has 5, no single honest count to print.
     current = Report(runs=(
         [_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
         + [_ok(i, bench="b", samples=[_smp("runtime", 0.5)]) for i in range(1, 6)]

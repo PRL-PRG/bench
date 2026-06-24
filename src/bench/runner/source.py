@@ -19,17 +19,17 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from benchr.core.execution import (
+from bench.core.execution import (
     SPAWN_FAIL_RC,
     ExecutionResult,
     default_success,
     format_identifier,
 )
-from benchr.core.metric import extract_process, extract_run, partition_metrics
-from benchr.core.process import LiveProcess, execute, spawn_streaming
-from benchr.core.sample import Observation, Run, diagnostic_excerpt
-from benchr.grammar.benchmark import Benchmark
-from benchr.runner.base import format_benchmark_verbose
+from bench.core.metric import extract_process, extract_run, partition_metrics
+from bench.core.process import LiveProcess, execute, spawn_streaming
+from bench.core.sample import Observation, Run, diagnostic_excerpt
+from bench.grammar.benchmark import Benchmark
+from bench.runner.base import format_benchmark_verbose
 
 
 class RunSource(abc.ABC):
@@ -37,7 +37,7 @@ class RunSource(abc.ABC):
 
     Two-method surface: pull `Observation`s with `next()` (each carries a
     display `label`), then `close()` to release resources and get the
-    assembled `Run`(s) — a command yields one Run per observation; a harness
+    assembled `Run`(s). A command yields one Run per observation. A harness
     yields one Run holding all its observations.
     """
 
@@ -45,7 +45,7 @@ class RunSource(abc.ABC):
     def next(self) -> Observation:
         """Next observation. Raise StopIteration when exhausted.
 
-        The source owns its own sequencing — callers just pull."""
+        The source owns its own sequencing, callers just pull."""
 
     @abc.abstractmethod
     def close(self) -> list[Run]:
@@ -113,7 +113,7 @@ class CommandSource(RunSource):
 class HarnessHandle:
     """What a monitor needs: the growing output path and liveness.
 
-    A read-only view over the internal LiveProcess — it exposes only what a
+    A read-only view over the internal LiveProcess. It exposes only what a
     monitor should touch (tail the output, poll liveness), not the
     reaping/kill internals."""
 
@@ -201,7 +201,7 @@ class HarnessSource(RunSource):
                 self._b.execution, SPAWN_FAIL_RC,
                 failure=f"harness finish failed: {e}")
         # A harness we killed ourselves on convergence is expected termination,
-        # not a failure — only judge a process that ended on its own. A monitor
+        # not a failure. Only judge a process that ended on its own. A monitor
         # failure always wins.
         if self._monitor_failure is not None:
             reason = self._monitor_failure
@@ -228,7 +228,7 @@ class HarnessSource(RunSource):
                 if samples:
                     self._q.put(Observation(samples=samples, label=self._label))
         except Exception as e:
-            # A monitor that raises fails the run; the process is killed below
+            # A monitor that raises fails the run. The process is killed below
             # since nothing is consuming its output anymore.
             self._monitor_failure = f"monitor failed: {type(e).__name__}: {e}"
         finally:

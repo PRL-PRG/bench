@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from benchr import Observation, Report, Run, Sample, report_from_json, report_to_json
+from bench import Observation, Report, Run, Sample, report_from_json, report_to_json
 
 
 def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:

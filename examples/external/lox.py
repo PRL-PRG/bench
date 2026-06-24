@@ -1,12 +1,12 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "../..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
-"""Lox: two suites sharing a base; per-suite formatter.
+"""Lox: two suites sharing a base, per-suite formatter.
 
 Demonstrates:
 - ``.factory(lambda ctx: from_files(..., exclude={...}))`` discovery.
@@ -18,7 +18,7 @@ Demonstrates:
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import (
+from bench import (
     Compact, CompositeReporter, Context, FloatPerLine, SummaryReporter, Time,
     bench, from_files, max_rss, run, suite,
 )

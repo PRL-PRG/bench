@@ -1,7 +1,7 @@
 """Grouping, statistics, ratios, geometric means.
 
-By default `group(report)` excludes each benchmark variant's warmup runs —
-the first `report.warmups[key]` runs — from the groups (and therefore from
+By default `group(report)` excludes each benchmark variant's warmup runs,
+the first `report.warmups[key]` runs, from the groups (and therefore from
 stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep every run.
 """
 
@@ -12,8 +12,8 @@ import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from benchr.core.execution import Variant
-from benchr.core.sample import Report, Run, report_from_json
+from bench.core.execution import Variant
+from bench.core.sample import Report, Run, report_from_json
 
 
 type MetricKey = tuple[str, str]                # (metric, unit)
@@ -331,7 +331,7 @@ def _per_suite_geomean(
                 if e[0] in comp_index
             }
             if len(run_counts) != 1:
-                # Inconsistent run counts across the benchmarks — skip the
+                # Inconsistent run counts across the benchmarks, skip the
                 # aggregated number rather than fabricating one.
                 continue
             out[suite][mk] = GeoMeanRatio(
@@ -345,18 +345,27 @@ def _per_suite_geomean(
 
 
 def build_summary(
-    report: Report,
+    report: Report | None,
     baselines: list[Path] | None = None,
 ) -> SummaryData:
     """Build the bundle of pre-computed stats consumed by Formatters.
 
-    Warmup is excluded from the current run's grouping. Baselines are loaded
-    via report_from_json.
+    `report` is the in-memory run to summarize (the live path), grouped as
+    "current" and folded in as an extra comparee. Pass `None` to compare only
+    loaded files (the `compare` subcommand): then `baselines[0]` is the baseline
+    and the rest are comparees, all named uniformly. Warmup is excluded from
+    grouping. Baselines are loaded via report_from_json.
     """
-    current = group(report, name="current")
-    current_stats = [group_stats(g, current.lower_is_better) for g in current.groups]
-
     baselines = baselines or []
+    if report is not None:
+        current = group(report, name="current")
+        current_stats = [
+            group_stats(g, current.lower_is_better) for g in current.groups
+        ]
+    else:
+        current = None
+        current_stats = []
+
     if not baselines:
         return SummaryData(groups=current_stats)
 
@@ -365,8 +374,8 @@ def build_summary(
     grouped = [group(r, name=n) for r, n in zip(loaded, names)]
 
     base = grouped[0]
-    comparees = grouped[1:] + [current]
-    comparee_names = names[1:] + ["current"]
+    comparees = grouped[1:] + ([current] if current is not None else [])
+    comparee_names = names[1:] + (["current"] if current is not None else [])
 
     ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = {}
     geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = {}

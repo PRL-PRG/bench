@@ -14,16 +14,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from benchr.core.execution import format_identifier
-from benchr.core.sample import Report
-from benchr.grammar.benchmark import Benchmark
-from benchr.runner.base import Runner, format_benchmark_verbose
+from bench.core.execution import format_identifier
+from bench.core.sample import Report
+from bench.grammar.benchmark import Benchmark
+from bench.runner.base import Runner, format_benchmark_verbose
 
 
 class Dry(Runner):
-    """Enumerate planned Executions per Benchmark; do not subprocess.
+    """Enumerate planned Executions per Benchmark. Do not subprocess.
 
-    The `reporter` accepted by `Runner.__init__` is ignored — a dry run
+    The `reporter` accepted by `Runner.__init__` is ignored. A dry run
     produces no results to report.
     """
 

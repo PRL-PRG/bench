@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from benchr import (
+from bench import (
     CoefficientOfVariation,
     CompositeReporter,
     CsvReporter,
@@ -21,10 +21,10 @@ from benchr import (
     SuiteMaterializationError,
     Time,
     bench,
-    plan,
     report_from_json,
     suite,
 )
+from bench.runner.base import plan
 
 
 def _all_samples(report):
@@ -51,7 +51,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
 
 def test_sequential_basic():
     report = Sequential().run(plan([_sleep_suite()], None), None)
-    assert len(_all_samples(report)) == 4  # 2 benchmarks × 2 runs
+    assert len(_all_samples(report)) == 4  # 2 benchmarks x 2 runs
 
 
 def test_sequential_three_runs_yields_three_samples():
@@ -137,13 +137,13 @@ def test_parallel_runs_faster_than_sequential():
     par_t = time.monotonic() - t0
     # Two benchmarks across 4 workers should overlap, so parallel is clearly
     # faster than sequential. The threshold is loose (vs. an ideal ~0.5) to
-    # tolerate process-spawn overhead and CI jitter — with no overlap the ratio
+    # tolerate process-spawn overhead and CI jitter. With no overlap the ratio
     # would be ~1.0, so this still catches a broken Parallel.
     assert par_t < seq_t * 0.8, f"parallel must be faster: {par_t=:.2f}, {seq_t=:.2f}"
 
 
 def test_parallel_records_every_run():
-    s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks × 3 runs
+    s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks x 3 runs
     report = Parallel(workers=4).run(plan([s], None), None)
     assert len(_all_samples(report)) == 6
 
@@ -169,14 +169,14 @@ def test_parallel_runs_convergence_benchmarks():
     by_bench = {}
     for r in report.runs:
         by_bench.setdefault(r.benchmark, []).append(r)
-    # Both benchmarks produced records and converged (constant 1.0 → CoV 0).
+    # Both benchmarks produced records and converged (constant 1.0 -> CoV 0).
     assert set(by_bench) == {"conv0", "conv1"}
     assert all(records for records in by_bench.values())
     assert report.failures == []
 
 
 def test_parallel_shared_report_not_corrupted_under_concurrency():
-    # Many benchmarks fanned across workers all mutate one shared Report; the
+    # Many benchmarks fanned across workers all mutate one shared Report. The
     # locked wrappers must keep run counts and per-benchmark grouping exact.
     n_bench, n_runs = 8, 5
     s = suite(
@@ -203,7 +203,7 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
 
 
 def test_dry_no_subprocess():
-    # Use a non-existent command — Dry must not spawn anything.
+    # Use a non-existent command. Dry must not spawn anything.
     s = suite(
         "X",
         bench("a")
@@ -441,9 +441,9 @@ def test_default_metric_is_time():
     assert [smp.metric for o in report.runs[0].observations for smp in o.samples] == ["elapsed"]
 
 
-def test_plan_accepts_single_suite_and_default_ctx():
+def test_plan_default_params():
     s = suite("s", bench("a").with_command(["true"]))
-    report = Sequential().run(plan(s))
+    report = Sequential().run(plan([s]))
     assert len(report.runs) == 1
 
 

@@ -1,18 +1,18 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
-"""Two suites with different metrics; a per-suite Compact summary each.
+"""Two suites with different metrics, a per-suite Compact summary each.
 
 Each suite gets its own ``SummaryReporter`` whose ``Compact`` formatter is
-scoped with ``suite=...``; a ``CompositeReporter`` fans the run out to both.
+scoped with ``suite=...``. A ``CompositeReporter`` fans the run out to both.
 """
 
-from benchr import Compact, CompositeReporter, SummaryReporter, Time, bench, run, suite
+from bench import Compact, CompositeReporter, SummaryReporter, Time, bench, run, suite
 
 
 fast = (

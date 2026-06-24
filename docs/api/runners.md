@@ -1,24 +1,24 @@
 # Runners
 
 A runner consumes a flat list of planned benchmarks and emits samples. Build
-the plan with [`plan`][benchr.runner.base.plan], then hand it to a runner.
+the plan with [`plan`][bench.runner.base.plan], then hand it to a runner.
 
 ## Base
 
-::: benchr.runner.base
+::: bench.runner.base
 
 ## Sequential
 
-::: benchr.runner.sequential
+::: bench.runner.sequential
 
 ## Parallel
 
-::: benchr.runner.parallel
+::: bench.runner.parallel
 
 ## Dry
 
-::: benchr.runner.dry
+::: bench.runner.dry
 
 ## Harness sources
 
-::: benchr.runner.source
+::: bench.runner.source

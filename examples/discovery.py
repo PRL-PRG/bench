@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """File-discovered benchmarks: every script in workloads/ becomes a benchmark.
 
@@ -14,7 +14,7 @@ extension) and stamps the file onto ``b.path``.
 
 from pathlib import Path
 
-from benchr import Time, from_files, run, suite
+from bench import Time, from_files, run, suite
 
 
 HERE = Path(__file__).resolve().parent

@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "../..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
 """
 
@@ -17,7 +17,7 @@ Each renaissance iteration prints a multi-line block:
     GC before operation: completed in 4.812 ms, heap usage 121.567 MB -> 3.935 MB.
     ====== mnemonics (functional) [default], iteration 0 completed (1575.265 ms) ======
 
-To bring it into benchr, we need to create a benchmark monitor,
+To bring it into bench, we need to create a benchmark monitor,
 a component which finds individual runs so the run metrics can
 extracts the measurements.
 """
@@ -28,7 +28,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from benchr import (
+from bench import (
     BenchmarkBuilder,
     Context,
     HarnessHandle,
@@ -83,7 +83,7 @@ def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
 def renaissance_monitor(handle: HarnessHandle) -> Iterator[str]:
     """Group each iteration's lines (started -> completed) into one block.
 
-    Reuses ``line_monitor`` for the file-tailing; JVM-startup lines before the
+    Reuses ``line_monitor`` for the file-tailing. JVM-startup lines before the
     first ``started`` fall through with an empty buffer and are discarded.
     """
     buf: list[str] = []

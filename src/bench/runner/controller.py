@@ -2,12 +2,30 @@
 
 from __future__ import annotations
 
-from benchr.core.loop import benchmarking_loop
-from benchr.core.process import interrupted
-from benchr.core.sample import Report
-from benchr.grammar.benchmark import Benchmark
-from benchr.report.reporter import Reporter
-from benchr.runner.source import make_source
+from collections.abc import Generator
+
+from bench.core.policy import StoppingPolicy
+from bench.core.process import interrupted
+from bench.core.sample import Observation, Report
+from bench.grammar.benchmark import Benchmark
+from bench.report.reporter import Reporter
+from bench.runner.source import make_source
+
+
+def benchmarking_loop(
+    warmup: StoppingPolicy,
+    runs: StoppingPolicy,
+) -> Generator[bool, Observation, None]:
+    """Yield `in_warmup` per slot until both policies converge.
+
+    Every observation, including a failed one (empty samples), counts:
+    the active policy observes it and decides.
+    """
+    for policy, in_warmup in ((warmup, True), (runs, False)):
+        state = policy.start()
+        while not state.satisfied():
+            observation = yield in_warmup
+            state.observe(observation)
 
 
 class Controller:
@@ -17,7 +35,7 @@ class Controller:
     the stopping policy, count warmup observations, and `close()` the source on
     convergence (which kills a running harness and returns the assembled
     `Run`(s)). The Controller records those runs and marks the variant's
-    warmup. It never schedules — the source owns scheduling and spawning.
+    warmup. It never schedules. The source owns scheduling and spawning.
 
     `max_consecutive_failures` only applies when policies are *unbounded*:
     bounded policies already cap the count, so the failure cap would only mask a

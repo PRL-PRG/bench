@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "../..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
 """Multi-suite R benchmark configuration.
 
@@ -17,7 +17,7 @@ Demonstrates:
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import Rebench, bench as B, run, suite
+from bench import Rebench, bench as B, run, suite
 
 
 HERE = Path(__file__).resolve().parent

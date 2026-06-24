@@ -2,7 +2,7 @@
 
 An Execution is a description of how to start one subprocess: command,
 working directory, environment, optional timeout, optional stdin payload.
-It carries no benchmark-level identity (suite/benchmark/run) — that
+It carries no benchmark-level identity (suite/benchmark/run). That
 metadata lives on the resolved `Benchmark` (`BenchmarkBuilder.create`) that
 embeds it, and on the `Run` emitted afterward.
 """
@@ -33,8 +33,8 @@ class Execution:
 # ---------------------------------------------------------------------------
 # ExecutionResult: what happened when one Execution ran.
 #
-# `execute` records facts only — it does not judge success. The Runner asks a
-# `SuccessFn` (default `default_success`; per-benchmark overridable via
+# `execute` records facts only, it does not judge success. The Runner asks a
+# `SuccessFn` (default `default_success`, per-benchmark overridable via
 # `Benchmark.with_success`) for a `Verdict` and stamps the resulting
 # `failure` reason onto the result. A failed run carries no metrics.
 #
@@ -42,8 +42,8 @@ class Execution:
 #   0 ............. clean exit
 #   124 .......... timed out (coreutils `timeout(1)` convention)
 #   any other > 0  process crash / non-zero exit
-#   -1 ........... pre-execution failure (spawn errored before the process ran —
-#                  no real exit code; `failure` set by `execute`)
+#   -1 ........... pre-execution failure (spawn errored before the process ran,
+#                  no real exit code, `failure` set by `execute`)
 # ---------------------------------------------------------------------------
 
 
@@ -67,7 +67,7 @@ class ExecutionResult:
         return self.failure is not None
 
 
-type Verdict = str | None  # None = success; str = failure reason
+type Verdict = str | None  # None = success, str = failure reason
 type SuccessFn = Callable[[ExecutionResult], Verdict]
 
 
@@ -87,12 +87,12 @@ def default_success(result: ExecutionResult) -> Verdict:
     return None
 
 
-# Canonical matrix-variant identifier: sorted ((dimension_name, dimension_value), …).
+# Canonical matrix-variant identifier: sorted ((dimension_name, dimension_value), ...).
 type Variant = tuple[tuple[str, str], ...]
 
 
 def format_variant(variant: Variant) -> str:
-    """` (k=v, …)` suffix identifying a matrix variant; `""` if empty."""
+    """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
     if not variant:
         return ""
     return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
@@ -105,7 +105,7 @@ def _bench_head(suite: str, benchmark: str) -> str:
 
 
 def record_key(suite: str, benchmark: str, variant: Variant) -> str:
-    """Canonical benchmark-variant key: `suite/benchmark (k=v, …)`.
+    """Canonical benchmark-variant key: `suite/benchmark (k=v, ...)`.
 
     Built from the variant tuple (never the cosmetic label) so the runner and
     a deserialized report agree. Keys `Report.warmups`.
@@ -120,7 +120,7 @@ def format_identifier(
     run: int,
     variant_label: str = "",
 ) -> str:
-    """Canonical run label: `suite/benchmark[/label or (k=v, …)] #run`."""
+    """Canonical run label: `suite/benchmark[/label or (k=v, ...)] #run`."""
     head = _bench_head(suite, benchmark)
     if variant_label:
         head = f"{head}/{variant_label}"

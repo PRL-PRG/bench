@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Run with --json out.json to save, then --compare out.json to diff.
 
@@ -13,7 +13,7 @@ Typical workflow:
     ./compare_baseline.py --compare baseline.json
 """
 
-from benchr import Time, bench, run, suite
+from bench import Time, bench, run, suite
 
 
 s = (

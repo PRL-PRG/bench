@@ -1,4 +1,4 @@
-"""Scheduler base (Runner), the suite→benchmark plan builder, and shared helpers."""
+"""Scheduler base (Runner), the suite->benchmark plan builder, and shared helpers."""
 
 from __future__ import annotations
 
@@ -6,14 +6,14 @@ import abc
 import subprocess
 from typing import Any
 
-from benchr.grammar.benchmark import Benchmark
-from benchr.core.execution import (
+from bench.grammar.benchmark import Benchmark
+from bench.core.execution import (
     default_success,
     format_identifier,
 )
-from benchr.grammar.suite import Suite
-from benchr.report.reporter import Reporter
-from benchr.core.sample import Report
+from bench.grammar.suite import Suite
+from bench.report.reporter import Reporter
+from bench.core.sample import Report
 
 
 class _NoopReporter(Reporter):
@@ -36,7 +36,7 @@ class SuiteMaterializationError(Exception):
     def _format(self) -> str:
         lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
 
-        # FIXME: there must be a better way to do this
+        # Only subprocess failures carry capturable output worth surfacing.
         if isinstance(self.cause, subprocess.CalledProcessError):
             out = self.cause.output or self.cause.stderr
             if out:
@@ -47,12 +47,8 @@ class SuiteMaterializationError(Exception):
         return "\n".join(lines)
 
 
-# TODO: this should be private API
-# TODO: it should only take list[Suite]
-def plan(suites: Suite | list[Suite], params: Any = None) -> list[Benchmark]:
+def plan(suites: list[Suite], params: Any = None) -> list[Benchmark]:
     """Flatten suites + their deferred factories into resolved benchmarks."""
-    if isinstance(suites, Suite):
-        suites = [suites]
     out: list[Benchmark] = []
     for s in suites:
         try:
@@ -105,13 +101,13 @@ class Runner(abc.ABC):
     """Abstract runner: drives a set of planned benchmarks to a `Report`.
 
     Concrete runners (`Sequential`, `Parallel`) drive one `Controller`
-    per benchmark; `Dry` just enumerates the plan. `run()` returns the
+    per benchmark. `Dry` just enumerates the plan. `run()` returns the
     accumulated `Report`.
 
     `max_runs_per_policy` is a defensive backstop for non-converging custom
     policies. `max_consecutive_failures` silently aborts a benchmark whose
-    runs keep failing — surface that fact in the report rather than retrying
-    forever. Bump it for flaky benchmarks; set high for purely-success suites.
+    runs keep failing, surface that fact in the report rather than retrying
+    forever. Bump it for flaky benchmarks. Set high for purely-success suites.
     """
 
     def __init__(

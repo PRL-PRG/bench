@@ -1,11 +1,11 @@
 """Sample, Observation, Run, Report: the data model over benchmark execution.
 
-A `Run` is one process execution — its identity, command, outcome
+A `Run` is one process execution: its identity, command, outcome
 (returncode / runtime / failure / stdout / stderr) and the `Observation`s
 measured during it. An `Observation` is one measurement point: a bag of
 `Sample`s (possibly several metrics) plus an optional per-observation failure.
-A command benchmark yields one Run with one Observation; a harness yields one
-Run with many. A `Report` is the collection of Runs; it summarizes by
+A command benchmark yields one Run with one Observation, a harness yields one
+Run with many. A `Report` is the collection of Runs. It summarizes by
 flattening every observation's samples per metric.
 
 All are pure data and round-trip through JSON. `stdout`/`stderr`/`env` are
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 from cattrs import structure, unstructure
 
-from benchr.core.execution import Variant, format_identifier, record_key
+from bench.core.execution import Variant, format_identifier, record_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +37,9 @@ class Sample:
 class Observation:
     """One measurement point: samples (possibly multi-metric) + optional failure.
 
-    A failed observation — extraction produced nothing it expected, or the
-    harness flagged the iteration — carries `failure` and usually no samples;
-    the run proceeds to the next observation. `label` is the benchmark-variant
+    A failed observation (extraction produced nothing it expected, or the
+    harness flagged the iteration) carries `failure` and usually no samples,
+    and the run proceeds to the next observation. `label` is the benchmark-variant
     display identifier, carried for live progress reporting.
     """
 
@@ -55,11 +55,11 @@ class Observation:
 class Run:
     """One process execution: identity + command + outcome + observations.
 
-    `command`/`cwd`/`env` are the execution inputs; `returncode` /
+    `command`/`cwd`/`env` are the execution inputs. `returncode` /
     `runtime` / `failure` / `message` / `stdout` / `stderr` the
-    outcome; `observations` the measurements taken during the run (command: 1;
+    outcome. `observations` the measurements taken during the run (command: 1,
     harness: N). `run` is the run's index within its variant (command runs are
-    numbered 1..N; a harness is a single run).
+    numbered 1..N, a harness is a single run).
 
     `returncode` conventions follow ExecutionResult: `124` = timeout, `-1`
     = pre-execution failure. `message` is the last non-empty stderr/stdout line
@@ -96,7 +96,7 @@ class Run:
 
 
 def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
-    """Last non-empty line of stderr (then stdout), truncated — for failures."""
+    """Last non-empty line of stderr (then stdout), truncated, for failures."""
     for text in (stderr, stdout):
         if not text:
             continue
@@ -112,7 +112,7 @@ class Report:
     """The accumulating Runs, each carrying its Observations.
 
     `warmups` maps a benchmark-variant key (`record_key`) to the number of
-    its leading *observations* that were warmup — recorded once per variant.
+    its leading *observations* that were warmup, recorded once per variant.
     Stats drop those observations by default.
     """
 

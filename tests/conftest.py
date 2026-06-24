@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from benchr import (
+from bench import (
     Execution, ExecutionResult,
 )
 

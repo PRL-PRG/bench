@@ -1,4 +1,4 @@
-"""Dataclass → argparse glue, and the Context value object."""
+"""Dataclass -> argparse glue, and the Context value object."""
 
 import argparse
 from dataclasses import dataclass
@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from benchr.grammar.context import Context, Matrix, add_dataclass_args, build_dataclass
+from bench.grammar.context import Context, Matrix, add_dataclass_args, build_dataclass
 
 
 @dataclass
@@ -81,7 +81,7 @@ def _ctx(**overrides: Any) -> Context[Any]:
 
 
 def test_context_matrix_attribute_access():
-    # Variant values are read as attributes (ctx.matrix.vm); a missing one raises.
+    # Variant values are read as attributes (ctx.matrix.vm), a missing one raises.
     ctx = _ctx(matrix=Matrix({"vm": "v8", "size": 100}))
     assert ctx.matrix.vm == "v8" and ctx.matrix.size == 100
     with pytest.raises(AttributeError):

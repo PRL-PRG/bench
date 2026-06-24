@@ -1,14 +1,14 @@
-"""benchr — a benchmarking framework."""
+"""bench - a benchmarking framework."""
 
 # Atoms
-from benchr.core.execution import (
+from bench.core.execution import (
     Execution,
     ExecutionResult,
     Variant,
     Verdict,
     default_success,
 )
-from benchr.core.sample import (
+from bench.core.sample import (
     Observation,
     Report,
     Run,
@@ -18,7 +18,7 @@ from benchr.core.sample import (
 )
 
 # Metrics
-from benchr.core.metric import (
+from bench.core.metric import (
     FloatPerLine,
     Metric,
     Rebench,
@@ -29,37 +29,37 @@ from benchr.core.metric import (
 )
 
 # Stopping policies
-from benchr.core.policy import (
+from bench.core.policy import (
     CoefficientOfVariation,
     FixedRuns,
+    MaxDuration,
     PolicyState,
     StoppingPolicy,
 )
 
 # Benchmark / Suite
-from benchr.grammar.benchmark import (
+from bench.grammar.benchmark import (
     Benchmark,
     BenchmarkBuilder,
     bench,
     default_label,
     from_files,
 )
-from benchr.grammar.suite import Suite, suite
-from benchr.grammar.context import Context
+from bench.grammar.suite import Suite, suite
+from bench.grammar.context import Context
 
 # Runners
-from benchr.runner.base import (
+from bench.runner.base import (
     Runner,
     SuiteMaterializationError,
-    plan,
 )
-from benchr.runner.dry import Dry
-from benchr.runner.parallel import Parallel
-from benchr.runner.sequential import Sequential
-from benchr.runner.source import HarnessHandle, HarnessMonitor, line_monitor
+from bench.runner.dry import Dry
+from bench.runner.parallel import Parallel
+from bench.runner.sequential import Sequential
+from bench.runner.source import HarnessHandle, HarnessMonitor, line_monitor
 
 # Reporters
-from benchr.report.reporter import (
+from bench.report.reporter import (
     CompositeReporter,
     CsvReporter,
     DirReporter,
@@ -70,10 +70,10 @@ from benchr.report.reporter import (
 )
 
 # Formatters
-from benchr.report.formatter import Compact, DefaultSummary, Formatter
+from bench.report.formatter import Compact, DefaultSummary, Formatter
 
 # CLI
-from benchr.cli import Benchr, main, run
+from bench.cli import Bench, main, run
 
 __all__ = [
     # Atoms
@@ -85,14 +85,14 @@ __all__ = [
     "Time", "Regex", "FloatPerLine", "Rebench", "RUsage", "max_rss",
     # Policies
     "StoppingPolicy", "PolicyState",
-    "FixedRuns", "CoefficientOfVariation",
+    "FixedRuns", "CoefficientOfVariation", "MaxDuration",
     # Benchmark / Suite
     "Benchmark", "BenchmarkBuilder", "bench",
     "default_label", "from_files",
     "Suite", "suite",
     "Context",
     # Runners
-    "Runner", "Sequential", "Parallel", "Dry", "plan",
+    "Runner", "Sequential", "Parallel", "Dry",
     "SuiteMaterializationError",
     "HarnessMonitor", "HarnessHandle", "line_monitor",
     # Reporters
@@ -100,5 +100,5 @@ __all__ = [
     # Formatters
     "Formatter", "DefaultSummary", "Compact",
     # CLI
-    "Benchr", "run", "main",
+    "Bench", "run", "main",
 ]

@@ -1,21 +1,21 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Custom Reporter: a pass/fail test runner that sets the process exit code.
 
-Treats each ``.lox`` file under ``ctx.cwd/tests`` as a test and drives benchr's
+Treats each ``.lox`` file under ``ctx.cwd/tests`` as a test and drives bench's
 Sequential runner with a custom ``Reporter`` that counts pass/fail and exits
-non-zero on any failure — the test-runner shape, distinct from a *timing* run.
+non-zero on any failure, the test-runner shape, distinct from a *timing* run.
 Success is "stdout matches the ``// expect: <line>`` comments in the source",
-expressed as a ``.with_success`` policy; see ``custom_metric.py`` for the
+expressed as a ``.with_success`` policy. See ``custom_metric.py`` for the
 custom-metric/success mechanics in isolation.
 
-Needs a real Lox interpreter, like the ``external/`` examples; for a
+Needs a real Lox interpreter, like the ``external/`` examples. For a
 *benchmarking* (rather than testing) Lox config see ``external/lox.py``.
 
 Usage:
@@ -29,11 +29,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import (
+from bench import (
     Context, ExecutionResult, Reporter, Run, Time, from_files, run,
     suite,
 )
-from benchr.report.reporter import console
+from bench.report.reporter import console
 
 
 HERE = Path(__file__).resolve().parent
@@ -96,9 +96,9 @@ class LoxTestSummary(Reporter):
         console.print()
         console.print("Summary:")
         if self.passed:
-            console.print(f"\t[benchr.success]PASSED:  {self.passed:5d}[/]")
+            console.print(f"\t[bench.success]PASSED:  {self.passed:5d}[/]")
         if self.failed:
-            console.print(f"\t[benchr.failure]FAILED:  {self.failed:5d}[/]")
+            console.print(f"\t[bench.failure]FAILED:  {self.failed:5d}[/]")
         if self.failed_tests:
             console.print()
             console.print("Failed tests:")

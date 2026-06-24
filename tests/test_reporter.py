@@ -5,13 +5,14 @@ from pathlib import Path
 
 from rich.console import Console
 
-from benchr import (
+from bench import (
     CsvReporter, DirReporter, JsonReporter, CompositeReporter, FloatPerLine, ProgressReporter, Sequential, SummaryReporter,
-    Time, bench, plan, report_from_json, suite,
+    Time, bench, report_from_json, suite,
 )
-from benchr.core.sample import Observation, Run
-from benchr.report.reporter import DirReporter as _DirReporter
-from benchr.report.theme import BENCHR_THEME
+from bench.runner.base import plan
+from bench.core.sample import Observation, Run
+from bench.report.reporter import DirReporter as _DirReporter
+from bench.report.theme import BENCHR_THEME
 
 
 def test_dirreporter_writes_on_run_done(tmp_path):
@@ -94,7 +95,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
 
 
 def _string_console() -> tuple[Console, io.StringIO]:
-    """Rich Console wired to a StringIO; non-TTY, no ANSI markup."""
+    """Rich Console wired to a StringIO, non-TTY, no ANSI markup."""
     buf = io.StringIO()
     c = Console(theme=BENCHR_THEME, file=buf, force_terminal=False,
                 width=200, no_color=True, highlight=False)

@@ -3,11 +3,12 @@
 import time
 from pathlib import Path
 
-from benchr import (
+from bench import (
     CoefficientOfVariation, Dry, FloatPerLine, JsonReporter, Parallel,
-    Regex, Sequential, Time, bench, line_monitor, plan, report_from_json,
+    Regex, Sequential, Time, bench, line_monitor, report_from_json,
     suite,
 )
+from bench.runner.base import plan
 
 
 def _echo_lines(*values) -> list[str]:
@@ -46,7 +47,7 @@ def test_bench_level_with_harness_in_command_suite():
 
 
 def test_harness_killed_when_policy_converges():
-    # emits constant 1.0 ~20/sec; CoV warmup converges fast, then FixedRuns(2) measured
+    # emits constant 1.0 ~20/sec, CoV warmup converges fast, then FixedRuns(2) measured
     cmd = ["sh", "-c", "for i in $(seq 1000); do echo 1.0; sleep 0.05; done"]
     s = (
         suite("H", bench("a").with_command(cmd).with_harness())
@@ -110,7 +111,7 @@ def test_no_parsable_output_is_a_loud_failure():
 
 
 def test_under_delivery_records_what_was_delivered():
-    # The harness produced fewer iterations than the runs policy wanted; we
+    # The harness produced fewer iterations than the runs policy wanted. We
     # keep what was delivered (no synthetic short-delivery failure).
     s = _harness_suite(_echo_lines("1.0", "2.0"), runs=3)
     report = Sequential().run(plan([s], None), None)
@@ -179,7 +180,7 @@ def test_harness_process_metric_becomes_trailing_observation():
          .with_runs(2).with_harness())
     report = Sequential().run(plan([s], None), None)
     run = report.runs[0]
-    # per-iteration observations carry FloatPerLine (not elapsed); a trailing
+    # per-iteration observations carry FloatPerLine (not elapsed), a trailing
     # observation carries the whole-process Time (elapsed).
     per_iter = run.observations[:2]
     assert all(all(s.metric != "elapsed" for s in o.samples) for o in per_iter)

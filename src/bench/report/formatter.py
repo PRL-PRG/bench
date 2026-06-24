@@ -1,14 +1,7 @@
 """Formatters: turn a Report (or pre-computed SummaryData) into a string.
 
-The Reporter sinks (CsvReporter/JsonReporter/DirReporter) handle raw output; Formatters are for
+The Reporter sinks (CsvReporter/JsonReporter/DirReporter) handle raw output. Formatters are for
 human-readable summaries. They are pure: `format(report, baseline=...) -> str`.
-
-Built-ins:
-
-```text
-DefaultSummary   per-benchmark stats + per-suite geomean comparison
-Compact          one-line-per-benchmark (good for commit messages)
-```
 """
 
 from __future__ import annotations
@@ -18,9 +11,9 @@ import math
 import statistics
 from pathlib import Path
 
-from benchr.core.execution import format_variant
-from benchr.core.sample import Report
-from benchr.report.stats import (
+from bench.core.execution import format_variant
+from bench.core.sample import Report
+from bench.report.stats import (
     BenchKey,
     BenchmarkGroup,
     BenchmarkId,
@@ -40,7 +33,7 @@ from benchr.report.stats import (
 
 
 class Formatter(abc.ABC):
-    """Pure: render a Report → text."""
+    """Pure: render a Report -> text."""
 
     def __call__(self, report: Report, *, baseline: list[Path] | None = None) -> str:
         data = build_summary(report, baseline)
@@ -65,16 +58,16 @@ def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
 
 def _count_markup(rc: RunCounts) -> str:
     """Render fail|success counts with markup. Single token, pipe separator."""
-    f_s = f"[benchr.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
-    s_s = f"[benchr.success]{rc.successes}[/]"
+    f_s = f"[bench.failure]{rc.failures}[/]" if rc.failures else str(rc.failures)
+    s_s = f"[bench.success]{rc.successes}[/]"
     return f"{f_s}|{s_s}"
 
 
 def _variant_suffix(gs: GroupStats | BenchmarkGroup) -> str:
     """Render the variant portion of a display name.
 
-    Prefers the explicit `variant_label` (set via `Benchmark.with_label`);
-    falls back to `" (k=v, …)"` for unlabeled dimensions.
+    Prefers the explicit `variant_label` (set via `Benchmark.with_label`).
+    Falls back to `" (k=v, …)"` for unlabeled dimensions.
     """
     if gs.variant_label:
         return f"/{gs.variant_label}"
@@ -126,7 +119,7 @@ class DefaultSummary(Formatter):
         rc = gs.run_counts
         total = rc.failures + rc.successes
         word = "run" if total <= 1 else "runs"
-        lines.append(f"[benchr.label]{name}:[/] {_count_markup(rc)} {word}")
+        lines.append(f"[bench.label]{name}:[/] {_count_markup(rc)} {word}")
 
         if not gs.metrics:
             return
@@ -157,14 +150,14 @@ class DefaultSummary(Formatter):
                 min_v = ms.min * scale
                 max_v = ms.max * scale
                 lines.append(
-                    f"  [benchr.label]{label}[/]"
-                    f"  [benchr.value]{mean_v:.2f}[/]"
-                    f" ± [benchr.success]{std_v:.2f}[/]"
-                    f"    ([benchr.min]{min_v:.2f}[/]"
-                    f" … [benchr.max]{max_v:.2f}[/])"
+                    f"  [bench.label]{label}[/]"
+                    f"  [bench.value]{mean_v:.2f}[/]"
+                    f" ± [bench.success]{std_v:.2f}[/]"
+                    f"    ([bench.min]{min_v:.2f}[/]"
+                    f" … [bench.max]{max_v:.2f}[/])"
                 )
             else:
-                lines.append(f"  {label}  [benchr.value]{mean_v:.2f}[/]")
+                lines.append(f"  {label}  [bench.value]{mean_v:.2f}[/]")
 
     # ----- intra-benchmark ranking (hyperfine-style) -----------------
 
@@ -172,7 +165,7 @@ class DefaultSummary(Formatter):
         """Append "Summary" blocks ranking the variants WITHIN each benchmark.
 
         Comparison is meaningful only between variants of the same workload.
-        For each `(suite, benchmark)` partition with ≥ 2 variants and each
+        For each `(suite, benchmark)` partition with >= 2 variants and each
         rankable metric, emit one block: best variant, then one line per slower
         variant with the factor and propagated sigma.
         """
@@ -213,10 +206,10 @@ class DefaultSummary(Formatter):
 
                 lines.append("")
                 title = f"Summary — {suite}/{bench}" if multi_partition else "Summary"
-                lines.append(f"[benchr.label]{title}[/]")
+                lines.append(f"[bench.label]{title}[/]")
                 lines.append(
-                    f"  [benchr.name]'{_variant_name(best)}'[/]"
-                    f" [benchr.metric]\\[{mk[0]}][/] was"
+                    f"  [bench.name]'{_variant_name(best)}'[/]"
+                    f" [bench.metric]\\[{mk[0]}][/] was"
                 )
                 for other in ranked[1:]:
                     mr = metric_ratio(best.metrics[mk], other.metrics[mk])
@@ -224,10 +217,10 @@ class DefaultSummary(Formatter):
                         continue
                     ratio, sigma, _ = _orient(mr.display_ratio, mr.sigma)
                     lines.append(
-                        f"    [benchr.value]{ratio:.2f}[/]"
-                        f" ± [benchr.success]{sigma:.2f}[/]"
-                        f" times [benchr.better]{word}[/] than"
-                        f" [benchr.name]'{_variant_name(other)}'[/]"
+                        f"    [bench.value]{ratio:.2f}[/]"
+                        f" ± [bench.success]{sigma:.2f}[/]"
+                        f" times [bench.better]{word}[/] than"
+                        f" [bench.name]'{_variant_name(other)}'[/]"
                     )
 
     # ----- comparison block -----------------------------------------
@@ -261,7 +254,7 @@ class DefaultSummary(Formatter):
             first = False
 
             name = f"{_group_label(bl_g)}{_variant_suffix(bl_g)}"
-            lines.append(f"[benchr.label]{name}:[/]")
+            lines.append(f"[bench.label]{name}:[/]")
             lines.append("  runs:")
             lines.append(f"    {self._fmt_runs(baseline.name, bl_g.run_counts)}")
             for cn, cg in present:
@@ -275,7 +268,7 @@ class DefaultSummary(Formatter):
                     if mr is None:
                         continue
                     if not shown:
-                        lines.append(f"  [benchr.metric]{mk[0]}[/]:")
+                        lines.append(f"  [bench.metric]{mk[0]}[/]:")
                         shown = True
                     r, s, word = _orient(mr.display_ratio, mr.sigma)
                     lines.append(self._fmt_ratio_line("    ", cn, r, s, word, baseline.name))
@@ -288,10 +281,10 @@ class DefaultSummary(Formatter):
         if not suites_in_order:
             return
 
-        lines.append("\n[benchr.label]Summary (geometric mean of ratios):[/]")
+        lines.append("\n[bench.label]Summary (geometric mean of ratios):[/]")
         for suite in suites_in_order:
             suite_groups = [g for g in baseline.groups if g.suite == suite]
-            lines.append(f"  [benchr.label]{suite}:[/]")
+            lines.append(f"  [bench.label]{suite}:[/]")
             lines.append("    runs:")
             lines.append(f"      {self._fmt_runs(baseline.name, self._sum(suite_groups))}")
             for c, cn in zip(data.comparees, data.comparee_names):
@@ -314,7 +307,7 @@ class DefaultSummary(Formatter):
                     if gmr is None:
                         continue
                     if not shown:
-                        lines.append(f"    [benchr.metric]{mk[0]}[/]:")
+                        lines.append(f"    [bench.metric]{mk[0]}[/]:")
                         shown = True
                     r, s, word = _orient(gmr.display_ratio, gmr.sigma)
                     lines.append(self._fmt_ratio_line("      ", cn, r, s, word, baseline.name))
@@ -327,12 +320,12 @@ class DefaultSummary(Formatter):
     def _fmt_ratio_line(indent: str, name: str, ratio: float, sigma: float,
                        word: str, baseline_name: str) -> str:
         err = f" ± {sigma:.2f}" if sigma > 0 else ""
-        word_style = "benchr.better" if word == "better" else "benchr.worse"
+        word_style = "bench.better" if word == "better" else "bench.worse"
         return (
-            f"{indent}[benchr.name]{name}[/] was"
-            f" [benchr.value]{ratio:.2f}[/]{err}"
+            f"{indent}[bench.name]{name}[/] was"
+            f" [bench.value]{ratio:.2f}[/]{err}"
             f" times [{word_style}]{word}[/] than"
-            f" [benchr.value]{baseline_name}[/]"
+            f" [bench.value]{baseline_name}[/]"
         )
 
     @staticmethod

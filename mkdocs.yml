@@ -1,7 +1,7 @@
-site_name: benchr
+site_name: bench
 site_description: A lightweight Python benchmarking framework
-repo_url: https://github.com/fikovnik/benchr
-repo_name: fikovnik/benchr
+repo_url: https://github.com/fikovnik/bench
+repo_name: fikovnik/bench
 
 # .html URLs (not directory URLs) so the built site also works when opened
 # directly from disk (file://), not just from a web server.

@@ -1,23 +1,23 @@
 """Benchmark grammar: a builder template and the resolved instances it produces.
 
-`BenchmarkBuilder` is the chainable spec returned by `bench()`; `Benchmark` is
+`BenchmarkBuilder` is the chainable spec returned by `bench()`. `Benchmark` is
 one fully *resolved* variant produced by `BenchmarkBuilder.create()`. The
 builder leaves every inheritable field as the `UNSET` null object ("inherit the
-suite's default", filled in by `Suite`); the resolved benchmark carries concrete
-objects and a frozen `Execution`, which the runner consumes directly — no
+suite's default", filled in by `Suite`). The resolved benchmark carries concrete
+objects and a frozen `Execution`, which the runner consumes directly, with no
 callables left to evaluate.
 
 Every configurable field is set either as a static value or as a
 `Build[T]` = `(ctx) -> value` builder, resolved once per variant at `create()`
-time (a setter wraps a static value via `const`; a callable is taken as the
-builder). The three fields whose value is *itself* a callable —
-`success`/`monitor`/`label_fn` — are value-only (no per-variant builder), so a
+time (a setter wraps a static value via `const`, and a callable is taken as the
+builder). The three fields whose value is *itself* a callable
+(`success`/`monitor`/`label_fn`) are value-only (no per-variant builder), so a
 bare callable passed to them is never ambiguous.
 
 `create()` expands the matrix (cartesian product of the declared dimensions),
 drops skipped cells, and resolves every field against the variant `Context` in
 a single pass. Variants within a benchmark are what the end-of-run Summary
-compares; comparison across different benchmarks is never emitted.
+compares. Comparison across different benchmarks is never emitted.
 """
 
 from __future__ import annotations
@@ -32,27 +32,27 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
-from benchr.core.execution import (
+from bench.core.execution import (
     EMPTY_MAPPING,
     Execution,
     SuccessFn,
     Variant,
     format_variant,
 )
-from benchr.core.metric import Metric
-from benchr.core.policy import StoppingPolicy, coerce_policy
-from benchr.grammar.context import Context, Matrix
+from bench.core.metric import Metric
+from bench.core.policy import StoppingPolicy, coerce_policy
+from bench.grammar.context import Context, Matrix
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
-    from benchr.runner.source import HarnessMonitor
+    from bench.runner.source import HarnessMonitor
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create()
 # time. The single concept for "value or function": a setter accepts `T |
-# Build[T]` — a callable is the builder, anything else is the static value
-# (wrapped). The three callable-valued fields (success/monitor/label_fn) are
-# value-only, so a bare callable is never ambiguous.
+# Build[T]`, where a callable is the builder and anything else is the static
+# value (wrapped). The three callable-valued fields (success/monitor/label_fn)
+# are value-only, so a bare callable is never ambiguous.
 type Build[T] = Callable[[Context[Any]], T]
 
 # command/cwd/env are always stored as a builder (a static value is wrapped).
@@ -89,7 +89,7 @@ class _Unset:
         return "UNSET"
 
 
-# Typed `Any` so fields keep their concrete declared types; misuse of an
+# Typed `Any` so fields keep their concrete declared types. Misuse of an
 # unresolved factory fails loudly at runtime in one place (above).
 UNSET: Any = _Unset()
 
@@ -100,22 +100,22 @@ def const(value: Any) -> Build[Any]:
 
 
 def to_argv(command: Any) -> tuple[Any, ...]:
-    """A bare str/bytes/PathLike is a one-element argv; a Sequence is full argv."""
+    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
     if isinstance(command, (str, bytes, os.PathLike)):
-        return (command,)
+        return (cast(Any, command),)
     return tuple(command)
 
 
 def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Build[Any]:
     """Coerce a setter argument into a `Build[T]`: a callable is the builder as
-    is; anything else is the static value, normalized once and wrapped."""
+    is, anything else is the static value, normalized once and wrapped."""
     if callable(value):
         return cast("Build[Any]", value)
     return const(normalize(value))
 
 
 def default_label(b: Benchmark) -> str:
-    """Default variant label: the formatted `(k=v, …)` tuple, no parens."""
+    """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
     return format_variant(b.variant).strip(" ()")
 
 
@@ -126,7 +126,7 @@ def normalize_matrix(
     dims: Mapping[str, Sequence[Any]],
 ) -> Mapping[str, tuple[Any, ...]]:
     """Validate dimension names and freeze `{name: values}` into the canonical
-    `{name: (v, …)}` mapping shared by `BenchmarkBuilder` and `Suite`."""
+    `{name: (v, ...)}` mapping shared by `BenchmarkBuilder` and `Suite`."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -136,10 +136,10 @@ def normalize_matrix(
 def make_skip_rule(
     predicate: SkipFn | None, kwargs: Mapping[str, Any]
 ) -> SkipFn | None:
-    """Build a skip predicate from a predicate and/or AND-matched kwargs; `None`
+    """Build a skip predicate from a predicate and/or AND-matched kwargs. `None`
     when neither is given (the caller then leaves its skip list untouched).
 
-    A variant is dropped when the returned predicate is truthy; within one rule
+    A variant is dropped when the returned predicate is truthy. Within one rule
     all kwargs must match AND the predicate (if any) must return truthy.
     """
     if predicate is None and not kwargs:
@@ -184,7 +184,7 @@ class BenchmarkBuilder:
     # ----- attribute access into data ---------------------------------
 
     def __getattr__(self, name: str) -> Any:
-        # __getattr__ is only called when normal lookup fails; safe to use even
+        # __getattr__ is only called when normal lookup fails, safe to use even
         # with slots.
         data = object.__getattribute__(self, "data")
         if name in data:
@@ -221,7 +221,7 @@ class BenchmarkBuilder:
         self, *metrics: Metric | Build[tuple[Metric, ...]]
     ) -> BenchmarkBuilder:
         """Set (replace) the benchmark's metrics. Pass them statically
-        (`with_metric(m1, m2, …)`), or a single `(ctx) -> (m, …)` builder for
+        (`with_metric(m1, m2, ...)`), or a single `(ctx) -> (m, ...)` builder for
         per-variant metrics."""
         if len(metrics) == 1 and callable(metrics[0]):
             build = metrics[0]
@@ -248,7 +248,7 @@ class BenchmarkBuilder:
         self, monitor: HarnessMonitor | None = UNSET
     ) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
-        streams all iterations — each line (or framed block) becomes one
+        streams all iterations, where each line (or framed block) becomes one
         observation.
 
         `monitor` frames the output stream into iterations."""
@@ -394,7 +394,7 @@ def from_files(
     recursive: bool = True,
     exclude: set[str] | None = None,
 ) -> list[BenchmarkBuilder]:
-    """Discover files under `root`; each becomes a factory with `b.path` set."""
+    """Discover files under `root`, each becomes a factory with `b.path` set."""
     compiled = re.compile(pattern) if pattern else None
     exclude_set = exclude or set()
     r = Path(root)

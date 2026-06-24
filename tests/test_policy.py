@@ -1,19 +1,21 @@
 """Stopping policies: FixedRuns, CoV, combinators.
 
 Protocol: ``policy.start()`` returns a ``PolicyState``. ``observe(observation)``
-feeds one ``Observation``; ``satisfied()`` reports whether the policy has
+feeds one ``Observation``. ``satisfied()`` reports whether the policy has
 converged (and is also valid before any observation). Run numbering lives in
-the caller — a policy keeps its own counter if it needs one.
+the caller. A policy keeps its own counter if it needs one.
 """
 
 import random
 import statistics
+import time
 
 import pytest
 
-from benchr import (
+from bench import (
     CoefficientOfVariation,
     FixedRuns,
+    MaxDuration,
     Observation,
     PolicyState,
     Sample,
@@ -38,7 +40,7 @@ def _rr(*samples: Sample) -> Observation:
 def test_fixed_runs_counts_every_observation():
     state = FixedRuns(3).start()
     assert not state.satisfied()
-    # Every run counts — success or failure (failed runs observe with no samples).
+    # Every run counts, success or failure (failed runs observe with no samples).
     state.observe(_rr())
     state.observe(_rr(_mk(1.0)))
     assert not state.satisfied()
@@ -113,8 +115,8 @@ def test_and_requires_both():
     state = p.start()
     for _ in range(3):
         state.observe(_rr(_mk(10.0)))
-    # CoV: 3 obs at value=10.0 → window full, mean=10, stdev=0, threshold=0 ✓.
-    # Fixed(3): 3 obs ✓.
+    # CoV: 3 obs at value=10.0 -> window full, mean=10, stdev=0, threshold=0 ok.
+    # Fixed(3): 3 obs ok.
     assert state.satisfied()
 
 
@@ -147,7 +149,7 @@ def test_at_least_at_most_sugar():
 
 
 # ---------------------------------------------------------------------------
-# Custom policy via subclassing (the Custom adapter was removed; subclassing
+# Custom policy via subclassing (the Custom adapter was removed. Subclassing
 # StoppingPolicy / PolicyState is the supported extension point).
 # ---------------------------------------------------------------------------
 
@@ -214,10 +216,48 @@ def test_or_max_runs_is_earlier_of_two():
 
 
 def test_or_max_runs_ignores_unbounded_child():
-    # `.at_most(20)` desugars to `self | FixedRuns(20)` — the cap bounds the Or.
+    # `.at_most(20)` desugars to `self | FixedRuns(20)`. The cap bounds the Or.
     assert (CoefficientOfVariation("rt") | FixedRuns(20)).max_runs() == 20
     assert CoefficientOfVariation("rt").at_most(20).max_runs() == 20
 
 
 def test_or_max_runs_both_unbounded_is_none():
     assert (CoefficientOfVariation("rt") | CoefficientOfVariation("rt")).max_runs() is None
+
+
+# ---------------------------------------------------------------------------
+# MaxDuration
+# ---------------------------------------------------------------------------
+
+
+def test_max_duration_is_count_unbounded():
+    assert MaxDuration(5.0).max_runs() is None
+
+
+def test_max_duration_satisfied_after_deadline():
+    state = MaxDuration(0.05).start()
+    assert not state.satisfied()
+    state.observe(_rr(_mk(1.0)))
+    assert not state.satisfied()
+    time.sleep(0.06)
+    assert state.satisfied()
+
+
+def test_fixed_or_duration_stops_on_whichever_first():
+    # Count cap reached before the (long) time bound.
+    state = (FixedRuns(2) | MaxDuration(30.0)).start()
+    state.observe(_rr(_mk(1.0)))
+    assert not state.satisfied()
+    state.observe(_rr(_mk(1.0)))
+    assert state.satisfied()  # FixedRuns(2) fired first
+
+    # Time bound reached before the (high) count cap.
+    state = (FixedRuns(1000) | MaxDuration(0.05)).start()
+    state.observe(_rr(_mk(1.0)))
+    time.sleep(0.06)
+    assert state.satisfied()  # MaxDuration fired first
+
+
+def test_fixed_or_duration_max_runs_is_the_count_cap():
+    # _Or.max_runs() = min(count cap, unbounded) = the count cap.
+    assert (FixedRuns(10) | MaxDuration(3.0)).max_runs() == 10

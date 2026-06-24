@@ -1,6 +1,6 @@
 # CLI
 
-The `run(...)` entry point that powers benchmark scripts, plus the `benchr`
+The `run(...)` entry point that powers benchmark scripts, plus the `bench`
 command-line interface.
 
-::: benchr.cli
+::: bench.cli

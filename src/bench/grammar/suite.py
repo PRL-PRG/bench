@@ -1,37 +1,20 @@
 """Suite: a named collection of Benchmarks plus the defaults they inherit.
 
 A `Suite` is a frozen value object. It stores *defaults* (command, env,
-policies, metrics, …) next to its member benchmarks; calling a `.with_*`
-method just sets the suite field — nothing propagates eagerly. Resolution
+policies, metrics, ...) next to its member benchmarks. Calling a `.with_*`
+method just sets the suite field, and nothing propagates eagerly. Resolution
 happens once, in `materialize(ctx)`: every benchmark field still holding
-`UNSET` is filled from the suite, so builder-call order never matters —
+`UNSET` is filled from the suite, so builder-call order never matters, and
 `Suite("A").with_command(c).add(b)` equals
 `Suite("A").add(b).with_command(c)`.
 
 Suite defaults are always set (except `command`, which has no sensible
-default); benchmark fields are all `UNSET`-able (they inherit the suite).
+default). Benchmark fields are all `UNSET`-able (they inherit the suite).
 
 Resolution precedence (most specific wins):
 
 ```text
 benchmark explicit > suite default
-```
-
-Producers:
-
-```text
-.add(b) / .add_all(*bs)      append benchmarks
-.factory(fn)                 defer (ctx) -> [Benchmark] production (wrap the
-                             from_files helper for ctx-dependent discovery)
-.with_command/.with_cwd/.with_env/.with_timeout/.with_metric/
-.with_success/.with_label    set a suite default
-.with_warmup/.with_runs      set a default warmup/runs policy
-.with_harness()              make every benchmark a harness benchmark
-.with_matrix(**dims)         add dimensions to every benchmark (at materialize)
-.add_matrix_skip(...)        add a skip rule to every benchmark
-.filter(pred)                keep matching resolved benchmarks (deferred to
-                             materialize; order-independent, per-variant)
-.with_name(new_name)         rename
 ```
 """
 
@@ -44,7 +27,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
-from benchr.grammar.benchmark import (
+from bench.grammar.benchmark import (
     UNSET,
     Benchmark,
     BenchmarkBuilder,
@@ -61,17 +44,17 @@ from benchr.grammar.benchmark import (
     normalize_matrix,
     to_argv,
 )
-from benchr.grammar.context import Context, Matrix
-from benchr.core.execution import (
+from bench.grammar.context import Context, Matrix
+from bench.core.execution import (
     EMPTY_MAPPING,
     SuccessFn,
     default_success,
 )
-from benchr.core.metric import Metric, Time
-from benchr.core.policy import FixedRuns, StoppingPolicy, coerce_policy
+from bench.core.metric import Metric, Time
+from bench.core.policy import FixedRuns, StoppingPolicy, coerce_policy
 
 if TYPE_CHECKING:
-    from benchr.runner.source import HarnessMonitor
+    from bench.runner.source import HarnessMonitor
 
 
 type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
@@ -83,12 +66,12 @@ def _default_cwd(ctx: Context[Any]) -> Path:
 
 
 def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
-    """Suite default env: empty — the child inherits the OS environment."""
+    """Suite default env: empty, the child inherits the OS environment."""
     return EMPTY_MAPPING
 
 
 def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
-    """Lazy per-key merge: `base` first, `override` wins (suite ⊕ benchmark)."""
+    """Lazy per-key merge: `base` first, `override` wins (suite (+) benchmark)."""
     return lambda ctx: {**base(ctx), **override(ctx)}
 
 
@@ -103,9 +86,9 @@ class Suite:
     # ----- suite defaults --------------------------------------------
     # Each is the inheritance root for benchmarks that leave the field UNSET.
     # command/cwd/env and the policy/config fields are stored as `Build`
-    # builders (a static default is wrapped via `const`); success/monitor/
+    # builders (a static default is wrapped via `const`). success/monitor/
     # label_fn/harness are value-only.
-    command: CommandFn = UNSET  # no sensible default; checked at materialize
+    command: CommandFn = UNSET  # no sensible default, checked at materialize
     cwd: PathFn = _default_cwd
     env: EnvFn = _default_env
     timeout: Build[float | None] = const(None)  # None = no timeout
@@ -114,7 +97,7 @@ class Suite:
     warmup: Build[StoppingPolicy] = const(FixedRuns(0))
     runs: Build[StoppingPolicy] = const(FixedRuns(1))
     harness: bool = False
-    # Suite-level default for the harness monitor; benchmark value wins.
+    # Suite-level default for the harness monitor, benchmark value wins.
     monitor: HarnessMonitor | None = None
     label_fn: LabelFn = default_label
     matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
@@ -133,7 +116,7 @@ class Suite:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
     def factory(self, fn: BenchmarkFactory) -> Suite:
-        """Register a deferred `(ctx: Context) -> [Benchmark]` producer;
+        """Register a deferred `(ctx: Context) -> [Benchmark]` producer
         that wwill be called when suite materializes."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
@@ -141,7 +124,7 @@ class Suite:
         """Keep only the resolved benchmarks for which `pred(b)` is truthy.
 
         Applied once, at the end of `materialize`, to every fully-resolved
-        variant — so it is order-independent (it sees benchmarks added before
+        variant, so it is order-independent (it sees benchmarks added before
         or after this call) and can filter individual matrix variants.
         """
         return dataclasses.replace(self, filters=self.filters + (pred,))
@@ -163,9 +146,9 @@ class Suite:
     def with_metric(
         self, *metrics: Metric | Build[tuple[Metric, ...]]
     ) -> Suite:
-        """Set (replace) the suite's default metrics — initially `(Time(),)`.
-        Pass them statically (`with_metric(m1, m2, …)`), or a single
-        `(ctx) -> (m, …)` builder for per-variant metrics."""
+        """Set (replace) the suite's default metrics, initially `(Time(),)`.
+        Pass them statically (`with_metric(m1, m2, ...)`), or a single
+        `(ctx) -> (m, ...)` builder for per-variant metrics."""
         if len(metrics) == 1 and callable(metrics[0]):
             build = metrics[0]
         else:

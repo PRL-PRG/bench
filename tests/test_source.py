@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from benchr import FloatPerLine, Time, bench, plan, suite
-from benchr.runner.source import HarnessSource, make_source
+from bench import FloatPerLine, Time, bench, suite
+from bench.runner.base import plan
+from bench.runner.source import HarnessSource, make_source
 
 
 def _planned(cmd, metric):
@@ -89,7 +90,7 @@ def test_harness_process_metrics_become_trailing_observation():
     src = make_source(plan([s], None)[0])
     _drain(src)
     run = src.close()[0]
-    # FloatPerLine -> 2 per-iteration observations; Time -> a trailing
+    # FloatPerLine -> 2 per-iteration observations. Time -> a trailing
     # whole-process observation (no separate metadata).
     all_metrics = [sm.metric for o in run.observations for sm in o.samples]
     assert "elapsed" in all_metrics

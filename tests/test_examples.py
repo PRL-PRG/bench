@@ -2,7 +2,7 @@
 
 Each top-level ``examples/*.py`` builds its suite at module import time, so
 importing it exercises the construction path (metrics, policies, matrix,
-factories) without running any benchmark — the ``run(...)`` calls sit behind
+factories) without running any benchmark. The ``run(...)`` calls sit behind
 ``if __name__ == "__main__"``. This catches breakage like a custom Metric that
 can't instantiate. The ``workloads/`` helpers and the ``external/`` examples
 (which need real binaries) are intentionally excluded.

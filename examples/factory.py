@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Factory: build benchmarks programmatically at materialization time.
 
@@ -16,7 +16,7 @@ they reach factory-produced benchmarks too. Run ``--dry`` to see what the
 factory expands to.
 """
 
-from benchr import Time, bench, run, suite
+from bench import Time, bench, run, suite
 
 WORKLOADS = {"tiny": 1_000, "small": 100_000, "large": 10_000_000}
 

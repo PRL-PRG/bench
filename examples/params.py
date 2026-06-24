@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Typed CLI parameters: a @dataclass becomes --flags, passed to builders as ctx.
 
@@ -15,7 +15,7 @@ Run with defaults, or override:
 
 from dataclasses import dataclass
 
-from benchr import Context, Time, bench, run, suite
+from bench import Context, Time, bench, run, suite
 
 
 @dataclass

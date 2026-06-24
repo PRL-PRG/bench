@@ -7,11 +7,12 @@ so the Controller pulls from the fake.
 
 from pathlib import Path
 
-from benchr import FixedRuns, Observation, Run, Sample, bench, plan, suite
-from benchr.core.sample import Report
-from benchr.report.reporter import Reporter
-from benchr.runner.controller import Controller
-from benchr.runner.source import RunSource
+from bench import FixedRuns, Observation, Run, Sample, bench, suite
+from bench.runner.base import plan
+from bench.core.sample import Report
+from bench.report.reporter import Reporter
+from bench.runner.controller import Controller
+from bench.runner.source import RunSource
 
 
 class _Collect(Reporter):
@@ -31,7 +32,7 @@ class _Collect(Reporter):
 
 
 class _FakeSource(RunSource):
-    """Command-like fake: yields the given Observations; close() returns one Run
+    """Command-like fake: yields the given Observations. close() returns one Run
     per taken observation."""
 
     def __init__(self, observations, closed):
@@ -63,7 +64,7 @@ def _planned(runs, *, warmup=0):
 
 
 def _patch(monkeypatch, obs, closed):
-    monkeypatch.setattr("benchr.runner.controller.make_source",
+    monkeypatch.setattr("bench.runner.controller.make_source",
                         lambda b, verbose=False: _FakeSource(obs, closed))
 
 
@@ -94,7 +95,7 @@ def test_stops_when_policy_converges(monkeypatch):
 
 
 def test_warmup_boundary_recorded_once(monkeypatch):
-    # warmup=2, runs=3 -> 5 observations; warmup noted once at 2.
+    # warmup=2, runs=3 -> 5 observations, warmup noted once at 2.
     closed = []
     _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
     rep = _Collect()

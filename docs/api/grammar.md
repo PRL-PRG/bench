@@ -5,12 +5,12 @@ and the context object passed to every builder callable.
 
 ## Benchmark
 
-::: benchr.grammar.benchmark
+::: bench.grammar.benchmark
 
 ## Suite
 
-::: benchr.grammar.suite
+::: bench.grammar.suite
 
 ## Context
 
-::: benchr.grammar.context
+::: bench.grammar.context

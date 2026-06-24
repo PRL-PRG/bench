@@ -1,11 +1,11 @@
-# benchr
+# bench
 
 A lightweight Python benchmarking framework.
 
 Two ways to use it:
 
-- **`benchr bench`** — hyperfine-style CLI for ad-hoc command timing.
-- **`run(suite, …)`** — declarative Python scripts for repeatable benchmark
+- **`bench run`** - hyperfine-style CLI for ad-hoc command timing.
+- **`run(suite, …)`** - declarative Python scripts for repeatable benchmark
   configurations (file-discovered benchmarks, matrices, custom metrics,
   convergence policies).
 
@@ -14,7 +14,7 @@ Two ways to use it:
 ### As a CLI
 
 ```console
-$ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
+$ bench run --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
 
 bench/sleep 0.05: 0|5 runs
   elapsed [ms] (mean ± σ):  55.22 ± 2.11    (51.83 … 57.35)
@@ -32,7 +32,7 @@ Summary
 ### As a script
 
 ```python
-from benchr import Time, bench, run, suite
+from bench import Time, bench, run, suite
 
 s = (
     suite("demo",
@@ -49,10 +49,10 @@ if __name__ == "__main__":
 
 Every CLI flag (`--runs`, `--warmup`, `--jobs`, `--json`, `--csv`, `--dir`,
 `--compare`, `--dry`, `--verbose`) also works on a script built with
-[`run`][benchr.cli.run].
+[`run`][bench.cli.run].
 
 ## Where next
 
-- **[Tutorial](tutorial.md)** — a guided walkthrough from a one-liner to
+- **[Tutorial](tutorial.md)** - a guided walkthrough from a one-liner to
   matrices, custom metrics, and convergence policies.
-- **[API reference](api/index.md)** — every public type, cross-linked.
+- **[API reference](api/index.md)** - every public type, cross-linked.

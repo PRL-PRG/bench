@@ -1,3 +1,3 @@
 # Stopping policies
 
-::: benchr.core.policy
+::: bench.core.policy

@@ -7,16 +7,16 @@ named in `code font` links to its [API reference](api/index.md).
 ## Install
 
 ```console
-uv add benchr
+uv add bench
 ```
 
 ## 1. Time a command from the shell
 
-The quickest way in is the `benchr bench` subcommand — point it at one or more
+The quickest way in is the `bench run` subcommand. Point it at one or more
 shell commands and it times them, hyperfine-style:
 
 ```console
-$ benchr bench --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
+$ bench run --runs 5 --warmup 1 'sleep 0.05' 'sleep 0.1'
 
 bench/sleep 0.05: 0|5 runs
   elapsed [ms] (mean ± σ):  55.22 ± 2.11    (51.83 … 57.35)
@@ -30,16 +30,16 @@ Summary
 ```
 
 `--warmup 1` runs each command once before measuring (warmup runs are reported
-but dropped from the statistics); `--runs 5` takes five measured runs.
+but dropped from the statistics). `--runs 5` takes five measured runs.
 
 ## 2. Turn it into a script
 
 A script gives you something repeatable and version-controllable. Build a
-[`suite`][benchr.grammar.suite.suite] of [`bench`][benchr.grammar.benchmark.bench]
-entries and hand it to [`run`][benchr.cli.run]:
+[`suite`][bench.grammar.suite.suite] of [`bench`][bench.grammar.benchmark.bench]
+entries and hand it to [`run`][bench.cli.run]:
 
 ```python
-from benchr import Time, bench, run, suite
+from bench import Time, bench, run, suite
 
 s = (
     suite("demo",
@@ -63,12 +63,12 @@ works for a quick local check and a heavier CI run.
 
 ## 3. Measure something other than wall-clock time
 
-A [`Metric`][benchr.core.metric.Metric] turns the output of a run into one or
-more samples. Wall-clock time ([`Time`][benchr.core.metric.Time]) is the
-default; the built-ins also parse program output:
+A [`Metric`][bench.core.metric.Metric] turns the output of a run into one or
+more samples. Wall-clock time ([`Time`][bench.core.metric.Time]) is the
+default. The built-ins also parse program output:
 
 ```python
-from benchr import FloatPerLine, Time, max_rss
+from bench import FloatPerLine, Time, max_rss
 
 suite("metrics", bench("x").with_command(["./mybench"]))
     .with_metric(
@@ -78,22 +78,22 @@ suite("metrics", bench("x").with_command(["./mybench"]))
     )
 ```
 
-- [`FloatPerLine`][benchr.core.metric.FloatPerLine] parses numeric stdout lines.
-- [`Regex`][benchr.core.metric.Regex] pulls values out with a pattern.
-- [`Rebench`][benchr.core.metric.Rebench] reads the ReBench log format.
-- [`max_rss`][benchr.core.metric.max_rss] / [`RUsage`][benchr.core.metric.RUsage]
+- [`FloatPerLine`][bench.core.metric.FloatPerLine] parses numeric stdout lines.
+- [`Regex`][bench.core.metric.Regex] pulls values out with a pattern.
+- [`Rebench`][bench.core.metric.Rebench] reads the ReBench log format.
+- [`max_rss`][bench.core.metric.max_rss] / [`RUsage`][bench.core.metric.RUsage]
   read `rusage` fields.
 
 ## 4. Stop when the numbers settle
 
-Instead of a fixed run count, a [`StoppingPolicy`][benchr.core.policy.StoppingPolicy]
-can run until the measurement converges. [`CoefficientOfVariation`][benchr.core.policy.CoefficientOfVariation]
+Instead of a fixed run count, a [`StoppingPolicy`][bench.core.policy.StoppingPolicy]
+can run until the measurement converges. [`CoefficientOfVariation`][bench.core.policy.CoefficientOfVariation]
 stops once the relative spread of a metric drops below a threshold, and the
-[`at_least`][benchr.core.policy.StoppingPolicy.at_least] /
-[`at_most`][benchr.core.policy.StoppingPolicy.at_most] combinators bound it:
+[`at_least`][bench.core.policy.StoppingPolicy.at_least] /
+[`at_most`][bench.core.policy.StoppingPolicy.at_most] combinators bound it:
 
 ```python
-from benchr import CoefficientOfVariation
+from bench import CoefficientOfVariation
 
 # run until CoV is stable, but never fewer than 5 or more than 30 runs
 policy = CoefficientOfVariation("elapsed", threshold=0.02).at_least(5).at_most(30)
@@ -103,12 +103,12 @@ suite("converge", bench("x").with_command(["./mybench"])).with_runs(policy)
 
 ## 5. Sweep a matrix of variants
 
-`.with_matrix(**dims)` declares dimensions; their cartesian product produces the
+`.with_matrix(**dims)` declares dimensions. Their cartesian product produces the
 *variants* of a benchmark. Command/cwd/env callables read the current cell from
-[`ctx.matrix`][benchr.grammar.context.Context]:
+[`ctx.matrix`][bench.grammar.context.Context]:
 
 ```python
-from benchr import Regex, bench, suite
+from bench import Regex, bench, suite
 
 def cmd(ctx):
     return ["sh", "-c", f"echo {ctx.matrix.compiler}-{ctx.matrix.opt}: $((RANDOM%50+50))"]
@@ -125,15 +125,15 @@ suite("compile_matrix")
 
 ## 6. Read the results programmatically
 
-A run produces a [`Report`][benchr.core.sample.Report] — a list of
-[`Run`][benchr.core.sample.Run] records, each carrying its
-[`Observation`][benchr.core.sample.Observation]s of
-[`Sample`][benchr.core.sample.Sample]s. It round-trips through JSON via
-[`report_to_json`][benchr.core.sample.report_to_json] /
-[`report_from_json`][benchr.core.sample.report_from_json]:
+A run produces a [`Report`][bench.core.sample.Report], a list of
+[`Run`][bench.core.sample.Run] records, each carrying its
+[`Observation`][bench.core.sample.Observation]s of
+[`Sample`][bench.core.sample.Sample]s. It round-trips through JSON via
+[`report_to_json`][bench.core.sample.report_to_json] /
+[`report_from_json`][bench.core.sample.report_from_json]:
 
 ```python
-from benchr import Sequential, Time, bench, plan, suite
+from bench import Sequential, Time, bench, plan, suite
 
 s = (suite("prog", bench("a").with_command(["sleep", "0.02"]))
      .with_metric(Time()).with_runs(3))
@@ -150,6 +150,6 @@ print("failures:", report.failures)
 
 - The [API reference](api/index.md) documents every public type, with
   signatures cross-linked.
-- The [`examples/`](https://github.com/fikovnik/benchr/tree/master/examples)
+- The [`examples/`](https://github.com/fikovnik/bench/tree/master/examples)
   directory has one runnable script per capability (matrices, file discovery,
   harness benchmarks, custom metrics and policies, baseline comparison).

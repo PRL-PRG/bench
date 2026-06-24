@@ -2,10 +2,11 @@
 
 from pathlib import Path
 
-from benchr import (
+from bench import (
     FloatPerLine, JsonReporter, Sequential, Time, bench,
-    plan, report_from_json, suite,
+    report_from_json, suite,
 )
+from bench.runner.base import plan
 
 
 def _all_samples(report):
@@ -32,7 +33,7 @@ def test_e2e_warmup_then_measure():
               .with_warmup(2)
               .with_runs(2))
     report = Sequential().run(plan([s], None), None)
-    # Continuous numbering; the warmup count is recorded once, not per run.
+    # Continuous numbering, the warmup count is recorded once, not per run.
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
     assert report.warmups == {"S/a": 2}
 

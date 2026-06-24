@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from benchr import Observation, Report, Run, Sample, report_to_json
-from benchr.report.stats import (
+from bench import Observation, Report, Run, Sample, report_to_json
+from bench.report.stats import (
     build_summary, geomean_with_sigma, group,
     metric_ratio, metric_stats, scale_unit,
 )
@@ -106,7 +106,7 @@ def test_metric_ratio_lower_is_better_speedup():
     cur = metric_stats([0.5, 0.5, 0.5], "rt", "s", True)
     r = metric_ratio(bl, cur)
     assert r is not None
-    assert abs(r.display_ratio - 2.0) < 1e-9  # 2× faster
+    assert abs(r.display_ratio - 2.0) < 1e-9  # 2x faster
     assert r.raw_ratio == 0.5
 
 

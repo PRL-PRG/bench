@@ -1,10 +1,10 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Writing a custom StoppingPolicy.
 
@@ -17,7 +17,7 @@ observation, ``satisfied`` reports whether the policy has converged).
 
 from dataclasses import dataclass
 
-from benchr import PolicyState, Regex, StoppingPolicy, bench, run, suite
+from bench import PolicyState, Regex, StoppingPolicy, bench, run, suite
 
 
 class _ConsecutiveReadyState(PolicyState):
@@ -47,8 +47,8 @@ class ConsecutiveReady(StoppingPolicy):
 
 # Script "warms up" for a few runs (printing READY=0), then becomes READY.
 SCRIPT = """
-mkdir -p /tmp/_benchr_demo
-counter=/tmp/_benchr_demo/cnt
+mkdir -p /tmp/_bench_demo
+counter=/tmp/_bench_demo/cnt
 [ -f "$counter" ] || echo 0 > "$counter"
 n=$(cat "$counter")
 echo $((n + 1)) > "$counter"
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     import os
     # Reset the demo counter so the example is deterministic.
     try:
-        os.remove("/tmp/_benchr_demo/cnt")
+        os.remove("/tmp/_bench_demo/cnt")
     except FileNotFoundError:
         pass
     run(s)

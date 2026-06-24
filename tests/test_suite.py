@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from benchr import FixedRuns, Time, bench, from_files, suite
+from bench import FixedRuns, Time, bench, from_files, suite
 
 
 def _b(name: str):

@@ -1,14 +1,14 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Run a benchmark until the coefficient of variation stabilizes.
 
-Here CoV governs the *measured* runs (``.with_runs``); for CoV as the *warmup*
+Here CoV governs the *measured* runs (``.with_runs``). For CoV as the *warmup*
 policy followed by a fixed measured count, see ``jit_warmup.py``.
 
 Stops as soon as the last 5 runs are within 2% CoV, but always runs at least 5
@@ -18,10 +18,10 @@ policy combinators:
     cov.at_least(5).at_most(30)
         == (cov & FixedRuns(5)) | FixedRuns(30)
 
-(`&` = both must converge, `|` = either suffices; `&` binds tighter than `|`.)
+(`&` = both must converge, `|` = either suffices, and `&` binds tighter than `|`.)
 """
 
-from benchr import CoefficientOfVariation, Time, bench, run, suite
+from bench import CoefficientOfVariation, Time, bench, run, suite
 
 
 cov = (

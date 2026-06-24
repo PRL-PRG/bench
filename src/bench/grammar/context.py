@@ -1,7 +1,7 @@
 """`Context`: the single object passed to every builder callable, plus the
 user-params-from-CLI glue that feeds it.
 
-Users declare a `@dataclass` describing their parameters. `benchr.run()`
+Users declare a `@dataclass` describing their parameters. `bench.run()`
 auto-generates argparse arguments from the field annotations and constructs an
 instance. That instance is exposed as `ctx.params` on the `Context` handed
 to every command/cwd/env callable and suite factory, alongside the resolved
@@ -11,8 +11,8 @@ Supported param field types: `str`, `int`, `float`, `bool`, `Path`,
 `Optional[T]` / `T | None`.
 
 Required vs default:
-  - field with no default              → required argument
-  - field with a default (or default_factory) → optional, --help shows default
+  - field with no default              -> required argument
+  - field with a default (or default_factory) -> optional, --help shows default
 """
 
 from __future__ import annotations
@@ -48,12 +48,12 @@ class Matrix:
 class Context[T]:
     """Everything a builder callable needs, in one object.
 
-    The single argument passed to every command/cwd/env/timeout/runs/… builder
+    The single argument passed to every command/cwd/env/timeout/runs/... builder
     (built per variant in `BenchmarkBuilder._resolve_cell`) and to every suite
     factory (built in `Suite.materialize`). `T` is the user's params
     `@dataclass`.
 
-    At suite level (factories) `benchmark` is `None` and `matrix` is empty; at
+    At suite level (factories) `benchmark` is `None` and `matrix` is empty. At
     benchmark level `benchmark` is the name and `matrix` carries the variant's
     dimension values (read as attributes, e.g. `ctx.matrix.size`).
     """
@@ -78,7 +78,7 @@ def add_dataclass_args(
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")
     # Resolve string annotations (`from __future__ import annotations` makes
-    # every `f.type` a string); fall back to the raw field types if the
+    # every `f.type` a string). Fall back to the raw field types if the
     # forward refs can't be resolved.
     try:
         hints = typing.get_type_hints(dc)
@@ -133,7 +133,7 @@ def build_dataclass(dc: type, namespace: argparse.Namespace) -> Any:
 def _unwrap_optional(t: Any) -> tuple[Any, bool]:
     # Resolve string annotations if needed (from __future__ import annotations).
     if isinstance(t, str):
-        return t, False  # ambiguous; argparse will treat as str
+        return t, False  # ambiguous, argparse will treat as str
 
     origin = typing.get_origin(t)
     if origin in (typing.Union, types.UnionType):
@@ -145,7 +145,7 @@ def _unwrap_optional(t: Any) -> tuple[Any, bool]:
 
 def _coerce_type(t: Any) -> Any:
     # Path is the only one not directly a callable that yields the right value
-    # from a string — Path(str) does, so it's fine.
+    # from a string, but Path(str) does, so it's fine.
     if t is Path:
         return Path
     if t in (int, float, str):

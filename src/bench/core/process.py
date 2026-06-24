@@ -25,7 +25,7 @@ from collections.abc import Generator
 from pathlib import Path
 from types import FrameType
 
-from benchr.core.execution import (
+from bench.core.execution import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
     Execution,
@@ -59,7 +59,7 @@ def _kill_all_live_procs() -> None:
         try:
             os.killpg(p.pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError, OSError):
-            # Already dead, or never made it into its own group — fall back to
+            # Already dead, or never made it into its own group, so fall back to
             # a direct kill on the proc itself.
             try:
                 p.kill()
@@ -115,7 +115,7 @@ def _resolve_command(command: tuple[str, ...]) -> list[str]:
     """Resolve `argv[0]` against PATH to an absolute path.
 
     Raises `FileNotFoundError` if the command is not found. The absolute
-    path is taken against the invoker's cwd so that `Popen(cwd=…)` doesn't
+    path is taken against the invoker's cwd so that `Popen(cwd=...)` doesn't
     re-resolve a relative executable against the subprocess's own cwd.
     """
     cmd = list(command)
@@ -130,7 +130,7 @@ def execute(exe: Execution) -> ExecutionResult:
     """Spawn one subprocess and return an ExecutionResult.
 
     Honors `exe.timeout` (returncode `TIMEOUT_RC` on timeout), captures
-    stdout/stderr, and includes `rusage` via `os.wait4`. Pure mechanism —
+    stdout/stderr, and includes `rusage` via `os.wait4`. Pure mechanism,
     no policy, no reporting.
     """
     try:
@@ -163,7 +163,7 @@ def execute(exe: Execution) -> ExecutionResult:
 
         starttime = time.monotonic()
         # A Timer kills the process on timeout while the main thread blocks on
-        # `wait4(pid, 0)` — so `runtime` reflects the exact moment the
+        # `wait4(pid, 0)`, so `runtime` reflects the exact moment the
         # process exited (no busy-wait poll granularity inflating timed runs).
         killed = threading.Event()
         timer: threading.Timer | None = None
@@ -202,7 +202,7 @@ def execute(exe: Execution) -> ExecutionResult:
             TIMEOUT_RC if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
         )
 
-        # execute() records facts only; judging success is the Runner's job
+        # execute() records facts only. Judging success is the Runner's job
         # (see default_success / Benchmark.with_success).
         return ExecutionResult(
             execution=exe,
@@ -236,7 +236,7 @@ class LiveProcess:
     timer: threading.Timer | None = None
     # The reaper runs exactly once and caches its result. is_alive() polls it
     # non-blockingly (a harness reader thread tails until the process exits),
-    # finish() reaps blockingly — both go through _reap so the rusage-bearing
+    # finish() reaps blockingly. Both go through _reap so the rusage-bearing
     # wait4 is never lost to a stray poll(). Guarded for the reader thread vs.
     # finish()/close() racing.
     _reap_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
@@ -317,16 +317,16 @@ class LiveProcess:
 
 
 def spawn_streaming(exe: Execution) -> LiveProcess:
-    """Spawn a process writing stdout/stderr to named temp files; return a
+    """Spawn a process writing stdout/stderr to named temp files, and return a
     LiveProcess to be reaped via .finish(). Honors exe.timeout (a Timer kills
-    on expiry; .finish() then reports TIMEOUT_RC).
+    on expiry, .finish() then reports TIMEOUT_RC).
 
     Raises FileNotFoundError if the command is not found (caller converts to
     a failed ExecutionResult if needed).
     """
     cmd = _resolve_command(exe.command)
 
-    d = Path(tempfile.mkdtemp(prefix="benchr-harness-"))
+    d = Path(tempfile.mkdtemp(prefix="bench-harness-"))
     out_path, err_path = d / "stdout", d / "stderr"
     out_f = open(out_path, "wb")
     err_f = open(err_path, "wb")

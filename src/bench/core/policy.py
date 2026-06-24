@@ -5,26 +5,18 @@ stateful `PolicyState`. For each slot it calls `observe(observation)` to feed
 that observation and `satisfied()` to check whether the policy has converged.
 `satisfied()` is also checked up front, so a policy that converges before any
 run (e.g. `FixedRuns(0)`) takes no runs at all.
-
-Combinators:
-
-```text
-a & b           satisfied iff both are satisfied
-a | b           satisfied iff either is satisfied
-a.at_least(n)   == a & FixedRuns(n)
-a.at_most(n)    == a | FixedRuns(n)
-```
 """
 
 from __future__ import annotations
 
 import abc
 import math
+import time
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from benchr.core.sample import Observation
+from bench.core.sample import Observation
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +85,33 @@ class _FixedState(PolicyState):
         return self.cur >= self.target
 
 
+@dataclass(frozen=True, slots=True)
+class MaxDuration(StoppingPolicy):
+    """Stop once `seconds` of wall-clock time have elapsed since the policy started.
+
+    Count-unbounded (`max_runs()` is `None`), so pair it with a count cap, e.g.
+    `FixedRuns(n) | MaxDuration(s)`, for harnesses or a finite progress total.
+    """
+
+    seconds: float
+
+    def start(self) -> _DurationState:
+        return _DurationState(self.seconds)
+
+
+class _DurationState(PolicyState):
+    __slots__ = ("deadline",)
+
+    def __init__(self, seconds: float):
+        self.deadline = time.monotonic() + seconds
+
+    def observe(self, observation: Observation) -> None:
+        pass
+
+    def satisfied(self) -> bool:
+        return time.monotonic() >= self.deadline
+
+
 def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
     """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
     return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
@@ -151,7 +170,7 @@ class _CoVState(PolicyState):
         mean = self.sum / n
         if mean == 0:
             return False
-        # Var = (E[X²] - E[X]²) * n / (n-1)   (Bessel correction)
+        # Var = (E[X^2] - E[X]^2) * n / (n-1)   (Bessel correction)
         var = max((self.sumsq / n) - mean * mean, 0.0) * n / (n - 1)
         return math.sqrt(var) / abs(mean) <= cfg.threshold
 
@@ -170,7 +189,7 @@ class _And(StoppingPolicy):
         return _PairState(self.a.start(), self.b.start(), all)
 
     def max_runs(self) -> int | None:
-        # Stops only when both converge → worst case is the later of the two.
+        # Stops only when both converge, so worst case is the later of the two.
         # If either child is unbounded, the And is unbounded.
         a, b = self.a.max_runs(), self.b.max_runs()
         if a is None or b is None:
@@ -187,7 +206,7 @@ class _Or(StoppingPolicy):
         return _PairState(self.a.start(), self.b.start(), any)
 
     def max_runs(self) -> int | None:
-        # Stops as soon as either converges → at most the earlier of the two.
+        # Stops as soon as either converges, so at most the earlier of the two.
         # Treat `None` as Inf, an unbounded child can't tighten the bound.
         a, b = self.a.max_runs(), self.b.max_runs()
         if a is None:

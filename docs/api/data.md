@@ -1,12 +1,12 @@
 # Data model
 
 The pure atoms a benchmark run is built from and produces. Everything here is
-plain data — a [`Report`][benchr.core.sample.Report] round-trips through JSON.
+plain data. A [`Report`][bench.core.sample.Report] round-trips through JSON.
 
 ## Execution
 
-::: benchr.core.execution
+::: bench.core.execution
 
 ## Samples and reports
 
-::: benchr.core.sample
+::: bench.core.sample

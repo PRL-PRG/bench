@@ -1,12 +1,12 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "../..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
-"""RBenchmarking (rsh) configuration — port of reactorlabs/RBenchmarking/rebench.conf.
+"""RBenchmarking (rsh) configuration - port of reactorlabs/RBenchmarking/rebench.conf.
 
 Demonstrates:
 - Five suites sharing a single benchmark invocation pattern.
@@ -25,7 +25,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from benchr import bench as B, Context, FloatPerLine, max_rss, run, suite
+from bench import bench as B, Context, FloatPerLine, max_rss, run, suite
 
 
 _HARNESS_R = r"""

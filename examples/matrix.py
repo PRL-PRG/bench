@@ -1,19 +1,19 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
-"""Compiler × optimization matrix.
+"""Compiler x optimization matrix.
 
-One benchmark with two matrix axes — ``.with_matrix(compiler=..., opt=...)``.
-Each (compiler, opt) cell is a variant; reports compare variants within the
+One benchmark with two matrix axes: ``.with_matrix(compiler=..., opt=...)``.
+Each (compiler, opt) cell is a variant. Reports compare variants within the
 benchmark.
 """
 
-from benchr import Regex, bench, run, suite
+from bench import Regex, bench, run, suite
 
 
 def fake_cmd(ctx):

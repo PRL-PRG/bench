@@ -1,8 +1,8 @@
-"""`python -m benchr` entry point."""
+"""`python -m bench` entry point."""
 
 import sys
 
-from benchr.cli import main
+from bench.cli import main
 
 
 def cli() -> None:

@@ -3,10 +3,10 @@
 import re
 from pathlib import Path
 
-from benchr import (
+from bench import (
     Execution, ExecutionResult, FloatPerLine, RUsage, Rebench, Regex, Time, max_rss,
 )
-from benchr.core.metric import extract_process, extract_run, partition_metrics
+from bench.core.metric import extract_process, extract_run, partition_metrics
 
 from conftest import make_failure, make_rusage, make_success
 

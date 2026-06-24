@@ -1,19 +1,19 @@
 #!/usr/bin/env -S uv run --script --quiet
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["benchr"]
+# dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# benchr = { path = "..", editable = true }
+# bench = { path = "..", editable = true }
 # ///
 """Failure handling: mixed success / failure runs.
 
-Failed runs emit no metrics — benchr records each as a structured failure that
+Failed runs emit no metrics. bench records each as a structured failure that
 the summary lists in a ``Failures:`` block. ``.with_runs(N)`` counts every attempt,
 so ``broken`` runs exactly 3 times and reports 3 failures (no fake timings).
 """
 
-from benchr import Time, bench, run, suite
+from bench import Time, bench, run, suite
 
 
 s = (

@@ -19,13 +19,13 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from benchr.grammar.benchmark import Benchmark
-from benchr.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
-from benchr.core.sample import Observation, Report, Run, report_to_json
-from benchr.report.theme import BENCHR_THEME, console
+from bench.grammar.benchmark import Benchmark
+from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
+from bench.core.sample import Observation, Report, Run, report_to_json
+from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
-    from benchr.report.formatter import Formatter
+    from bench.report.formatter import Formatter
 
 
 # ---------------------------------------------------------------------------
@@ -34,13 +34,7 @@ if TYPE_CHECKING:
 
 
 class Reporter(abc.ABC):
-    """Streaming sink for benchmark progress and results.
-
-    Called by the Runner as `start(plan)` once, `observation(obs)` per
-    measurement (live progress; `obs.label` is the benchmark identifier),
-    `run_done(run)` per completed Run (a command run, or a harness's single
-    run), `warmup(key, n)` once per variant, and `finalize()` once.
-    """
+    """Streaming sink for benchmark progress and results."""
 
     def start(self, plan: list[Benchmark]) -> None:
         pass
@@ -109,11 +103,11 @@ class CompositeReporter(Reporter):
 
 
 class CsvReporter(_BufferingReporter):
-    """Buffer runs; write CSV on `finalize()`.
+    """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, failure`. One row per Sample for successful observations;
-    a failed observation (or run) emits one row with blank metric and the
+    lower_is_better, failure`. One row per Sample for successful observations.
+    A failed observation (or run) emits one row with blank metric and the
     failure verdict. All runs appear, warmup included.
     """
 
@@ -162,7 +156,7 @@ class JsonReporter(_BufferingReporter):
     """Buffer runs in memory, write a single JSON file on finalize().
 
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
-    default — they bloat the file and are rarely needed offline)."""
+    default, they bloat the file and are rarely needed offline)."""
 
     def __init__(self, path: Path, *, include_output: bool = False) -> None:
         super().__init__()
@@ -232,7 +226,7 @@ class ProgressReporter(Reporter):
     On a terminal, renders a progress bar and clears itself before the
     SummaryReporter prints. On a non-terminal it falls back to plain
     one-line-per-observation output. Total is known when every benchmark's
-    policies expose a `max_runs()`; otherwise displays `?`.
+    policies expose a `max_runs()`, otherwise displays `?`.
     """
 
     def __init__(self, target_console: Console | None = None) -> None:
@@ -249,11 +243,11 @@ class ProgressReporter(Reporter):
                 TimeElapsedColumn(),
                 BarColumn(),
                 TextColumn(
-                    "([benchr.failure]{task.fields[failures]}[/]"
-                    "|[benchr.success]{task.fields[successes]}[/]"
+                    "([bench.failure]{task.fields[failures]}[/]"
+                    "|[bench.success]{task.fields[successes]}[/]"
                     "|{task.fields[total_str]})"
                 ),
-                TextColumn("[benchr.in_process]{task.description}[/]"),
+                TextColumn("[bench.in_process]{task.description}[/]"),
                 console=self._console,
                 transient=True,
             )
@@ -300,9 +294,9 @@ class ProgressReporter(Reporter):
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
         if not obs.is_failure():
-            tag = "[benchr.success]ok[/]"
+            tag = "[bench.success]ok[/]"
         else:
-            tag = f"[benchr.failure]FAIL[/] ({obs.failure})"
+            tag = f"[bench.failure]FAIL[/] ({obs.failure})"
         self._console.print(f"[{n}|{total_str}] {markup_escape(obs.label)} {tag}")
 
     @staticmethod
@@ -317,12 +311,12 @@ class ProgressReporter(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# SummaryReporter (delegates to a Formatter; see report/formatter.py)
+# SummaryReporter (delegates to a Formatter, see report/formatter.py)
 # ---------------------------------------------------------------------------
 
 
 class SummaryReporter(_BufferingReporter):
-    """Buffer runs; format on finalize().
+    """Buffer runs, format on finalize().
 
     Takes an optional `formatter` (any callable `(Report, baseline=...) -> str`).
     Defaults to `DefaultSummary`. After the formatter output, appends a
@@ -336,7 +330,7 @@ class SummaryReporter(_BufferingReporter):
         baseline: list[Path] | None = None,
         target_console: Console | None = None,
     ) -> None:
-        from benchr.report.formatter import DefaultSummary
+        from bench.report.formatter import DefaultSummary
 
         super().__init__()
         self._formatter = formatter or DefaultSummary()
@@ -352,19 +346,19 @@ class SummaryReporter(_BufferingReporter):
             self._console.print(out)
         if self._report.failures:
             self._console.print()
-            self._console.print("[benchr.label]Failures:[/]")
+            self._console.print("[bench.label]Failures:[/]")
             for run in self._report.failures:
                 self._console.print("  " + self._failure_line(run))
 
     @staticmethod
     def _failure_line(run: Run) -> str:
         if run.returncode == TIMEOUT_RC:
-            verdict = f"[benchr.failure]timeout (exit {TIMEOUT_RC})[/]"
+            verdict = f"[bench.failure]timeout (exit {TIMEOUT_RC})[/]"
         elif run.returncode == SPAWN_FAIL_RC:
-            verdict = f"[benchr.failure]spawn failed[/]: {run.failure or 'unknown'}"
+            verdict = f"[bench.failure]spawn failed[/]: {run.failure or 'unknown'}"
         else:
-            verdict = f"[benchr.failure]exit {run.returncode}[/]"
-        return (f"[benchr.failure]✗[/] {markup_escape(run.identifier())}"
+            verdict = f"[bench.failure]exit {run.returncode}[/]"
+        return (f"[bench.failure]✗[/] {markup_escape(run.identifier())}"
                 f" — {verdict}: {markup_escape(run.message) or '(no output)'}")
 
 
