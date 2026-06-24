@@ -31,6 +31,7 @@ class Observation:
 
     samples: list[Sample] = field(default_factory=list[Sample])
     failure: str | None = None
+    runtime: float = 0.0  # command runtime that produced this observation (s)
 
     def is_failure(self) -> bool:
         return self.failure is not None

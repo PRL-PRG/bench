@@ -331,7 +331,7 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         type=float,
         default=3.0,
         metavar="SECONDS",
-        help="Stop measuring after SECONDS, or after --runs, whichever comes first. 0 disables (default: %(default)s).",
+        help="Stop measuring after SECONDS of command runtime, or after --runs, whichever comes first. 0 disables (default: %(default)s).",
     )
     p.add_argument(
         "--warmup",

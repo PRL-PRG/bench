@@ -79,8 +79,9 @@ class CommandSource(RunSource):
         label = format_identifier(
             b.suite, b.name, b.variant, self._run, b.variant_label
         )
+        runtime = result.runtime or 0.0
         if result.is_failure():
-            obs = Observation(samples=[], failure=result.failure)
+            obs = Observation(samples=[], failure=result.failure, runtime=runtime)
             message = diagnostic_excerpt(result.stdout, result.stderr)
         else:
             # For a command, the process is the run.
@@ -88,7 +89,7 @@ class CommandSource(RunSource):
             samples = list(extract_run(b.metrics, result)) + list(
                 extract_process(b.metrics, result)
             )
-            obs = Observation(samples=samples)
+            obs = Observation(samples=samples, runtime=runtime)
             message = ""
 
         ex = b.execution
@@ -224,6 +225,10 @@ class HarnessSource(RunSource):
         # next() raises StopIteration instead of hanging.
         assert self._live is not None
         handle = HarnessHandle(self._live)
+        # No per-iteration runtime is measured for a continuous harness, so each
+        # frame carries its wall-delta since the previous one; summed, that is
+        # the wall-clock the harness has been running (≈ its command runtime).
+        last = time.monotonic()
         try:
             for block in self._monitor(handle):
                 if self._closed.is_set():
@@ -232,7 +237,9 @@ class HarnessSource(RunSource):
                 samples = list(extract_run(self._run_metrics, frame))
                 # A framed block that parses to nothing is not an iteration.
                 if samples:
-                    self._q.put(Observation(samples=samples))
+                    now = time.monotonic()
+                    self._q.put(Observation(samples=samples, runtime=now - last))
+                    last = now
         except Exception as e:
             # A monitor that raises fails the run. The process is killed below
             # since nothing is consuming its output anymore.

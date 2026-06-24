@@ -1,4 +1,4 @@
-"""Subprocess execution: one Execution in, one ExecutionResult out.
+"""Subprocess execution.
 
 Also home to the Ctrl+C machinery: every live benchmark subprocess is
 tracked so a SIGINT can kill the whole subtree (each child runs in its own

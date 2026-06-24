@@ -8,7 +8,6 @@ the caller. A policy keeps its own counter if it needs one.
 
 import random
 import statistics
-import time
 
 import pytest
 
@@ -27,9 +26,9 @@ def _mk(value: float, *, metric: str = "rt") -> Sample:
     return Sample(metric=metric, value=value, unit="s", lower_is_better=True)
 
 
-def _rr(*samples: Sample) -> Observation:
+def _rr(*samples: Sample, runtime: float = 0.0) -> Observation:
     """An Observation carrying the given samples (empty = failed observation)."""
-    return Observation(samples=list(samples))
+    return Observation(samples=list(samples), runtime=runtime)
 
 
 # ---------------------------------------------------------------------------
@@ -244,12 +243,15 @@ def test_max_duration_is_count_unbounded():
     assert MaxDuration(5.0).max_runs() is None
 
 
-def test_max_duration_satisfied_after_deadline():
+def test_max_duration_satisfied_when_runtime_accumulates():
     state = MaxDuration(0.05).start()
     assert not state.satisfied()
-    state.observe(_rr(_mk(1.0)))
+    # A run with no measured runtime (e.g. spawn failure) doesn't spend budget.
+    state.observe(_rr(_mk(1.0), runtime=0.0))
     assert not state.satisfied()
-    time.sleep(0.06)
+    state.observe(_rr(_mk(1.0), runtime=0.03))
+    assert not state.satisfied()
+    state.observe(_rr(_mk(1.0), runtime=0.03))
     assert state.satisfied()
 
 
@@ -263,8 +265,7 @@ def test_fixed_or_duration_stops_on_whichever_first():
 
     # Time bound reached before the (high) count cap.
     state = (FixedRuns(1000) | MaxDuration(0.05)).start()
-    state.observe(_rr(_mk(1.0)))
-    time.sleep(0.06)
+    state.observe(_rr(_mk(1.0), runtime=0.06))
     assert state.satisfied()  # MaxDuration fired first
 
 

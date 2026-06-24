@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import abc
 import math
-import time
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -75,7 +74,9 @@ class _FixedState(PolicyState):
 
 @dataclass(frozen=True, slots=True)
 class MaxDuration(StoppingPolicy):
-    """Stop once `seconds` of wall-clock time have elapsed since the policy started."""
+    """Stop once `seconds` of cumulative command runtime have been observed.
+
+    Counts only time spent running the benchmark command."""
 
     seconds: float
 
@@ -84,16 +85,17 @@ class MaxDuration(StoppingPolicy):
 
 
 class _DurationState(PolicyState):
-    __slots__ = ("deadline",)
+    __slots__ = ("seconds", "elapsed")
 
     def __init__(self, seconds: float):
-        self.deadline = time.monotonic() + seconds
+        self.seconds = seconds
+        self.elapsed = 0.0
 
     def observe(self, observation: Observation) -> None:
-        pass
+        self.elapsed += observation.runtime
 
     def satisfied(self) -> bool:
-        return time.monotonic() >= self.deadline
+        return self.elapsed >= self.seconds
 
 
 def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
