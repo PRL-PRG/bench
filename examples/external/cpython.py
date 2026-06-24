@@ -33,17 +33,29 @@ from bench import Context, Regex, bench, run, suite
 
 @dataclass
 class CpythonParams:
-    python: Path                                  # required: interpreter under test
-    pyperformance: Path = Path("pyperformance")   # on PATH in the pyperformance venv
+    python: Path  # required: interpreter under test
+    pyperformance: Path = Path("pyperformance")  # on PATH in the pyperformance venv
     pyperf: Path = Path("pyperf")
 
 
 # A representative slice of the pyperformance default suite.
 # Run `pyperformance list` for the full set (~100 benchmarks).
 BENCHMARKS = [
-    "2to3", "chaos", "deltablue", "fannkuch", "float", "go",
-    "json_dumps", "nbody", "nqueens", "pickle", "pyflate",
-    "raytrace", "regex_compile", "richards", "spectral_norm",
+    "2to3",
+    "chaos",
+    "deltablue",
+    "fannkuch",
+    "float",
+    "go",
+    "json_dumps",
+    "nbody",
+    "nqueens",
+    "pickle",
+    "pyflate",
+    "raytrace",
+    "regex_compile",
+    "richards",
+    "spectral_norm",
 ]
 
 

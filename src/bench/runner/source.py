@@ -90,14 +90,25 @@ class CommandSource(RunSource):
             message = ""
 
         ex = b.execution
-        self._runs.append(Run(
-            suite=b.suite, benchmark=b.name,
-            variant=b.variant, variant_label=b.variant_label,
-            run=self._run, command=ex.command, cwd=str(ex.cwd), env=dict(ex.env),
-            returncode=result.returncode, runtime=result.runtime,
-            failure=result.failure, message=message,
-            stdout=result.stdout, stderr=result.stderr, observations=[obs],
-        ))
+        self._runs.append(
+            Run(
+                suite=b.suite,
+                benchmark=b.name,
+                variant=b.variant,
+                variant_label=b.variant_label,
+                run=self._run,
+                command=ex.command,
+                cwd=str(ex.cwd),
+                env=dict(ex.env),
+                returncode=result.returncode,
+                runtime=result.runtime,
+                failure=result.failure,
+                message=message,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                observations=[obs],
+            )
+        )
         return obs
 
     def close(self) -> list[Run]:
@@ -163,9 +174,7 @@ class HarnessSource(RunSource):
 
     def __init__(self, b: Benchmark, *, verbose: bool = False) -> None:
         self._b = b
-        self._label = format_identifier(
-            b.suite, b.name, b.variant, 1, b.variant_label
-        )
+        self._label = format_identifier(b.suite, b.name, b.variant, 1, b.variant_label)
         self._run_metrics, self._process_metrics = partition_metrics(b.metrics)
         self._monitor: HarnessMonitor = b.monitor or line_monitor
         self._q: queue.Queue[Any] = queue.Queue()
@@ -198,8 +207,8 @@ class HarnessSource(RunSource):
             result = self._live.finish(killed=killed)
         except Exception as e:
             result = ExecutionResult(
-                self._b.execution, SPAWN_FAIL_RC,
-                failure=f"harness finish failed: {e}")
+                self._b.execution, SPAWN_FAIL_RC, failure=f"harness finish failed: {e}"
+            )
         # A harness we killed ourselves on convergence is expected termination,
         # not a failure. Only judge a process that ended on its own. A monitor
         # failure always wins.
@@ -264,23 +273,35 @@ class HarnessSource(RunSource):
             proc_samples = list(extract_process(self._process_metrics, result))
             if proc_samples:
                 observations.append(
-                    Observation(samples=proc_samples, label=self._label))
+                    Observation(samples=proc_samples, label=self._label)
+                )
 
         run_failure = result.failure  # process verdict or monitor failure
         # Clean-but-empty delivery: nothing parsed from the harness output.
         if run_failure is None and not any(not o.is_failure() for o in observations):
             run_failure = _ZERO_DELIVERY
 
-        message = diagnostic_excerpt(result.stdout, result.stderr) if run_failure else ""
+        message = (
+            diagnostic_excerpt(result.stdout, result.stderr) if run_failure else ""
+        )
         ex = self._b.execution
         b = self._b
         return Run(
-            suite=b.suite, benchmark=b.name,
-            variant=b.variant, variant_label=b.variant_label,
-            run=1, command=ex.command, cwd=str(ex.cwd), env=dict(ex.env),
-            returncode=result.returncode, runtime=result.runtime,
-            failure=run_failure, message=message,
-            stdout=result.stdout, stderr=result.stderr, observations=observations,
+            suite=b.suite,
+            benchmark=b.name,
+            variant=b.variant,
+            variant_label=b.variant_label,
+            run=1,
+            command=ex.command,
+            cwd=str(ex.cwd),
+            env=dict(ex.env),
+            returncode=result.returncode,
+            runtime=result.runtime,
+            failure=run_failure,
+            message=message,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            observations=observations,
         )
 
 

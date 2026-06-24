@@ -19,14 +19,16 @@ fast = (
     suite("fast")
     .add(bench("a").with_command(["sh", "-c", "sleep 0.01"]))
     .add(bench("b").with_command(["sh", "-c", "sleep 0.02"]))
-    .with_metric(Time()).with_runs(5)
+    .with_metric(Time())
+    .with_runs(5)
 )
 
 slow = (
     suite("slow")
     .add(bench("x").with_command(["sh", "-c", "sleep 0.05"]))
     .add(bench("y").with_command(["sh", "-c", "sleep 0.08"]))
-    .with_metric(Time()).with_runs(5)
+    .with_metric(Time())
+    .with_runs(5)
 )
 
 

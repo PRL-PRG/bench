@@ -30,24 +30,23 @@ def cmd(ctx):
 
 
 s = (
-    suite("matrix_skips",
+    suite(
+        "matrix_skips",
         # 1. Cartesian minus one cell - 3 variants.
         bench("minus_one")
-            .with_command(cmd)
-            .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
-            .add_matrix_skip(vm="VM1", size=500),
-
+        .with_command(cmd)
+        .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
+        .add_matrix_skip(vm="VM1", size=500),
         # 2. Slice - fix vm=VM2, vary size. 2 variants.
         bench("slice_vm2")
-            .with_command(cmd)
-            .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
-            .add_matrix_skip(lambda b: b.vm != "VM2"),
-
+        .with_command(cmd)
+        .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
+        .add_matrix_skip(lambda b: b.vm != "VM2"),
         # 3. Slice - fix size=500, vary vm. 2 variants.
         bench("slice_500")
-            .with_command(cmd)
-            .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
-            .add_matrix_skip(lambda b: b.size != 500),
+        .with_command(cmd)
+        .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
+        .add_matrix_skip(lambda b: b.size != 500),
     )
     .with_metric(FloatPerLine("ms").lower_is_better())
     .with_runs(5)

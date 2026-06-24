@@ -93,7 +93,10 @@ def test_default_cwd_is_invokers_cwd():
 
 def test_with_metric_replaces_not_appends():
     b = _mat(
-        bench("x").with_command(["true"]).with_metric(Time()).with_metric(FloatPerLine("s"))
+        bench("x")
+        .with_command(["true"])
+        .with_metric(Time())
+        .with_metric(FloatPerLine("s"))
     )
     assert len(b.metrics) == 1 and isinstance(b.metrics[0], FloatPerLine)
 
@@ -109,10 +112,13 @@ def test_with_matrix_replaces_dimensions():
 
 
 def test_add_matrix_skip_unions_rules_on_one_benchmark():
-    b = (bench("x").with_command(["true"])
-         .with_matrix(vm=["v8", "jsc"], size=[100, 500])
-         .add_matrix_skip(vm="v8", size=500)
-         .add_matrix_skip(vm="jsc", size=100))
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+        .add_matrix_skip(vm="v8", size=500)
+        .add_matrix_skip(vm="jsc", size=100)
+    )
     bs = suite("S", b).materialize(None)
     assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}
 
@@ -121,17 +127,25 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
 
 
 def test_value_field_bare_callable_resolved_per_variant():
-    b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
-         .with_matrix(size=[100, 200])
-         .with_timeout(lambda ctx: ctx.matrix.size / 1000))
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(size=[100, 200])
+        .with_timeout(lambda ctx: ctx.matrix.size / 1000)
+    )
     bs = suite("S", b).materialize(None)
     assert {x.execution.timeout for x in bs} == {0.1, 0.2}
 
 
 def test_dynamic_runs_resolved_per_variant():
-    b = (bench("x").with_command(["true"]).with_cwd(Path("/tmp"))
-         .with_matrix(n=[2, 5])
-         .with_runs(lambda ctx: FixedRuns(ctx.matrix.n)))
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(n=[2, 5])
+        .with_runs(lambda ctx: FixedRuns(ctx.matrix.n))
+    )
     bs = suite("S", b).materialize(None)
     assert {x.runs.max_runs() for x in bs} == {2, 5}
 

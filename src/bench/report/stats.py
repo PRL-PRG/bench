@@ -16,9 +16,9 @@ from bench.core.execution import Variant
 from bench.core.sample import Report, Run, report_from_json
 
 
-type MetricKey = tuple[str, str]                # (metric, unit)
-type BenchKey = tuple[str, str]                 # (suite, benchmark)
-type BenchmarkId = tuple[str, str, Variant]     # (suite, benchmark, variant)
+type MetricKey = tuple[str, str]  # (metric, unit)
+type BenchKey = tuple[str, str]  # (suite, benchmark)
+type BenchmarkId = tuple[str, str, Variant]  # (suite, benchmark, variant)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,9 @@ class BenchmarkGroup:
     benchmark: str
     variant: Variant
     variant_label: str = ""
-    metrics: dict[MetricKey, list[float]] = field(default_factory=dict[MetricKey, list[float]])
+    metrics: dict[MetricKey, list[float]] = field(
+        default_factory=dict[MetricKey, list[float]]
+    )
     run_counts: RunCounts = field(default_factory=RunCounts)
 
 
@@ -51,8 +53,9 @@ class GroupedReport:
     lower_is_better: dict[MetricKey, bool]
 
 
-def group(report: Report, *, name: str = "current",
-          include_warmup: bool = False) -> GroupedReport:
+def group(
+    report: Report, *, name: str = "current", include_warmup: bool = False
+) -> GroupedReport:
     """Reshape a Report for stats/comparison.
 
     Flattens every Run's Observations per benchmark variant and collects their
@@ -70,7 +73,8 @@ def group(report: Report, *, name: str = "current",
         g = groups.get(bid)
         if g is None:
             g = groups[bid] = BenchmarkGroup(
-                suite=r.suite, benchmark=r.benchmark, variant=r.variant)
+                suite=r.suite, benchmark=r.benchmark, variant=r.variant
+            )
         if r.variant_label and not g.variant_label:
             g.variant_label = r.variant_label
         return g
@@ -100,8 +104,7 @@ def group(report: Report, *, name: str = "current",
                     lib[mk] = s.lower_is_better
                 g.metrics.setdefault(mk, []).append(s.value)
 
-    return GroupedReport(name=name, groups=list(groups.values()),
-                         lower_is_better=lib)
+    return GroupedReport(name=name, groups=list(groups.values()), lower_is_better=lib)
 
 
 # ---------------------------------------------------------------------------
@@ -148,11 +151,14 @@ class GroupStats:
     metrics: dict[MetricKey, MetricStats]
 
 
-def metric_stats(values: list[float], metric: str, unit: str,
-                 lower_is_better: bool | None) -> MetricStats:
+def metric_stats(
+    values: list[float], metric: str, unit: str, lower_is_better: bool | None
+) -> MetricStats:
     n = len(values)
     return MetricStats(
-        metric=metric, unit=unit, lower_is_better=lower_is_better,
+        metric=metric,
+        unit=unit,
+        lower_is_better=lower_is_better,
         n=n,
         mean=statistics.mean(values),
         median=statistics.median(values),
@@ -164,8 +170,11 @@ def metric_stats(values: list[float], metric: str, unit: str,
 
 def group_stats(g: BenchmarkGroup, lib_map: dict[MetricKey, bool]) -> GroupStats:
     return GroupStats(
-        suite=g.suite, benchmark=g.benchmark, variant=g.variant,
-        variant_label=g.variant_label, run_counts=g.run_counts,
+        suite=g.suite,
+        benchmark=g.benchmark,
+        variant=g.variant,
+        variant_label=g.variant_label,
+        run_counts=g.run_counts,
         metrics={
             mk: metric_stats(vs, mk[0], mk[1], lib_map.get(mk))
             for mk, vs in g.metrics.items()
@@ -183,8 +192,8 @@ class MetricRatio:
     metric: str
     unit: str
     lower_is_better: bool
-    raw_ratio: float       # current_center / baseline_center
-    display_ratio: float   # > 1 means current is better
+    raw_ratio: float  # current_center / baseline_center
+    display_ratio: float  # > 1 means current is better
     sigma: float
     baseline_center: float
     baseline_stdev: float
@@ -227,10 +236,16 @@ def metric_ratio(baseline: MetricStats, current: MetricStats) -> MetricRatio | N
     sigma = display * math.sqrt(rel_err_sq)
 
     return MetricRatio(
-        metric=current.metric, unit=current.unit, lower_is_better=lib,
-        raw_ratio=raw, display_ratio=display, sigma=sigma,
-        baseline_center=bl_c, baseline_stdev=bl_sd,
-        current_center=cur_c, current_stdev=cur_sd,
+        metric=current.metric,
+        unit=current.unit,
+        lower_is_better=lib,
+        raw_ratio=raw,
+        display_ratio=display,
+        sigma=sigma,
+        baseline_center=bl_c,
+        baseline_stdev=bl_sd,
+        current_center=cur_c,
+        current_stdev=cur_sd,
     )
 
 
@@ -269,9 +284,11 @@ class SummaryData:
     # Both keyed comparee-first: ratios[comparee][benchmark_id][metric],
     # geomeans[comparee][suite][metric].
     ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = field(
-        default_factory=dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]])
+        default_factory=dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]]
+    )
     geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = field(
-        default_factory=dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]])
+        default_factory=dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]]
+    )
 
 
 def _all_ratios(
@@ -335,9 +352,11 @@ def _per_suite_geomean(
                 # aggregated number rather than fabricating one.
                 continue
             out[suite][mk] = GeoMeanRatio(
-                metric=mk[0], unit=mk[1],
+                metric=mk[0],
+                unit=mk[1],
                 lower_is_better=mrs[0].lower_is_better,
-                display_ratio=geo, sigma=sigma,
+                display_ratio=geo,
+                sigma=sigma,
                 n_benchmarks=len(mrs),
                 runs_per_benchmark=run_counts.pop(),
             )
@@ -386,8 +405,11 @@ def build_summary(
 
     return SummaryData(
         groups=current_stats,
-        baseline=base, comparees=comparees, comparee_names=comparee_names,
-        ratios=ratios, geomeans=geomeans,
+        baseline=base,
+        comparees=comparees,
+        comparee_names=comparee_names,
+        ratios=ratios,
+        geomeans=geomeans,
     )
 
 

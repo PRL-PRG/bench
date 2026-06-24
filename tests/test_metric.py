@@ -4,7 +4,14 @@ import re
 from pathlib import Path
 
 from bench import (
-    Execution, ExecutionResult, FloatPerLine, RUsage, Rebench, Regex, Time, max_rss,
+    Execution,
+    ExecutionResult,
+    FloatPerLine,
+    RUsage,
+    Rebench,
+    Regex,
+    Time,
+    max_rss,
 )
 from bench.core.metric import extract_process, extract_run, partition_metrics
 
@@ -54,8 +61,9 @@ def test_when_predicate():
 
 def test_regex_unit_in_pattern_or_arg():
     pr = make_success(stdout="time: 12.5 ms\ntime: 7 us")
-    proc = Regex("rt", re.compile(r"time:\s*([\d.]+)\s*(ms|us)"),
-                   match_group=1, unit_group=2)
+    proc = Regex(
+        "rt", re.compile(r"time:\s*([\d.]+)\s*(ms|us)"), match_group=1, unit_group=2
+    )
     samples = list(proc.process(pr))
     assert samples[0].value == 12.5 and samples[0].unit == "ms"
     assert samples[1].value == 7.0 and samples[1].unit == "us"
@@ -78,10 +86,12 @@ def test_max_rss():
 
 
 def test_rebench_metric():
-    pr = make_success(stdout=(
-        "log: bench1 total: iterations=1 runtime: 1500ms\n"
-        "log: bench1: gc-rate: 12kB\n"
-    ))
+    pr = make_success(
+        stdout=(
+            "log: bench1 total: iterations=1 runtime: 1500ms\n"
+            "log: bench1: gc-rate: 12kB\n"
+        )
+    )
     samples = list(Rebench().process(pr))
     assert any(s.metric == "runtime" and s.unit == "ms" for s in samples)
     assert any(s.metric == "gc-rate" for s in samples)
@@ -118,9 +128,14 @@ def test_partition_metrics():
 
 
 def test_extract_run_and_process_filter_by_kind():
-    res = ExecutionResult(execution=Execution(command=("x",), cwd=Path("/")),
-                          returncode=0, stdout="3.0\n", runtime=1.5, rusage=None)
+    res = ExecutionResult(
+        execution=Execution(command=("x",), cwd=Path("/")),
+        returncode=0,
+        stdout="3.0\n",
+        runtime=1.5,
+        rusage=None,
+    )
     runs = list(extract_run([FloatPerLine(), Time()], res))
     procs = list(extract_process([FloatPerLine(), Time()], res))
-    assert [s.metric for s in runs] == ["runtime"]      # FloatPerLine only
-    assert [s.metric for s in procs] == ["elapsed"]      # Time only
+    assert [s.metric for s in runs] == ["runtime"]  # FloatPerLine only
+    assert [s.metric for s in procs] == ["elapsed"]  # Time only

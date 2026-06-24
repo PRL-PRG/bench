@@ -23,11 +23,11 @@ from bench import Context, Rebench, from_files, max_rss, run, suite
 
 @dataclass
 class RcpParams:
-    RSH_HOME: Path                        # path to RSH client
-    R_HOME: Path                          # R installation root
+    RSH_HOME: Path  # path to RSH client
+    R_HOME: Path  # R installation root
     output: Path = Path(tempfile.gettempdir()) / "rcp"
     path_filter: str = ""
-    iterations: int = 1                   # harness --runs (avoids bench's reserved --runs)
+    iterations: int = 1  # harness --runs (avoids bench's reserved --runs)
 
 
 def _cmd(ctx: Context[RcpParams]):
@@ -35,11 +35,16 @@ def _cmd(ctx: Context[RcpParams]):
     R = p.R_HOME / "bin" / "R"
     harness_bin = p.RSH_HOME / "inst" / "benchmarks" / "harness.R"
     return [
-        str(R), "--slave", "--no-restore",
-        "-f", str(harness_bin),
+        str(R),
+        "--slave",
+        "--no-restore",
+        "-f",
+        str(harness_bin),
         "--args",
-        "--output-dir", str(p.output),
-        "--runs", str(p.iterations),
+        "--output-dir",
+        str(p.output),
+        "--runs",
+        str(p.iterations),
         "--rcp",
         str(ctx.matrix.path.with_suffix("")),
     ]

@@ -438,7 +438,9 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
     report = Sequential().run(plan([s], None), None)
-    assert [smp.metric for o in report.runs[0].observations for smp in o.samples] == ["elapsed"]
+    assert [smp.metric for o in report.runs[0].observations for smp in o.samples] == [
+        "elapsed"
+    ]
 
 
 def test_plan_default_params():

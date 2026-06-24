@@ -119,32 +119,53 @@ class CsvReporter(_BufferingReporter):
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         variant_cols = self._report.variant_keys()
-        cols = ["suite", "benchmark", "run"] + variant_cols + [
-            "metric", "value", "unit", "lower_is_better", "failure"
-        ]
+        cols = (
+            ["suite", "benchmark", "run"]
+            + variant_cols
+            + ["metric", "value", "unit", "lower_is_better", "failure"]
+        )
         with open(self.path, "wt", newline="") as f:
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
             for r in self._report.runs:
                 variant_map = dict(r.variant)
-                base: dict[str, Any] = {"suite": r.suite, "benchmark": r.benchmark,
-                                        "run": r.run}
+                base: dict[str, Any] = {
+                    "suite": r.suite,
+                    "benchmark": r.benchmark,
+                    "run": r.run,
+                }
                 for k in variant_cols:
                     base[k] = variant_map.get(k, "")
                 obs_list = r.observations or [Observation(failure=r.failure)]
                 for obs in obs_list:
                     failure = obs.failure or (r.failure if not obs.samples else None)
                     if failure or not obs.samples:
-                        w.writerow({**base, "metric": "", "value": "", "unit": "",
-                                    "lower_is_better": "", "failure": failure or ""})
+                        w.writerow(
+                            {
+                                **base,
+                                "metric": "",
+                                "value": "",
+                                "unit": "",
+                                "lower_is_better": "",
+                                "failure": failure or "",
+                            }
+                        )
                         continue
                     for s in obs.samples:
-                        w.writerow({**base,
-                                    "metric": s.metric, "value": s.value, "unit": s.unit,
-                                    "lower_is_better": (
-                                        "" if s.lower_is_better is None
-                                        else str(s.lower_is_better)),
-                                    "failure": ""})
+                        w.writerow(
+                            {
+                                **base,
+                                "metric": s.metric,
+                                "value": s.value,
+                                "unit": s.unit,
+                                "lower_is_better": (
+                                    ""
+                                    if s.lower_is_better is None
+                                    else str(s.lower_is_better)
+                                ),
+                                "failure": "",
+                            }
+                        )
 
 
 # ---------------------------------------------------------------------------
@@ -358,8 +379,10 @@ class SummaryReporter(_BufferingReporter):
             verdict = f"[bench.failure]spawn failed[/]: {run.failure or 'unknown'}"
         else:
             verdict = f"[bench.failure]exit {run.returncode}[/]"
-        return (f"[bench.failure]✗[/] {markup_escape(run.identifier())}"
-                f" — {verdict}: {markup_escape(run.message) or '(no output)'}")
+        return (
+            f"[bench.failure]✗[/] {markup_escape(run.identifier())}"
+            f" — {verdict}: {markup_escape(run.message) or '(no output)'}"
+        )
 
 
 __all__ = [

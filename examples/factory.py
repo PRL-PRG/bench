@@ -28,12 +28,7 @@ def make_benchmarks(ctx):
     ]
 
 
-s = (
-    suite("factory_demo")
-    .factory(make_benchmarks)
-    .with_metric(Time())
-    .with_runs(5)
-)
+s = suite("factory_demo").factory(make_benchmarks).with_metric(Time()).with_runs(5)
 
 
 if __name__ == "__main__":

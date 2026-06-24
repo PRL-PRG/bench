@@ -23,7 +23,9 @@ def test_format_identifier():
 
 
 def test_spawn_streaming_writes_incrementally_then_finishes():
-    exe = Execution(command=("sh", "-c", "echo a; sleep 0.05; echo b"), cwd=Path("/tmp"))
+    exe = Execution(
+        command=("sh", "-c", "echo a; sleep 0.05; echo b"), cwd=Path("/tmp")
+    )
     live = spawn_streaming(exe)
     # output file exists and fills over time
     deadline = time.monotonic() + 2

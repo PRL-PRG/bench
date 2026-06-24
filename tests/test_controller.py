@@ -47,9 +47,17 @@ class _FakeSource(RunSource):
 
     def close(self) -> list[Run]:
         self._closed.append(True)
-        return [Run(suite="S", benchmark="b", variant=(), run=i + 1,
-                    command=("true",), observations=[obs])
-                for i, obs in enumerate(self._taken)]
+        return [
+            Run(
+                suite="S",
+                benchmark="b",
+                variant=(),
+                run=i + 1,
+                command=("true",),
+                observations=[obs],
+            )
+            for i, obs in enumerate(self._taken)
+        ]
 
 
 def _obs(value: float) -> Observation:
@@ -57,15 +65,22 @@ def _obs(value: float) -> Observation:
 
 
 def _planned(runs, *, warmup=0):
-    return plan([
-        suite("S", bench("b").with_command(["true"]))
-        .with_cwd(Path("/tmp")).with_warmup(warmup).with_runs(runs)
-    ], None)[0]
+    return plan(
+        [
+            suite("S", bench("b").with_command(["true"]))
+            .with_cwd(Path("/tmp"))
+            .with_warmup(warmup)
+            .with_runs(runs)
+        ],
+        None,
+    )[0]
 
 
 def _patch(monkeypatch, obs, closed):
-    monkeypatch.setattr("bench.runner.controller.make_source",
-                        lambda b, verbose=False: _FakeSource(obs, closed))
+    monkeypatch.setattr(
+        "bench.runner.controller.make_source",
+        lambda b, verbose=False: _FakeSource(obs, closed),
+    )
 
 
 def test_records_run_per_slot_and_always_closes(monkeypatch):

@@ -30,7 +30,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (
-    Context, ExecutionResult, Reporter, Run, Time, from_files, run,
+    Context,
+    ExecutionResult,
+    Reporter,
+    Run,
+    Time,
+    from_files,
+    run,
     suite,
 )
 from bench.report.reporter import console
@@ -50,7 +56,8 @@ _EXPECT_RE = re.compile(r"//\s*expect:\s*(.*)")
 def _expected_lines(source: Path) -> list[str] | None:
     try:
         return [
-            m.group(1) for line in source.read_text().splitlines()
+            m.group(1)
+            for line in source.read_text().splitlines()
             if (m := _EXPECT_RE.search(line))
         ]
     except FileNotFoundError:
@@ -113,7 +120,7 @@ class LoxTestSummary(Reporter):
 
 @dataclass
 class TestParams:
-    lox: Path                            # required: lox binary
+    lox: Path  # required: lox binary
     cwd: Path = HERE
 
 

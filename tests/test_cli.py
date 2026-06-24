@@ -22,7 +22,10 @@ def _run(*args, env_extra: dict | None = None):
         env.update(env_extra)
     return subprocess.run(
         [sys.executable, "-m", "bench", *args],
-        capture_output=True, text=True, env=env, timeout=60,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
     )
 
 
@@ -46,8 +49,12 @@ def test_bench_writes_json(tmp_path: Path):
     assert out.exists()
     data = json.loads(out.read_text())
     assert "runs" in data
-    all_samples = [s for r in data["runs"]
-                   for o in r.get("observations", []) for s in o.get("samples", [])]
+    all_samples = [
+        s
+        for r in data["runs"]
+        for o in r.get("observations", [])
+        for s in o.get("samples", [])
+    ]
     assert len(all_samples) >= 2
 
 
@@ -63,8 +70,17 @@ def test_bench_writes_csv(tmp_path: Path):
 def test_bench_time_bound_caps_runs(tmp_path: Path):
     # High run cap but a short time budget: the time bound stops it early.
     out = tmp_path / "t.json"
-    r = _run("run", "--no-progress", "--runs", "100", "--time", "0.3",
-             "--json", str(out), "sleep 0.05")
+    r = _run(
+        "run",
+        "--no-progress",
+        "--runs",
+        "100",
+        "--time",
+        "0.3",
+        "--json",
+        str(out),
+        "sleep 0.05",
+    )
     assert r.returncode == 0, r.stderr
     n = len(json.loads(out.read_text())["runs"])
     assert 1 <= n < 100  # stopped by --time well before the run cap
@@ -72,8 +88,17 @@ def test_bench_time_bound_caps_runs(tmp_path: Path):
 
 def test_bench_time_zero_uses_exact_run_count(tmp_path: Path):
     out = tmp_path / "t.json"
-    r = _run("run", "--no-progress", "--runs", "3", "--time", "0",
-             "--json", str(out), "sleep 0.01")
+    r = _run(
+        "run",
+        "--no-progress",
+        "--runs",
+        "3",
+        "--time",
+        "0",
+        "--json",
+        str(out),
+        "sleep 0.01",
+    )
     assert r.returncode == 0, r.stderr
     assert len(json.loads(out.read_text())["runs"]) == 3
 
@@ -100,8 +125,17 @@ def test_compare_first_is_baseline_no_current_label(tmp_path: Path):
     paths: list[str] = []
     for name in ("a", "b", "c"):
         p = tmp_path / f"{name}.json"
-        _run("run", "--no-progress", "--runs", "2", "--time", "0",
-             "--json", str(p), "sleep 0.01")
+        _run(
+            "run",
+            "--no-progress",
+            "--runs",
+            "2",
+            "--time",
+            "0",
+            "--json",
+            str(p),
+            "sleep 0.01",
+        )
         paths.append(str(p))
     r = _run("compare", *paths)
     assert r.returncode == 0, r.stderr
@@ -115,7 +149,12 @@ def test_bench_compare_warns_or_diffs(tmp_path: Path):
     r = _run("run", "--runs", "2", "--compare", str(base), "sleep 0.01")
     assert r.returncode == 0, r.stderr
     # Should print the per-benchmark comparison block.
-    assert "Summary" in r.stdout or "geometric mean" in r.stdout or "better" in r.stdout or "worse" in r.stdout
+    assert (
+        "Summary" in r.stdout
+        or "geometric mean" in r.stdout
+        or "better" in r.stdout
+        or "worse" in r.stdout
+    )
 
 
 def test_compare_missing_file_errors(tmp_path: Path):

@@ -18,7 +18,11 @@ from bench import Regex, bench, run, suite
 
 def fake_cmd(ctx):
     # Variant values reach the callable via ``ctx.matrix``.
-    return ["sh", "-c", f"echo {ctx.matrix.compiler}-{ctx.matrix.opt}: $((RANDOM%50+50))"]
+    return [
+        "sh",
+        "-c",
+        f"echo {ctx.matrix.compiler}-{ctx.matrix.opt}: $((RANDOM%50+50))",
+    ]
 
 
 s = (

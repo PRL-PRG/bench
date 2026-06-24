@@ -4,8 +4,17 @@ import time
 from pathlib import Path
 
 from bench import (
-    CoefficientOfVariation, Dry, FloatPerLine, JsonReporter, Parallel,
-    Regex, Sequential, Time, bench, line_monitor, report_from_json,
+    CoefficientOfVariation,
+    Dry,
+    FloatPerLine,
+    JsonReporter,
+    Parallel,
+    Regex,
+    Sequential,
+    Time,
+    bench,
+    line_monitor,
+    report_from_json,
     suite,
 )
 from bench.runner.base import plan
@@ -35,12 +44,13 @@ def test_suite_with_harness_reaches_every_benchmark():
 
 
 def test_bench_level_with_harness_in_command_suite():
-    s = (suite("S", bench("h").with_command(["true"]).with_harness(),
-               bench("c").with_command(["true"]))
-         .with_metric(Time()))
+    s = suite(
+        "S",
+        bench("h").with_command(["true"]).with_harness(),
+        bench("c").with_command(["true"]),
+    ).with_metric(Time())
     h, c = s.materialize(None)
     assert h.harness and not c.harness
-
 
 
 # ----- streaming kill integration ---------------------------------
@@ -53,7 +63,9 @@ def test_harness_killed_when_policy_converges():
         suite("H", bench("a").with_command(cmd).with_harness())
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("").lower_is_better())
-        .with_warmup(CoefficientOfVariation("runtime", threshold=0.01, window=3, min_runs=3))
+        .with_warmup(
+            CoefficientOfVariation("runtime", threshold=0.01, window=3, min_runs=3)
+        )
         .with_runs(2)
     )
     t = time.monotonic()
@@ -68,8 +80,7 @@ def test_harness_killed_when_policy_converges():
 
 
 def test_one_execution_is_one_run_with_observations():
-    s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"),
-                       warmup=2, runs=3)
+    s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"), warmup=2, runs=3)
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     run = report.runs[0]
@@ -86,7 +97,9 @@ def test_multi_metric_iterations_pair_up():
     assert len(report.runs) == 1
     obs = report.runs[0].observations
     assert [(smp.metric, smp.value) for smp in obs[0].samples] == [
-        ("t", 1.0), ("m", 10.0)]
+        ("t", 1.0),
+        ("m", 10.0),
+    ]
 
 
 def test_failed_execution_is_one_failed_record():
@@ -125,8 +138,12 @@ def test_monitor_exception_fails_the_run():
         raise RuntimeError("boom")
 
     s = (
-        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0", "3.0"))
-              .with_harness(monitor=boom))
+        suite(
+            "H",
+            bench("a")
+            .with_command(_echo_lines("1.0", "2.0", "3.0"))
+            .with_harness(monitor=boom),
+        )
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("ms").lower_is_better())
         .with_runs(3)
@@ -147,8 +164,12 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
             yield line
 
     s = (
-        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0", "3.0", "4.0"))
-              .with_harness(monitor=boom_after_two))
+        suite(
+            "H",
+            bench("a")
+            .with_command(_echo_lines("1.0", "2.0", "3.0", "4.0"))
+            .with_harness(monitor=boom_after_two),
+        )
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("ms").lower_is_better())
         .with_runs(5)
@@ -175,9 +196,13 @@ def test_over_delivery_stops_at_policy():
 
 
 def test_harness_process_metric_becomes_trailing_observation():
-    s = (suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
-         .with_cwd(Path("/tmp")).with_metric(FloatPerLine("ms"), Time())
-         .with_runs(2).with_harness())
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms"), Time())
+        .with_runs(2)
+        .with_harness()
+    )
     report = Sequential().run(plan([s], None), None)
     run = report.runs[0]
     # per-iteration observations carry FloatPerLine (not elapsed), a trailing
@@ -190,13 +215,21 @@ def test_harness_process_metric_becomes_trailing_observation():
 def test_harness_process_metric_reaches_json_file(tmp_path: Path):
     # Whole-process metrics travel through the Reporter chain to file sinks.
     out = tmp_path / "r.json"
-    s = (suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
-         .with_cwd(Path("/tmp")).with_metric(FloatPerLine("ms"), Time())
-         .with_runs(2).with_harness())
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms"), Time())
+        .with_runs(2)
+        .with_harness()
+    )
     Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     loaded = report_from_json(out.read_text())
-    assert any(s.metric == "elapsed"
-               for run in loaded.runs for o in run.observations for s in o.samples)
+    assert any(
+        s.metric == "elapsed"
+        for run in loaded.runs
+        for o in run.observations
+        for s in o.samples
+    )
 
 
 # ----- runners ----------------------------------------------------------------
@@ -204,9 +237,11 @@ def test_harness_process_metric_reaches_json_file(tmp_path: Path):
 
 def test_parallel_runs_harness_benchmarks():
     s = (
-        suite("H",
-              bench("a").with_command(_echo_lines("1.0", "2.0")),
-              bench("b").with_command(_echo_lines("3.0", "4.0")))
+        suite(
+            "H",
+            bench("a").with_command(_echo_lines("1.0", "2.0")),
+            bench("b").with_command(_echo_lines("3.0", "4.0")),
+        )
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("ms").lower_is_better())
         .with_warmup(1)
@@ -217,7 +252,8 @@ def test_parallel_runs_harness_benchmarks():
     by_bench = {}
     for r in report.runs:
         by_bench.setdefault(r.benchmark, []).extend(
-            s.value for o in r.observations for s in o.samples)
+            s.value for o in r.observations for s in o.samples
+        )
     assert by_bench == {"a": [1.0, 2.0], "b": [3.0, 4.0]}
     assert report.warmups == {"H/a": 1, "H/b": 1}
 

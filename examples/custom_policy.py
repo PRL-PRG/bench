@@ -56,18 +56,18 @@ if [ $n -lt 2 ]; then echo "READY 0"; else echo "READY 1"; fi
 """
 
 
-s = (
-    suite("ready_loop",
-        bench("p")
-            .with_command(["bash", "-c", SCRIPT])
-            .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
-            .with_runs(ConsecutiveReady(n=3).at_most(20))
-    )
+s = suite(
+    "ready_loop",
+    bench("p")
+    .with_command(["bash", "-c", SCRIPT])
+    .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
+    .with_runs(ConsecutiveReady(n=3).at_most(20)),
 )
 
 
 if __name__ == "__main__":
     import os
+
     # Reset the demo counter so the example is deterministic.
     try:
         os.remove("/tmp/_bench_demo/cnt")

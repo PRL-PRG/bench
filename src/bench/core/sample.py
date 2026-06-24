@@ -87,8 +87,13 @@ class Run:
         return self.failure is not None
 
     def identifier(self) -> str:
-        return format_identifier(self.suite, self.benchmark, self.variant,
-                                 self.run, variant_label=self.variant_label)
+        return format_identifier(
+            self.suite,
+            self.benchmark,
+            self.variant,
+            self.run,
+            variant_label=self.variant_label,
+        )
 
     def key(self) -> str:
         """Canonical benchmark-variant key (see `record_key`)."""
@@ -129,8 +134,11 @@ class Report:
 
     def metrics(self) -> list[str]:
         """Distinct metric names, first-seen order."""
-        return list(dict.fromkeys(
-            s.metric for r in self.runs for o in r.observations for s in o.samples))
+        return list(
+            dict.fromkeys(
+                s.metric for r in self.runs for o in r.observations for s in o.samples
+            )
+        )
 
     def variant_keys(self) -> list[str]:
         """Stable list of matrix-dimension names across all runs, first-seen order."""
@@ -152,7 +160,9 @@ class Report:
 _OUTPUT_FIELDS = ("stdout", "stderr", "env")
 
 
-def report_to_json(report: Report, *, indent: int = 2, include_output: bool = False) -> str:
+def report_to_json(
+    report: Report, *, indent: int = 2, include_output: bool = False
+) -> str:
     """Serialize a Report. `stdout`/`stderr`/`env` are dropped unless
     `include_output` (they bloat the file and are rarely needed offline)."""
     raw = unstructure(report)

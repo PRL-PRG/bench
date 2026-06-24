@@ -4,24 +4,41 @@ from pathlib import Path
 
 from bench import Observation, Report, Run, Sample, report_to_json
 from bench.report.stats import (
-    build_summary, geomean_with_sigma, group,
-    metric_ratio, metric_stats, scale_unit,
+    build_summary,
+    geomean_with_sigma,
+    group,
+    metric_ratio,
+    metric_stats,
+    scale_unit,
 )
 
 
-def _smp(metric: str, value: float, *, unit: str = "s",
-         lower_is_better: bool | None = True) -> Sample:
-    return Sample(metric=metric, value=value, unit=unit,
-                  lower_is_better=lower_is_better)
+def _smp(
+    metric: str, value: float, *, unit: str = "s", lower_is_better: bool | None = True
+) -> Sample:
+    return Sample(
+        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better
+    )
 
 
-def _run(run: int = 1, *, returncode: int = 0, failure: str | None = None,
-         bench: str = "b", suite: str = "S",
-         samples: list[Sample] | None = None) -> Run:
+def _run(
+    run: int = 1,
+    *,
+    returncode: int = 0,
+    failure: str | None = None,
+    bench: str = "b",
+    suite: str = "S",
+    samples: list[Sample] | None = None,
+) -> Run:
     obs = Observation(samples=list(samples) if samples else [])
     return Run(
-        suite=suite, benchmark=bench, variant=(), run=run,
-        command=("x",), returncode=returncode, failure=failure,
+        suite=suite,
+        benchmark=bench,
+        variant=(),
+        run=run,
+        command=("x",),
+        returncode=returncode,
+        failure=failure,
         message="boom" if failure else "",
         observations=[obs],
     )
@@ -29,35 +46,50 @@ def _run(run: int = 1, *, returncode: int = 0, failure: str | None = None,
 
 def _fail(run: int, *, bench: str = "b", suite: str = "S") -> Run:
     return Run(
-        suite=suite, benchmark=bench, variant=(), run=run, command=("x",),
-        returncode=7, failure="boom", message="boom",
-        observations=[Observation(failure="boom")])
+        suite=suite,
+        benchmark=bench,
+        variant=(),
+        run=run,
+        command=("x",),
+        returncode=7,
+        failure="boom",
+        message="boom",
+        observations=[Observation(failure="boom")],
+    )
 
 
 def test_group_excludes_warmup_by_default():
-    r = Report(runs=[
-        _run(1, samples=[_smp("runtime", 1.0)]),
-        _run(2, samples=[_smp("runtime", 0.5)]),
-    ], warmups={"S/b": 1})
+    r = Report(
+        runs=[
+            _run(1, samples=[_smp("runtime", 1.0)]),
+            _run(2, samples=[_smp("runtime", 0.5)]),
+        ],
+        warmups={"S/b": 1},
+    )
     g = group(r)
     assert len(g.groups) == 1
     assert g.groups[0].metrics[("runtime", "s")] == [0.5]
 
 
 def test_group_with_warmup_when_opted_in():
-    r = Report(runs=[
-        _run(1, samples=[_smp("runtime", 1.0)]),
-        _run(2, samples=[_smp("runtime", 0.5)]),
-    ], warmups={"S/b": 1})
+    r = Report(
+        runs=[
+            _run(1, samples=[_smp("runtime", 1.0)]),
+            _run(2, samples=[_smp("runtime", 0.5)]),
+        ],
+        warmups={"S/b": 1},
+    )
     g = group(r, include_warmup=True)
     assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
 
 
 def test_failures_count_into_run_counts():
-    r = Report(runs=[
-        _run(2, samples=[_smp("runtime", 1.0)]),
-        _fail(1),
-    ])
+    r = Report(
+        runs=[
+            _run(2, samples=[_smp("runtime", 1.0)]),
+            _fail(1),
+        ]
+    )
     g = group(r)
     assert g.groups[0].run_counts.failures == 1
     assert g.groups[0].run_counts.successes == 1
@@ -137,9 +169,7 @@ def test_geomean_with_sigma():
 
 
 def test_build_summary_with_no_baseline():
-    r = Report(runs=[
-        _run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
-    ])
+    r = Report(runs=[_run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     data = build_summary(r, [])
     assert len(data.groups) == 1
     assert data.baseline is None
@@ -147,15 +177,15 @@ def test_build_summary_with_no_baseline():
 
 
 def test_build_summary_with_baseline(tmp_path: Path):
-    baseline = Report(runs=[
-        _run(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)
-    ])
+    baseline = Report(
+        runs=[_run(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
+    )
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
-    current = Report(runs=[
-        _run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
-    ])
+    current = Report(
+        runs=[_run(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
+    )
     data = build_summary(current, [bpath])
     assert data.baseline is not None
     assert "current" in data.ratios

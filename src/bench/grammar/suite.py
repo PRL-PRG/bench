@@ -143,9 +143,7 @@ class Suite:
     def with_timeout(self, timeout: float | None | Build[float | None]) -> Suite:
         return dataclasses.replace(self, timeout=as_build(timeout))
 
-    def with_metric(
-        self, *metrics: Metric | Build[tuple[Metric, ...]]
-    ) -> Suite:
+    def with_metric(self, *metrics: Metric | Build[tuple[Metric, ...]]) -> Suite:
         """Set (replace) the suite's default metrics, initially `(Time(),)`.
         Pass them statically (`with_metric(m1, m2, ...)`), or a single
         `(ctx) -> (m, ...)` builder for per-variant metrics."""
@@ -162,15 +160,11 @@ class Suite:
     def with_label(self, fn: LabelFn) -> Suite:
         return dataclasses.replace(self, label_fn=fn)
 
-    def with_warmup(
-        self, p: int | StoppingPolicy | Build[StoppingPolicy]
-    ) -> Suite:
+    def with_warmup(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Suite:
         """Set the default warmup policy."""
         return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
 
-    def with_runs(
-        self, p: int | StoppingPolicy | Build[StoppingPolicy]
-    ) -> Suite:
+    def with_runs(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Suite:
         """Set the default policy for the measured runs."""
         return dataclasses.replace(self, runs=as_build(p, coerce_policy))
 

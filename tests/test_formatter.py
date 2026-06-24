@@ -7,22 +7,43 @@ from pathlib import Path
 from rich.console import Console
 
 from bench import (
-    Compact, DefaultSummary, Observation, Report, Run, Sample, report_to_json,
+    Compact,
+    DefaultSummary,
+    Observation,
+    Report,
+    Run,
+    Sample,
+    report_to_json,
 )
 
 
-def _smp(metric: str = "runtime", value: float = 0.5, unit: str = "s",
-         lower_is_better: bool | None = True) -> Sample:
-    return Sample(metric=metric, value=value, unit=unit,
-                  lower_is_better=lower_is_better)
+def _smp(
+    metric: str = "runtime",
+    value: float = 0.5,
+    unit: str = "s",
+    lower_is_better: bool | None = True,
+) -> Sample:
+    return Sample(
+        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better
+    )
 
 
-def _ok(run: int = 1, *, bench: str = "b", suite: str = "S",
-        variant=(), variant_label: str = "",
-        samples: list[Sample] | None = None) -> Run:
+def _ok(
+    run: int = 1,
+    *,
+    bench: str = "b",
+    suite: str = "S",
+    variant=(),
+    variant_label: str = "",
+    samples: list[Sample] | None = None,
+) -> Run:
     return Run(
-        suite=suite, benchmark=bench, variant=variant, run=run,
-        command=("x",), returncode=0,
+        suite=suite,
+        benchmark=bench,
+        variant=variant,
+        run=run,
+        command=("x",),
+        returncode=0,
         variant_label=variant_label,
         observations=[Observation(samples=list(samples) if samples else [])],
     )
@@ -48,15 +69,15 @@ def test_compact_no_baseline_lists_benchmarks():
 
 
 def test_compact_with_baseline_shows_speedup(tmp_path: Path):
-    baseline = Report(runs=[
-        _ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)
-    ])
+    baseline = Report(
+        runs=[_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
+    )
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
-    current = Report(runs=[
-        _ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
-    ])
+    current = Report(
+        runs=[_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
+    )
     out = Compact("runtime")(current, baseline=[bpath])
     assert "geometric mean speedup" in out
     assert "a:" in out
@@ -65,43 +86,46 @@ def test_compact_with_baseline_shows_speedup(tmp_path: Path):
 
 
 def test_compact_omits_run_count_when_inconsistent(tmp_path: Path):
-    baseline = Report(runs=(
-        [_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
-        + [_ok(i, bench="b", samples=[_smp("runtime", 1.0)]) for i in range(1, 6)]
-    ))
+    baseline = Report(
+        runs=(
+            [_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
+            + [_ok(i, bench="b", samples=[_smp("runtime", 1.0)]) for i in range(1, 6)]
+        )
+    )
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
     # a has 3 runs, b has 5, no single honest count to print.
-    current = Report(runs=(
-        [_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
-        + [_ok(i, bench="b", samples=[_smp("runtime", 0.5)]) for i in range(1, 6)]
-    ))
+    current = Report(
+        runs=(
+            [_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
+            + [_ok(i, bench="b", samples=[_smp("runtime", 0.5)]) for i in range(1, 6)]
+        )
+    )
     out = Compact("runtime")(current, baseline=[bpath])
     assert "geometric mean speedup" in out
     assert "runs)" not in out
 
 
 def test_default_summary_with_baseline_includes_runs(tmp_path: Path):
-    baseline = Report(runs=[
-        _ok(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)
-    ])
+    baseline = Report(
+        runs=[_ok(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
+    )
     bpath = tmp_path / "b.json"
     bpath.write_text(report_to_json(baseline))
 
-    current = Report(runs=[
-        _ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)
-    ])
+    current = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     out = DefaultSummary()(current, baseline=[bpath])
     assert "Summary (geometric mean of ratios)" in out
     assert "better" in out
 
 
 def test_compact_filters_by_metric():
-    r = Report(runs=[
-        _ok(1, samples=[_smp("runtime", 1.0),
-                        _smp("max_rss", 1024.0, unit="kB")]),
-    ])
+    r = Report(
+        runs=[
+            _ok(1, samples=[_smp("runtime", 1.0), _smp("max_rss", 1024.0, unit="kB")]),
+        ]
+    )
     out_rt = Compact("runtime")(r)
     out_rss = Compact("max_rss")(r)
     assert "1.00" in out_rt
@@ -120,11 +144,22 @@ def _strip_markup(s: str) -> str:
     return s.replace("\x00", "[")
 
 
-def _vrun(value: float, *, run: int, label: str, variant_dim: str = "k",
-          bench: str = "b", suite: str = "S", metric: str = "elapsed",
-          unit: str = "s", lower_is_better: bool | None = True) -> Run:
+def _vrun(
+    value: float,
+    *,
+    run: int,
+    label: str,
+    variant_dim: str = "k",
+    bench: str = "b",
+    suite: str = "S",
+    metric: str = "elapsed",
+    unit: str = "s",
+    lower_is_better: bool | None = True,
+) -> Run:
     return _ok(
-        run, bench=bench, suite=suite,
+        run,
+        bench=bench,
+        suite=suite,
         variant=((variant_dim, label),),
         variant_label=label,
         samples=[_smp(metric, value, unit=unit, lower_is_better=lower_is_better)],
@@ -156,9 +191,9 @@ def test_default_summary_no_ranking_across_distinct_benchmarks():
 
 
 def test_default_summary_no_ranking_with_single_variant():
-    r = Report(runs=[
-        _ok(i, bench="a", samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)
-    ])
+    r = Report(
+        runs=[_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)]
+    )
     text = _strip_markup(DefaultSummary()(r))
     assert "Summary" not in text
 
@@ -166,10 +201,26 @@ def test_default_summary_no_ranking_with_single_variant():
 def test_default_summary_ranking_uses_higher_for_higher_is_better():
     runs = []
     for i in range(1, 4):
-        runs.append(_vrun(200.0, run=i, label="fast", metric="throughput",
-                          unit="iter/s", lower_is_better=False))
-        runs.append(_vrun(100.0, run=i, label="slow", metric="throughput",
-                          unit="iter/s", lower_is_better=False))
+        runs.append(
+            _vrun(
+                200.0,
+                run=i,
+                label="fast",
+                metric="throughput",
+                unit="iter/s",
+                lower_is_better=False,
+            )
+        )
+        runs.append(
+            _vrun(
+                100.0,
+                run=i,
+                label="slow",
+                metric="throughput",
+                unit="iter/s",
+                lower_is_better=False,
+            )
+        )
     r = Report(runs=runs)
     text = _strip_markup(DefaultSummary()(r))
     assert "'fast' [throughput] was" in text

@@ -1,6 +1,9 @@
-.PHONY: check check-types test docs docs-serve
+.PHONY: check check-types test docs docs-serve format
 
 check: check-types test
+
+format:
+	uv run ruff format .
 
 check-types:
 	uv run pyright

@@ -22,7 +22,7 @@ def main() -> None:
     rng = random.Random(42)
     for i in range(args.n):
         # Warmup curve: ~3x slower at first, decaying towards steady state.
-        factor = 1.0 + 2.0 * (0.5 ** i)
+        factor = 1.0 + 2.0 * (0.5**i)
         elapsed = steady * factor * rng.uniform(0.97, 1.03)
         time.sleep(elapsed / 10_000)  # pretend to work (sped up 10x)
         print(f"{elapsed:.3f}")

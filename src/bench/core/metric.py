@@ -74,7 +74,9 @@ def extract_run(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[
             yield from m.process(result)
 
 
-def extract_process(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
+def extract_process(
+    metrics: Iterable[Metric], result: ExecutionResult
+) -> Iterator[Sample]:
     """Run only per-process (`per_process == True`) metrics over one result."""
     for m in metrics:
         if m.per_process:
@@ -234,9 +236,22 @@ class RUsage(Metric):
     per_process = True
 
     Field = Literal[
-        "ru_utime", "ru_stime", "ru_maxrss", "ru_ixrss", "ru_idrss", "ru_isrss",
-        "ru_minflt", "ru_majflt", "ru_nswap", "ru_inblock", "ru_oublock",
-        "ru_msgsnd", "ru_msgrcv", "ru_nsignals", "ru_nvcsw", "ru_nivcsw",
+        "ru_utime",
+        "ru_stime",
+        "ru_maxrss",
+        "ru_ixrss",
+        "ru_idrss",
+        "ru_isrss",
+        "ru_minflt",
+        "ru_majflt",
+        "ru_nswap",
+        "ru_inblock",
+        "ru_oublock",
+        "ru_msgsnd",
+        "ru_msgrcv",
+        "ru_nsignals",
+        "ru_nvcsw",
+        "ru_nivcsw",
     ]
 
     field: Field

@@ -85,14 +85,13 @@ class Parallel(Runner):
     order-dependent) runs fine. `--jobs N` just bounds how many run at once.
     """
 
-    def __init__(self, workers: int, reporter: Reporter | None = None,
-                 **kwargs: Any) -> None:
+    def __init__(
+        self, workers: int, reporter: Reporter | None = None, **kwargs: Any
+    ) -> None:
         super().__init__(reporter, **kwargs)
         self.workers = workers
 
-    def run(
-        self, planned: list[Benchmark], params: Any = None
-    ) -> Report:
+    def run(self, planned: list[Benchmark], params: Any = None) -> Report:
         self.reporter.start(planned)
         report = Report()
         lock = threading.Lock()

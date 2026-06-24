@@ -43,8 +43,8 @@ LOCALE = {
 
 @dataclass
 class RParams:
-    Rpath: Path                        # required: path to R install
-    iterations: int = 15               # optional
+    Rpath: Path  # required: path to R install
+    iterations: int = 15  # optional
 
 
 def _rscript(ctx: RParams) -> str:
@@ -63,7 +63,15 @@ areWeFast = (
     .add(B("Bounce_nonames_simple", size=35))
     .add(B("Storage", size=100))
     .with_cwd(BENCHMARKS / "areWeFast")
-    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.size)])
+    .with_command(
+        lambda ctx: [
+            _rscript(ctx.params),
+            "harness.r",
+            str(ctx.benchmark),
+            str(ctx.params.iterations),
+            str(ctx.matrix.size),
+        ]
+    )
     .with_metric(Rebench())
 )
 
@@ -75,22 +83,30 @@ def _shootout(name: str, subfolder: str, arg: int):
 
 shootout = (
     suite("shootout")
-    .add(_shootout("binarytrees",            "binarytrees",      9))
-    .add(_shootout("fannkuchredux",          "fannkuch",         9))
-    .add(_shootout("fasta",                  "fasta",            60000))
-    .add(_shootout("fastaredux",             "fastaredux",       80000))
-    .add(_shootout("knucleotide",            "knucleotide",      2000))
-    .add(_shootout("mandelbrot_ascii",       "mandelbrot",       300))
-    .add(_shootout("mandelbrot_naive_ascii", "mandelbrot",       200))
-    .add(_shootout("nbody",                  "nbody",            25000))
-    .add(_shootout("nbody_naive",            "nbody",            20000))
-    .add(_shootout("pidigits",               "pidigits",         30))
-    .add(_shootout("regexdna",               "regexdna",         500000))
-    .add(_shootout("reversecomplement",      "reversecomplement", 150000))
-    .add(_shootout("spectralnorm",           "spectralnorm",     1200))
-    .add(_shootout("spectralnorm_math",      "spectralnorm",     1200))
+    .add(_shootout("binarytrees", "binarytrees", 9))
+    .add(_shootout("fannkuchredux", "fannkuch", 9))
+    .add(_shootout("fasta", "fasta", 60000))
+    .add(_shootout("fastaredux", "fastaredux", 80000))
+    .add(_shootout("knucleotide", "knucleotide", 2000))
+    .add(_shootout("mandelbrot_ascii", "mandelbrot", 300))
+    .add(_shootout("mandelbrot_naive_ascii", "mandelbrot", 200))
+    .add(_shootout("nbody", "nbody", 25000))
+    .add(_shootout("nbody_naive", "nbody", 20000))
+    .add(_shootout("pidigits", "pidigits", 30))
+    .add(_shootout("regexdna", "regexdna", 500000))
+    .add(_shootout("reversecomplement", "reversecomplement", 150000))
+    .add(_shootout("spectralnorm", "spectralnorm", 1200))
+    .add(_shootout("spectralnorm_math", "spectralnorm", 1200))
     .with_cwd(lambda ctx: BENCHMARKS / "shootout" / ctx.matrix.subfolder)
-    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.arg)])
+    .with_command(
+        lambda ctx: [
+            _rscript(ctx.params),
+            "harness.r",
+            str(ctx.benchmark),
+            str(ctx.params.iterations),
+            str(ctx.matrix.arg),
+        ]
+    )
     .with_metric(Rebench())
 )
 
@@ -102,7 +118,15 @@ realThing = (
     .add(B("volcano", size=1))
     .add(B("flexclust", size=5))
     .with_cwd(BENCHMARKS / "RealThing")
-    .with_command(lambda ctx: [_rscript(ctx.params), "harness.r", str(ctx.benchmark), str(ctx.params.iterations), str(ctx.matrix.size)])
+    .with_command(
+        lambda ctx: [
+            _rscript(ctx.params),
+            "harness.r",
+            str(ctx.benchmark),
+            str(ctx.params.iterations),
+            str(ctx.matrix.size),
+        ]
+    )
     .with_metric(Rebench())
 )
 
@@ -115,7 +139,14 @@ kaggle = (
     .add(B("placement"))
     .add(B("titanic"))
     .with_cwd(lambda ctx: INPUTS / "kaggle" / str(ctx.benchmark))
-    .with_command(lambda ctx: [_rscript(ctx.params), "../../harness.r", str(ctx.benchmark), str(ctx.params.iterations)])
+    .with_command(
+        lambda ctx: [
+            _rscript(ctx.params),
+            "../../harness.r",
+            str(ctx.benchmark),
+            str(ctx.params.iterations),
+        ]
+    )
     .with_metric(Rebench())
 )
 

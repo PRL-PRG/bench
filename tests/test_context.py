@@ -12,7 +12,7 @@ from bench.grammar.context import Context, Matrix, add_dataclass_args, build_dat
 
 @dataclass
 class _Params:
-    name: Path                      # required (no default)
+    name: Path  # required (no default)
     iterations: int = 15
     cwd: Path = Path("/tmp")
     verbose: bool = False
@@ -40,10 +40,19 @@ def test_required_field_only():
 
 
 def test_overrides():
-    ns = _parser().parse_args([
-        "--name", "/x", "--iterations", "30", "--cwd", "/y",
-        "--verbose", "--label", "tag",
-    ])
+    ns = _parser().parse_args(
+        [
+            "--name",
+            "/x",
+            "--iterations",
+            "30",
+            "--cwd",
+            "/y",
+            "--verbose",
+            "--label",
+            "tag",
+        ]
+    )
     ctx = build_dataclass(_Params, ns)
     assert ctx.iterations == 30
     assert ctx.cwd == Path("/y")
@@ -74,7 +83,10 @@ def test_dash_to_underscore():
 
 def _ctx(**overrides: Any) -> Context[Any]:
     base: dict[str, Any] = dict(
-        params=None, suite="S", benchmark="b", matrix=Matrix(),
+        params=None,
+        suite="S",
+        benchmark="b",
+        matrix=Matrix(),
     )
     base.update(overrides)
     return Context(**base)

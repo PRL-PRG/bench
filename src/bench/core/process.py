@@ -312,7 +312,11 @@ class LiveProcess:
                 rusage,
                 failure="interrupted",
             )
-        rc = TIMEOUT_RC if self._killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
+        rc = (
+            TIMEOUT_RC
+            if self._killed.is_set()
+            else os.waitstatus_to_exitcode(waitstatus)
+        )
         return ExecutionResult(self.execution, rc, stdout, stderr, runtime, rusage)
 
 
@@ -353,6 +357,7 @@ def spawn_streaming(exe: Execution) -> LiveProcess:
     live = LiveProcess(proc, exe, out_path, err_path, start, killed)
 
     if exe.timeout is not None:
+
         def _kill() -> None:
             killed.set()
             with contextlib.suppress(ProcessLookupError, OSError):

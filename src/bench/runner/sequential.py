@@ -14,9 +14,7 @@ from bench.runner.controller import Controller
 class Sequential(Runner):
     """Run benchmarks one at a time, in suite-then-benchmark order."""
 
-    def run(
-        self, planned: list[Benchmark], params: Any = None
-    ) -> Report:
+    def run(self, planned: list[Benchmark], params: Any = None) -> Report:
         self.reporter.start(planned)
         report = Report()
         controller = Controller(

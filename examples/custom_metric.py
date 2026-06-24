@@ -19,8 +19,13 @@ import re
 from collections.abc import Iterable
 
 from bench import (
-    ExecutionResult, Metric, Sample, Time,
-    bench, run, suite,
+    ExecutionResult,
+    Metric,
+    Sample,
+    Time,
+    bench,
+    run,
+    suite,
 )
 
 
@@ -55,14 +60,13 @@ def succeeded(pr: ExecutionResult) -> str | None:
     return None
 
 
-s = (
-    suite("custom",
-        bench("with_stderr")
-            .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
-            .with_metric(StderrFloat().lower_is_better(), Time())
-            .with_success(succeeded)
-            .with_runs(3)
-    )
+s = suite(
+    "custom",
+    bench("with_stderr")
+    .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
+    .with_metric(StderrFloat().lower_is_better(), Time())
+    .with_success(succeeded)
+    .with_runs(3),
 )
 
 

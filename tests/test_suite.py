@@ -34,45 +34,52 @@ def test_runs_preserves_benchmark_override():
 
 
 def test_with_runs_accepts_ctx_callable():
-    s = (suite("S", _b("a"))
-         .with_command(["true"])
-         .with_runs(lambda ctx: FixedRuns(ctx.params.n)))
+    s = (
+        suite("S", _b("a"))
+        .with_command(["true"])
+        .with_runs(lambda ctx: FixedRuns(ctx.params.n))
+    )
     b = s.materialize(SimpleNamespace(n=4))[0]
     assert b.runs == FixedRuns(4)
 
 
 def test_with_warmup_accepts_ctx_callable():
-    s = (suite("S", _b("a"))
-         .with_command(["true"])
-         .with_warmup(lambda ctx: FixedRuns(ctx.params.w)))
+    s = (
+        suite("S", _b("a"))
+        .with_command(["true"])
+        .with_warmup(lambda ctx: FixedRuns(ctx.params.w))
+    )
     b = s.materialize(SimpleNamespace(w=2))[0]
     assert b.warmup == FixedRuns(2)
 
 
 def test_with_timeout_accepts_ctx_callable():
-    s = (suite("S", _b("a"))
-         .with_command(["true"])
-         .with_timeout(lambda ctx: float(ctx.params.t)))
+    s = (
+        suite("S", _b("a"))
+        .with_command(["true"])
+        .with_timeout(lambda ctx: float(ctx.params.t))
+    )
     b = s.materialize(SimpleNamespace(t=30))[0]
     assert b.execution.timeout == 30.0
 
 
 def test_with_metric_accepts_ctx_callable():
     m = Time()
-    s = (suite("S", _b("a"))
-         .with_command(["true"])
-         .with_metric(lambda ctx: (m,)))
+    s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: (m,))
     b = s.materialize(None)[0]
     assert b.metrics == (m,)
 
 
 def test_suite_callable_runs_still_loses_to_benchmark_override():
     a = _b("a").with_runs(FixedRuns(5))
-    s = (suite("S", a, _b("b"))
-         .with_command(["true"])
-         .with_runs(lambda ctx: FixedRuns(ctx.params.n)))
+    s = (
+        suite("S", a, _b("b"))
+        .with_command(["true"])
+        .with_runs(lambda ctx: FixedRuns(ctx.params.n))
+    )
     assert [b.runs for b in s.materialize(SimpleNamespace(n=9))] == [
-        FixedRuns(5), FixedRuns(9),
+        FixedRuns(5),
+        FixedRuns(9),
     ]
 
 
@@ -111,7 +118,11 @@ def test_with_env_merges():
 
 
 def test_env_merge_both_callable():
-    a = _b("a").with_command(["true"]).with_env(lambda ctx: {"X": ctx.benchmark or "", "Y": "from_b"})
+    a = (
+        _b("a")
+        .with_command(["true"])
+        .with_env(lambda ctx: {"X": ctx.benchmark or "", "Y": "from_b"})
+    )
     s = suite("S", a).with_env(lambda ctx: {"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
     assert b.execution.env == {"X": "a", "Y": "from_b", "Z": "1"}
@@ -134,7 +145,8 @@ def test_suite_with_success_propagates_and_respects_override():
     bench_fn = lambda r: "nope"
     s = (
         suite("s", bench("a"), bench("b").with_success(bench_fn))
-        .with_command(["true"]).with_success(suite_fn)
+        .with_command(["true"])
+        .with_success(suite_fn)
     )
     resolved = _mat(s)
     assert resolved[0].success is suite_fn
@@ -146,7 +158,8 @@ def test_suite_with_label_propagates_and_respects_override():
     bench_label = lambda b: "bench"
     s = (
         suite("s", bench("a"), bench("b").with_label(bench_label))
-        .with_command(["true"]).with_label(suite_label)
+        .with_command(["true"])
+        .with_label(suite_label)
     )
     resolved = _mat(s)
     assert resolved[0].variant_label == "suite"
@@ -159,10 +172,14 @@ def test_suite_with_label_propagates_and_respects_override():
 def test_filter():
     # Deferred: applies after expansion (per-variant) and is order-independent
     # (added before the benchmark it filters).
-    s = (suite("S")
-         .filter(lambda b: b.size != 500)
-         .add(_b("c").with_matrix(size=[100, 500]))
-         .with_command(["true"]).with_cwd(Path("/tmp")).with_metric(Time()))
+    s = (
+        suite("S")
+        .filter(lambda b: b.size != 500)
+        .add(_b("c").with_matrix(size=[100, 500]))
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+    )
     assert sorted(b.size for b in _mat(s)) == [100]
 
 
@@ -172,7 +189,9 @@ def test_from_files(tmp_path: Path):
     (tmp_path / "skip.txt").write_text("")
     s = (
         suite("X", *from_files(tmp_path, pattern=r"\.lox$"))
-        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
+        .with_command(["true"])
+        .with_cwd(tmp_path)
+        .with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "b"]
@@ -186,7 +205,9 @@ def test_from_files_recursive_with_exclude(tmp_path: Path):
     (tmp_path / "excl.lox").write_text("")
     s = (
         suite("X", *from_files(tmp_path, pattern=r"\.lox$", exclude={"excl"}))
-        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
+        .with_command(["true"])
+        .with_cwd(tmp_path)
+        .with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "sub/nested"]
@@ -197,7 +218,9 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
     s = (
         suite("X")
         .factory(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
-        .with_command(["true"]).with_cwd(tmp_path).with_metric(Time())
+        .with_command(["true"])
+        .with_cwd(tmp_path)
+        .with_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(tmp_path))
     assert names == ["p"]
@@ -208,10 +231,14 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
 
 def test_with_matrix_expands_and_stamps_variant():
     s = (
-        suite("M", _b("compute")
-              .with_command(lambda ctx: ["x", "-" + ctx.matrix.opt])
-              .with_matrix(opt=["O0", "O2"]))
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        suite(
+            "M",
+            _b("compute")
+            .with_command(lambda ctx: ["x", "-" + ctx.matrix.opt])
+            .with_matrix(opt=["O0", "O2"]),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     benchmarks = list(s.materialize(None))
     assert len(benchmarks) == 2
@@ -222,11 +249,14 @@ def test_with_matrix_expands_and_stamps_variant():
 
 def test_suite_with_matrix_applies_to_all_benchmarks():
     s = (
-        suite("M",
-              _b("a").with_command(lambda ctx: ["x", ctx.matrix.vm]),
-              _b("b").with_command(lambda ctx: ["y", ctx.matrix.vm]))
+        suite(
+            "M",
+            _b("a").with_command(lambda ctx: ["x", ctx.matrix.vm]),
+            _b("b").with_command(lambda ctx: ["y", ctx.matrix.vm]),
+        )
         .with_matrix(vm=["v8", "jsc"])
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     bs = list(s.materialize(None))
     names_vms = sorted((b.name, b.vm) for b in bs)
@@ -234,9 +264,8 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
 
 
 def test_suite_dimensions_append_after_benchmark_dimensions():
-    s = (
-        suite("M", _b("a").with_command(["true"]).with_matrix(size=[1, 2]))
-        .with_matrix(vm=["v8", "jsc"])
+    s = suite("M", _b("a").with_command(["true"]).with_matrix(size=[1, 2])).with_matrix(
+        vm=["v8", "jsc"]
     )
     bs = _mat(s)
     assert len(bs) == 4
@@ -245,9 +274,8 @@ def test_suite_dimensions_append_after_benchmark_dimensions():
 
 
 def test_suite_dimension_collision_with_benchmark_dimension_raises():
-    s = (
-        suite("M", _b("a").with_command(["true"]).with_matrix(vm=["a"]))
-        .with_matrix(vm=["b"])
+    s = suite("M", _b("a").with_command(["true"]).with_matrix(vm=["a"])).with_matrix(
+        vm=["b"]
     )
     with pytest.raises(ValueError, match="already declared"):
         s.materialize(None)
@@ -255,11 +283,15 @@ def test_suite_dimension_collision_with_benchmark_dimension_raises():
 
 def test_with_skip_kwargs_drops_variant():
     s = (
-        suite("M", _b("c")
-              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
-              .with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .add_matrix_skip(vm="v8", size=500))
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        suite(
+            "M",
+            _b("c")
+            .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+            .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+            .add_matrix_skip(vm="v8", size=500),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     bs = list(s.materialize(None))
     assert len(bs) == 3
@@ -268,11 +300,15 @@ def test_with_skip_kwargs_drops_variant():
 
 def test_with_skip_predicate_drops_variant():
     s = (
-        suite("M", _b("c")
-              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
-              .with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .add_matrix_skip(lambda b: b.vm != "jsc"))
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        suite(
+            "M",
+            _b("c")
+            .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+            .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+            .add_matrix_skip(lambda b: b.vm != "jsc"),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     bs = list(s.materialize(None))
     assert all(b.vm == "jsc" for b in bs)
@@ -280,24 +316,28 @@ def test_with_skip_predicate_drops_variant():
 
 
 def test_suite_skip_unions_with_benchmark_skip():
-    s = (
-        suite("M", _b("c")
-              .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
-              .with_matrix(vm=["v8", "jsc"], size=[100, 500])
-              .add_matrix_skip(vm="v8", size=500))
-        .add_matrix_skip(vm="jsc", size=100)
-    )
+    s = suite(
+        "M",
+        _b("c")
+        .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+        .with_matrix(vm=["v8", "jsc"], size=[100, 500])
+        .add_matrix_skip(vm="v8", size=500),
+    ).add_matrix_skip(vm="jsc", size=100)
     bs = _mat(s)
     assert {(b.vm, b.size) for b in bs} == {("v8", 100), ("jsc", 500)}
 
 
 def test_with_label_overrides_default():
     s = (
-        suite("M", _b("c")
-              .with_command(lambda ctx: ["true"])
-              .with_matrix(arg=["one", "two"])
-              .with_label(lambda b: f"<{b.arg}>"))
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        suite(
+            "M",
+            _b("c")
+            .with_command(lambda ctx: ["true"])
+            .with_matrix(arg=["one", "two"])
+            .with_label(lambda b: f"<{b.arg}>"),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     bs = list(s.materialize(None))
     assert sorted(b.variant_label for b in bs) == ["<one>", "<two>"]
@@ -306,9 +346,14 @@ def test_with_label_overrides_default():
 def test_command_via_matrix_builder():
     """Per-variant command is wired explicitly via a builder reading ctx.matrix."""
     s = (
-        suite("M", _b("c").with_matrix(cmd=[["echo", "a"], ["echo", "b"]])
-              .with_command(lambda ctx: list(ctx.matrix.cmd)))
-        .with_cwd(Path("/tmp")).with_metric(Time())
+        suite(
+            "M",
+            _b("c")
+            .with_matrix(cmd=[["echo", "a"], ["echo", "b"]])
+            .with_command(lambda ctx: list(ctx.matrix.cmd)),
+        )
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
     )
     bs = list(s.materialize(None))
     assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]

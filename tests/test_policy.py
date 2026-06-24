@@ -82,8 +82,12 @@ def test_cov_matches_reference_stdev():
     window = values[-5:]
     ref = statistics.stdev(window) / statistics.mean(window)
     mean = state.sum / len(state.window)
-    var = max((state.sumsq / len(state.window)) - mean * mean, 0.0) * len(state.window) / (len(state.window) - 1)
-    inc = (var ** 0.5) / abs(mean)
+    var = (
+        max((state.sumsq / len(state.window)) - mean * mean, 0.0)
+        * len(state.window)
+        / (len(state.window) - 1)
+    )
+    inc = (var**0.5) / abs(mean)
     assert abs(inc - ref) < 1e-9
 
 
@@ -140,7 +144,11 @@ def test_or_stops_at_first():
 
 
 def test_at_least_at_most_sugar():
-    p = CoefficientOfVariation("rt", threshold=0.0, window=3, min_runs=3).at_least(5).at_most(7)
+    p = (
+        CoefficientOfVariation("rt", threshold=0.0, window=3, min_runs=3)
+        .at_least(5)
+        .at_most(7)
+    )
     state = p.start()
     # 7 stable values: at_most kicks in at run 7.
     for _ in range(7):
@@ -222,7 +230,9 @@ def test_or_max_runs_ignores_unbounded_child():
 
 
 def test_or_max_runs_both_unbounded_is_none():
-    assert (CoefficientOfVariation("rt") | CoefficientOfVariation("rt")).max_runs() is None
+    assert (
+        CoefficientOfVariation("rt") | CoefficientOfVariation("rt")
+    ).max_runs() is None
 
 
 # ---------------------------------------------------------------------------

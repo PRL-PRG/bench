@@ -31,8 +31,8 @@ from bench import BenchmarkBuilder, Regex, Time, bench, max_rss, run, suite
 
 @dataclass
 class LevelDBParams:
-    db_bench: Path          # required: path to the built db_bench binary
-    num: int = 100000       # key/value pairs written (and read)
+    db_bench: Path  # required: path to the built db_bench binary
+    num: int = 100000  # key/value pairs written (and read)
 
 
 # Self-contained ops that write data / hash - they report MB/s throughput.

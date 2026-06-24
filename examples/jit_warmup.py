@@ -18,17 +18,17 @@ many leading runs were warmup, and the summary stats drop exactly those.
 from bench import CoefficientOfVariation, FixedRuns, Time, bench, run, suite
 
 
-s = (
-    suite("jit",
-        bench("workload")
-            .with_command(["sh", "-c", "sleep 0.05"])
-            .with_metric(Time())
-            .with_warmup(
-                CoefficientOfVariation("elapsed", threshold=0.05, window=4, min_runs=4)
-                .at_most(20)
-            )
-            .with_runs(FixedRuns(10))
+s = suite(
+    "jit",
+    bench("workload")
+    .with_command(["sh", "-c", "sleep 0.05"])
+    .with_metric(Time())
+    .with_warmup(
+        CoefficientOfVariation("elapsed", threshold=0.05, window=4, min_runs=4).at_most(
+            20
+        )
     )
+    .with_runs(FixedRuns(10)),
 )
 
 

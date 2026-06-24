@@ -244,9 +244,7 @@ class BenchmarkBuilder:
     ) -> BenchmarkBuilder:
         return dataclasses.replace(self, runs=as_build(p, coerce_policy))
 
-    def with_harness(
-        self, monitor: HarnessMonitor | None = UNSET
-    ) -> BenchmarkBuilder:
+    def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
         streams all iterations, where each line (or framed block) becomes one
         observation.

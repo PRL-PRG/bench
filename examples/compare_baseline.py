@@ -17,7 +17,8 @@ from bench import Time, bench, run, suite
 
 
 s = (
-    suite("cmp",
+    suite(
+        "cmp",
         bench("fast").with_command(["sh", "-c", "sleep 0.02"]),
         bench("slow").with_command(["sh", "-c", "sleep 0.05"]),
     )

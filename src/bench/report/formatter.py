@@ -52,7 +52,7 @@ def _orient(display_ratio: float, sigma: float) -> tuple[float, float, str]:
     if display_ratio >= 1:
         return display_ratio, sigma, "better"
     inv = 1.0 / display_ratio
-    inv_sigma = sigma / (display_ratio ** 2)
+    inv_sigma = sigma / (display_ratio**2)
     return inv, inv_sigma, "worse"
 
 
@@ -271,7 +271,9 @@ class DefaultSummary(Formatter):
                         lines.append(f"  [bench.metric]{mk[0]}[/]:")
                         shown = True
                     r, s, word = _orient(mr.display_ratio, mr.sigma)
-                    lines.append(self._fmt_ratio_line("    ", cn, r, s, word, baseline.name))
+                    lines.append(
+                        self._fmt_ratio_line("    ", cn, r, s, word, baseline.name)
+                    )
 
         # Per-suite geomean summary
         suites_in_order: list[str] = []
@@ -286,11 +288,16 @@ class DefaultSummary(Formatter):
             suite_groups = [g for g in baseline.groups if g.suite == suite]
             lines.append(f"  [bench.label]{suite}:[/]")
             lines.append("    runs:")
-            lines.append(f"      {self._fmt_runs(baseline.name, self._sum(suite_groups))}")
+            lines.append(
+                f"      {self._fmt_runs(baseline.name, self._sum(suite_groups))}"
+            )
             for c, cn in zip(data.comparees, data.comparee_names):
                 idx = {(g.suite, g.benchmark, g.variant): g for g in c.groups}
-                matched = [idx[(g.suite, g.benchmark, g.variant)] for g in suite_groups
-                           if (g.suite, g.benchmark, g.variant) in idx]
+                matched = [
+                    idx[(g.suite, g.benchmark, g.variant)]
+                    for g in suite_groups
+                    if (g.suite, g.benchmark, g.variant) in idx
+                ]
                 lines.append(f"      {self._fmt_runs(cn, self._sum(matched))}")
 
             metric_keys: list[MetricKey] = []
@@ -310,15 +317,23 @@ class DefaultSummary(Formatter):
                         lines.append(f"    [bench.metric]{mk[0]}[/]:")
                         shown = True
                     r, s, word = _orient(gmr.display_ratio, gmr.sigma)
-                    lines.append(self._fmt_ratio_line("      ", cn, r, s, word, baseline.name))
+                    lines.append(
+                        self._fmt_ratio_line("      ", cn, r, s, word, baseline.name)
+                    )
 
     @staticmethod
     def _fmt_runs(name: str, rc: RunCounts) -> str:
         return f"{name}: {_count_markup(rc)} (failed|succeeded)"
 
     @staticmethod
-    def _fmt_ratio_line(indent: str, name: str, ratio: float, sigma: float,
-                       word: str, baseline_name: str) -> str:
+    def _fmt_ratio_line(
+        indent: str,
+        name: str,
+        ratio: float,
+        sigma: float,
+        word: str,
+        baseline_name: str,
+    ) -> str:
         err = f" ± {sigma:.2f}" if sigma > 0 else ""
         word_style = "bench.better" if word == "better" else "bench.worse"
         return (
@@ -345,10 +360,14 @@ class DefaultSummary(Formatter):
 class Compact(Formatter):
     """One-line-per-benchmark format. Useful for commit messages / CI logs."""
 
-    def __init__(self, metric: str | list[str], *,
-                 suite: str | None = None,
-                 baseline_name: str | None = None,
-                 precision: int = 2) -> None:
+    def __init__(
+        self,
+        metric: str | list[str],
+        *,
+        suite: str | None = None,
+        baseline_name: str | None = None,
+        precision: int = 2,
+    ) -> None:
         self._metrics = [metric] if isinstance(metric, str) else list(metric)
         self._suite = suite
         self._baseline_name = baseline_name
@@ -367,7 +386,11 @@ class Compact(Formatter):
     def _with_baseline(self, data: SummaryData) -> str:
         cname = self._baseline_name
         if cname is None:
-            cname = "current" if "current" in data.comparee_names else data.comparee_names[-1]
+            cname = (
+                "current"
+                if "current" in data.comparee_names
+                else data.comparee_names[-1]
+            )
         if cname not in data.ratios:
             return f"Error: comparee {cname!r} not found"
 
@@ -396,9 +419,11 @@ class Compact(Formatter):
                 geo, sigma = geomean_with_sigma(mrs)
                 runs = self._infer_run_count(data, cname, bench_ratios, matched)
                 gmr = GeoMeanRatio(
-                    metric=mrs[0].metric, unit=mrs[0].unit,
+                    metric=mrs[0].metric,
+                    unit=mrs[0].unit,
                     lower_is_better=mrs[0].lower_is_better,
-                    display_ratio=geo, sigma=sigma,
+                    display_ratio=geo,
+                    sigma=sigma,
                     n_benchmarks=len(mrs),
                     runs_per_benchmark=runs,
                 )
@@ -411,7 +436,8 @@ class Compact(Formatter):
             label = "speedup" if len(matched) == 1 else "improvement"
             runs_note = (
                 f" ({gmr.runs_per_benchmark} runs)"
-                if gmr.runs_per_benchmark is not None else ""
+                if gmr.runs_per_benchmark is not None
+                else ""
             )
             out.append(
                 f"geometric mean {label} vs baseline:"
@@ -446,7 +472,9 @@ class Compact(Formatter):
             comp = data.comparees[idx]
             for g in comp.groups:
                 bid = (g.suite, g.benchmark, g.variant)
-                if bid in bench_ratios and any(mk in bench_ratios[bid] for mk in matched):
+                if bid in bench_ratios and any(
+                    mk in bench_ratios[bid] for mk in matched
+                ):
                     runs.add(g.run_counts.successes)
         return runs.pop() if len(runs) == 1 else None
 
