@@ -273,3 +273,86 @@ def test_bench_combines_static_and_discovered_suites():
 def test_run_still_accepts_a_list_of_suites():
     report = run([_trivial("A"), _trivial("B")], argv=["--no-progress"])
     assert {r.suite for r in report.runs} == {"A", "B"}
+
+
+# ----- --list / --include / --exclude -------------------------------------
+
+
+def _matrix_suite(suite_name: str = "M", bench_name: str = "b", **matrix):
+    return suite(
+        suite_name,
+        bench(bench_name)
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1)
+        .with_matrix(**matrix),
+    )
+
+
+def test_list_prints_tree_and_runs_nothing(capsys):
+    report = run([_trivial("Alpha"), _trivial("Beta")], argv=["--list", "--no-progress"])
+    out = capsys.readouterr().out
+    assert "Alpha" in out
+    assert "Beta" in out
+    assert not report.runs  # listing executes nothing
+
+
+def test_list_shows_variants(capsys):
+    run(_matrix_suite("M", "b", jdk=(11, 17)), argv=["--list", "--no-progress"])
+    out = capsys.readouterr().out
+    assert "jdk=11" in out
+    assert "jdk=17" in out
+
+
+def test_include_keeps_only_matching():
+    report = run(
+        [_trivial("Keep"), _trivial("Drop")],
+        argv=["--include", "Keep", "--no-progress"],
+    )
+    assert {r.suite for r in report.runs} == {"Keep"}
+
+
+def test_exclude_drops_matching():
+    report = run(
+        [_trivial("Keep"), _trivial("Drop")],
+        argv=["--exclude", "Drop", "--no-progress"],
+    )
+    assert {r.suite for r in report.runs} == {"Keep"}
+
+
+def test_exclude_wins_over_include():
+    report = run(
+        [_trivial("A"), _trivial("B")],
+        argv=["--include", ".", "--exclude", "B", "--no-progress"],
+    )
+    assert {r.suite for r in report.runs} == {"A"}
+
+
+def test_include_anchored_regex_targets_whole_suite():
+    # `^alpha/` matches "alpha/b" but not "alphabet/b".
+    report = run(
+        [_trivial("alpha"), _trivial("alphabet")],
+        argv=["--include", "^alpha/", "--no-progress"],
+    )
+    assert {r.suite for r in report.runs} == {"alpha"}
+
+
+def test_include_selects_single_variant():
+    report = run(
+        _matrix_suite("M", "b", jdk=(11, 17)),
+        argv=["--include", "jdk=17", "--no-progress"],
+    )
+    assert [dict(r.variant).get("jdk") for r in report.runs] == ["17"]
+
+
+def test_bad_regex_exits_2():
+    with pytest.raises(SystemExit) as ei:
+        run(_trivial("A"), argv=["--include", "(", "--no-progress"])
+    assert ei.value.code == 2
+
+
+def test_empty_selection_exits_1():
+    with pytest.raises(SystemExit) as ei:
+        run(_trivial("A"), argv=["--include", "no-such-bench", "--no-progress"])
+    assert ei.value.code == 1

@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from bench.grammar.benchmark import bench
+from rich.text import Text
+from rich.tree import Tree
+
+from bench.grammar.benchmark import Benchmark, bench
 from bench.grammar.context import add_dataclass_args, build_dataclass
+from bench.core.execution import record_key
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.grammar.suite import Suite, suite
@@ -32,6 +37,7 @@ from bench.runner.base import (
     Runner,
     SuiteMaterializationError,
     plan,
+    select,
 )
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
@@ -137,6 +143,25 @@ def _do_run(
         print_exception(e)
         sys.exit(1)
 
+    includes = getattr(cli_args, "include", None)
+    excludes = getattr(cli_args, "exclude", None)
+    try:
+        planned = select(planned, includes, excludes)
+    except re.error as e:
+        console.print(f"[bench.failure]Invalid --include/--exclude regex: {e}[/]")
+        sys.exit(2)
+
+    if getattr(cli_args, "list_plan", False):
+        console.print(_list_planned_benchmarks(planned))
+        return Report()
+
+    if (includes or excludes) and not planned:
+        console.print(
+            "[bench.failure]No benchmarks matched --include/--exclude "
+            "(run with --list to see what's available).[/]"
+        )
+        sys.exit(1)
+
     runner = _make_runner(cli_args, reporter)
 
     try:
@@ -192,6 +217,7 @@ def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="bench")
     _add_user_params(p, params)
     _add_runtime_flags(p.add_argument_group("bench flags"))
+    _add_selection_flags(p.add_argument_group("selection"))
     return p
 
 
@@ -258,6 +284,32 @@ def _add_runtime_flags(
         metavar="JSON",
         help="Compare against a baseline JSON report (repeat to add more)."
         "First is the baseline.",
+    )
+
+
+def _add_selection_flags(
+    g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
+) -> None:
+    g.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_plan",
+        help="List the suite/benchmark/variant tree and exit (run nothing).",
+    )
+    g.add_argument(
+        "--include",
+        action="append",
+        default=None,
+        metavar="REGEX",
+        help="Keep only benchmarks whose key matches REGEX, where the key is "
+        "'suite/benchmark (k=v, ...)'. Repeatable (OR semantics).",
+    )
+    g.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        metavar="REGEX",
+        help="Drop benchmarks whose key matches REGEX. Repeatable; wins over --include.",
     )
 
 
@@ -423,3 +475,41 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     if out:
         console.print(out)
     return 0
+
+
+# ----- list ------------------------------------------------------------
+
+
+def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
+    """Group planned benchmarks into a `suite → benchmark (variant)` tree.
+
+    Each leaf is one resolved benchmark, labeled `name (k=v, …)`, with the
+    explicit `variant_label` (if any) shown dimmed. The root carries a one-line
+    count summary. This is what `--list` prints.
+    """
+    n_suites = len({b.suite for b in planned})
+    n_benchmarks = len({(b.suite, b.name) for b in planned})
+    n_variants = len(planned)  # each runnable instance is a variant
+
+    def plural(n: int, word: str) -> str:
+        return f"{n} {word}{'' if n == 1 else 's'}"
+
+    header = ", ".join(
+        (
+            plural(n_suites, "suite"),
+            plural(n_benchmarks, "benchmark"),
+            plural(n_variants, "variant"),
+        )
+    )
+    root = Tree(Text(header, style="bench.label"))
+
+    by_suite: dict[str, list[Benchmark]] = {}
+    for b in planned:
+        by_suite.setdefault(b.suite, []).append(b)
+
+    for s, bs in by_suite.items():
+        node = root.add(Text(s, style="bench.label"))
+        for b in bs:
+            leaf = Text(record_key(b.name, b.name, b.variant))
+            node.add(leaf)
+    return root

@@ -5,3 +5,4 @@ build/
 .venv/
 site/
 /schema.json
+/examples/external/harness-*

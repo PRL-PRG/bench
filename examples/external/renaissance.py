@@ -47,6 +47,7 @@ class Params:
     java: Path = Path("java")
     renaissance: Path = Path("renaissance-gpl-0.16.1.jar")
     runs: int | None = None
+    warmup: int = 10
 
 
 @dataclass
@@ -100,20 +101,23 @@ def renaissance_monitor(handle: HarnessHandle) -> Iterator[str]:
 
 
 def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkBuilder]:
+    warmup = ctx.params.warmup
+    runs = ctx.params.runs
     return [
         bench(rb.name)
         .with_command(
-            lambda ctx, name=rb.name, reps=rb.reps: [
+            lambda ctx, name=rb.name, reps=(runs if runs is not None else rb.reps): [
                 ctx.params.java,
                 "-jar",
                 ctx.params.renaissance,
                 name,
                 "-r",
-                str(reps),
+                str(reps + warmup),
             ]
         )
         .with_harness()
-        .with_runs(ctx.params.runs if ctx.params.runs is not None else rb.reps)
+        .with_runs(runs if runs is not None else rb.reps)
+        .with_warmup(warmup)
         for rb in list_benchmarks(ctx.params)
     ]
 

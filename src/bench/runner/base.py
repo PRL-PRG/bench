@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import re
 import subprocess
 from typing import Any
 
@@ -10,6 +11,7 @@ from bench.grammar.benchmark import Benchmark
 from bench.core.execution import (
     default_success,
     format_identifier,
+    record_key,
 )
 from bench.grammar.suite import Suite
 from bench.report.reporter import Reporter
@@ -55,6 +57,27 @@ def plan(suites: list[Suite], params: Any = None) -> list[Benchmark]:
             out.extend(s.materialize(params))
         except Exception as cause:
             raise SuiteMaterializationError(s.name, cause) from cause
+    return out
+
+
+def select(
+    planned: list[Benchmark],
+    includes: list[str] | None,
+    excludes: list[str] | None,
+) -> list[Benchmark]:
+    """Filter planned benchmarks by include/exclude regexes."""
+    inc = [re.compile(p) for p in (includes or [])]
+    exc = [re.compile(p) for p in (excludes or [])]
+    if not inc and not exc:
+        return planned
+    out: list[Benchmark] = []
+    for b in planned:
+        key = record_key(b.suite, b.name, b.variant)
+        if inc and not any(r.search(key) for r in inc):
+            continue
+        if any(r.search(key) for r in exc):
+            continue
+        out.append(b)
     return out
 
 
