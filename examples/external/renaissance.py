@@ -46,6 +46,7 @@ from bench import (
 class Params:
     java: Path = Path("java")
     renaissance: Path = Path("renaissance-gpl-0.16.1.jar")
+    runs: int | None = None
 
 
 @dataclass
@@ -112,7 +113,7 @@ def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkBuilder]:
             ]
         )
         .with_harness()
-        .with_runs(rb.reps)
+        .with_runs(ctx.params.runs if ctx.params.runs is not None else rb.reps)
         for rb in list_benchmarks(ctx.params)
     ]
 
