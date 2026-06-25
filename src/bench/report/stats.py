@@ -43,6 +43,8 @@ class BenchmarkGroup:
     metrics: dict[MetricKey, list[float]] = field(
         default_factory=dict[MetricKey, list[float]]
     )
+    # Outliers stay in `metrics` (stats are unchanged); this only counts them.
+    outliers: dict[MetricKey, int] = field(default_factory=dict[MetricKey, int])
     run_counts: RunCounts = field(default_factory=RunCounts)
 
 
@@ -83,6 +85,8 @@ def group(
         if s.lower_is_better is not None:
             lib[mk] = s.lower_is_better
         g.metrics.setdefault(mk, []).append(s.value)
+        if s.outlier:
+            g.outliers[mk] = g.outliers.get(mk, 0) + 1
 
     for r in report.runs:
         # A run that failed before producing any iteration (spawn /
@@ -149,6 +153,7 @@ class MetricStats:
     stdev: float  # 0.0 if n < 2
     min: float
     max: float
+    n_outliers: int = 0  # values flagged by outlier detection (still in stats)
 
 
 @dataclass(slots=True)
@@ -162,7 +167,11 @@ class GroupStats:
 
 
 def metric_stats(
-    values: list[float], metric: str, unit: str, lower_is_better: bool | None
+    values: list[float],
+    metric: str,
+    unit: str,
+    lower_is_better: bool | None,
+    n_outliers: int = 0,
 ) -> MetricStats:
     n = len(values)
     return MetricStats(
@@ -175,6 +184,7 @@ def metric_stats(
         stdev=statistics.stdev(values) if n >= 2 else 0.0,
         min=min(values),
         max=max(values),
+        n_outliers=n_outliers,
     )
 
 
@@ -186,7 +196,7 @@ def group_stats(g: BenchmarkGroup, lib_map: dict[MetricKey, bool]) -> GroupStats
         variant_label=g.variant_label,
         run_counts=g.run_counts,
         metrics={
-            mk: metric_stats(vs, mk[0], mk[1], lib_map.get(mk))
+            mk: metric_stats(vs, mk[0], mk[1], lib_map.get(mk), g.outliers.get(mk, 0))
             for mk, vs in g.metrics.items()
         },
     )

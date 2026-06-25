@@ -155,6 +155,36 @@ def test_group_excludes_failures_in_warmup():
     assert g.groups == []
 
 
+def test_outliers_stay_in_stats_but_are_counted():
+    # An outlier-flagged sample is still part of the values (mean/σ unchanged),
+    # and the count surfaces on MetricStats.
+    r = Report(
+        runs=[
+            _run(1, samples=[_smp("runtime", 1.0)]),
+            _run(2, samples=[_smp("runtime", 1.0)]),
+            _run(
+                3,
+                samples=[
+                    Sample(
+                        "runtime", 100.0, unit="s", lower_is_better=True, outlier=True
+                    )
+                ],
+            ),
+        ]
+    )
+    g = group(r).groups[0]
+    assert sorted(g.metrics[("runtime", "s")]) == [1.0, 1.0, 100.0]
+    assert g.outliers[("runtime", "s")] == 1
+
+    gs = build_summary(r, []).groups[0]
+    assert gs.metrics[("runtime", "s")].n_outliers == 1
+
+
+def test_metric_stats_default_zero_outliers():
+    ms = metric_stats([1.0, 2.0, 3.0], "runtime", "s", True)
+    assert ms.n_outliers == 0
+
+
 def test_metric_stats_basic():
     ms = metric_stats([1.0, 2.0, 3.0], "runtime", "s", True)
     assert ms.n == 3

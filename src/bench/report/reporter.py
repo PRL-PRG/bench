@@ -97,6 +97,7 @@ def _sample_row(base: dict[str, Any], s: Sample) -> dict[str, Any]:
         "value": s.value,
         "unit": s.unit,
         "lower_is_better": "" if s.lower_is_better is None else str(s.lower_is_better),
+        "outlier": str(s.outlier),
         "failure": "",
     }
 
@@ -108,6 +109,7 @@ def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
         "value": "",
         "unit": "",
         "lower_is_better": "",
+        "outlier": "",
         "failure": failure,
     }
 
@@ -116,7 +118,7 @@ class CsvReporter(_BufferingReporter):
     """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, failure`. One row per Sample, for each iteration's samples
+    lower_is_better, outlier, failure`. One row per Sample, for each iteration's samples
     and then the run's whole-process samples. A failed iteration (or run) emits
     one row with blank metric and the failure verdict. All runs appear, warmup
     included.
@@ -133,7 +135,7 @@ class CsvReporter(_BufferingReporter):
         cols = (
             ["suite", "benchmark", "run"]
             + variant_cols
-            + ["metric", "value", "unit", "lower_is_better", "failure"]
+            + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
         )
         with open(self.path, "wt", newline="") as f:
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)

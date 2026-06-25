@@ -40,6 +40,7 @@ from bench.core.metric import (
     Time,
     as_metric_source,
 )
+from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
 from bench.grammar.context import Context, Matrix
 
@@ -245,6 +246,7 @@ class BenchmarkBuilder(MetricSetters):
     success: SuccessFn = UNSET
     warmup: Build[StoppingPolicy] = UNSET
     runs: Build[StoppingPolicy] = UNSET
+    outlier_detection: OutlierDetection = UNSET
     harness: bool = UNSET
     monitor: HarnessMonitor | None = UNSET
 
@@ -298,6 +300,9 @@ class BenchmarkBuilder(MetricSetters):
         self, p: int | StoppingPolicy | Build[StoppingPolicy]
     ) -> BenchmarkBuilder:
         return dataclasses.replace(self, runs=as_build(p, coerce_policy))
+
+    def with_outlier_detection(self, d: OutlierDetection) -> BenchmarkBuilder:
+        return dataclasses.replace(self, outlier_detection=d)
 
     def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
@@ -392,6 +397,7 @@ class BenchmarkBuilder(MetricSetters):
             success=self.success,
             warmup=self.warmup(ctx),
             runs=self.runs(ctx),
+            outlier_detection=self.outlier_detection,
             harness=self.harness,
             monitor=self.monitor,
             data=self.data,
@@ -412,6 +418,7 @@ class Benchmark:
     success: SuccessFn
     warmup: StoppingPolicy
     runs: StoppingPolicy
+    outlier_detection: OutlierDetection
     harness: bool
     monitor: HarnessMonitor | None
     data: Mapping[str, Any]

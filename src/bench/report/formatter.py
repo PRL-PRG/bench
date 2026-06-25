@@ -159,6 +159,26 @@ class DefaultSummary(Formatter):
             else:
                 lines.append(f"  {label}  [bench.value]{mean_v:.2f}[/]")
 
+        self._fmt_outliers(gs, scaled, lines)
+
+    @staticmethod
+    def _fmt_outliers(
+        gs: GroupStats, scaled: dict[MetricKey, tuple[float, str]], lines: list[str]
+    ) -> None:
+        """Note any flagged outliers."""
+        notes = [
+            (mk[0], gs.metrics[mk].n_outliers)
+            for mk in scaled
+            if gs.metrics[mk].n_outliers > 0
+        ]
+        if not notes:
+            return
+        total = sum(n for _, n in notes)
+        detail = ", ".join(f"{m}: {n}" for m, n in notes)
+        lines.append(
+            f"  [bench.warning]!! statistical outlier(s) detected: {total} ({detail}) !![/]"
+        )
+
     # ----- intra-benchmark ranking (hyperfine-style) -----------------
 
     def _fmt_ranking(self, data: SummaryData, lines: list[str]) -> None:

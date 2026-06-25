@@ -1,5 +1,6 @@
 """Reporter sinks (CsvReporter, JsonReporter, DirReporter, CompositeReporter)."""
 
+import csv
 import io
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
-from bench.core.sample import Iteration, Run
+from bench.core.sample import Iteration, Run, Sample
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
@@ -93,6 +94,52 @@ def test_mixed_fans_out(tmp_path: Path):
         plan([_s()], None), None
     )
     assert js.exists() and cs.exists()
+
+
+def _flagged_run() -> Run:
+    return Run(
+        suite="S",
+        benchmark="b",
+        variant=(),
+        run=1,
+        command=("x",),
+        iterations=[
+            Iteration(
+                samples=[
+                    Sample("runtime", 1.0, unit="s", lower_is_better=True),
+                    Sample(
+                        "runtime", 100.0, unit="s", lower_is_better=True, outlier=True
+                    ),
+                ]
+            )
+        ],
+    )
+
+
+def test_csv_includes_outlier_column(tmp_path: Path):
+    out = tmp_path / "r.csv"
+    rep = CsvReporter(out)
+    rep.run_done(_flagged_run())
+    rep.finalize()
+    rows = list(csv.DictReader(out.open()))
+    assert "outlier" in rows[0]
+    flags = {r["value"]: r["outlier"] for r in rows}
+    assert flags["1.0"] == "False"
+    assert flags["100.0"] == "True"
+
+
+def test_json_persists_outlier_flag(tmp_path: Path):
+    out = tmp_path / "r.json"
+    rep = JsonReporter(out)
+    rep.run_done(_flagged_run())
+    rep.finalize()
+    samples = [
+        s
+        for run in report_from_json(out.read_text()).runs
+        for it in run.iterations
+        for s in it.samples
+    ]
+    assert sorted(s.outlier for s in samples) == [False, True]
 
 
 def test_csv_header_includes_variant_columns(tmp_path: Path):

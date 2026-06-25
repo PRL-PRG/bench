@@ -7,7 +7,7 @@ so the Controller pulls from the fake.
 
 from pathlib import Path
 
-from bench import FixedRuns, Iteration, Run, Sample, bench, suite
+from bench import FixedRuns, Iteration, NoDetection, Run, Sample, bench, suite
 from bench.runner.base import plan
 from bench.core.sample import Report
 from bench.report.reporter import Reporter
@@ -62,16 +62,16 @@ def _obs(value: float) -> Iteration:
     return Iteration(samples=[Sample("t", float(value))])
 
 
-def _planned(runs, *, warmup=0):
-    return plan(
-        [
-            suite("S", bench("b").with_command(["true"]))
-            .with_cwd(Path("/tmp"))
-            .with_warmup(warmup)
-            .with_runs(runs)
-        ],
-        None,
-    )[0]
+def _planned(runs, *, warmup=0, outlier_detection=None):
+    s = (
+        suite("S", bench("b").with_command(["true"]))
+        .with_cwd(Path("/tmp"))
+        .with_warmup(warmup)
+        .with_runs(runs)
+    )
+    if outlier_detection is not None:
+        s = s.with_outlier_detection(outlier_detection)
+    return plan([s], None)[0]
 
 
 def _patch(monkeypatch, obs, closed):
@@ -105,6 +105,40 @@ def test_stops_when_policy_converges(monkeypatch):
 
     assert len(report.runs) == 2
     assert closed == [True]
+
+
+def test_outliers_marked_across_runs(monkeypatch):
+    # Spread cluster (MAD > 0) plus a lone 100: detection (on by default) pools
+    # the values across all runs and flags only the 100.
+    values = [10.0, 11.0, 12.0, 10.0, 11.0, 12.0, 10.0, 100.0]
+    _patch(monkeypatch, [_obs(v) for v in values], [])
+    report = Report()
+    Controller(_Collect()).run_benchmark(_planned(FixedRuns(8)), report)
+
+    flags = [r.iterations[0].samples[0].outlier for r in report.runs]
+    assert flags == [False] * 7 + [True]
+
+
+def test_no_detection_leaves_samples_unmarked(monkeypatch):
+    values = [1.0] * 7 + [100.0]
+    _patch(monkeypatch, [_obs(v) for v in values], [])
+    report = Report()
+    Controller(_Collect()).run_benchmark(
+        _planned(FixedRuns(8), outlier_detection=NoDetection()), report
+    )
+
+    assert all(not r.iterations[0].samples[0].outlier for r in report.runs)
+
+
+def test_warmup_iterations_excluded_from_detection(monkeypatch):
+    # The big value is in warmup; the measured tail is flat, so nothing is an
+    # outlier and the warmup sample itself is never flagged.
+    values = [100.0] + [1.0] * 7
+    _patch(monkeypatch, [_obs(v) for v in values], [])
+    report = Report()
+    Controller(_Collect()).run_benchmark(_planned(FixedRuns(7), warmup=1), report)
+
+    assert all(not r.iterations[0].samples[0].outlier for r in report.runs)
 
 
 def test_warmup_boundary_marked_on_iterations(monkeypatch):

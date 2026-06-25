@@ -45,6 +45,7 @@ from bench.core.metric import (
     MetricSource,
     ProcessMetric,
 )
+from bench.core.outlier import ModifiedZScore, OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy, coerce_policy
 
 if TYPE_CHECKING:
@@ -95,6 +96,9 @@ class Suite(MetricSetters):
     success: SuccessFn = default_success
     warmup: Build[StoppingPolicy] = const(FixedRuns(0))
     runs: Build[StoppingPolicy] = const(FixedRuns(1))
+    # Outlier detection is on by default; with_outlier_detection(NoDetection())
+    # turns it off.
+    outlier_detection: OutlierDetection = ModifiedZScore()
     harness: bool = False
     # Suite-level default for the harness monitor, benchmark value wins.
     monitor: HarnessMonitor | None = None
@@ -155,6 +159,10 @@ class Suite(MetricSetters):
     def with_runs(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Suite:
         """Set the default policy for the measured runs."""
         return dataclasses.replace(self, runs=as_build(p, coerce_policy))
+
+    def with_outlier_detection(self, d: OutlierDetection) -> Suite:
+        """Set the default outlier-detection strategy (`NoDetection()` = off)."""
+        return dataclasses.replace(self, outlier_detection=d)
 
     def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
         """Make every contained benchmark a harness benchmark."""
@@ -247,6 +255,11 @@ class Suite(MetricSetters):
             success=self.success if b.success is UNSET else b.success,
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,
+            outlier_detection=(
+                self.outlier_detection
+                if b.outlier_detection is UNSET
+                else b.outlier_detection
+            ),
             harness=self.harness if b.harness is UNSET else b.harness,
             monitor=self.monitor if b.monitor is UNSET else b.monitor,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from bench.report.theme import BENCHR_THEME
 from bench import (
     Compact,
     DefaultSummary,
@@ -55,6 +56,31 @@ def test_default_summary_no_baseline():
     assert "S/b" in out
     assert "3" in out and "runs" in out
     assert "runtime" in out and "ms" in out  # 0.5s -> scaled to 500ms
+    assert "outlier" not in out.lower()  # nothing flagged -> no warning
+
+
+def test_default_summary_warns_on_outliers():
+    r = Report(
+        runs=[
+            _ok(1, samples=[_smp("runtime", 1.0)]),
+            _ok(2, samples=[_smp("runtime", 1.0)]),
+            _ok(
+                3,
+                samples=[
+                    Sample(
+                        "runtime", 100.0, unit="s", lower_is_better=True, outlier=True
+                    )
+                ],
+            ),
+        ]
+    )
+    out = DefaultSummary()(r)
+    assert "1" in out and "outlier" in out.lower()
+    # The breakdown names the affected metric — never empty parens like "1 ()".
+    assert "runtime: 1" in out
+    assert "()" not in out
+    # Rendering must not raise (the warning style must exist in the theme).
+    Console(file=StringIO(), theme=BENCHR_THEME).print(out)
 
 
 def test_compact_no_baseline_lists_benchmarks():

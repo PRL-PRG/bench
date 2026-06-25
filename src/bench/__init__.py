@@ -38,6 +38,13 @@ from bench.core.policy import (
     StoppingPolicy,
 )
 
+# Outlier detection
+from bench.core.outlier import (
+    ModifiedZScore,
+    NoDetection,
+    OutlierDetection,
+)
+
 # Benchmark / Suite
 from bench.grammar.benchmark import (
     Benchmark,
@@ -104,6 +111,10 @@ __all__ = [
     "FixedRuns",
     "CoefficientOfVariation",
     "MaxDuration",
+    # Outlier detection
+    "OutlierDetection",
+    "NoDetection",
+    "ModifiedZScore",
     # Benchmark / Suite
     "Benchmark",
     "BenchmarkBuilder",

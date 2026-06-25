@@ -18,6 +18,7 @@ BENCHR_THEME = Theme(
         "bench.label": "bold",
         "bench.better": "green bold",
         "bench.worse": "red bold",
+        "bench.warning": "yellow",
         "bench.progress": "blue bold",
         "bench.in_process": "magenta bold",
     }
