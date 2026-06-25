@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Generator
 
 from bench.core.policy import StoppingPolicy
 from bench.core.process import interrupted
-from bench.core.sample import Observation, Report
+from bench.core.sample import Iteration, Report, Run
 from bench.grammar.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.source import make_source
@@ -15,27 +16,51 @@ from bench.runner.source import make_source
 def benchmarking_loop(
     warmup: StoppingPolicy,
     runs: StoppingPolicy,
-) -> Generator[bool, Observation, None]:
+) -> Generator[bool, Iteration, None]:
     """Yield `in_warmup` per slot until both policies converge.
 
-    Every observation, including a failed one (empty samples), counts:
+    Every iteration, including a failed one (empty samples), counts:
     the active policy observes it and decides.
     """
     for policy, in_warmup in ((warmup, True), (runs, False)):
         state = policy.start()
         while not state.satisfied():
-            observation = yield in_warmup
-            state.observe(observation)
+            iteration = yield in_warmup
+            state.observe(iteration)
+
+
+def _mark_warmup(runs: list[Run], warmup: int) -> list[Run]:
+    """Flag the first `warmup` iterations (in pull order, across runs) as warmup.
+
+    The Controller knows the warmup boundary (it drove the warmup policy), so it
+    stamps it onto the assembled Runs — the flag then travels with the data."""
+    if warmup <= 0:
+        return runs
+    remaining = warmup
+    out: list[Run] = []
+    for run in runs:
+        if remaining <= 0:
+            out.append(run)
+            continue
+        new_iters: list[Iteration] = []
+        for it in run.iterations:
+            if remaining > 0:
+                new_iters.append(dataclasses.replace(it, warmup=True))
+                remaining -= 1
+            else:
+                new_iters.append(it)
+        out.append(dataclasses.replace(run, iterations=new_iters))
+    return out
 
 
 class Controller:
     """Drive `benchmarking_loop` over one benchmark-variant's RunSource.
 
-    Pull one `(Observation, label)` per slot, feed
-    the stopping policy, count warmup observations, and `close()` the source on
-    convergence (which kills a running harness and returns the assembled
-    `Run`(s)). The Controller records those runs and marks the variant's
-    warmup. It never schedules. The source owns scheduling and spawning.
+    Pull one `(Iteration, label)` per slot, feed the stopping policy, count
+    warmup iterations, and `close()` the source on convergence (which kills a
+    running harness and returns the assembled `Run`(s)). The Controller stamps
+    the warmup iterations onto the runs and records them. It never schedules;
+    the source owns scheduling and spawning.
     """
 
     def __init__(
@@ -53,7 +78,7 @@ class Controller:
 
         source = make_source(b, verbose=self.verbose)
 
-        warmup_obs = 0
+        warmup_iters = 0
 
         loop = benchmarking_loop(b.warmup, b.runs)
         try:
@@ -64,26 +89,22 @@ class Controller:
         try:
             while in_warmup is not None:
                 try:
-                    obs, label = source.next()
+                    it, label = source.next()
                 except StopIteration:
                     break
 
-                self.reporter.observation(obs, label)
+                self.reporter.iteration(it, label)
                 if in_warmup:
-                    warmup_obs += 1
+                    warmup_iters += 1
                 if interrupted():
                     break
 
                 try:
-                    in_warmup = loop.send(obs)
+                    in_warmup = loop.send(it)
                 except StopIteration:
                     break
         finally:
-            runs = source.close()
+            runs = _mark_warmup(source.close(), warmup_iters)
             for run in runs:
                 report.add(run)
                 self.reporter.run_done(run)
-            if warmup_obs and runs:
-                key = runs[0].key()
-                report.warmup(key, warmup_obs)
-                self.reporter.warmup(key, warmup_obs)

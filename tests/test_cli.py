@@ -52,10 +52,12 @@ def test_bench_writes_json(tmp_path: Path):
     all_samples = [
         s
         for r in data["runs"]
-        for o in r.get("observations", [])
-        for s in o.get("samples", [])
+        for s in (
+            [s for o in r.get("iterations", []) for s in o.get("samples", [])]
+            + r.get("process_samples", [])
+        )
     ]
-    assert len(all_samples) >= 2
+    assert len(all_samples) >= 2  # `run` measures Time -> 2 elapsed process samples
 
 
 def test_bench_writes_csv(tmp_path: Path):
@@ -236,7 +238,7 @@ def _trivial(suite_name: str, bench_name: str = "b"):
         bench(bench_name)
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
 
@@ -284,14 +286,16 @@ def _matrix_suite(suite_name: str = "M", bench_name: str = "b", **matrix):
         bench(bench_name)
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1)
         .with_matrix(**matrix),
     )
 
 
 def test_list_prints_tree_and_runs_nothing(capsys):
-    report = run([_trivial("Alpha"), _trivial("Beta")], argv=["--list", "--no-progress"])
+    report = run(
+        [_trivial("Alpha"), _trivial("Beta")], argv=["--list", "--no-progress"]
+    )
     out = capsys.readouterr().out
     assert "Alpha" in out
     assert "Beta" in out

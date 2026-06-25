@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from bench import Observation, Report, Run, Sample, report_to_json
+from bench import Iteration, Report, Run, Sample, report_to_json
 from bench.report.stats import (
     build_summary,
     geomean_with_sigma,
@@ -29,8 +29,10 @@ def _run(
     bench: str = "b",
     suite: str = "S",
     samples: list[Sample] | None = None,
+    warmup: bool = False,
+    process_samples: list[Sample] | None = None,
 ) -> Run:
-    obs = Observation(samples=list(samples) if samples else [])
+    it = Iteration(samples=list(samples) if samples else [], warmup=warmup)
     return Run(
         suite=suite,
         benchmark=bench,
@@ -40,11 +42,12 @@ def _run(
         returncode=returncode,
         failure=failure,
         message="boom" if failure else "",
-        observations=[obs],
+        iterations=[it],
+        process_samples=list(process_samples) if process_samples else [],
     )
 
 
-def _fail(run: int, *, bench: str = "b", suite: str = "S") -> Run:
+def _fail(run: int, *, bench: str = "b", suite: str = "S", warmup: bool = False) -> Run:
     return Run(
         suite=suite,
         benchmark=bench,
@@ -54,17 +57,16 @@ def _fail(run: int, *, bench: str = "b", suite: str = "S") -> Run:
         returncode=7,
         failure="boom",
         message="boom",
-        observations=[Observation(failure="boom")],
+        iterations=[Iteration(failure="boom", warmup=warmup)],
     )
 
 
 def test_group_excludes_warmup_by_default():
     r = Report(
         runs=[
-            _run(1, samples=[_smp("runtime", 1.0)]),
+            _run(1, samples=[_smp("runtime", 1.0)], warmup=True),
             _run(2, samples=[_smp("runtime", 0.5)]),
         ],
-        warmups={"S/b": 1},
     )
     g = group(r)
     assert len(g.groups) == 1
@@ -74,13 +76,56 @@ def test_group_excludes_warmup_by_default():
 def test_group_with_warmup_when_opted_in():
     r = Report(
         runs=[
-            _run(1, samples=[_smp("runtime", 1.0)]),
+            _run(1, samples=[_smp("runtime", 1.0)], warmup=True),
             _run(2, samples=[_smp("runtime", 0.5)]),
         ],
-        warmups={"S/b": 1},
     )
     g = group(r, include_warmup=True)
     assert sorted(g.groups[0].metrics[("runtime", "s")]) == [0.5, 1.0]
+
+
+def test_process_samples_collected_but_not_counted():
+    # A harness-style run: 2 measured iterations + one whole-process sample.
+    r = Report(
+        runs=[
+            Run(
+                suite="S",
+                benchmark="b",
+                variant=(),
+                run=1,
+                command=("x",),
+                iterations=[
+                    Iteration(samples=[_smp("runtime", 1.0)]),
+                    Iteration(samples=[_smp("runtime", 2.0)]),
+                ],
+                process_samples=[_smp("max_rss", 2048.0, unit="kB")],
+            )
+        ]
+    )
+    g = group(r).groups[0]
+    assert g.run_counts.successes == 2  # process sample is not an extra run
+    assert g.metrics[("runtime", "s")] == [1.0, 2.0]
+    assert g.metrics[("max_rss", "kB")] == [2048.0]
+
+
+def test_process_only_run_counts_once():
+    # No per-iteration data, just a whole-process metric: the session ran once.
+    r = Report(
+        runs=[
+            Run(
+                suite="S",
+                benchmark="b",
+                variant=(),
+                run=1,
+                command=("x",),
+                iterations=[],
+                process_samples=[_smp("max_rss", 1024.0, unit="kB")],
+            )
+        ]
+    )
+    g = group(r).groups[0]
+    assert g.run_counts.successes == 1
+    assert g.metrics[("max_rss", "kB")] == [1024.0]
 
 
 def test_failures_count_into_run_counts():
@@ -105,7 +150,7 @@ def test_all_failed_benchmark_still_appears():
 
 
 def test_group_excludes_failures_in_warmup():
-    r = Report(runs=[_fail(1)], warmups={"S/b": 1})
+    r = Report(runs=[_fail(1, warmup=True)])
     g = group(r)
     assert g.groups == []
 

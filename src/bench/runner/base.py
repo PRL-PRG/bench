@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import abc
 import re
+import shlex
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from bench.grammar.benchmark import Benchmark
 from bench.core.execution import (
+    Execution,
     default_success,
     format_identifier,
     record_key,
 )
+from bench.core.policy import StoppingPolicy
 from bench.grammar.suite import Suite
 from bench.report.reporter import Reporter
 from bench.core.sample import Report
@@ -81,12 +85,40 @@ def select(
     return out
 
 
+def format_command(e: Execution) -> str:
+    """A copy-pasteable shell command for one execution: `cd DIR && KEY='v' cmd
+    args`. The `cd` prefix appears only when the cwd differs from the current
+    directory, env assignments only when present; every part is shell-quoted."""
+    parts: list[str] = []
+    if e.cwd != Path.cwd():
+        parts.append(f"cd {shlex.quote(str(e.cwd))} &&")
+    if e.env:
+        parts.append(" ".join(f"{k}={shlex.quote(v)}" for k, v in e.env.items()))
+    parts.append(shlex.join(e.command))
+    return " ".join(parts)
+
+
+def format_policy(p: StoppingPolicy) -> str:
+    """A stopping policy's run bound as a string ("unbounded" when open-ended)."""
+    n = p.max_runs()
+    return str(n) if n is not None else "unbounded"
+
+
+def _metric_name(m: Any) -> str:
+    """A metric's display name: its `metric` field if it has one, else the
+    class name (e.g. Time, Rebench)."""
+    return getattr(m, "metric", type(m).__name__)
+
+
 def format_benchmark_verbose(b: Benchmark, run: int) -> str:
     e = b.execution
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(type(m).__name__ for m in b.metrics)
+    metric_str = ", ".join(
+        [_metric_name(m) for m, _src in b.iteration_metrics]
+        + [_metric_name(m) for m in b.process_metrics]
+    )
     success_str = (
         "<default>"
         if b.success is default_success
@@ -101,6 +133,8 @@ def format_benchmark_verbose(b: Benchmark, run: int) -> str:
             f"  suite:      {b.suite}",
             f"  benchmark:  {b.name}",
             f"  run:        {run}",
+            f"  warmup:     {format_policy(b.warmup)}",
+            f"  runs:       {format_policy(b.runs)}",
             f"  command:    {' '.join(e.command)}",
             f"  cwd:        {e.cwd}",
             f"  env:        {{{env_str}}}",

@@ -21,7 +21,7 @@ from rich.progress import (
 
 from bench.grammar.benchmark import Benchmark
 from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
-from bench.core.sample import Observation, Report, Run, report_to_json
+from bench.core.sample import Iteration, Report, Run, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
@@ -39,14 +39,10 @@ class Reporter(abc.ABC):
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
-    def observation(self, obs: Observation, label: str) -> None:
+    def iteration(self, it: Iteration, label: str) -> None:
         pass
 
     def run_done(self, run: Run) -> None:
-        pass
-
-    def warmup(self, key: str, observations: int) -> None:
-        """The variant's first `observations` observations were warmup."""
         pass
 
     def finalize(self) -> None:
@@ -55,7 +51,7 @@ class Reporter(abc.ABC):
 
 class _BufferingReporter(Reporter):
     """Base for reporters that accumulate a Report and render it at
-    `finalize()`. Gives subclasses a thread-safe `run_done`/`warmup`."""
+    `finalize()`. Gives subclasses a thread-safe `run_done`."""
 
     def __init__(self) -> None:
         self._report = Report()
@@ -64,10 +60,6 @@ class _BufferingReporter(Reporter):
     def run_done(self, run: Run) -> None:
         with self._lock:
             self._report.add(run)
-
-    def warmup(self, key: str, observations: int) -> None:
-        with self._lock:
-            self._report.warmup(key, observations)
 
 
 class CompositeReporter(Reporter):
@@ -80,17 +72,13 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.start(plan)
 
-    def observation(self, obs: Observation, label: str) -> None:
+    def iteration(self, it: Iteration, label: str) -> None:
         for r in self.reporters:
-            r.observation(obs, label)
+            r.iteration(it, label)
 
     def run_done(self, run: Run) -> None:
         for r in self.reporters:
             r.run_done(run)
-
-    def warmup(self, key: str, observations: int) -> None:
-        for r in self.reporters:
-            r.warmup(key, observations)
 
     def finalize(self) -> None:
         for r in self.reporters:
@@ -102,13 +90,36 @@ class CompositeReporter(Reporter):
 # ---------------------------------------------------------------------------
 
 
+def _sample_row(base: dict[str, Any], s: Sample) -> dict[str, Any]:
+    return {
+        **base,
+        "metric": s.metric,
+        "value": s.value,
+        "unit": s.unit,
+        "lower_is_better": "" if s.lower_is_better is None else str(s.lower_is_better),
+        "failure": "",
+    }
+
+
+def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
+    return {
+        **base,
+        "metric": "",
+        "value": "",
+        "unit": "",
+        "lower_is_better": "",
+        "failure": failure,
+    }
+
+
 class CsvReporter(_BufferingReporter):
     """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, failure`. One row per Sample for successful observations.
-    A failed observation (or run) emits one row with blank metric and the
-    failure verdict. All runs appear, warmup included.
+    lower_is_better, failure`. One row per Sample, for each iteration's samples
+    and then the run's whole-process samples. A failed iteration (or run) emits
+    one row with blank metric and the failure verdict. All runs appear, warmup
+    included.
     """
 
     def __init__(self, path: Path, *, delimiter: str = ",") -> None:
@@ -136,36 +147,23 @@ class CsvReporter(_BufferingReporter):
                 }
                 for k in variant_cols:
                     base[k] = variant_map.get(k, "")
-                obs_list = r.observations or [Observation(failure=r.failure)]
-                for obs in obs_list:
-                    failure = obs.failure or (r.failure if not obs.samples else None)
-                    if failure or not obs.samples:
-                        w.writerow(
-                            {
-                                **base,
-                                "metric": "",
-                                "value": "",
-                                "unit": "",
-                                "lower_is_better": "",
-                                "failure": failure or "",
-                            }
-                        )
+                iters = r.iterations or [Iteration(failure=r.failure)]
+                emitted = False
+                for it in iters:
+                    failure = it.failure or (r.failure if not it.samples else None)
+                    if failure:
+                        w.writerow(_blank_row(base, failure))
+                        emitted = True
                         continue
-                    for s in obs.samples:
-                        w.writerow(
-                            {
-                                **base,
-                                "metric": s.metric,
-                                "value": s.value,
-                                "unit": s.unit,
-                                "lower_is_better": (
-                                    ""
-                                    if s.lower_is_better is None
-                                    else str(s.lower_is_better)
-                                ),
-                                "failure": "",
-                            }
-                        )
+                    for s in it.samples:
+                        w.writerow(_sample_row(base, s))
+                        emitted = True
+                for s in r.process_samples:
+                    w.writerow(_sample_row(base, s))
+                    emitted = True
+                # A run that produced nothing (no samples, no failure) still appears.
+                if not emitted:
+                    w.writerow(_blank_row(base, ""))
 
 
 # ---------------------------------------------------------------------------
@@ -288,9 +286,9 @@ class ProgressReporter(Reporter):
                 total_str=str(self._total) if self._total is not None else "?",
             )
 
-    def observation(self, obs: Observation, label: str) -> None:
+    def iteration(self, it: Iteration, label: str) -> None:
         with self._lock:
-            if not obs.is_failure():
+            if not it.is_failure():
                 self._successes += 1
             else:
                 self._failures += 1
@@ -303,7 +301,7 @@ class ProgressReporter(Reporter):
                 )
                 self._progress.advance(self._task_id)
             else:
-                self._print_plain(obs, label)
+                self._print_plain(it, label)
 
     def finalize(self) -> None:
         if self._progress is not None and self._task_id is not None:
@@ -311,13 +309,13 @@ class ProgressReporter(Reporter):
 
     # ----- helpers ---------------------------------------------------
 
-    def _print_plain(self, obs: Observation, label: str) -> None:
+    def _print_plain(self, it: Iteration, label: str) -> None:
         n = self._failures + self._successes
         total_str = str(self._total) if self._total is not None else "?"
-        if not obs.is_failure():
+        if not it.is_failure():
             tag = "[bench.success]ok[/]"
         else:
-            tag = f"[bench.failure]FAIL[/] ({obs.failure})"
+            tag = f"[bench.failure]FAIL[/] ({it.failure})"
         self._console.print(f"[{n}|{total_str}] {markup_escape(label)} {tag}")
 
     @staticmethod

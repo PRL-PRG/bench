@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from bench import Observation, Report, Run, Sample, report_from_json, report_to_json
+from bench import Iteration, Report, Run, Sample, report_from_json, report_to_json
 
 
 def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:
@@ -11,11 +11,13 @@ def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:
     )
 
 
-def _obs(*samples: Sample, failure: str | None = None) -> Observation:
-    return Observation(samples=list(samples), failure=failure)
+def _it(
+    *samples: Sample, failure: str | None = None, warmup: bool = False
+) -> Iteration:
+    return Iteration(samples=list(samples), failure=failure, warmup=warmup)
 
 
-def _run(variant=(), observations=None, **kw) -> Run:
+def _run(variant=(), iterations=None, **kw) -> Run:
     base: dict[str, Any] = dict(
         suite="S",
         benchmark="B",
@@ -24,7 +26,7 @@ def _run(variant=(), observations=None, **kw) -> Run:
         command=("./bench",),
         returncode=0,
         runtime=0.1,
-        observations=observations if observations is not None else [_obs(_smp())],
+        iterations=iterations if iterations is not None else [_it(_smp())],
     )
     base.update(kw)
     return Run(**base)
@@ -42,27 +44,29 @@ def test_variant_keys_orders_first_seen():
 
 
 def test_metrics_distinct():
+    # Distinct names span both iteration samples and whole-process samples.
     r = Report(
         runs=[
-            _run(observations=[_obs(_smp(metric="x"), _smp(metric="y"))]),
-            _run(observations=[_obs(_smp(metric="x"))]),
+            _run(iterations=[_it(_smp(metric="x"), _smp(metric="y"))]),
+            _run(
+                iterations=[_it(_smp(metric="x"))], process_samples=[_smp(metric="z")]
+            ),
         ]
     )
-    assert r.metrics() == ["x", "y"]
+    assert r.metrics() == ["x", "y", "z"]
 
 
-def test_observation_can_fail():
-    o = Observation(failure="bad extraction")
-    assert o.is_failure() and o.samples == []
+def test_iteration_can_fail():
+    it = Iteration(failure="bad extraction")
+    assert it.is_failure() and it.samples == []
 
 
 def test_json_round_trip():
     r = Report(
         runs=[
             _run(
-                observations=[
-                    _obs(_smp(), _smp(metric="max_rss", value=2048, unit="kB"))
-                ]
+                iterations=[_it(_smp(), warmup=True), _it(_smp())],
+                process_samples=[_smp(metric="max_rss", value=2048, unit="kB")],
             ),
             Run(
                 suite="S",
@@ -73,16 +77,14 @@ def test_json_round_trip():
                 returncode=7,
                 failure="exit 7",
                 message="boom",
-                observations=[_obs(failure="exit 7")],
+                iterations=[_it(failure="exit 7")],
             ),
         ],
-        warmups={"S/B": 2},
     )
     text = report_to_json(r)
     r2 = report_from_json(text)
-    assert r2.runs == r.runs
+    assert r2.runs == r.runs  # warmup flag + process_samples survive
     assert r2.failures == r.failures
-    assert r2.warmups == {"S/B": 2}
 
 
 def test_json_excludes_output_by_default():
@@ -108,7 +110,7 @@ def test_failures_are_failed_runs():
     r = Report(
         runs=[
             _run(),
-            _run(returncode=1, failure="exit 1", observations=[_obs(failure="exit 1")]),
+            _run(returncode=1, failure="exit 1", iterations=[_it(failure="exit 1")]),
         ]
     )
     assert len(r.failures) == 1 and r.failures[0].returncode == 1

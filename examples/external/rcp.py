@@ -9,9 +9,9 @@
 """RCP: programmatic suite construction.
 
 Demonstrates:
-- ``from_files`` discovery driven by ctx (root depends on ``ctx.RSH_HOME``).
-- Mixing ``Rebench`` + ``max_rss`` in a pipeline.
-- A typed ``RcpParams`` dataclass for CLI flags.
+- `from_files` discovery driven by ctx (root depends on `ctx.RSH_HOME`).
+- Mixing `Rebench` + `max_rss` in a pipeline.
+- A typed `RcpParams` dataclass for CLI flags.
 """
 
 import tempfile
@@ -59,7 +59,8 @@ rcp_suite = (
     .factory(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
-    .with_metric(Rebench(), max_rss())
+    .with_metric(Rebench())
+    .with_process_metric(max_rss())
 )
 
 

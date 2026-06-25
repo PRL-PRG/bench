@@ -28,7 +28,9 @@ def cmd(ctx: Context[Params]):
     return [ctx.params.python, "-c", f"sum(range({ctx.params.n}))"]
 
 
-s = suite("params", bench("sum").with_command(cmd).with_metric(Time()).with_runs(3))
+s = suite(
+    "params", bench("sum").with_command(cmd).with_process_metric(Time()).with_runs(3)
+)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@
 Demonstrates:
 - Five suites sharing a common locale environment.
 - Mixing static and dynamic working directories.
-- ``Rebench`` metric over many benchmark families.
+- `Rebench` metric over many benchmark families.
 """
 
 from dataclasses import dataclass

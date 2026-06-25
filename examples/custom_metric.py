@@ -6,44 +6,28 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Writing a custom Metric and a custom success policy.
-
-A real benchmark prints a fixed string to stdout and a metric to stderr.
-The Metric parses the value. The success policy (``.with_success``)
-decides whether a run counts as successful. The Runner only calls
-``process`` on a run it judged successful, so the Metric never has to
-re-check the exit status.
-"""
+"""Writing a custom metric and a custom success policy."""
 
 import re
 from collections.abc import Iterable
 
 from bench import (
     ExecutionResult,
-    Metric,
+    IterationMetric,
     Sample,
-    Time,
     bench,
     run,
     suite,
 )
 
 
-class StderrFloat(Metric):
-    """Custom Metric: read 'TIME=<float>' from stderr.
-
-    Implement ``extract`` (not ``process``): the base ``process`` applies the
-    direction set via ``.lower_is_better()`` and any ``.when(...)`` predicate
-    for you. ``per_process`` says whether the metric is fed once per run
-    (``False``) or once per whole process (``True``).
-    """
-
-    per_process = False
+class TaggedFloat(IterationMetric):
+    """Custom IterationMetric: read 'TIME=<float>' from the iteration text."""
 
     _re = re.compile(r"TIME=([0-9.]+)")
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        m = self._re.search(result.stderr or "")
+    def extract(self, text: str) -> Iterable[Sample]:
+        m = self._re.search(text)
         if m:
             yield Sample(metric="custom_time", value=float(m.group(1)), unit="s")
 
@@ -51,7 +35,7 @@ class StderrFloat(Metric):
 def succeeded(pr: ExecutionResult) -> str | None:
     """Success policy: exit zero AND stdout contains 'OK'.
 
-    Returns ``None`` on success, or a failure reason string otherwise.
+    Returns `None` on success, or a failure reason string otherwise.
     """
     if pr.returncode != 0:
         return f"exit code {pr.returncode}"
@@ -64,7 +48,7 @@ s = suite(
     "custom",
     bench("with_stderr")
     .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
-    .with_metric(StderrFloat().lower_is_better(), Time())
+    .add_metric(TaggedFloat().lower_is_better(), "stderr")
     .with_success(succeeded)
     .with_runs(3),
 )

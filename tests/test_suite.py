@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bench import FixedRuns, Time, bench, from_files, suite
+from bench import FixedRuns, FloatPerLine, Time, bench, from_files, suite
 
 
 def _b(name: str):
@@ -64,10 +64,10 @@ def test_with_timeout_accepts_ctx_callable():
 
 
 def test_with_metric_accepts_ctx_callable():
-    m = Time()
+    m = FloatPerLine("s")
     s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: (m,))
     b = s.materialize(None)[0]
-    assert b.metrics == (m,)
+    assert [im for im, _src in b.iteration_metrics] == [m]
 
 
 def test_suite_callable_runs_still_loses_to_benchmark_override():
@@ -178,7 +178,7 @@ def test_filter():
         .add(_b("c").with_matrix(size=[100, 500]))
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     assert sorted(b.size for b in _mat(s)) == [100]
 
@@ -191,7 +191,7 @@ def test_from_files(tmp_path: Path):
         suite("X", *from_files(tmp_path, pattern=r"\.lox$"))
         .with_command(["true"])
         .with_cwd(tmp_path)
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "b"]
@@ -207,7 +207,7 @@ def test_from_files_recursive_with_exclude(tmp_path: Path):
         suite("X", *from_files(tmp_path, pattern=r"\.lox$", exclude={"excl"}))
         .with_command(["true"])
         .with_cwd(tmp_path)
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(None))
     assert names == ["a", "sub/nested"]
@@ -220,7 +220,7 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
         .factory(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
         .with_command(["true"])
         .with_cwd(tmp_path)
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     names = sorted(b.name for b in s.materialize(tmp_path))
     assert names == ["p"]
@@ -238,7 +238,7 @@ def test_with_matrix_expands_and_stamps_variant():
             .with_matrix(opt=["O0", "O2"]),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     benchmarks = list(s.materialize(None))
     assert len(benchmarks) == 2
@@ -256,7 +256,7 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
         )
         .with_matrix(vm=["v8", "jsc"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
     names_vms = sorted((b.name, b.vm) for b in bs)
@@ -291,7 +291,7 @@ def test_with_skip_kwargs_drops_variant():
             .add_matrix_skip(vm="v8", size=500),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
     assert len(bs) == 3
@@ -308,7 +308,7 @@ def test_with_skip_predicate_drops_variant():
             .add_matrix_skip(lambda b: b.vm != "jsc"),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
     assert all(b.vm == "jsc" for b in bs)
@@ -337,7 +337,7 @@ def test_with_label_overrides_default():
             .with_label(lambda b: f"<{b.arg}>"),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
     assert sorted(b.variant_label for b in bs) == ["<one>", "<two>"]
@@ -353,7 +353,7 @@ def test_command_via_matrix_builder():
             .with_command(lambda ctx: list(ctx.matrix.cmd)),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
     assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]

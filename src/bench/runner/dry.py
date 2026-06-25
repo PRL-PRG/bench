@@ -17,7 +17,12 @@ from typing import Any
 from bench.core.execution import format_identifier
 from bench.core.sample import Report
 from bench.grammar.benchmark import Benchmark
-from bench.runner.base import Runner, format_benchmark_verbose
+from bench.runner.base import (
+    Runner,
+    format_benchmark_verbose,
+    format_command,
+    format_policy,
+)
 
 
 class Dry(Runner):
@@ -34,7 +39,11 @@ class Dry(Runner):
 
     def _print_executions(self, b: Benchmark) -> None:
         if b.harness:
-            self._print_one(b, 1, marker="[harness]")
+            marker = (
+                f"[harness, warmup {format_policy(b.warmup)}, "
+                f"runs {format_policy(b.runs)}]"
+            )
+            self._print_one(b, 1, marker=marker)
             return
         warmup, runs = b.warmup.max_runs(), b.runs.max_runs()
         if warmup is None or runs is None:
@@ -50,7 +59,6 @@ class Dry(Runner):
             identifier = format_identifier(
                 b.suite, b.name, b.variant, run, b.variant_label
             )
-            cmd = " ".join(b.execution.command)
-            block = f"{identifier}: {cmd}"
+            block = f"{identifier}: `{format_command(b.execution)}`"
 
         print(f"{block} {marker}" if marker else block)

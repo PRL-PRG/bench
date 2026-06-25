@@ -8,22 +8,22 @@
 # ///
 """Skipping and slicing matrix cells.
 
-One workload parameterized by ``vm`` by ``size`` (see ``matrix.py`` for the
+One workload parameterized by `vm` by `size` (see `matrix.py` for the
 plain full-cartesian case). Three benchmarks show the common skip shapes:
 
-  1. ``minus_one``: full cartesian minus one cell (drop ``VM1`` x ``500``)
-  2. ``slice_vm2``: keep only ``vm=VM2`` (predicate skip)
-  3. ``slice_500``: keep only ``size=500`` (predicate skip)
+  1. `minus_one`: full cartesian minus one cell (drop `VM1` x `500`)
+  2. `slice_vm2`: keep only `vm=VM2` (predicate skip)
+  3. `slice_500`: keep only `size=500` (predicate skip)
 
-Commands are fake (``sh -c "sleep …; echo …"``) shaped so VM1 is roughly 2x slower
-than VM2 and bigger ``size`` slightly slower.
+Commands are fake `sh -c` snippets (a sleep then an echo) shaped so VM1 is roughly 2x slower
+than VM2 and bigger `size` slightly slower.
 """
 
 from bench import FloatPerLine, bench, run, suite
 
 
 def cmd(ctx):
-    # Axis values reach the callable via ``ctx.matrix`` (ctx.matrix.vm, ...).
+    # Axis values reach the callable via `ctx.matrix` (ctx.matrix.vm, ...).
     base_ms = 50 if ctx.matrix.vm == "VM2" else 100
     total_ms = base_ms + ctx.matrix.size // 50
     return ["sh", "-c", f"sleep {total_ms / 1000.0}; echo {total_ms}"]

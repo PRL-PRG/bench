@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from bench.core.sample import Observation
+from bench.core.sample import Iteration
 
 
 class StoppingPolicy(abc.ABC):
@@ -41,7 +41,7 @@ class PolicyState(abc.ABC):
     __slots__ = ()
 
     @abc.abstractmethod
-    def observe(self, observation: Observation) -> None: ...
+    def observe(self, iteration: Iteration) -> None: ...
 
     @abc.abstractmethod
     def satisfied(self) -> bool: ...
@@ -65,7 +65,7 @@ class _FixedState(PolicyState):
         self.target = target
         self.cur = 0
 
-    def observe(self, observation: Observation) -> None:
+    def observe(self, iteration: Iteration) -> None:
         self.cur += 1
 
     def satisfied(self) -> bool:
@@ -91,8 +91,8 @@ class _DurationState(PolicyState):
         self.seconds = seconds
         self.elapsed = 0.0
 
-    def observe(self, observation: Observation) -> None:
-        self.elapsed += observation.runtime
+    def observe(self, iteration: Iteration) -> None:
+        self.elapsed += iteration.runtime
 
     def satisfied(self) -> bool:
         return self.elapsed >= self.seconds
@@ -126,11 +126,11 @@ class _CoVState(PolicyState):
         self.sumsq = 0.0
         self.n_runs = 0
 
-    def observe(self, observation: Observation) -> None:
+    def observe(self, iteration: Iteration) -> None:
         # CoV tracks one scalar per run. More than one matching sample is
         # ambiguous and would inflate the
         # window / min_runs counters, so reject it loudly.
-        matching = [s.value for s in observation.samples if s.metric == self.cfg.metric]
+        matching = [s.value for s in iteration.samples if s.metric == self.cfg.metric]
         if len(matching) > 1:
             raise ValueError(
                 f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
@@ -207,9 +207,9 @@ class _PairState(PolicyState):
         self.b = b
         self.op = op
 
-    def observe(self, observation: Observation) -> None:
-        self.a.observe(observation)
-        self.b.observe(observation)
+    def observe(self, iteration: Iteration) -> None:
+        self.a.observe(iteration)
+        self.b.observe(iteration)
 
     def satisfied(self) -> bool:
         return self.op((self.a.satisfied(), self.b.satisfied()))

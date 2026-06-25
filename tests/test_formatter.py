@@ -9,7 +9,7 @@ from rich.console import Console
 from bench import (
     Compact,
     DefaultSummary,
-    Observation,
+    Iteration,
     Report,
     Run,
     Sample,
@@ -45,7 +45,7 @@ def _ok(
         command=("x",),
         returncode=0,
         variant_label=variant_label,
-        observations=[Observation(samples=list(samples) if samples else [])],
+        iterations=[Iteration(samples=list(samples) if samples else [])],
     )
 
 

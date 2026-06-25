@@ -1,9 +1,11 @@
-"""Metric: ExecutionResult -> Iterable[Sample].
+"""Metric: extract Samples from a benchmark run.
 
-Every metric is a frozen dataclass carrying an optional `direction`
-and an optional `predicate`. Concrete metrics implement `extract`.
-The base `process` applies the predicate and stamps the direction
-onto each Sample.
+Two kinds, distinguished by what they read:
+
+  - `IterationMetric` parses one iteration's text into Samples.
+  - `ProcessMetric` reads the whole `ExecutionResult`.
+
+Both carry an optional `direction` and `predicate`.
 """
 
 from __future__ import annotations
@@ -13,44 +15,69 @@ import dataclasses
 import re
 import sys
 from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
-from typing import ClassVar, Literal, Self
+from dataclasses import dataclass, field
+from typing import Literal, Self
 
 from bench.core.execution import ExecutionResult
 from bench.core.sample import Sample
 
 # None = no direction, True = lower is better, False = higher is better
-# (mirrors Sample.lower_is_better).
 type Direction = bool | None
-type Predicate = Callable[[ExecutionResult], bool]
+
+# A MetricSource pulls the text an IterationMetric parses out of the
+# ExecutionResult.
+type MetricSource = Callable[[ExecutionResult], str]
+
+
+def StdoutMetricSource(result: ExecutionResult) -> str:
+    return result.stdout or ""
+
+
+def StderrMetricSource(result: ExecutionResult) -> str:
+    return result.stderr or ""
+
+
+def as_metric_source(
+    source: Literal["stdout", "stderr"] | MetricSource,
+) -> MetricSource:
+    """Coerce a builder-level source argument into a MetricSource callable."""
+    if source == "stdout":
+        return StdoutMetricSource
+    if source == "stderr":
+        return StderrMetricSource
+    if callable(source):
+        return source
+    raise ValueError(f"unknown metric source: {source!r}")
 
 
 # ---------------------------------------------------------------------------
-# Metric base
+# Metric bases
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class Metric(abc.ABC):
-    """ExecutionResult -> Samples, plus an optional direction and predicate.
+class _MetricBase[T](abc.ABC):
+    """A metric reads input of type `T` and emits Samples.
 
-    `per_process` (set by each concrete metric) decides whether it is fed once
-    per run (`False`) or once per whole process (`True`).
+    `extract` parses the input; `process` wraps it with the optional
+    `predicate` gate and the `direction` override. `IterationMetric` and
+    `ProcessMetric` fix `T` to the iteration text and the `ExecutionResult`
+    respectively.
     """
 
-    per_process: ClassVar[bool]
-
-    direction: Direction = dataclasses.field(default=None, kw_only=True)
-    predicate: Predicate | None = dataclasses.field(default=None, kw_only=True)
+    direction: Direction = field(default=None, kw_only=True)
+    predicate: Callable[[T], bool] | None = field(default=None, kw_only=True)
 
     @abc.abstractmethod
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        """Parse the raw samples. `process` applies direction + predicate."""
+    def extract(self, data: T, /) -> Iterable[Sample]: ...
 
-    def process(self, result: ExecutionResult) -> Iterator[Sample]:
-        if self.predicate is not None and not self.predicate(result):
+    def process(self, data: T) -> Iterator[Sample]:
+        if self.predicate is not None and not self.predicate(data):
             return
-        for s in self.extract(result):
+        yield from self._emit(self.extract(data))
+
+    def _emit(self, samples: Iterable[Sample]) -> Iterator[Sample]:
+        for s in samples:
             if self.direction is None:
                 yield s
             else:
@@ -62,49 +89,34 @@ class Metric(abc.ABC):
     def higher_is_better(self) -> Self:
         return dataclasses.replace(self, direction=False)
 
-    def when(self, predicate: Predicate) -> Self:
-        """Run this metric only when `predicate(result)` is true."""
+    def when(self, predicate: Callable[[T], bool]) -> Self:
+        """Run this metric only when `predicate(data)` is true."""
         return dataclasses.replace(self, predicate=predicate)
 
 
-def extract_run(metrics: Iterable[Metric], result: ExecutionResult) -> Iterator[Sample]:
-    """Run only per-run (`per_process == False`) metrics over one result."""
-    for m in metrics:
-        if not m.per_process:
-            yield from m.process(result)
+@dataclass(frozen=True)
+class IterationMetric(_MetricBase[str]):
+    """Parse one iteration's text into Samples."""
 
 
-def extract_process(
-    metrics: Iterable[Metric], result: ExecutionResult
-) -> Iterator[Sample]:
-    """Run only per-process (`per_process == True`) metrics over one result."""
-    for m in metrics:
-        if m.per_process:
-            yield from m.process(result)
-
-
-def partition_metrics(metrics: Iterable[Metric]) -> tuple[list[Metric], list[Metric]]:
-    """Split a flat list of metrics into (run_metrics, process_metrics)."""
-    run = [m for m in metrics if not m.per_process]
-    proc = [m for m in metrics if m.per_process]
-    return run, proc
+@dataclass(frozen=True)
+class ProcessMetric(_MetricBase[ExecutionResult]):
+    """Read whole-process Samples from an ExecutionResult."""
 
 
 # ---------------------------------------------------------------------------
-# Built-in metrics
+# Iteration metrics
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class FloatPerLine(Metric):
-    """Parse non-empty lines of stdout as floats, one sample per line.
+class FloatPerLine(IterationMetric):
+    """Parse non-empty lines of the iteration text as floats, one sample each.
 
     `line` selects a single 1-based non-empty line (negative counts from the
-    end). `None` (the default) parses every non-empty line. A failed run, or a
-    `line` index out of range, emits nothing.
+    end). `None` (the default) parses every non-empty line. A `line` index out
+    of range emits nothing.
     """
-
-    per_process = False
 
     unit: str = "s"
     metric: str = "runtime"
@@ -114,10 +126,10 @@ class FloatPerLine(Metric):
         if self.line == 0:
             raise ValueError("line must be non-zero")
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        if result.is_failure() or not result.stdout:
+    def extract(self, text: str) -> Iterable[Sample]:
+        if not text:
             return
-        lines = [s for s in (ln.strip() for ln in result.stdout.split("\n")) if s]
+        lines = [s for s in (ln.strip() for ln in text.split("\n")) if s]
         if self.line is not None:
             idx = self.line - 1 if self.line > 0 else self.line
             try:
@@ -131,11 +143,11 @@ class FloatPerLine(Metric):
                 continue
 
     def last_line(self) -> Self:
-        """Parse only the last non-empty line of stdout."""
+        """Parse only the last non-empty line."""
         return dataclasses.replace(self, line=-1)
 
     def first_line(self) -> Self:
-        """Parse only the first non-empty line of stdout."""
+        """Parse only the first non-empty line."""
         return dataclasses.replace(self, line=1)
 
     def nth(self, i: int) -> Self:
@@ -144,56 +156,39 @@ class FloatPerLine(Metric):
 
 
 @dataclass(frozen=True)
-class Regex(Metric):
-    """Extract metric values via a regex against stdout/stderr."""
-
-    per_process = False
+class Regex(IterationMetric):
+    """Extract metric values via a regex against the iteration text."""
 
     metric: str
     regex: re.Pattern[str] | str
-    output: Literal["stdout", "stderr", "both"] = dataclasses.field(
-        default="stdout", kw_only=True
-    )
-    match_group: str | int = dataclasses.field(default=1, kw_only=True)
-    transform: Callable[[str], float] = dataclasses.field(default=float, kw_only=True)
-    unit: str = dataclasses.field(default="", kw_only=True)
-    unit_group: str | int | None = dataclasses.field(default=None, kw_only=True)
+    match_group: str | int = field(default=1, kw_only=True)
+    transform: Callable[[str], float] = field(default=float, kw_only=True)
+    unit: str = field(default="", kw_only=True)
+    unit_group: str | int | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         if isinstance(self.regex, str):
             object.__setattr__(self, "regex", re.compile(self.regex))
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        if result.is_failure():
-            return
+    def extract(self, text: str) -> Iterable[Sample]:
         pattern = self.regex
         assert isinstance(pattern, re.Pattern)  # compiled in __post_init__
-        outs: list[str] = []
-        if self.output in ("stdout", "both"):
-            outs.append(result.stdout or "")
-        if self.output in ("stderr", "both"):
-            outs.append(result.stderr or "")
-        for text in outs:
-            for m in pattern.finditer(text):
-                value = self.transform(m.group(self.match_group))
-                unit = (
-                    m.group(self.unit_group)
-                    if self.unit_group is not None
-                    else self.unit
-                )
-                yield Sample(metric=self.metric, value=value, unit=unit)
+        for m in pattern.finditer(text):
+            value = self.transform(m.group(self.match_group))
+            unit = (
+                m.group(self.unit_group) if self.unit_group is not None else self.unit
+            )
+            yield Sample(metric=self.metric, value=value, unit=unit)
 
 
 @dataclass(frozen=True)
-class Rebench(Metric):
+class Rebench(IterationMetric):
     """ReBench log format adapter.
 
     `optional_prefix: name optional_criterion: iterations=N runtime: V[ms|us]`
     or `optional_prefix: name: criterion: V<unit>`
     Runtime emitted in ms. Non-"total" runtime criteria are ignored.
     """
-
-    per_process = False
 
     _re_runtime = re.compile(
         r"^(?:.*: )?([^\s]+)( [\w\.]+)?: iterations=([0-9]+) "
@@ -206,10 +201,10 @@ class Rebench(Metric):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
-        if result.is_failure() or not result.stdout:
+    def extract(self, text: str) -> Iterable[Sample]:
+        if not text:
             return
-        for line in result.stdout.split("\n"):
+        for line in text.split("\n"):
             m = self._re_runtime.match(line)
             if m is not None:
                 criterion = m.group(2)
@@ -229,11 +224,14 @@ class Rebench(Metric):
                 )
 
 
-@dataclass(frozen=True)
-class RUsage(Metric):
-    """Emit one sample from a single `resource.struct_rusage` field."""
+# ---------------------------------------------------------------------------
+# Process metrics
+# ---------------------------------------------------------------------------
 
-    per_process = True
+
+@dataclass(frozen=True)
+class RUsage(ProcessMetric):
+    """Emit one sample from a single `resource.struct_rusage` field."""
 
     Field = Literal[
         "ru_utime",
@@ -269,18 +267,16 @@ class RUsage(Metric):
 
 
 @dataclass(frozen=True)
-class Time(Metric):
+class Time(ProcessMetric):
     """Up to three time samples: `elapsed` (wall), `user`, `system` (s).
 
     All are lower-is-better by default, override with `.higher_is_better()`.
     """
 
-    per_process = True
-
     elapsed: bool = True
     user: bool = False
     system: bool = False
-    direction: Direction = dataclasses.field(default=True, kw_only=True)
+    direction: Direction = field(default=True, kw_only=True)
 
     def __post_init__(self) -> None:
         if not (self.elapsed or self.user or self.system):
@@ -296,6 +292,6 @@ class Time(Metric):
                 yield Sample(metric="system", value=result.rusage.ru_stime, unit="s")
 
 
-def max_rss() -> Metric:
+def max_rss() -> ProcessMetric:
     """RSS in kB, lower-is-better. macOS byte-vs-kB normalization handled."""
     return RUsage("ru_maxrss", "max_rss", "kB").lower_is_better()

@@ -6,17 +6,17 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""LevelDB ``db_bench``: the canonical key/value microbenchmarks.
+"""LevelDB `db_bench`: the canonical key/value microbenchmarks.
 
 Each bench benchmark maps to one db_bench operation. db_bench prints one
 result line per operation, e.g.
 
-    fillseq      :       4.805 micros/op;   23.0 MB/s
-    readrandom   :       0.531 micros/op; (5000 of 5000 found)
-    crc32c       :       0.778 micros/op; 5023.3 MB/s (4K per op)
+    fillseq      :       4.805 micros/op,   23.0 MB/s
+    readrandom   :       0.531 micros/op, (5000 of 5000 found)
+    crc32c       :       0.778 micros/op, 5023.3 MB/s (4K per op)
 
 Write/CRC ops are self-contained and report a MB/s throughput. Read/seek ops
-need a populated DB, so we prefix a ``fillseq`` into the *same* db_bench
+need a populated DB, so we prefix a `fillseq` into the *same* db_bench
 invocation (one open DB, rebuilt fresh on every run). A per-op Regex anchored
 to the operation name picks that op's line out of the output, so the prefixed
 fill is ignored by the read benchmarks.
@@ -71,15 +71,15 @@ def make_benchmarks() -> list[BenchmarkBuilder]:
         specs.append(
             bench(op)
             .with_command(_command(op))
-            .with_metric(
-                _micros(op), _throughput(op), max_rss(), Time(user=True, system=True)
-            )
+            .with_metric(_micros(op), _throughput(op))
+            .with_process_metric(max_rss(), Time(user=True, system=True))
         )
     for op in READ_OPS:
         specs.append(
             bench(op)
             .with_command(_command(f"fillseq,{op}"))
-            .with_metric(_micros(op), max_rss(), Time(user=True, system=True))
+            .with_metric(_micros(op))
+            .with_process_metric(max_rss(), Time(user=True, system=True))
         )
     return specs
 

@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from bench.grammar.benchmark import (
     UNSET,
@@ -22,6 +22,7 @@ from bench.grammar.benchmark import (
     BenchmarkBuilder,
     Build,
     CommandFn,
+    MetricSetters,
     EnvFn,
     LabelFn,
     PathFn,
@@ -39,7 +40,11 @@ from bench.core.execution import (
     SuccessFn,
     default_success,
 )
-from bench.core.metric import Metric, Time
+from bench.core.metric import (
+    IterationMetric,
+    MetricSource,
+    ProcessMetric,
+)
 from bench.core.policy import FixedRuns, StoppingPolicy, coerce_policy
 
 if TYPE_CHECKING:
@@ -65,7 +70,7 @@ def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
 
 
 @dataclass(frozen=True, slots=True)
-class Suite:
+class Suite(MetricSetters):
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
@@ -81,7 +86,12 @@ class Suite:
     cwd: PathFn = _default_cwd
     env: EnvFn = _default_env
     timeout: Build[float | None] = const(None)  # None = no timeout
-    metrics: Build[tuple[Metric, ...]] = const((Time(),))
+    # Default metrics are empty; a benchmark with none declared falls back to
+    # Time() at resolution (see BenchmarkBuilder._resolve_cell).
+    iteration_metrics: Build[tuple[tuple[IterationMetric, MetricSource], ...]] = const(
+        ()
+    )
+    process_metrics: Build[tuple[ProcessMetric, ...]] = const(())
     success: SuccessFn = default_success
     warmup: Build[StoppingPolicy] = const(FixedRuns(0))
     runs: Build[StoppingPolicy] = const(FixedRuns(1))
@@ -131,17 +141,6 @@ class Suite:
 
     def with_timeout(self, timeout: float | None | Build[float | None]) -> Suite:
         return dataclasses.replace(self, timeout=as_build(timeout))
-
-    def with_metric(self, *metrics: Metric | Build[tuple[Metric, ...]]) -> Suite:
-        """Set (replace) the suite's default metrics, initially `(Time(),)`.
-        Pass them statically (`with_metric(m1, m2, ...)`), or a single
-        `(ctx) -> (m, ...)` builder for per-variant metrics."""
-        if len(metrics) == 1 and callable(metrics[0]):
-            build = metrics[0]
-        else:
-            ms = cast("tuple[Metric, ...]", metrics)
-            build = const(ms)
-        return dataclasses.replace(self, metrics=build)
 
     def with_success(self, fn: SuccessFn) -> Suite:
         return dataclasses.replace(self, success=fn)
@@ -235,7 +234,16 @@ class Suite:
             cwd=cwd,
             env=env,
             timeout=self.timeout if b.timeout is UNSET else b.timeout,
-            metrics=self.metrics if b.metrics is UNSET else b.metrics,
+            iteration_metrics=(
+                self.iteration_metrics
+                if b.iteration_metrics is UNSET
+                else b.iteration_metrics
+            ),
+            process_metrics=(
+                self.process_metrics
+                if b.process_metrics is UNSET
+                else b.process_metrics
+            ),
             success=self.success if b.success is UNSET else b.success,
             warmup=self.warmup if b.warmup is UNSET else b.warmup,
             runs=self.runs if b.runs is UNSET else b.runs,

@@ -65,12 +65,19 @@ def test_command_source_failure_sets_verdict_and_no_samples():
     )
 
 
-def test_command_source_process_metrics_fold_into_one_observation():
-    src = make_source(_planned(["sh", "-c", "echo 1.5"], Time()))
-    obs, _ = src.next()
-    # Time (process metric) folds into the command's single observation.
-    assert any(s.metric == "elapsed" for s in obs.samples)
-    src.close()
+def test_command_source_process_metrics_go_to_process_samples():
+    s = (
+        suite("S", bench("b").with_command(["sh", "-c", "echo 1.5"]))
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(1)
+    )
+    src = make_source(plan([s], None)[0])
+    it, _ = src.next()
+    run = src.close()[0]
+    # A command's process metrics live on the run, not its single iteration.
+    assert all(s.metric != "elapsed" for s in it.samples)
+    assert any(s.metric == "elapsed" for s in run.process_samples)
 
 
 # ----- HarnessSource ------------------------------------------------------
@@ -96,21 +103,21 @@ def test_harness_source_close_kills_long_process():
     assert time.monotonic() - t < 5
 
 
-def test_harness_process_metrics_become_trailing_observation():
+def test_harness_process_metrics_go_to_process_samples():
     s = (
         suite("H", bench("a").with_command(["sh", "-c", "echo 1.0; echo 2.0"]))
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine(""), Time())
+        .with_metric(FloatPerLine(""))
+        .with_process_metric(Time())
         .with_runs(2)
         .with_harness()
     )
     src = make_source(plan([s], None)[0])
     _drain(src)
     run = src.close()[0]
-    # FloatPerLine -> 2 per-iteration observations. Time -> a trailing
-    # whole-process observation (no separate metadata).
-    all_metrics = [sm.metric for o in run.observations for sm in o.samples]
-    assert "elapsed" in all_metrics
+    # FloatPerLine -> per-iteration samples; Time -> whole-process samples.
+    assert all(s.metric != "elapsed" for it in run.iterations for s in it.samples)
+    assert any(s.metric == "elapsed" for s in run.process_samples)
 
 
 def test_harness_source_non_parsing_line_yields_no_observation():

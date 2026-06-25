@@ -13,7 +13,7 @@ execute"), or just getting through a batch faster.
 
 `--jobs N` means "up to N benchmarks at once." The shared `Report` is
 mutated from worker threads, so both it and the reporter are wrapped in
-lock-guarded proxies to keep concurrent `add`/`warmup` writes from tearing.
+lock-guarded proxies to keep concurrent `add` writes from tearing.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from bench.core.process import install_sigint_handler, interrupted
-from bench.core.sample import Observation, Report, Run
+from bench.core.sample import Iteration, Report, Run
 from bench.grammar.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
@@ -40,27 +40,19 @@ class _LockedReport(Report):
         with self._lock:
             self._report.add(run)
 
-    def warmup(self, key: str, observations: int) -> None:
-        with self._lock:
-            self._report.warmup(key, observations)
-
 
 class _LockedReporter(Reporter):
     def __init__(self, reporter: Reporter, lock: threading.Lock) -> None:
         self._reporter = reporter
         self._lock = lock
 
-    def observation(self, obs: Observation, label: str) -> None:
+    def iteration(self, it: Iteration, label: str) -> None:
         with self._lock:
-            self._reporter.observation(obs, label)
+            self._reporter.iteration(it, label)
 
     def run_done(self, run: Run) -> None:
         with self._lock:
             self._reporter.run_done(run)
-
-    def warmup(self, key: str, observations: int) -> None:
-        with self._lock:
-            self._reporter.warmup(key, observations)
 
 
 class Parallel(Runner):

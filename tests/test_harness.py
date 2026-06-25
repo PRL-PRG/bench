@@ -48,7 +48,7 @@ def test_bench_level_with_harness_in_command_suite():
         "S",
         bench("h").with_command(["true"]).with_harness(),
         bench("c").with_command(["true"]),
-    ).with_metric(Time())
+    ).with_process_metric(Time())
     h, c = s.materialize(None)
     assert h.harness and not c.harness
 
@@ -84,8 +84,8 @@ def test_one_execution_is_one_run_with_observations():
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
     run = report.runs[0]
-    assert [o.samples[0].value for o in run.observations] == [1.0, 2.0, 3.0, 4.0, 5.0]
-    assert report.warmups == {"H/a": 2}
+    assert [o.samples[0].value for o in run.iterations] == [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert [o.warmup for o in run.iterations] == [True, True, False, False, False]
     assert report.failures == []
 
 
@@ -95,7 +95,7 @@ def test_multi_metric_iterations_pair_up():
     s = s.with_metric(Regex("t", r"t: ([\d.]+)"), Regex("m", r"m: ([\d.]+)"))
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
-    obs = report.runs[0].observations
+    obs = report.runs[0].iterations
     assert [(smp.metric, smp.value) for smp in obs[0].samples] == [
         ("t", 1.0),
         ("m", 10.0),
@@ -129,7 +129,7 @@ def test_under_delivery_records_what_was_delivered():
     s = _harness_suite(_echo_lines("1.0", "2.0"), runs=3)
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
-    assert [o.samples[0].value for o in report.runs[0].observations] == [1.0, 2.0]
+    assert [o.samples[0].value for o in report.runs[0].iterations] == [1.0, 2.0]
     assert report.failures == []
 
 
@@ -179,7 +179,7 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
     # are kept.
     assert len(report.runs) == 1
     run = report.runs[0]
-    good = [o for o in run.observations if not o.is_failure()]
+    good = [o for o in run.iterations if not o.is_failure()]
     assert len(good) == 2
     assert report.failures == [run]
     assert "bad output" in (run.failure or "")
@@ -191,25 +191,25 @@ def test_over_delivery_stops_at_policy():
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
     report = Sequential().run(plan([s], None), None)
     assert len(report.runs) == 1
-    assert len(report.runs[0].observations) == 2
+    assert len(report.runs[0].iterations) == 2
     assert report.failures == []
 
 
-def test_harness_process_metric_becomes_trailing_observation():
+def test_harness_process_metric_goes_to_process_samples():
     s = (
         suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms"), Time())
+        .with_metric(FloatPerLine("ms"))
+        .with_process_metric(Time())
         .with_runs(2)
         .with_harness()
     )
     report = Sequential().run(plan([s], None), None)
     run = report.runs[0]
-    # per-iteration observations carry FloatPerLine (not elapsed), a trailing
-    # observation carries the whole-process Time (elapsed).
-    per_iter = run.observations[:2]
-    assert all(all(s.metric != "elapsed" for s in o.samples) for o in per_iter)
-    assert any(s.metric == "elapsed" for o in run.observations for s in o.samples)
+    # Per-iteration metrics stay on the iterations; the whole-process Time
+    # (elapsed) lands in process_samples, not on any iteration.
+    assert all(s.metric != "elapsed" for o in run.iterations for s in o.samples)
+    assert any(s.metric == "elapsed" for s in run.process_samples)
 
 
 def test_harness_process_metric_reaches_json_file(tmp_path: Path):
@@ -218,17 +218,15 @@ def test_harness_process_metric_reaches_json_file(tmp_path: Path):
     s = (
         suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms"), Time())
+        .with_metric(FloatPerLine("ms"))
+        .with_process_metric(Time())
         .with_runs(2)
         .with_harness()
     )
     Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     loaded = report_from_json(out.read_text())
     assert any(
-        s.metric == "elapsed"
-        for run in loaded.runs
-        for o in run.observations
-        for s in o.samples
+        s.metric == "elapsed" for run in loaded.runs for s in run.process_samples
     )
 
 
@@ -252,10 +250,12 @@ def test_parallel_runs_harness_benchmarks():
     by_bench = {}
     for r in report.runs:
         by_bench.setdefault(r.benchmark, []).extend(
-            s.value for o in r.observations for s in o.samples
+            s.value for o in r.iterations for s in o.samples
         )
     assert by_bench == {"a": [1.0, 2.0], "b": [3.0, 4.0]}
-    assert report.warmups == {"H/a": 1, "H/b": 1}
+    # Each benchmark's first iteration is flagged warmup.
+    for r in report.runs:
+        assert r.iterations[0].warmup and not r.iterations[1].warmup
 
 
 def test_dry_prints_one_harness_line(capsys):
@@ -263,5 +263,6 @@ def test_dry_prints_one_harness_line(capsys):
     Dry().run(plan([s], None), None)
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert len(lines) == 1
-    assert lines[0].endswith("[harness]")
+    assert lines[0].endswith("[harness, warmup 2, runs 3]")
     assert "H/a #1" in lines[0]
+    assert "`cd /tmp && sh -c 'echo 1.0'`" in lines[0]

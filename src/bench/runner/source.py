@@ -1,11 +1,11 @@
-"""RunSource: produces Observations and assembles Runs for one benchmark-variant.
+"""RunSource: produces Iterations and assembles Runs for one benchmark-variant.
 
-`CommandSource` spawns one process per observation (pull): each observation is a
-finished Run with a single `Observation`. `HarnessSource` spawns one long-running
-process and frames its output into many `Observation`s (push), all belonging to a
+`CommandSource` spawns one process per iteration (pull): each iteration is a
+finished Run with a single `Iteration`. `HarnessSource` spawns one long-running
+process and frames its output into many `Iteration`s (push), all belonging to a
 single `Run`, killable via close(). The `Controller` drives either uniformly: it
-pulls `Observation`s (driving the stopping policy) and, when done, collects the
-assembled `Run`(s) via `runs()`.
+pulls `Iteration`s (driving the stopping policy) and, when done, collects the
+assembled `Run`(s) via `close()`.
 """
 
 from __future__ import annotations
@@ -25,26 +25,25 @@ from bench.core.execution import (
     default_success,
     format_identifier,
 )
-from bench.core.metric import extract_process, extract_run, partition_metrics
 from bench.core.process import LiveProcess, execute, spawn_streaming
-from bench.core.sample import Observation, Run, diagnostic_excerpt
+from bench.core.sample import Iteration, Run, diagnostic_excerpt
 from bench.grammar.benchmark import Benchmark
 from bench.runner.base import format_benchmark_verbose
 
 
 class RunSource(abc.ABC):
-    """Produces Observations and assembles Runs for one benchmark-variant.
+    """Produces Iterations and assembles Runs for one benchmark-variant.
 
-    Two-method surface: pull `(Observation, label)` pairs with `next()` (the
+    Two-method surface: pull `(Iteration, label)` pairs with `next()` (the
     label is the benchmark-variant display identifier, for live progress only),
     then `close()` to release resources and get the assembled `Run`(s). A
-    command yields one `Run` per observation. A harness yields one `Run`
-    holding all its observations.
+    command yields one `Run` per iteration. A harness yields one `Run`
+    holding all its iterations.
     """
 
     @abc.abstractmethod
-    def next(self) -> tuple[Observation, str]:
-        """Next observation and its display label. Raise `StopIteration` when
+    def next(self) -> tuple[Iteration, str]:
+        """Next iteration and its display label. Raise `StopIteration` when
         exhausted.
 
         The source owns its own sequencing, callers just pull."""
@@ -56,7 +55,7 @@ class RunSource(abc.ABC):
 
 
 class CommandSource(RunSource):
-    """One process per observation. Each observation is its own finished Run."""
+    """One process per iteration. Each iteration is its own finished Run."""
 
     def __init__(self, b: Benchmark, *, verbose: bool = False) -> None:
         self._b = b
@@ -64,7 +63,7 @@ class CommandSource(RunSource):
         self._run = 0
         self._runs: list[Run] = []
 
-    def next(self) -> tuple[Observation, str]:
+    def next(self) -> tuple[Iteration, str]:
         self._run += 1
         b = self._b
         if self._verbose and self._run == 1:
@@ -81,15 +80,19 @@ class CommandSource(RunSource):
         )
         runtime = result.runtime or 0.0
         if result.is_failure():
-            obs = Observation(samples=[], failure=result.failure, runtime=runtime)
+            it = Iteration(samples=[], failure=result.failure, runtime=runtime)
+            process_samples = []
             message = diagnostic_excerpt(result.stdout, result.stderr)
         else:
-            # For a command, the process is the run.
-            # Run and process metrics both fold into this single observation.
-            samples = list(extract_run(b.metrics, result)) + list(
-                extract_process(b.metrics, result)
-            )
-            obs = Observation(samples=samples, runtime=runtime)
+            # A command is one iteration: its iteration metrics read the chosen
+            # source text; its process metrics read the whole result.
+            it_samples = [
+                s
+                for m, source in b.iteration_metrics
+                for s in m.process(source(result))
+            ]
+            process_samples = [s for m in b.process_metrics for s in m.process(result)]
+            it = Iteration(samples=it_samples, runtime=runtime)
             message = ""
 
         ex = b.execution
@@ -109,10 +112,11 @@ class CommandSource(RunSource):
                 message=message,
                 stdout=result.stdout,
                 stderr=result.stderr,
-                observations=[obs],
+                iterations=[it],
+                process_samples=process_samples,
             )
         )
-        return obs, label
+        return it, label
 
     def close(self) -> list[Run]:
         return self._runs
@@ -170,15 +174,16 @@ _ZERO_DELIVERY = "no iterations parsed from harness output"
 
 
 class HarnessSource(RunSource):
-    """One process, framed into many observations, killable mid-flight via close()."""
+    """One process, framed into many iterations, killable mid-flight via close()."""
 
     def __init__(self, b: Benchmark, *, verbose: bool = False) -> None:
         self._b = b
         self._label = format_identifier(b.suite, b.name, b.variant, 1, b.variant_label)
-        self._run_metrics, self._process_metrics = partition_metrics(b.metrics)
+        self._iteration_metrics = b.iteration_metrics
+        self._process_metrics = b.process_metrics
         self._monitor: HarnessMonitor = b.monitor or line_monitor
         self._q: queue.Queue[Any] = queue.Queue()
-        self._taken: list[Observation] = []
+        self._taken: list[Iteration] = []
         self._proc_result: ExecutionResult | None = None
         self._monitor_failure: str | None = None
         self._run: Run | None = None
@@ -233,12 +238,17 @@ class HarnessSource(RunSource):
             for block in self._monitor(handle):
                 if self._closed.is_set():
                     break
-                frame = ExecutionResult(self._b.execution, 0, stdout=block)
-                samples = list(extract_run(self._run_metrics, frame))
+                # The monitor frame is the iteration text; its source is fixed
+                # (the streamed output), so each metric's source is ignored here.
+                samples = [
+                    s
+                    for m, _source in self._iteration_metrics
+                    for s in m.process(block)
+                ]
                 # A framed block that parses to nothing is not an iteration.
                 if samples:
                     now = time.monotonic()
-                    self._q.put(Observation(samples=samples, runtime=now - last))
+                    self._q.put(Iteration(samples=samples, runtime=now - last))
                     last = now
         except Exception as e:
             # A monitor that raises fails the run. The process is killed below
@@ -250,7 +260,7 @@ class HarnessSource(RunSource):
             finally:
                 self._q.put(_DONE)
 
-    def next(self) -> tuple[Observation, str]:
+    def next(self) -> tuple[Iteration, str]:
         item = self._q.get()
         if item is _DONE:
             raise StopIteration
@@ -271,16 +281,16 @@ class HarnessSource(RunSource):
         result = self._proc_result
         assert result is not None
 
-        observations = list(self._taken)
-        # Whole-process metrics become a trailing observation on the run.
-        if not result.is_failure():
-            proc_samples = list(extract_process(self._process_metrics, result))
-            if proc_samples:
-                observations.append(Observation(samples=proc_samples))
+        iterations = list(self._taken)
+        process_samples = (
+            [s for m in self._process_metrics for s in m.process(result)]
+            if not result.is_failure()
+            else []
+        )
 
         run_failure = result.failure  # process verdict or monitor failure
-        # Clean-but-empty delivery: nothing parsed from the harness output.
-        if run_failure is None and not any(not o.is_failure() for o in observations):
+        # Per-iteration metrics were expected but none parsed: nothing delivered.
+        if run_failure is None and self._iteration_metrics and not iterations:
             run_failure = _ZERO_DELIVERY
 
         message = (
@@ -303,7 +313,8 @@ class HarnessSource(RunSource):
             message=message,
             stdout=result.stdout,
             stderr=result.stderr,
-            observations=observations,
+            iterations=iterations,
+            process_samples=process_samples,
         )
 
 

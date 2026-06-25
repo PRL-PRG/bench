@@ -8,8 +8,8 @@
 # ///
 """File-discovered benchmarks: every script in workloads/ becomes a benchmark.
 
-``from_files`` names each benchmark by its path relative to the root (without
-extension) and stamps the file onto ``b.path``.
+`from_files` names each benchmark by its path relative to the root (without
+extension) and stamps the file onto `b.path`.
 """
 
 from pathlib import Path
@@ -22,7 +22,7 @@ HERE = Path(__file__).resolve().parent
 s = (
     suite("discovered", *from_files(HERE / "workloads", pattern=r"\.py$"))
     .with_command(lambda ctx: ["python3", str(ctx.matrix.path)])
-    .with_metric(Time())
+    .with_process_metric(Time())
     .with_runs(3)
 )
 

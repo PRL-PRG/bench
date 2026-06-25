@@ -1,7 +1,7 @@
 """Stopping policies: FixedRuns, CoV, combinators.
 
 Protocol: ``policy.start()`` returns a ``PolicyState``. ``observe(observation)``
-feeds one ``Observation``. ``satisfied()`` reports whether the policy has
+feeds one ``Iteration``. ``satisfied()`` reports whether the policy has
 converged (and is also valid before any observation). Run numbering lives in
 the caller. A policy keeps its own counter if it needs one.
 """
@@ -15,7 +15,7 @@ from bench import (
     CoefficientOfVariation,
     FixedRuns,
     MaxDuration,
-    Observation,
+    Iteration,
     PolicyState,
     Sample,
     StoppingPolicy,
@@ -26,9 +26,9 @@ def _mk(value: float, *, metric: str = "rt") -> Sample:
     return Sample(metric=metric, value=value, unit="s", lower_is_better=True)
 
 
-def _rr(*samples: Sample, runtime: float = 0.0) -> Observation:
-    """An Observation carrying the given samples (empty = failed observation)."""
-    return Observation(samples=list(samples), runtime=runtime)
+def _rr(*samples: Sample, runtime: float = 0.0) -> Iteration:
+    """An Iteration carrying the given samples (empty = failed observation)."""
+    return Iteration(samples=list(samples), runtime=runtime)
 
 
 # ---------------------------------------------------------------------------
@@ -166,8 +166,8 @@ class _SeenNState(PolicyState):
         self.target = n
         self.cur = 0
 
-    def observe(self, observation):
-        if any(s.value > 0 for s in observation.samples):
+    def observe(self, iteration):
+        if any(s.value > 0 for s in iteration.samples):
             self.cur += 1
 
     def satisfied(self):

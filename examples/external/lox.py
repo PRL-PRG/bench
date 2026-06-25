@@ -9,10 +9,10 @@
 """Lox: two suites sharing a base, per-suite formatter.
 
 Demonstrates:
-- ``.factory(lambda ctx: from_files(..., exclude={...}))`` discovery.
+- `.factory(lambda ctx: from_files(..., exclude={...}))` discovery.
 - Multiple suites, each with its own metrics.
 - Per-suite Compact summary via CompositeReporter reporters.
-- Typed ``LoxParams`` dataclass for CLI flags.
+- Typed `LoxParams` dataclass for CLI flags.
 """
 
 from dataclasses import dataclass
@@ -63,6 +63,8 @@ lox_suite = (
     .with_runs(10)
     .with_metric(
         FloatPerLine("s").last_line().lower_is_better(),
+    )
+    .with_process_metric(
         max_rss(),
         Time(user=True, system=True),
     )

@@ -10,14 +10,14 @@
 
 Demonstrates:
 - Five suites sharing a single benchmark invocation pattern.
-- Per-benchmark ``cmd`` overrides (shootout uses ``subfolder/name``).
+- Per-benchmark `cmd` overrides (shootout uses `subfolder/name`).
 - Minimal R harness: an inline R profile dumped to a tempfile, wired via
-  ``R_PROFILE_USER``. The benchmark file itself is the script ``Rscript`` runs.
-  ``.Last`` runs the timing loop after the benchmark file finishes sourcing.
+  `R_PROFILE_USER`. The benchmark file itself is the script `Rscript` runs.
+  `.Last` runs the timing loop after the benchmark file finishes sourcing.
 
 The rebench config defines three executors (GNU-R, PIR-LLVM, FASTR) that differ
-only in the ``Rscript`` path. Here, the executor is selected at the CLI via
-``--Rscript /path/to/Rscript``.
+only in the `Rscript` path. Here, the executor is selected at the CLI via
+`--Rscript /path/to/Rscript`.
 """
 
 import os
@@ -75,7 +75,8 @@ def _suite_cwd(subdir: str):
 # Suites
 # ----------------------------------------------------------------------
 
-_PROC = (FloatPerLine("us").lower_is_better(), max_rss())
+_ITER = (FloatPerLine("us").lower_is_better(),)
+_PROC = (max_rss(),)
 
 
 are_we_fast_r = (
@@ -88,7 +89,8 @@ are_we_fast_r = (
     .with_cwd(_suite_cwd("areWeFast"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_PROC)
+    .with_metric(*_ITER)
+    .with_process_metric(*_PROC)
 )
 
 
@@ -169,7 +171,8 @@ shootout = (
     .with_cwd(_suite_cwd("shootout"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_PROC)
+    .with_metric(*_ITER)
+    .with_process_metric(*_PROC)
 )
 
 
@@ -180,7 +183,8 @@ simple_extra = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_PROC)
+    .with_metric(*_ITER)
+    .with_process_metric(*_PROC)
 )
 
 
@@ -205,7 +209,8 @@ simple_reduced = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_PROC)
+    .with_metric(*_ITER)
+    .with_process_metric(*_PROC)
 )
 
 
@@ -220,7 +225,8 @@ real_thing = (
     .with_cwd(_suite_cwd("RealThing"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_PROC)
+    .with_metric(*_ITER)
+    .with_process_metric(*_PROC)
 )
 
 

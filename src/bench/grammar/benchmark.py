@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, cast
 
 from bench.core.execution import (
     EMPTY_MAPPING,
@@ -32,7 +32,14 @@ from bench.core.execution import (
     Variant,
     format_variant,
 )
-from bench.core.metric import Metric
+from bench.core.metric import (
+    IterationMetric,
+    MetricSource,
+    ProcessMetric,
+    StdoutMetricSource,
+    Time,
+    as_metric_source,
+)
 from bench.core.policy import StoppingPolicy, coerce_policy
 from bench.grammar.context import Context, Matrix
 
@@ -141,8 +148,83 @@ def make_skip_rule(
     )
 
 
+class MetricSetters:
+    """Shared metric setters for the two builders (`BenchmarkBuilder`, `Suite`).
+
+    Both are frozen dataclasses carrying `iteration_metrics` (per-iteration
+    metrics paired with their text source) and `process_metrics` `Build`
+    fields. Each setter returns a replaced copy, so the concrete `Self` type is
+    preserved.
+    """
+
+    __slots__ = ()
+
+    if TYPE_CHECKING:  # only ever mixed into the two frozen dataclasses
+        __dataclass_fields__: ClassVar[dict[str, Any]]
+        iteration_metrics: Build[tuple[tuple[IterationMetric, MetricSource], ...]]
+        process_metrics: Build[tuple[ProcessMetric, ...]]
+
+    def with_metric(
+        self, *metrics: IterationMetric | Build[tuple[IterationMetric, ...]]
+    ) -> Self:
+        """Set (replace) the per-iteration metrics, each reading stdout.
+
+        Pass metric instances, or a single `(ctx) -> (m, ...)` builder for
+        per-variant metrics. Use `add_metric` to pick a non-default source."""
+        if len(metrics) == 1 and callable(metrics[0]):
+            fn = metrics[0]
+
+            def build(
+                ctx: Context[Any],
+            ) -> tuple[tuple[IterationMetric, MetricSource], ...]:
+                return tuple((m, StdoutMetricSource) for m in fn(ctx))
+
+            return dataclasses.replace(self, iteration_metrics=build)
+        out = dataclasses.replace(self, iteration_metrics=const(()))
+        for m in cast("tuple[IterationMetric, ...]", metrics):
+            out = out.add_metric(m)
+        return out
+
+    def add_metric(
+        self,
+        metric: IterationMetric,
+        source: Literal["stdout", "stderr"] | MetricSource = "stdout",
+    ) -> Self:
+        """Append one per-iteration metric reading from `source` ("stdout",
+        "stderr", or a `(ExecutionResult) -> str` extractor)."""
+        # Runtime guard for callers not running a type checker: a misfiled
+        # process metric would otherwise crash deep in extraction.
+        if not isinstance(metric, IterationMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(
+                f"with_metric/add_metric expects an IterationMetric, got "
+                f"{type(metric).__name__}; use with_process_metric for "
+                f"process metrics like Time or max_rss"
+            )
+        src = as_metric_source(source)
+        current = self.iteration_metrics
+        base = current if current is not UNSET else const(())
+
+        def build(
+            ctx: Context[Any],
+        ) -> tuple[tuple[IterationMetric, MetricSource], ...]:
+            return base(ctx) + ((metric, src),)
+
+        return dataclasses.replace(self, iteration_metrics=build)
+
+    def with_process_metric(self, *metrics: ProcessMetric) -> Self:
+        """Set (replace) the whole-process metrics (peak RSS, total time, ...)."""
+        for m in metrics:
+            if not isinstance(m, ProcessMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise TypeError(
+                    f"with_process_metric expects ProcessMetrics, got "
+                    f"{type(m).__name__}; use with_metric for iteration metrics "
+                    f"like Regex or FloatPerLine"
+                )
+        return dataclasses.replace(self, process_metrics=const(tuple(metrics)))
+
+
 @dataclass(frozen=True, slots=True)
-class BenchmarkBuilder:
+class BenchmarkBuilder(MetricSetters):
     """A benchmark *spec*: a builder-style API configuring a workload that
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
@@ -158,7 +240,8 @@ class BenchmarkBuilder:
     env: EnvFn = UNSET
     timeout: Build[float | None] = UNSET
     stdin: Build[bytes | None] = const(None)  # None = no stdin (never inherited)
-    metrics: Build[tuple[Metric, ...]] = UNSET
+    iteration_metrics: Build[tuple[tuple[IterationMetric, MetricSource], ...]] = UNSET
+    process_metrics: Build[tuple[ProcessMetric, ...]] = UNSET
     success: SuccessFn = UNSET
     warmup: Build[StoppingPolicy] = UNSET
     runs: Build[StoppingPolicy] = UNSET
@@ -201,16 +284,6 @@ class BenchmarkBuilder:
             self,
             stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
         )
-
-    def with_metric(
-        self, *metrics: Metric | Build[tuple[Metric, ...]]
-    ) -> BenchmarkBuilder:
-        if len(metrics) == 1 and callable(metrics[0]):
-            build = metrics[0]
-        else:
-            ms = cast("tuple[Metric, ...]", metrics)
-            build = const(ms)
-        return dataclasses.replace(self, metrics=build)
 
     def with_success(self, fn: SuccessFn) -> BenchmarkBuilder:
         """Override the success policy (returns a failure reason, or None)."""
@@ -304,12 +377,18 @@ class BenchmarkBuilder:
             timeout=self.timeout(ctx),
             stdin=self.stdin(ctx),
         )
+        iteration_metrics = self.iteration_metrics(ctx)
+        process_metrics = self.process_metrics(ctx)
+        # Bare benchmark (no metrics declared at all): measure wall time.
+        if not iteration_metrics and not process_metrics:
+            process_metrics = (Time(),)
         b = Benchmark(
             suite=suite,
             name=self.name,
             execution=execution,
             variant=variant,
-            metrics=self.metrics(ctx),
+            iteration_metrics=iteration_metrics,
+            process_metrics=process_metrics,
             success=self.success,
             warmup=self.warmup(ctx),
             runs=self.runs(ctx),
@@ -328,7 +407,8 @@ class Benchmark:
     name: str
     execution: Execution
     variant: Variant
-    metrics: tuple[Metric, ...]
+    iteration_metrics: tuple[tuple[IterationMetric, MetricSource], ...]
+    process_metrics: tuple[ProcessMetric, ...]
     success: SuccessFn
     warmup: StoppingPolicy
     runs: StoppingPolicy

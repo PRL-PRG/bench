@@ -9,7 +9,7 @@ from bench.core.execution import (
     default_success,
 )
 from bench.core.sample import (
-    Observation,
+    Iteration,
     Report,
     Run,
     Sample,
@@ -20,7 +20,8 @@ from bench.core.sample import (
 # Metrics
 from bench.core.metric import (
     FloatPerLine,
-    Metric,
+    IterationMetric,
+    ProcessMetric,
     Rebench,
     Regex,
     RUsage,
@@ -83,13 +84,14 @@ __all__ = [
     "Verdict",
     "default_success",
     "Sample",
-    "Observation",
+    "Iteration",
     "Run",
     "Report",
     "report_from_json",
     "report_to_json",
     # Metrics
-    "Metric",
+    "IterationMetric",
+    "ProcessMetric",
     "Time",
     "Regex",
     "FloatPerLine",

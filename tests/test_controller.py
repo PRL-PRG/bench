@@ -7,7 +7,7 @@ so the Controller pulls from the fake.
 
 from pathlib import Path
 
-from bench import FixedRuns, Observation, Run, Sample, bench, suite
+from bench import FixedRuns, Iteration, Run, Sample, bench, suite
 from bench.runner.base import plan
 from bench.core.sample import Report
 from bench.report.reporter import Reporter
@@ -17,35 +17,31 @@ from bench.runner.source import RunSource
 
 class _Collect(Reporter):
     def __init__(self):
-        self.observations = []
+        self.iterations = []
         self.labels = []
         self.runs = []
-        self.warmups = []
 
-    def observation(self, obs, label):
-        self.observations.append(obs)
+    def iteration(self, it, label):
+        self.iterations.append(it)
         self.labels.append(label)
 
     def run_done(self, run):
         self.runs.append(run)
 
-    def warmup(self, key, observations):
-        self.warmups.append((key, observations))
-
 
 class _FakeSource(RunSource):
-    """Command-like fake: yields the given Observations. close() returns one Run
-    per taken observation."""
+    """Command-like fake: yields the given Iterations. close() returns one Run
+    per taken iteration."""
 
-    def __init__(self, observations, closed):
-        self._it = iter(observations)
+    def __init__(self, iterations, closed):
+        self._it = iter(iterations)
         self._closed = closed
-        self._taken: list[Observation] = []
+        self._taken: list[Iteration] = []
 
-    def next(self) -> tuple[Observation, str]:
-        obs = next(self._it)
-        self._taken.append(obs)
-        return obs, "S/b"
+    def next(self) -> tuple[Iteration, str]:
+        it = next(self._it)
+        self._taken.append(it)
+        return it, "S/b"
 
     def close(self) -> list[Run]:
         self._closed.append(True)
@@ -56,14 +52,14 @@ class _FakeSource(RunSource):
                 variant=(),
                 run=i + 1,
                 command=("true",),
-                observations=[obs],
+                iterations=[it],
             )
-            for i, obs in enumerate(self._taken)
+            for i, it in enumerate(self._taken)
         ]
 
 
-def _obs(value: float) -> Observation:
-    return Observation(samples=[Sample("t", float(value))])
+def _obs(value: float) -> Iteration:
+    return Iteration(samples=[Sample("t", float(value))])
 
 
 def _planned(runs, *, warmup=0):
@@ -93,9 +89,9 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     Controller(rep).run_benchmark(_planned(FixedRuns(3)), report)
 
     assert [r.run for r in report.runs] == [1, 2, 3]
-    assert [r.observations[0].samples[0].value for r in report.runs] == [1.0, 2.0, 3.0]
+    assert [r.iterations[0].samples[0].value for r in report.runs] == [1.0, 2.0, 3.0]
     assert len(rep.runs) == 3
-    assert len(rep.observations) == 3
+    assert len(rep.iterations) == 3
     assert rep.labels[0] == "S/b"
     assert closed == [True]
 
@@ -111,8 +107,8 @@ def test_stops_when_policy_converges(monkeypatch):
     assert closed == [True]
 
 
-def test_warmup_boundary_recorded_once(monkeypatch):
-    # warmup=2, runs=3 -> 5 observations, warmup noted once at 2.
+def test_warmup_boundary_marked_on_iterations(monkeypatch):
+    # warmup=2, runs=3 -> 5 iterations; the first 2 are flagged warmup.
     closed = []
     _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
     rep = _Collect()
@@ -120,5 +116,10 @@ def test_warmup_boundary_recorded_once(monkeypatch):
     Controller(rep).run_benchmark(_planned(FixedRuns(3), warmup=2), report)
 
     assert len(report.runs) == 5
-    assert report.warmups == {"S/b": 2}
-    assert rep.warmups == [("S/b", 2)]
+    assert [r.iterations[0].warmup for r in report.runs] == [
+        True,
+        True,
+        False,
+        False,
+        False,
+    ]

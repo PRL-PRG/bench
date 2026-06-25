@@ -1,8 +1,8 @@
 """Grouping, statistics, ratios, geometric means.
 
-By default `group(report)` excludes each benchmark variant's warmup runs,
-the first `report.warmups[key]` runs, from the groups (and therefore from
-stats). Raw outputs (CsvReporter, JsonReporter, DirReporter) keep every run.
+By default `group(report)` excludes warmup iterations (those flagged
+`Iteration.warmup`) from the groups, and therefore from stats. Raw outputs
+(CsvReporter, JsonReporter, DirReporter) keep every iteration.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bench.core.execution import Variant
-from bench.core.sample import Report, Run, report_from_json
+from bench.core.sample import Report, Run, Sample, report_from_json
 
 
 type MetricKey = tuple[str, str]  # (metric, unit)
@@ -58,15 +58,14 @@ def group(
 ) -> GroupedReport:
     """Reshape a Report for stats/comparison.
 
-    Flattens every Run's Observations per benchmark variant and collects their
-    samples by (metric, unit). The first `report.warmups[key]` observations of
-    a variant are warmup and excluded by default. A run that failed before
-    producing any observation (spawn / zero-delivery) counts as one failure.
-    Benchmarks that only ever failed still appear (zero successes).
+    Flattens every Run's Iterations per benchmark variant and collects their
+    samples by (metric, unit), plus each run's whole-process samples. Warmup
+    iterations (flagged `Iteration.warmup`) are excluded by default. A run that
+    failed before producing any iteration (spawn / zero-delivery) counts as one
+    failure. Benchmarks that only ever failed still appear (zero successes).
     """
     groups: dict[BenchmarkId, BenchmarkGroup] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
-    seen: dict[BenchmarkId, int] = {}  # observations seen per variant (for warmup)
 
     def ensure(r: Run) -> BenchmarkGroup:
         bid: BenchmarkId = (r.suite, r.benchmark, r.variant)
@@ -79,30 +78,41 @@ def group(
             g.variant_label = r.variant_label
         return g
 
+    def add_sample(g: BenchmarkGroup, s: Sample) -> None:
+        mk = (s.metric, s.unit)
+        if s.lower_is_better is not None:
+            lib[mk] = s.lower_is_better
+        g.metrics.setdefault(mk, []).append(s.value)
+
     for r in report.runs:
-        bid = (r.suite, r.benchmark, r.variant)
-        # A run that failed before producing any observation (spawn /
+        # A run that failed before producing any iteration (spawn /
         # zero-delivery) is one failure, never warmup.
-        if not r.observations and r.is_failure():
+        if not r.iterations and r.is_failure():
             ensure(r).run_counts.failures += 1
             continue
 
-        warmup = report.warmups.get(r.key(), 0)
-        for obs in r.observations:
-            idx = seen.get(bid, 0)
-            seen[bid] = idx + 1
-            if not include_warmup and idx < warmup:
+        measured = 0
+        for it in r.iterations:
+            if it.warmup and not include_warmup:
                 continue
             g = ensure(r)
-            if obs.is_failure():
+            measured += 1
+            if it.is_failure():
                 g.run_counts.failures += 1
             else:
                 g.run_counts.successes += 1
-            for s in obs.samples:
-                mk = (s.metric, s.unit)
-                if s.lower_is_better is not None:
-                    lib[mk] = s.lower_is_better
-                g.metrics.setdefault(mk, []).append(s.value)
+            for s in it.samples:
+                add_sample(g, s)
+
+        # Whole-process samples are collected once, never counted as a run —
+        # unless there were no measured iterations at all (a process-only
+        # benchmark), in which case the session counts as one run.
+        if r.process_samples:
+            g = ensure(r)
+            if measured == 0:
+                g.run_counts.successes += 1
+            for s in r.process_samples:
+                add_sample(g, s)
 
     return GroupedReport(name=name, groups=list(groups.values()), lower_is_better=lib)
 

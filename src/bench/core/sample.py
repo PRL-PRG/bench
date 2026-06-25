@@ -21,17 +21,13 @@ class Sample:
 
 
 @dataclass(frozen=True, slots=True)
-class Observation:
-    """One measurement point: samples (possibly multi-metric) + optional failure.
-
-    A failed observation (extraction produced nothing it expected, or the
-    harness flagged the iteration) carries `failure` and usually no samples,
-    and the run proceeds to the next observation.
-    """
+class Iteration:
+    """One measured iteration: samples (possibly multi-metric) with optional failure."""
 
     samples: list[Sample] = field(default_factory=list[Sample])
     failure: str | None = None
-    runtime: float = 0.0  # command runtime that produced this observation (s)
+    runtime: float = 0.0  # command runtime that produced this iteration (s)
+    warmup: bool = False  # a discarded warmup iteration, flagged by the Controller
 
     def is_failure(self) -> bool:
         return self.failure is not None
@@ -39,7 +35,7 @@ class Observation:
 
 @dataclass(frozen=True, slots=True)
 class Run:
-    """One process execution: identity + command + outcome + observations."""
+    """One process execution: identity + command + outcome + iterations."""
 
     suite: str
     benchmark: str
@@ -55,7 +51,8 @@ class Run:
     message: str = ""
     stdout: str = ""
     stderr: str = ""
-    observations: list[Observation] = field(default_factory=list[Observation])
+    iterations: list[Iteration] = field(default_factory=list[Iteration])
+    process_samples: list[Sample] = field(default_factory=list[Sample])
 
     def is_failure(self) -> bool:
         return self.failure is not None
@@ -88,29 +85,29 @@ def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
 
 @dataclass(slots=True)
 class Report:
-    """The accumulating Runs, each carrying its Observations.
-
-    `warmups` maps a benchmark-variant key to the number of
-    its leading observations that were warmup, recorded once per variant.
-    Stats drop those observations by default.
-    """
+    """The accumulating Runs, each carrying its Iterations."""
 
     runs: list[Run] = field(default_factory=list[Run])
-    warmups: dict[str, int] = field(default_factory=dict[str, int])
 
     @property
     def failures(self) -> list[Run]:
         """Runs whose process failed (returncode-bearing failures)."""
         return [r for r in self.runs if r.is_failure()]
 
-    def observations(self) -> list[Observation]:
-        return [o for r in self.runs for o in r.observations]
+    def iterations(self) -> list[Iteration]:
+        return [it for r in self.runs for it in r.iterations]
 
     def metrics(self) -> list[str]:
-        """Distinct metric names, first-seen order."""
+        """Distinct metric names across iterations and whole-process samples,
+        first-seen order."""
         return list(
             dict.fromkeys(
-                s.metric for r in self.runs for o in r.observations for s in o.samples
+                s.metric
+                for r in self.runs
+                for s in (
+                    *(s for it in r.iterations for s in it.samples),
+                    *r.process_samples,
+                )
             )
         )
 
@@ -120,11 +117,6 @@ class Report:
 
     def add(self, run: Run) -> None:
         self.runs.append(run)
-
-    def warmup(self, key: str, observations: int) -> None:
-        """Note that benchmark-variant `key`'s first `observations` were warmup."""
-        if observations:
-            self.warmups[key] = observations
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +130,7 @@ def report_to_json(
     report: Report, *, indent: int = 2, include_output: bool = False
 ) -> str:
     """Serialize a Report. `stdout`/`stderr`/`env` are dropped unless
-    `include_output` (they bloat the file and are rarely needed offline)."""
+    `include_output`."""
     raw = unstructure(report)
     if not include_output:
         for run in raw.get("runs", []):

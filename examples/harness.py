@@ -8,17 +8,17 @@
 # ///
 """Harness benchmarks: one process runs all iterations, the VM pattern.
 
-A *harness* benchmark (``.with_harness()``) executes its command once. The
+A *harness* benchmark (`.with_harness()`) executes its command once. The
 harness itself runs the iterations and prints one measurement per iteration
-(here ``workloads/fakevm.py``, a fake JIT whose early iterations are slow).
-The command fn derives the iteration count from the ``WARMUP``/``RUNS``
+(here `workloads/fakevm.py`, a fake JIT whose early iterations are slow).
+The command fn derives the iteration count from the `WARMUP`/`RUNS`
 constants that also configure the policies, the metrics parse the complete
-output, and each iteration becomes one run record, the first ``warmup`` of
+output, and each iteration becomes one run record, the first `warmup` of
 them discarded by the summary stats.
 
-Real-world harnesses fit the same shape: Renaissance (``-r N`` + a Regex on
-its ``iteration N completed (… ms)`` lines), LevelDB's db_bench (a Regex on
-``micros/op``), or any ReBench-format harness (the ``Rebench()`` metric).
+Real-world harnesses fit the same shape: Renaissance (`-r N` + a Regex on
+its `iteration N completed (... ms)` lines), LevelDB's db_bench (a Regex on
+`micros/op`), or any ReBench-format harness (the `Rebench()` metric).
 """
 
 import sys

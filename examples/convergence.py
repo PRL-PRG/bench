@@ -6,20 +6,7 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Run a benchmark until the coefficient of variation stabilizes.
-
-Here CoV governs the *measured* runs (``.with_runs``). For CoV as the *warmup*
-policy followed by a fixed measured count, see ``jit_warmup.py``.
-
-Stops as soon as the last 5 runs are within 2% CoV, but always runs at least 5
-and at most 30 times. ``.at_least`` / ``.at_most`` are sugar over the raw
-policy combinators:
-
-    cov.at_least(5).at_most(30)
-        == (cov & FixedRuns(5)) | FixedRuns(30)
-
-(`&` = both must converge, `|` = either suffices, and `&` binds tighter than `|`.)
-"""
+"""Run a benchmark until the coefficient of variation stabilizes."""
 
 from bench import CoefficientOfVariation, Time, bench, run, suite
 
@@ -34,7 +21,7 @@ s = suite(
     "converge",
     bench("noisy")
     .with_command(["sh", "-c", "sleep 0.02"])
-    .with_metric(Time())
+    .with_process_metric(Time())
     .with_runs(cov),
 )
 

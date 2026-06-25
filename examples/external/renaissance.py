@@ -85,8 +85,8 @@ def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
 def renaissance_monitor(handle: HarnessHandle) -> Iterator[str]:
     """Group each iteration's lines (started -> completed) into one block.
 
-    Reuses ``line_monitor`` for the file-tailing. JVM-startup lines before the
-    first ``started`` fall through with an empty buffer and are discarded.
+    Reuses `line_monitor` for the file-tailing. JVM-startup lines before the
+    first `started` fall through with an empty buffer and are discarded.
     """
     buf: list[str] = []
     for line in line_monitor(handle):
@@ -135,6 +135,8 @@ renaissance = (
         ).lower_is_better(),
         Regex("heap_before", r"heap usage ([\d.]+) MB", unit="MB"),
         Regex("heap_after", r"-> ([\d.]+) MB", unit="MB"),
+    )
+    .with_process_metric(
         max_rss(),
         Time(user=True, system=True, elapsed=True),
     )

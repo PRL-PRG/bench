@@ -20,7 +20,7 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
-from bench.core.sample import Observation, Run
+from bench.core.sample import Iteration, Run
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
@@ -38,7 +38,7 @@ def test_dirreporter_writes_on_run_done(tmp_path):
         returncode=0,
         stdout="hi\n",
         stderr="",
-        observations=[Observation(samples=[])],
+        iterations=[Iteration(samples=[])],
     )
     rep.run_done(run)
     assert (tmp_path / "S" / "b" / "1" / "stdout").read_text() == "hi\n"
@@ -69,7 +69,7 @@ def test_json_writer_round_trip(tmp_path: Path):
     out = tmp_path / "r.json"
     Sequential(reporter=JsonReporter(out)).run(plan([_s()], None), None)
     r = report_from_json(out.read_text())
-    all_samples = [s for run in r.runs for o in run.observations for s in o.samples]
+    all_samples = [s for run in r.runs for o in run.iterations for s in o.samples]
     assert len(all_samples) == 2
     assert all(s.metric == "runtime" for s in all_samples)
 
@@ -105,7 +105,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
             .with_matrix(compiler=["gcc"]),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1)
     )
     Sequential(reporter=CsvReporter(out)).run(plan([s], None), None)
@@ -139,7 +139,7 @@ def test_summary_appends_failures_block_with_diagnostic():
         bench("bad")
         .with_command(["sh", "-c", "echo trouble >&2; exit 7"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -159,7 +159,7 @@ def test_summary_failures_block_handles_spawn_failure():
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -177,7 +177,7 @@ def test_summary_no_failures_block_when_all_succeed():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -198,7 +198,7 @@ def test_progress_plain_lines_in_non_tty():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(3),
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
@@ -215,12 +215,10 @@ def test_progress_plain_marks_failures():
         bench("bad")
         .with_command(["sh", "-c", "exit 11"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
-    Sequential(
-        reporter=ProgressReporter(target_console=c)
-    ).run(plan([s], None), None)
+    Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
     text = buf.getvalue()
     assert "FAIL" in text and "exit code 11" in text
 
@@ -233,7 +231,7 @@ def test_progress_plain_escapes_identifier_markup():
         "S",
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
@@ -247,11 +245,9 @@ def test_summary_failure_line_escapes_identifier_markup():
         "F",
         bench("bad")
         .with_command(["sh", "-c", "exit 11"])
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
-    Sequential(
-        reporter=SummaryReporter(target_console=c)
-    ).run(plan([s], None), None)
+    Sequential(reporter=SummaryReporter(target_console=c)).run(plan([s], None), None)
     assert "[v1]" in buf.getvalue()

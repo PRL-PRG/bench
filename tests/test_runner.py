@@ -27,12 +27,17 @@ from bench import (
 from bench.runner.base import plan
 
 
+def _run_samples(r):
+    yield from (s for o in r.iterations for s in o.samples)
+    yield from r.process_samples
+
+
 def _all_samples(report):
-    return [s for r in report.runs for o in r.observations for s in o.samples]
+    return [s for r in report.runs for s in _run_samples(r)]
 
 
 def _runs_with_samples(report):
-    return [(r, s) for r in report.runs for o in r.observations for s in o.samples]
+    return [(r, s) for r in report.runs for s in _run_samples(r)]
 
 
 def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
@@ -42,7 +47,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
             bench(f"b{i}")
             .with_command(["sh", "-c", f"sleep {duration}"])
             .with_cwd(Path("/tmp"))
-            .with_metric(Time())
+            .with_process_metric(Time())
             .with_runs(runs)
             for i in range(2)
         ],
@@ -77,7 +82,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         bench("bad")
         .with_command(["false"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(10),
     )
     out = tmp_path / "r.json"
@@ -170,7 +175,7 @@ def test_dry_no_subprocess():
         bench("a")
         .with_command(["/nonexistent_binary_xyz"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(5),
     )
     out = _all_samples(Dry().run(plan([s], None), None))
@@ -183,7 +188,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(5),
     )
     Dry().run(plan([s], None), None)
@@ -191,7 +196,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
     for i, ln in enumerate(lines, start=1):
-        assert ln == f"X/a #{i}: /bin/echo hi"
+        assert ln == f"X/a #{i}: `cd /tmp && /bin/echo hi`"
     assert "cwd:" not in out and "plan:" not in out
 
 
@@ -201,7 +206,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_warmup(2)
         .with_runs(3),
     )
@@ -211,7 +216,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
     assert len(lines) == 5
     # Continuous numbering: warmup runs are #1..#2, measured runs #3..#5.
     for i, ln in enumerate(lines, start=1):
-        assert ln == f"X/a #{i}: /bin/echo hi"
+        assert ln == f"X/a #{i}: `cd /tmp && /bin/echo hi`"
 
 
 def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
@@ -220,7 +225,7 @@ def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(CoefficientOfVariation("elapsed")),
     )
     Dry().run(plan([s], None), None)
@@ -236,7 +241,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(5),
     )
     Dry(verbose=True).run(plan([s], None), None)
@@ -244,6 +249,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
     assert "command:    /bin/echo hi" in out
     assert "cwd:" in out
     assert "metrics:    Time" in out
+    assert "warmup:" in out and "runs:" in out
     assert out.count("command:    /bin/echo hi") == 5
     assert out.count("X/a #1") == 1
     assert out.count("X/a #5") == 1
@@ -280,7 +286,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
         bench("slow")
         .with_command(["sleep", "10"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(3),
     )
     json_path = tmp_path / "r.json"
@@ -312,7 +318,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
             bench(f"slow{i}")
             .with_command(["sleep", "10"])
             .with_cwd(Path("/tmp"))
-            .with_metric(Time())
+            .with_process_metric(Time())
             .with_runs(1)
             for i in range(4)
         ],
@@ -341,7 +347,7 @@ def test_sigint_kills_shell_wrapped_subtree():
         bench("wrapped")
         .with_command(["sh", "-c", "sleep 10"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(1),
     )
 
@@ -385,7 +391,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         bench("a")
         .with_command(["tools/echo_hi"])
         .with_cwd(other_dir)  # subprocess runs from elsewhere/
-        .with_metric(Time())  # emits one `elapsed` sample on success
+        .with_process_metric(Time())  # emits one `elapsed` sample on success
         .with_runs(2),
     )
     report = Sequential().run(plan([s], None), None)
@@ -399,9 +405,8 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
     report = Sequential().run(plan([s], None), None)
-    assert [smp.metric for o in report.runs[0].observations for smp in o.samples] == [
-        "elapsed"
-    ]
+    # Time is a process metric, so the default `elapsed` lands in process_samples.
+    assert [s.metric for s in report.runs[0].process_samples] == ["elapsed"]
 
 
 def test_plan_default_params():

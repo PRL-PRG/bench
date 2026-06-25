@@ -8,11 +8,11 @@
 # ///
 """Writing a custom StoppingPolicy.
 
-Stop as soon as we've seen the value '1' on the ``READY`` metric for three
-consecutive runs. Demonstrates inheriting from ``StoppingPolicy`` (the frozen
-config that returns a fresh ``PolicyState`` from ``start()``) and
-``PolicyState`` (the per-observation observer: ``observe`` records each
-observation, ``satisfied`` reports whether the policy has converged).
+Stop as soon as we've seen the value '1' on the `READY` metric for three
+consecutive runs. Demonstrates inheriting from `StoppingPolicy` (the frozen
+config that returns a fresh `PolicyState` from `start()`) and
+`PolicyState` (the per-observation observer: `observe` records each
+observation, `satisfied` reports whether the policy has converged).
 """
 
 from dataclasses import dataclass
@@ -25,8 +25,8 @@ class _ConsecutiveReadyState(PolicyState):
         self.target = n
         self.cur = 0
 
-    def observe(self, observation):
-        for s in observation.samples:
+    def observe(self, iteration):
+        for s in iteration.samples:
             if s.metric == "READY" and s.value == 1.0:
                 self.cur += 1
                 break

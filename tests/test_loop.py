@@ -2,13 +2,13 @@
 
 import pytest
 
-from bench import CoefficientOfVariation, FixedRuns, Observation, Sample
+from bench import CoefficientOfVariation, FixedRuns, Iteration, Sample
 from bench.grammar.benchmark import UNSET
 from bench.runner.controller import benchmarking_loop
 
 
 def _pump(warmup, runs, fake_value=1.0):
-    """Drive the loop to exhaustion, feeding one Observation per slot.
+    """Drive the loop to exhaustion, feeding one Iteration per slot.
     Returns the list of (run, in_warmup) slots seen. The caller (this pump)
     owns run numbering. The loop only reports the phase."""
     out = []
@@ -22,7 +22,7 @@ def _pump(warmup, runs, fake_value=1.0):
             s = Sample(
                 metric="runtime", value=fake_value, unit="s", lower_is_better=True
             )
-            in_warmup = gen.send(Observation(samples=[s]))
+            in_warmup = gen.send(Iteration(samples=[s]))
     except StopIteration:
         pass
     return out
@@ -60,7 +60,7 @@ def test_cov_warmup_then_fixed_measure():
 
 def test_empty_observation_counts():
     gen = benchmarking_loop(FixedRuns(0), FixedRuns(2))
-    empty = Observation(samples=[])
+    empty = Iteration(samples=[])
     assert next(gen) is False  # warmup skipped -> first measured run
     assert gen.send(empty) is False  # second measured run
     with pytest.raises(StopIteration):

@@ -15,7 +15,14 @@ from bench.runner.base import plan
 
 
 def _all_samples(report):
-    return [(r, s) for r in report.runs for o in r.observations for s in o.samples]
+    return [
+        (r, s)
+        for r in report.runs
+        for s in (
+            *(s for o in r.iterations for s in o.samples),
+            *r.process_samples,
+        )
+    ]
 
 
 def test_e2e_sleep_runs_produce_expected_count():
@@ -24,7 +31,7 @@ def test_e2e_sleep_runs_produce_expected_count():
         bench("a")
         .with_command(["sleep", "0.02"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(3),
     )
     pairs = _all_samples(Sequential().run(plan([s], None), None))
@@ -44,9 +51,14 @@ def test_e2e_warmup_then_measure():
         .with_runs(2),
     )
     report = Sequential().run(plan([s], None), None)
-    # Continuous numbering, the warmup count is recorded once, not per run.
+    # Continuous numbering; the first two iterations are flagged warmup.
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
-    assert report.warmups == {"S/a": 2}
+    assert [o.warmup for r in report.runs for o in r.iterations] == [
+        True,
+        True,
+        False,
+        False,
+    ]
 
 
 def test_e2e_command_not_found_marks_failure(tmp_path: Path):
@@ -56,7 +68,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(3),
     )
     report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
@@ -73,7 +85,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         bench("hang")
         .with_command(["sh", "-c", "sleep 5"])
         .with_cwd(Path("/tmp"))
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_timeout(0.05)
         .with_runs(1),
     )

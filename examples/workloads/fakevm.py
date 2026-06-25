@@ -2,7 +2,7 @@
 """A fake VM harness: runs a workload N times, printing one time per line.
 
 Models a JIT runtime warming up: the first iterations are slow, then the
-times settle around a steady state. Usage: ``fakevm.py <bench> -n N``.
+times settle around a steady state. Usage: `fakevm.py <bench> -n N`.
 """
 
 import argparse

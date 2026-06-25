@@ -423,7 +423,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .with_command(lambda ctx: list(ctx.matrix.command))
         .with_label(lambda b: " ".join(b.data["command"]))
         .with_cwd(Path.cwd())
-        .with_metric(Time())
+        .with_process_metric(Time())
         .with_runs(runs_policy)
     )
 

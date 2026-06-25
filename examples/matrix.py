@@ -6,18 +6,13 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Compiler x optimization matrix.
-
-One benchmark with two matrix axes: ``.with_matrix(compiler=..., opt=...)``.
-Each (compiler, opt) cell is a variant. Reports compare variants within the
-benchmark.
-"""
+"""Compiler / optimization matrix."""
 
 from bench import Regex, bench, run, suite
 
 
 def fake_cmd(ctx):
-    # Variant values reach the callable via ``ctx.matrix``.
+    # Variant values reach the callable via `ctx.matrix`.
     return [
         "sh",
         "-c",
