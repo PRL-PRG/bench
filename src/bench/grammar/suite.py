@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -22,18 +22,14 @@ from bench.grammar.benchmark import (
     Benchmark,
     BenchmarkBuilder,
     Build,
+    BuilderSetters,
     CommandFn,
-    MetricSetters,
     EnvFn,
     LabelFn,
     PathFn,
     SkipFn,
-    as_build,
     const,
     default_label,
-    make_skip_rule,
-    normalize_matrix,
-    to_argv,
 )
 from bench.grammar.context import Context, Matrix
 from bench.core.execution import (
@@ -47,7 +43,7 @@ from bench.core.metric import (
     ProcessMetric,
 )
 from bench.core.outlier import ModifiedZScore, OutlierDetection
-from bench.core.policy import FixedRuns, StoppingPolicy, coerce_policy
+from bench.core.policy import FixedRuns, StoppingPolicy
 
 if TYPE_CHECKING:
     from bench.runner.source import HarnessMonitor
@@ -72,7 +68,7 @@ def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
 
 
 @dataclass(frozen=True, slots=True)
-class Suite(MetricSetters):
+class Suite(BuilderSetters):
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
@@ -139,41 +135,7 @@ class Suite(MetricSetters):
         """
         return dataclasses.replace(self, filters=self.filters + (pred,))
 
-    # ----- defaults ---------------------------------------------------
-
-    def with_command(self, command: Sequence[str] | CommandFn) -> Suite:
-        return dataclasses.replace(self, command=as_build(command, to_argv))
-
-    def with_cwd(self, cwd: str | Path | PathFn) -> Suite:
-        return dataclasses.replace(self, cwd=as_build(cwd, Path))
-
-    def with_env(self, env: Mapping[str, str] | EnvFn) -> Suite:
-        return dataclasses.replace(self, env=as_build(env, dict))
-
-    def with_timeout(self, timeout: float | None | Build[float | None]) -> Suite:
-        return dataclasses.replace(self, timeout=as_build(timeout))
-
-    def with_success(self, fn: SuccessFn) -> Suite:
-        return dataclasses.replace(self, success=fn)
-
-    def with_label(self, fn: LabelFn) -> Suite:
-        return dataclasses.replace(self, label_fn=fn)
-
-    def with_warmup(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Suite:
-        """Set the default warmup policy."""
-        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
-
-    def with_runs(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Suite:
-        """Set the default policy for the measured runs."""
-        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
-
-    def with_outlier_detection(self, d: OutlierDetection) -> Suite:
-        """Set the default outlier-detection strategy (`NoDetection()` = off)."""
-        return dataclasses.replace(self, outlier_detection=d)
-
-    def with_cooldown(self, seconds: float) -> Suite:
-        """Set the default pause between successive process executions."""
-        return dataclasses.replace(self, cooldown=seconds)
+    # ----- defaults (shared setters live on BuilderSetters) -----------
 
     def with_shuffle(self, seed: int | None = None) -> Suite:
         """Randomize the order benchmarks materialize in (seedable)."""
@@ -182,30 +144,6 @@ class Suite(MetricSetters):
     def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
-
-    def with_matrix(self, **dims: Sequence[Any]) -> Suite:
-        """Declare matrix dimensions applied to every contained benchmark
-
-        When materialized,these dimensions are appended to each
-        benchmark's own (a per-benchmark dimensions compose with
-        suite-level ones).
-        """
-        return dataclasses.replace(self, matrix=normalize_matrix(dims))
-
-    def add_matrix_skip(
-        self,
-        predicate: SkipFn | None = None,
-        /,
-        **kwargs: Any,
-    ) -> Suite:
-        """Add a skip rule applied to every contained benchmark.
-
-        kwargs are AND-matched against dimension values, optional predicate for complex cases.
-        """
-        rule = make_skip_rule(predicate, kwargs)
-        if rule is None:
-            return self
-        return dataclasses.replace(self, skips=self.skips + (rule,))
 
     def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""

@@ -149,21 +149,92 @@ def make_skip_rule(
     )
 
 
-class MetricSetters:
-    """Shared metric setters for the two builders (`BenchmarkBuilder`, `Suite`).
+class BuilderSetters:
+    """Shared `with_*` setters for the two builders (`BenchmarkBuilder`,
+    `Suite`).
 
-    Both are frozen dataclasses carrying `iteration_metrics` (per-iteration
-    metrics paired with their text source) and `process_metrics` `Build`
-    fields. Each setter returns a replaced copy, so the concrete `Self` type is
-    preserved.
+    Both are frozen dataclasses with the same field names; each setter returns
+    a replaced copy, so the concrete `Self` type is preserved. Setters that
+    differ between the two (`with_harness`, `with_stdin`, `with_shuffle`) stay
+    on their own class.
     """
 
     __slots__ = ()
 
     if TYPE_CHECKING:  # only ever mixed into the two frozen dataclasses
         __dataclass_fields__: ClassVar[dict[str, Any]]
+        command: CommandFn
+        cwd: PathFn
+        env: EnvFn
+        timeout: Build[float | None]
         iteration_metrics: Build[tuple[tuple[IterationMetric, MetricSource], ...]]
         process_metrics: Build[tuple[ProcessMetric, ...]]
+        success: SuccessFn
+        warmup: Build[StoppingPolicy]
+        runs: Build[StoppingPolicy]
+        outlier_detection: OutlierDetection
+        cooldown: float
+        matrix: Mapping[str, tuple[Any, ...]]
+        skips: tuple[SkipFn, ...]
+        label_fn: LabelFn
+
+    # ----- command / environment / execution -------------------------
+
+    def with_command(self, command: Command) -> Self:
+        return dataclasses.replace(self, command=as_build(command, to_argv))
+
+    def with_cwd(self, cwd: str | Path | PathFn) -> Self:
+        return dataclasses.replace(self, cwd=as_build(cwd, Path))
+
+    def with_env(self, env: Mapping[str, str] | EnvFn) -> Self:
+        return dataclasses.replace(self, env=as_build(env, dict))
+
+    def with_timeout(self, timeout: float | None | Build[float | None]) -> Self:
+        return dataclasses.replace(self, timeout=as_build(timeout))
+
+    def with_success(self, fn: SuccessFn) -> Self:
+        """Override the success policy (returns a failure reason, or None)."""
+        return dataclasses.replace(self, success=fn)
+
+    # ----- policies ---------------------------------------------------
+
+    def with_warmup(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Self:
+        """Set the warmup policy."""
+        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
+
+    def with_runs(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Self:
+        """Set the policy for the measured runs."""
+        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
+
+    def with_outlier_detection(self, d: OutlierDetection) -> Self:
+        """Set the outlier-detection strategy (`NoDetection()` = off)."""
+        return dataclasses.replace(self, outlier_detection=d)
+
+    def with_cooldown(self, seconds: float) -> Self:
+        """Pause this long between successive process executions."""
+        return dataclasses.replace(self, cooldown=seconds)
+
+    # ----- matrix / skip / label --------------------------------------
+
+    def with_matrix(self, **dims: Sequence[Any]) -> Self:
+        """Declare matrix dimensions (variants are their cartesian product)."""
+        return dataclasses.replace(self, matrix=normalize_matrix(dims))
+
+    def add_matrix_skip(
+        self, predicate: SkipFn | None = None, /, **kwargs: Any
+    ) -> Self:
+        """Drop variants: kwargs AND-matched against dims, plus optional
+        predicate. Multiple calls compose as OR."""
+        rule = make_skip_rule(predicate, kwargs)
+        if rule is None:
+            return self
+        return dataclasses.replace(self, skips=self.skips + (rule,))
+
+    def with_label(self, fn: LabelFn) -> Self:
+        """Override how each variant's label renders in reports."""
+        return dataclasses.replace(self, label_fn=fn)
+
+    # ----- metrics ----------------------------------------------------
 
     def with_metric(
         self, *metrics: IterationMetric | Build[tuple[IterationMetric, ...]]
@@ -225,7 +296,7 @@ class MetricSetters:
 
 
 @dataclass(frozen=True, slots=True)
-class BenchmarkBuilder(MetricSetters):
+class BenchmarkBuilder(BuilderSetters):
     """A benchmark *spec*: a builder-style API configuring a workload that
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
@@ -266,48 +337,13 @@ class BenchmarkBuilder(MetricSetters):
             return data[name]
         raise AttributeError(name)
 
-    # ----- with_* methods ---------------------------------------------
-
-    def with_command(self, command: Command) -> BenchmarkBuilder:
-        return dataclasses.replace(self, command=as_build(command, to_argv))
-
-    def with_cwd(self, cwd: str | Path | PathFn) -> BenchmarkBuilder:
-        return dataclasses.replace(self, cwd=as_build(cwd, Path))
-
-    def with_env(self, env: Mapping[str, str] | EnvFn) -> BenchmarkBuilder:
-        return dataclasses.replace(self, env=as_build(env, dict))
-
-    def with_timeout(
-        self, timeout: float | None | Build[float | None]
-    ) -> BenchmarkBuilder:
-        return dataclasses.replace(self, timeout=as_build(timeout))
+    # ----- with_* setters (shared ones live on BuilderSetters) --------
 
     def with_stdin(self, data: bytes | str | Build[bytes]) -> BenchmarkBuilder:
         return dataclasses.replace(
             self,
             stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
         )
-
-    def with_success(self, fn: SuccessFn) -> BenchmarkBuilder:
-        """Override the success policy (returns a failure reason, or None)."""
-        return dataclasses.replace(self, success=fn)
-
-    def with_warmup(
-        self, p: int | StoppingPolicy | Build[StoppingPolicy]
-    ) -> BenchmarkBuilder:
-        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
-
-    def with_runs(
-        self, p: int | StoppingPolicy | Build[StoppingPolicy]
-    ) -> BenchmarkBuilder:
-        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
-
-    def with_outlier_detection(self, d: OutlierDetection) -> BenchmarkBuilder:
-        return dataclasses.replace(self, outlier_detection=d)
-
-    def with_cooldown(self, seconds: float) -> BenchmarkBuilder:
-        """Pause this long between successive executions of this benchmark."""
-        return dataclasses.replace(self, cooldown=seconds)
 
     def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
@@ -316,33 +352,6 @@ class BenchmarkBuilder(MetricSetters):
 
         `monitor` frames the output stream into iterations."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
-
-    # ----- matrix / skip / label --------------------------------------
-
-    def with_matrix(self, **dims: Sequence[Any]) -> BenchmarkBuilder:
-        """Declare the matrix dimensions (replaces any previously set).
-
-        Pass every dimension in one call: `b.with_matrix(vm=["v8", "jsc"],
-        size=[100, 500])` gives 4 variants (the cartesian product). Dimension
-        values are arbitrary.
-        """
-        return dataclasses.replace(self, matrix=normalize_matrix(dims))
-
-    def add_matrix_skip(
-        self,
-        predicate: SkipFn | None = None,
-        /,
-        **kwargs: Any,
-    ) -> BenchmarkBuilder:
-        """Add a rule that drops variants. Multiple calls compose as OR."""
-        rule = make_skip_rule(predicate, kwargs)
-        if rule is None:
-            return self
-        return dataclasses.replace(self, skips=self.skips + (rule,))
-
-    def with_label(self, fn: LabelFn) -> BenchmarkBuilder:
-        """Override how each variant's label renders in reports."""
-        return dataclasses.replace(self, label_fn=fn)
 
     # ----- creation ----------------------------------------------------
 
