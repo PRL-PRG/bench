@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 from collections.abc import Generator
 
 from bench.core.outlier import NoDetection, OutlierDetection
@@ -138,8 +139,16 @@ class Controller:
         except StopIteration:
             in_warmup = None
 
+        # Cooldown pauses between separate process executions. A harness is one
+        # streaming process, so its iterations are not separate executions.
+        cooldown = b.cooldown if not b.harness else 0.0
+        first = True
+
         try:
             while in_warmup is not None:
+                if not first and cooldown > 0:
+                    time.sleep(cooldown)
+                first = False
                 try:
                     it, label = source.next()
                 except StopIteration:

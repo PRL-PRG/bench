@@ -45,6 +45,16 @@ from bench.core.outlier import (
     OutlierDetection,
 )
 
+# Environment + diagnostics
+from bench.core.environment import (
+    Diagnostic,
+    Environment,
+    EnvironmentCollector,
+    NoEnvironment,
+    SystemEnvironment,
+)
+from bench.core.checks import run_checks
+
 # Benchmark / Suite
 from bench.grammar.benchmark import (
     Benchmark,
@@ -115,6 +125,13 @@ __all__ = [
     "OutlierDetection",
     "NoDetection",
     "ModifiedZScore",
+    # Environment + diagnostics
+    "Environment",
+    "EnvironmentCollector",
+    "SystemEnvironment",
+    "NoEnvironment",
+    "Diagnostic",
+    "run_checks",
     # Benchmark / Suite
     "Benchmark",
     "BenchmarkBuilder",

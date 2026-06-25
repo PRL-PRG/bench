@@ -247,6 +247,7 @@ class BenchmarkBuilder(MetricSetters):
     warmup: Build[StoppingPolicy] = UNSET
     runs: Build[StoppingPolicy] = UNSET
     outlier_detection: OutlierDetection = UNSET
+    cooldown: float = UNSET
     harness: bool = UNSET
     monitor: HarnessMonitor | None = UNSET
 
@@ -303,6 +304,10 @@ class BenchmarkBuilder(MetricSetters):
 
     def with_outlier_detection(self, d: OutlierDetection) -> BenchmarkBuilder:
         return dataclasses.replace(self, outlier_detection=d)
+
+    def with_cooldown(self, seconds: float) -> BenchmarkBuilder:
+        """Pause this long between successive executions of this benchmark."""
+        return dataclasses.replace(self, cooldown=seconds)
 
     def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> BenchmarkBuilder:
         """Mark this benchmark as a *harness*: the command is executed once and
@@ -398,6 +403,7 @@ class BenchmarkBuilder(MetricSetters):
             warmup=self.warmup(ctx),
             runs=self.runs(ctx),
             outlier_detection=self.outlier_detection,
+            cooldown=self.cooldown,
             harness=self.harness,
             monitor=self.monitor,
             data=self.data,
@@ -419,6 +425,7 @@ class Benchmark:
     warmup: StoppingPolicy
     runs: StoppingPolicy
     outlier_detection: OutlierDetection
+    cooldown: float
     harness: bool
     monitor: HarnessMonitor | None
     data: Mapping[str, Any]

@@ -65,8 +65,10 @@ def test_bench_writes_csv(tmp_path: Path):
     r = _run("run", "--runs", "2", "--csv", str(out), "sleep 0.01")
     assert r.returncode == 0, r.stderr
     lines = out.read_text().splitlines()
-    assert lines[0].startswith("suite,benchmark")
-    assert len(lines) >= 3  # header + 2 samples
+    # An environment comment preamble (# key: value) precedes the header.
+    data = [line for line in lines if not line.startswith("#")]
+    assert data[0].startswith("suite,benchmark")
+    assert len(data) >= 3  # header + 2 samples
 
 
 def test_bench_time_bound_caps_runs(tmp_path: Path):

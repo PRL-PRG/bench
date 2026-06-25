@@ -4,20 +4,31 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from rich.markup import escape as markup_escape
 from rich.text import Text
 from rich.tree import Tree
 
 from bench.grammar.benchmark import Benchmark, bench
 from bench.grammar.context import add_dataclass_args, build_dataclass
+from bench.core.checks import run_checks
+from bench.core.environment import (
+    Diagnostic,
+    Environment,
+    EnvironmentCollector,
+    NoEnvironment,
+    SystemEnvironment,
+)
 from bench.core.execution import record_key
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
+from bench.denoise import denoise_session, is_root, minimize, restore, status
 from bench.grammar.suite import Suite, suite
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
@@ -55,6 +66,8 @@ class Bench:
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
     reporter: Reporter | None = None
+    environment: EnvironmentCollector = SystemEnvironment()
+    denoise: bool = False
 
     def add_suite(self, s: Suite) -> Bench:
         """Register a suite."""
@@ -85,7 +98,14 @@ class Bench:
             produced = f(build_params)
             collected.extend(produced)
 
-        return _do_run(collected, cli_args, self.reporter, build_params)
+        return _do_run(
+            collected,
+            cli_args,
+            self.reporter,
+            build_params,
+            environment=self.environment,
+            denoise=self.denoise,
+        )
 
 
 def run(
@@ -94,6 +114,8 @@ def run(
     params: type | None = None,
     reporter: Reporter | None = None,
     argv: list[str] | None = None,
+    environment: EnvironmentCollector | None = None,
+    denoise: bool = False,
 ) -> Report:
     """
     The entrypoint for benchmarking.
@@ -107,11 +129,20 @@ def run(
         params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
         reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
         argv: The command-line parameters that will be parsed and use to fill the user-defined context.
+        environment: Strategy collecting the machine snapshot recorded with the
+            report and driving the checks.
+        denoise: When True, minimize system noise for the run and restore it afterward.
+            Requires root on Linux.
 
     Returns:
         The report of running all the benchmarks
     """
-    app = Bench(params=params, reporter=reporter)
+    app = Bench(
+        params=params,
+        reporter=reporter,
+        environment=environment or SystemEnvironment(),
+        denoise=denoise,
+    )
     if callable(suites):  # a Suite / list is never callable
         app = app.factory(suites)
     elif isinstance(suites, Suite):
@@ -127,14 +158,31 @@ def _do_run(
     cli_args: argparse.Namespace,
     reporter: Reporter | None,
     build_params: Any,
+    *,
+    environment: EnvironmentCollector = SystemEnvironment(),
+    denoise: bool = False,
 ) -> Report:
     """Run already-parsed benchmarks: build the reporter, plan the suites,
     apply CLI overrides and hand off to the runner."""
     if reporter is None:
         reporter = SummaryReporter(DefaultSummary())
 
+    if denoise and not is_root():
+        console.print(
+            "[bench.failure]--denoise requires root "
+            "(try: sudo bench run --denoise ...)[/]"
+        )
+        sys.exit(2)
+
+    env = environment.collect()
+    env_diagnostics = run_checks(env) if env is not None else []
+
     reporter = _build_reporter(
-        cli_args, reporter, with_progress=not cli_args.no_progress
+        cli_args,
+        reporter,
+        with_progress=not cli_args.no_progress,
+        environment=env,
+        diagnostics=env_diagnostics,
     )
 
     try:
@@ -162,13 +210,34 @@ def _do_run(
         )
         sys.exit(1)
 
+    _print_diagnostics(env_diagnostics, "Environment checks")
+
     runner = _make_runner(cli_args, reporter)
 
     try:
-        return runner.run(planned, build_params)
+        if denoise:
+            with denoise_session():
+                report = runner.run(planned, build_params)
+        else:
+            report = runner.run(planned, build_params)
     except KeyboardInterrupt:
         console.print("[bench.failure]Interrupted[/]")
         sys.exit(1)
+
+    report.environment = env
+    report.diagnostics = env_diagnostics
+    return report
+
+
+def _print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
+    if not diagnostics:
+        return
+    console.print(f"\n[bench.label]{title}:[/]")
+    for d in diagnostics:
+        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]⚠[/]"
+        console.print(f"  {tag} {markup_escape(d.message)}")
+        if d.fix:
+            console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")
 
 
 def _build_reporter(
@@ -176,6 +245,8 @@ def _build_reporter(
     summary_reporter: Reporter,
     *,
     with_progress: bool,
+    environment: Environment | None = None,
+    diagnostics: list[Diagnostic] | None = None,
 ) -> Reporter:
     sinks: list[Reporter] = []
     if with_progress:
@@ -184,13 +255,19 @@ def _build_reporter(
     sinks.append(summary_reporter)
 
     if ns.json:
-        sinks.append(JsonReporter(Path(ns.json)))
+        sinks.append(
+            JsonReporter(
+                Path(ns.json), environment=environment, diagnostics=diagnostics
+            )
+        )
 
     if ns.csv:
-        sinks.append(CsvReporter(Path(ns.csv)))
+        sinks.append(CsvReporter(Path(ns.csv), environment=environment))
 
     if ns.dir:
-        sinks.append(DirReporter(Path(ns.dir)))
+        sinks.append(
+            DirReporter(Path(ns.dir), environment=environment, diagnostics=diagnostics)
+        )
 
     if ns.compare and isinstance(summary_reporter, SummaryReporter):
         summary_reporter.set_baseline([Path(p) for p in ns.compare])
@@ -355,6 +432,29 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     )
+    _doctor_subparser(
+        sub.add_parser(
+            "doctor",
+            help="Inspect the machine for benchmarking noise sources.",
+            description=(
+                "Print the environment snapshot and the noise checks. "
+                "Exits non-zero if any high-severity issue is found, "
+                "so it can gate a benchmarking session in CI."
+            ),
+        )
+    )
+    _denoise_subparser(
+        sub.add_parser(
+            "denoise",
+            help="Minimize/restore system noise knobs (Linux + root).",
+            description=(
+                "Set the CPU governor to performance, disable turbo, and quiet "
+                "perf/swap/ASLR, saving the originals so `restore` can revert "
+                "them (even after a crash). `status` only reports current values. "
+                "minimize/restore require root."
+            ),
+        )
+    )
 
     ns = parser.parse_args(argv)
     return ns._func(ns)
@@ -406,6 +506,17 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         metavar="NAME",
         help="Metric to highlight in the comparison summary (default: %(default)s).",
     )
+    p.add_argument(
+        "--no-check",
+        action="store_true",
+        help="Skip the environment snapshot and noise checks.",
+    )
+    p.add_argument(
+        "--denoise",
+        action="store_true",
+        help="Minimize system noise (governor, turbo, ...) for the run, then "
+        "restore it. Linux + root.",
+    )
     p.set_defaults(_func=_cmd_run)
 
 
@@ -436,7 +547,8 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     metrics = {ns.metric} if ns.metric else None
     reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
 
-    _do_run([s], ns, reporter, None)
+    environment = NoEnvironment() if ns.no_check else SystemEnvironment()
+    _do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
     return 0
 
 
@@ -474,6 +586,74 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     out = DefaultSummary(metrics=metrics).format(data)
     if out:
         console.print(out)
+    return 0
+
+
+# ----- doctor --------------------------------------------------------------
+
+
+def _doctor_subparser(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the environment snapshot as JSON instead of a report.",
+    )
+    p.set_defaults(_func=_cmd_doctor)
+
+
+def _cmd_doctor(ns: argparse.Namespace) -> int:
+    env = SystemEnvironment().collect()
+    if env is None:
+        console.print("No environment information available.")
+        return 0
+    diagnostics = run_checks(env)
+    exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
+
+    if ns.json:
+        print(json.dumps(dataclasses.asdict(env), indent=2))
+        return exit_code
+
+    console.print("[bench.label]Environment:[/]")
+    for name, value in env.display_items():
+        console.print(f"  {name}: {value}")
+    if diagnostics:
+        _print_diagnostics(diagnostics, "Checks")
+    else:
+        console.print("\n[bench.success]No noise sources detected.[/]")
+    return exit_code
+
+
+# ----- denoise -------------------------------------------------------------
+
+
+def _denoise_subparser(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "action",
+        choices=("minimize", "restore", "status"),
+        help="minimize: quiet the knobs; restore: revert; status: show current.",
+    )
+    p.set_defaults(_func=_cmd_denoise)
+
+
+def _cmd_denoise(ns: argparse.Namespace) -> int:
+    if ns.action in ("minimize", "restore") and not is_root():
+        console.print(
+            f"[bench.failure]denoise {ns.action} requires root "
+            f"(try: sudo bench denoise {ns.action})[/]"
+        )
+        return 2
+    if ns.action == "minimize":
+        applied = minimize()
+        console.print(f"Minimized {len(applied)} setting(s).")
+    elif ns.action == "restore":
+        restored = restore()
+        console.print(f"Restored {len(restored)} setting(s).")
+    else:
+        snapshot = status()
+        if not snapshot:
+            console.print("No controllable knobs on this platform.")
+        for path, value in snapshot.items():
+            console.print(f"  {path}: {value}")
     return 0
 
 

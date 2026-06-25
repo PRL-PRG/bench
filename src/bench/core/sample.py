@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from cattrs import structure, unstructure
 
+from bench.core.environment import Diagnostic, Environment
 from bench.core.execution import Variant, format_identifier, record_key
 
 
@@ -89,6 +90,8 @@ class Report:
     """The accumulating Runs, each carrying its Iterations."""
 
     runs: list[Run] = field(default_factory=list[Run])
+    environment: Environment | None = None
+    diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
 
     @property
     def failures(self) -> list[Run]:

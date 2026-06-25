@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import abc
 import csv
+import json
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from cattrs import unstructure
 
 from rich.console import Console
 from rich.markup import escape as markup_escape
@@ -20,6 +23,7 @@ from rich.progress import (
 )
 
 from bench.grammar.benchmark import Benchmark
+from bench.core.environment import Diagnostic, Environment
 from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
 from bench.core.sample import Iteration, Report, Run, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
@@ -31,6 +35,13 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Reporter ABC
 # ---------------------------------------------------------------------------
+
+
+def _environment_comments(env: Environment | None) -> list[str]:
+    """`# key: value` lines for each known field, for a CSV preamble."""
+    if env is None:
+        return []
+    return [f"# {k}: {v}\n" for k, v in env.display_items()]
 
 
 class Reporter(abc.ABC):
@@ -124,10 +135,17 @@ class CsvReporter(_BufferingReporter):
     included.
     """
 
-    def __init__(self, path: Path, *, delimiter: str = ",") -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        delimiter: str = ",",
+        environment: Environment | None = None,
+    ) -> None:
         super().__init__()
         self.path = path
         self.delimiter = delimiter
+        self._environment = environment
 
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,6 +156,8 @@ class CsvReporter(_BufferingReporter):
             + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
         )
         with open(self.path, "wt", newline="") as f:
+            for line in _environment_comments(self._environment):
+                f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
             for r in self._report.runs:
@@ -179,13 +199,24 @@ class JsonReporter(_BufferingReporter):
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
     default, they bloat the file and are rarely needed offline)."""
 
-    def __init__(self, path: Path, *, include_output: bool = False) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        include_output: bool = False,
+        environment: Environment | None = None,
+        diagnostics: list[Diagnostic] | None = None,
+    ) -> None:
         super().__init__()
         self.path = path
         self.include_output = include_output
+        self._environment = environment
+        self._diagnostics = diagnostics or []
 
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._report.environment = self._environment
+        self._report.diagnostics = self._diagnostics
         self.path.write_text(
             report_to_json(self._report, include_output=self.include_output)
         )
@@ -203,14 +234,32 @@ class DirReporter(Reporter):
     up per (suite, benchmark) in completion order.
     """
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        environment: Environment | None = None,
+        diagnostics: list[Diagnostic] | None = None,
+    ) -> None:
         self.root = root
+        self._environment = environment
+        self._diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
 
     def start(self, plan: list[Benchmark]) -> None:
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
+        if self._environment is not None:
+            (self.root / "environment.json").write_text(
+                json.dumps(
+                    {
+                        "environment": unstructure(self._environment),
+                        "diagnostics": unstructure(self._diagnostics),
+                    },
+                    indent=2,
+                )
+            )
 
     def run_done(self, run: Run) -> None:
         key = (run.suite, run.benchmark)

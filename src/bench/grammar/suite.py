@@ -10,6 +10,7 @@ order never matters.
 from __future__ import annotations
 
 import dataclasses
+import random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,6 +100,12 @@ class Suite(MetricSetters):
     # Outlier detection is on by default; with_outlier_detection(NoDetection())
     # turns it off.
     outlier_detection: OutlierDetection = ModifiedZScore()
+    # Seconds to pause between successive process executions (thermal settling).
+    cooldown: float = 0.0
+    # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
+    # reproducibility. Suite-level: each suite shuffles its own benchmarks.
+    shuffle: bool = False
+    shuffle_seed: int | None = None
     harness: bool = False
     # Suite-level default for the harness monitor, benchmark value wins.
     monitor: HarnessMonitor | None = None
@@ -164,6 +171,14 @@ class Suite(MetricSetters):
         """Set the default outlier-detection strategy (`NoDetection()` = off)."""
         return dataclasses.replace(self, outlier_detection=d)
 
+    def with_cooldown(self, seconds: float) -> Suite:
+        """Set the default pause between successive process executions."""
+        return dataclasses.replace(self, cooldown=seconds)
+
+    def with_shuffle(self, seed: int | None = None) -> Suite:
+        """Randomize the order benchmarks materialize in (seedable)."""
+        return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
+
     def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
@@ -210,6 +225,8 @@ class Suite(MetricSetters):
             out.extend(resolved.create(params, suite=self.name))
         for pred in self.filters:
             out = [b for b in out if pred(b)]
+        if self.shuffle:
+            random.Random(self.shuffle_seed).shuffle(out)
         return out
 
     def _with_suite_matrix(self, b: BenchmarkBuilder) -> BenchmarkBuilder:
@@ -260,6 +277,7 @@ class Suite(MetricSetters):
                 if b.outlier_detection is UNSET
                 else b.outlier_detection
             ),
+            cooldown=self.cooldown if b.cooldown is UNSET else b.cooldown,
             harness=self.harness if b.harness is UNSET else b.harness,
             monitor=self.monitor if b.monitor is UNSET else b.monitor,
             label_fn=self.label_fn if b.label_fn is UNSET else b.label_fn,
