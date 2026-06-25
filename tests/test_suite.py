@@ -1,4 +1,4 @@
-"""Suite: lazy defaults, resolution, matrix, from_files, filter, materialize."""
+"""SuiteBuilder: lazy defaults, resolution, matrix, from_files, filter, materialize."""
 
 from pathlib import Path
 from types import SimpleNamespace

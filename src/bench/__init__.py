@@ -55,7 +55,7 @@ from bench.core.environment import (
 )
 from bench.core.checks import run_checks
 
-# Benchmark / Suite
+# Benchmark / SuiteBuilder
 from bench.grammar.benchmark import (
     Benchmark,
     BenchmarkBuilder,
@@ -63,7 +63,7 @@ from bench.grammar.benchmark import (
     default_label,
     from_files,
 )
-from bench.grammar.suite import Suite, suite
+from bench.grammar.suite import SuiteBuilder, suite
 from bench.grammar.context import Context
 
 # Runners
@@ -132,13 +132,13 @@ __all__ = [
     "NoEnvironment",
     "Diagnostic",
     "run_checks",
-    # Benchmark / Suite
+    # Benchmark / SuiteBuilder
     "Benchmark",
     "BenchmarkBuilder",
     "bench",
     "default_label",
     "from_files",
-    "Suite",
+    "SuiteBuilder",
     "suite",
     "Context",
     # Runners

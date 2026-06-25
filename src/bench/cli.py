@@ -29,7 +29,7 @@ from bench.core.execution import record_key
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.denoise import denoise_session, is_root, minimize, restore, status
-from bench.grammar.suite import Suite, suite
+from bench.grammar.suite import SuiteBuilder, suite
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
     CompositeReporter,
@@ -55,30 +55,30 @@ from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
 
 
-type SuiteFactory = Callable[[Any], list[Suite]]
+type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Bench:
     """Top-level run container: static suites + deferred suite factories."""
 
-    suites: tuple[Suite, ...] = ()
+    suites: tuple[SuiteBuilder, ...] = ()
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
     reporter: Reporter | None = None
     environment: EnvironmentCollector = SystemEnvironment()
     denoise: bool = False
 
-    def add_suite(self, s: Suite) -> Bench:
+    def add_suite(self, s: SuiteBuilder) -> Bench:
         """Register a suite."""
         return dataclasses.replace(self, suites=self.suites + (s,))
 
-    def add_suites(self, *ss: Suite) -> Bench:
+    def add_suites(self, *ss: SuiteBuilder) -> Bench:
         """Register several suites."""
         return dataclasses.replace(self, suites=self.suites + ss)
 
     def factory(self, fn: SuiteFactory) -> Bench:
-        """Register a deferred `(params) -> [Suite]` producer.
+        """Register a deferred `(params) -> [SuiteBuilder]` producer.
 
         Resolved at `run` once params are parsed. Its suites are appended after
         any manually added ones.
@@ -109,7 +109,7 @@ class Bench:
 
 
 def run(
-    suites: Suite | list[Suite] | SuiteFactory,
+    suites: SuiteBuilder | list[SuiteBuilder] | SuiteFactory,
     *,
     params: type | None = None,
     reporter: Reporter | None = None,
@@ -122,8 +122,8 @@ def run(
     Parse argv, build the ctx, run the benchmark, emit reports.
 
     Args:
-        suites: The suite(s) to run. Either a `Suite`, a list of `Suite`, or a
-            deferred `(params) -> [Suite]` producer that is called after
+        suites: The suite(s) to run. Either a `SuiteBuilder`, a list of `SuiteBuilder`, or a
+            deferred `(params) -> [SuiteBuilder]` producer that is called after
             CLI parsing (for suite discovery that depends on `params`). To
             combine static and discovered suites, build a `Bench` directly.
         params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
@@ -143,9 +143,9 @@ def run(
         environment=environment or SystemEnvironment(),
         denoise=denoise,
     )
-    if callable(suites):  # a Suite / list is never callable
+    if callable(suites):  # a SuiteBuilder / list is never callable
         app = app.factory(suites)
-    elif isinstance(suites, Suite):
+    elif isinstance(suites, SuiteBuilder):
         app = app.add_suite(suites)
     else:
         app = app.add_suites(*suites)
@@ -154,7 +154,7 @@ def run(
 
 
 def _do_run(
-    suites: list[Suite],
+    suites: list[SuiteBuilder],
     cli_args: argparse.Namespace,
     reporter: Reporter | None,
     build_params: Any,

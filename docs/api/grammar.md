@@ -7,7 +7,7 @@ and the context object passed to every builder callable.
 
 ::: bench.grammar.benchmark
 
-## Suite
+## SuiteBuilder
 
 ::: bench.grammar.suite
 

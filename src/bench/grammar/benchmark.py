@@ -125,7 +125,7 @@ def normalize_matrix(
     dims: Mapping[str, Sequence[Any]],
 ) -> Mapping[str, tuple[Any, ...]]:
     """Validate dimension names and freeze `{name: values}` into the canonical
-    `{name: (v, ...)}` mapping shared by `BenchmarkBuilder` and `Suite`."""
+    `{name: (v, ...)}` mapping shared by `BenchmarkBuilder` and `SuiteBuilder`."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -151,7 +151,7 @@ def make_skip_rule(
 
 class BuilderSetters:
     """Shared `with_*` setters for the two builders (`BenchmarkBuilder`,
-    `Suite`).
+    `SuiteBuilder`).
 
     Both are frozen dataclasses with the same field names; each setter returns
     a replaced copy, so the concrete `Self` type is preserved. Setters that

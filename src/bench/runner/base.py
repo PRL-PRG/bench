@@ -17,7 +17,7 @@ from bench.core.execution import (
     record_key,
 )
 from bench.core.policy import StoppingPolicy
-from bench.grammar.suite import Suite
+from bench.grammar.suite import SuiteBuilder
 from bench.report.reporter import Reporter
 from bench.core.sample import Report
 
@@ -27,7 +27,7 @@ class _NoopReporter(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# Plan builder (Suite list -> flat Benchmark list)
+# Plan builder (SuiteBuilder list -> flat Benchmark list)
 # ---------------------------------------------------------------------------
 
 
@@ -53,7 +53,7 @@ class SuiteMaterializationError(Exception):
         return "\n".join(lines)
 
 
-def plan(suites: list[Suite], params: Any = None) -> list[Benchmark]:
+def plan(suites: list[SuiteBuilder], params: Any = None) -> list[Benchmark]:
     """Flatten suites + their deferred factories into resolved benchmarks."""
     out: list[Benchmark] = []
     for s in suites:

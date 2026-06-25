@@ -10,7 +10,7 @@
 
 `.factory(fn)` registers a deferred `(ctx) -> [Benchmark]` producer. It runs
 when the Runner materializes the suite, so the benchmark list can depend on
-`ctx` (CLI params) or anything computed at run time. Suite defaults
+`ctx` (CLI params) or anything computed at run time. SuiteBuilder defaults
 (`.with_cwd` / `.with_metric` / `.runs`) resolve at the same moment, so
 they reach factory-produced benchmarks too. Run `--dry` to see what the
 factory expands to.

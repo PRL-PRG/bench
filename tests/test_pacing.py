@@ -1,4 +1,4 @@
-"""cooldown (Suite/benchmark property) and shuffle (Suite property)."""
+"""cooldown (SuiteBuilder/benchmark property) and shuffle (SuiteBuilder property)."""
 
 import pytest
 

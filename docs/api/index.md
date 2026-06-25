@@ -7,7 +7,7 @@ Layering rule: `core ← grammar ← report ← runner ← cli`, every import po
 left.
 
 - **[Grammar](grammar.md)** - the builder surface you write:
-  [`Suite`][bench.grammar.suite.Suite], [`Benchmark`][bench.grammar.benchmark.Benchmark],
+  [`SuiteBuilder`][bench.grammar.suite.SuiteBuilder], [`Benchmark`][bench.grammar.benchmark.Benchmark],
   [`Context`][bench.grammar.context.Context].
 - **[Metrics](metrics.md)** - turn run output into samples.
 - **[Stopping policies](policies.md)** - decide when enough runs have been taken.

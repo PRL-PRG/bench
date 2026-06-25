@@ -1,4 +1,4 @@
-"""Suite: a named collection of Benchmarks plus the defaults they inherit.
+"""SuiteBuilder: a named collection of Benchmarks plus the defaults they inherit.
 
 It stores defaults (command, env, policies, metrics, ...) next to its member
 benchmarks. Calling a `.with_*` method just sets the suite field, and nothing
@@ -53,12 +53,12 @@ type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
 
 
 def _default_cwd(ctx: Context[Any]) -> Path:
-    """Suite default cwd: the invoking process's cwd, read at schedule time."""
+    """SuiteBuilder default cwd: the invoking process's cwd, read at schedule time."""
     return Path.cwd()
 
 
 def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
-    """Suite default env: empty, the child inherits the OS environment."""
+    """SuiteBuilder default env: empty, the child inherits the OS environment."""
     return EMPTY_MAPPING
 
 
@@ -68,7 +68,7 @@ def _merge_env(base: EnvFn, override: EnvFn) -> EnvFn:
 
 
 @dataclass(frozen=True, slots=True)
-class Suite(BuilderSetters):
+class SuiteBuilder(BuilderSetters):
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
@@ -99,11 +99,11 @@ class Suite(BuilderSetters):
     # Seconds to pause between successive process executions (thermal settling).
     cooldown: float = 0.0
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
-    # reproducibility. Suite-level: each suite shuffles its own benchmarks.
+    # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
     shuffle: bool = False
     shuffle_seed: int | None = None
     harness: bool = False
-    # Suite-level default for the harness monitor, benchmark value wins.
+    # SuiteBuilder-level default for the harness monitor, benchmark value wins.
     monitor: HarnessMonitor | None = None
     label_fn: LabelFn = default_label
     matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
@@ -112,21 +112,21 @@ class Suite(BuilderSetters):
 
     # ----- producers -------------------------------------------------
 
-    def with_name(self, name: str) -> Suite:
+    def with_name(self, name: str) -> SuiteBuilder:
         return dataclasses.replace(self, name=name)
 
-    def add(self, b: BenchmarkBuilder) -> Suite:
+    def add(self, b: BenchmarkBuilder) -> SuiteBuilder:
         return dataclasses.replace(self, benchmarks=self.benchmarks + (b,))
 
-    def add_all(self, *bs: BenchmarkBuilder) -> Suite:
+    def add_all(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
-    def factory(self, fn: BenchmarkFactory) -> Suite:
+    def factory(self, fn: BenchmarkFactory) -> SuiteBuilder:
         """Register a deferred `(ctx: Context) -> [Benchmark]` producer
         that wwill be called when suite materializes."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
-    def filter(self, pred: Callable[[Benchmark], bool]) -> Suite:
+    def filter(self, pred: Callable[[Benchmark], bool]) -> SuiteBuilder:
         """Keep only the resolved benchmarks for which `pred(b)` is truthy.
 
         Applied once, at the end of `materialize`, to every fully-resolved
@@ -137,11 +137,11 @@ class Suite(BuilderSetters):
 
     # ----- defaults (shared setters live on BuilderSetters) -----------
 
-    def with_shuffle(self, seed: int | None = None) -> Suite:
+    def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
         return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
 
-    def with_harness(self, monitor: HarnessMonitor | None = None) -> Suite:
+    def with_harness(self, monitor: HarnessMonitor | None = None) -> SuiteBuilder:
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
@@ -223,11 +223,11 @@ class Suite(BuilderSetters):
         if resolved.command is UNSET:
             raise ValueError(
                 f"Benchmark {b.name!r} has no command — set one with "
-                f"BenchmarkBuilder.with_command or Suite.with_command"
+                f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
             )
         return resolved
 
 
-def suite(name: str, *benchmarks: BenchmarkBuilder) -> Suite:
+def suite(name: str, *benchmarks: BenchmarkBuilder) -> SuiteBuilder:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""
-    return Suite(name=name, benchmarks=tuple(benchmarks))
+    return SuiteBuilder(name=name, benchmarks=tuple(benchmarks))

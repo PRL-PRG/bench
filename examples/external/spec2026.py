@@ -64,7 +64,7 @@ from bench import (
     HarnessHandle,
     HarnessMonitor,
     Regex,
-    Suite,
+    SuiteBuilder,
     bench,
     run,
     suite,
@@ -171,7 +171,7 @@ _METRICS = (
 )
 
 
-def discover_suites(p: Spec2026Params) -> list[Suite]:
+def discover_suites(p: Spec2026Params) -> list[SuiteBuilder]:
     """Build one bench suite per reportable SPEC suite found under `--spec-root`.
 
     Globs `benchspec/CPU/*.bset` and keeps the manifests whose metric is in
@@ -187,7 +187,7 @@ def discover_suites(p: Spec2026Params) -> list[Suite]:
             (contains `shrc`, `benchspec/`).
 
     Returns:
-        One `Suite` per discovered SPEC suite, ordered by `.bset` filename.
+        One `SuiteBuilder` per discovered SPEC suite, ordered by `.bset` filename.
     """
     spec_root = p.spec_root
     cpu = spec_root / "benchspec" / "CPU"
@@ -198,7 +198,7 @@ def discover_suites(p: Spec2026Params) -> list[Suite]:
     def runs(ctx: Context[Spec2026Params]) -> FixedRuns:
         return FixedRuns(ctx.params.iterations)
 
-    suites: list[Suite] = []
+    suites: list[SuiteBuilder] = []
     for bset in sorted(cpu.glob("*.bset")):
         spec = json.loads(bset.read_text())
         if spec.get("metric") not in SUITE_METRICS:
