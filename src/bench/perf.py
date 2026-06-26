@@ -11,7 +11,7 @@ two things, and only when you ask:
 
 Usage::
 
-    counters = PerfStat("cache-misses", "cache-references").lower_is_better()
+    counters = PerfStat(("cache-misses", "cache-references")).lower_is_better()
 
     bench("matmul")
         .with_command(counters.wrap("./workload"))
@@ -31,47 +31,28 @@ to every event — fine for a homogeneous set like cache counters.
 
 from __future__ import annotations
 
-import os
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from bench.core.execution import ExecutionResult
-from bench.core.metric import Direction, ProcessMetric
+from bench.core.execution import ExecutionResult, to_argv
+from bench.core.metric import ProcessMetric
 from bench.core.sample import Sample
-
-type Predicate = Callable[[ExecutionResult], bool]
 
 
 @dataclass(frozen=True)
 class PerfStat(ProcessMetric):
-    """Run a command under `perf stat` and read its counters from stderr."""
+    """Run a command under `perf stat` and read its counters from stderr.
+
+    `events` is a tuple of symbolic perf event names. `direction`/`predicate`
+    and the `lower_is_better`/`higher_is_better`/`when` combinators come from
+    the `ProcessMetric` base unchanged.
+    """
 
     events: tuple[str, ...] = ()
 
-    def __init__(
-        self,
-        *events: str,
-        direction: Direction = None,
-        predicate: Predicate | None = None,
-    ) -> None:
-        if not events:
+    def __post_init__(self) -> None:
+        if not self.events:
             raise ValueError("PerfStat needs at least one event")
-
-        # TODO: feels super complicated, cannot we have a simple one?
-        object.__setattr__(self, "events", tuple(events))
-        object.__setattr__(self, "direction", direction)
-        object.__setattr__(self, "predicate", predicate)
-
-    # The base combinators rebuild via dataclasses.replace, which can't feed our
-    # variadic __init__; reconstruct explicitly instead.
-    def lower_is_better(self) -> PerfStat:
-        return PerfStat(*self.events, direction=True, predicate=self.predicate)
-
-    def higher_is_better(self) -> PerfStat:
-        return PerfStat(*self.events, direction=False, predicate=self.predicate)
-
-    def when(self, predicate: Predicate) -> PerfStat:
-        return PerfStat(*self.events, direction=self.direction, predicate=predicate)
 
     def _prefix(self) -> list[str]:
         return ["perf", "stat", "-x", ",", "-e", ",".join(self.events), "--"]
@@ -79,15 +60,9 @@ class PerfStat(ProcessMetric):
     def wrap(self, command: object) -> list[str]:
         """Prepend the `perf stat` invocation to `command` (idempotent).
 
-        Mirrors `with_command`'s normalization: a bare str/bytes/PathLike is a
-        one-element argv, any other sequence is the full argv.
+        Uses the same argv normalization as `with_command` (`to_argv`).
         """
-
-        # TODO: extrcat into some utiltities so with_command and this can use the same code
-        if isinstance(command, (str, bytes, os.PathLike)):
-            argv: list[object] = [command]
-        else:
-            argv = list(command)  # type: ignore[arg-type]
+        argv = list(to_argv(command))
         prefix = self._prefix()
         if argv[: len(prefix)] == prefix:
             return [str(a) for a in argv]

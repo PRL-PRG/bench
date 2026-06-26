@@ -31,6 +31,7 @@ from bench.core.execution import (
     SuccessFn,
     Variant,
     format_variant,
+    to_argv,
 )
 from bench.core.metric import (
     IterationMetric,
@@ -104,13 +105,6 @@ UNSET: Any = _Unset()
 def const(value: Any) -> Build[Any]:
     """Wrap a static value as a constant builder."""
     return lambda _ctx: value
-
-
-def to_argv(command: Any) -> tuple[Any, ...]:
-    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
-    if isinstance(command, (str, bytes, os.PathLike)):
-        return (cast(Any, command),)
-    return tuple(command)
 
 
 def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Build[Any]:

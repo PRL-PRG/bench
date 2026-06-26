@@ -20,7 +20,7 @@ if you actually run it without perf.
 
 from bench import PerfStat, bench, run, suite
 
-counters = PerfStat("cache-misses", "cache-references").lower_is_better()
+counters = PerfStat(("cache-misses", "cache-references")).lower_is_better()
 
 # A workload that walks a large array, so the cache counters are non-trivial.
 WORKLOAD = ["sh", "-c", "awk 'BEGIN{for (i = 0; i < 3000000; i++) a[i] = i}'"]

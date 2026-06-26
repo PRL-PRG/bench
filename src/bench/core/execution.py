@@ -6,14 +6,22 @@ working directory, environment, optional timeout, optional stdin payload.
 
 from __future__ import annotations
 
+import os
 import resource
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
+
+
+def to_argv(command: Any) -> tuple[Any, ...]:
+    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
+    if isinstance(command, (str, bytes, os.PathLike)):
+        return (cast(Any, command),)
+    return tuple(command)
 
 
 @dataclass(frozen=True, slots=True)
