@@ -56,6 +56,8 @@ class PerfStat(ProcessMetric):
     ) -> None:
         if not events:
             raise ValueError("PerfStat needs at least one event")
+
+        # TODO: feels super complicated, cannot we have a simple one?
         object.__setattr__(self, "events", tuple(events))
         object.__setattr__(self, "direction", direction)
         object.__setattr__(self, "predicate", predicate)
@@ -80,6 +82,8 @@ class PerfStat(ProcessMetric):
         Mirrors `with_command`'s normalization: a bare str/bytes/PathLike is a
         one-element argv, any other sequence is the full argv.
         """
+
+        # TODO: extrcat into some utiltities so with_command and this can use the same code
         if isinstance(command, (str, bytes, os.PathLike)):
             argv: list[object] = [command]
         else:

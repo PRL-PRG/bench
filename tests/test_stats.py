@@ -28,6 +28,7 @@ def _run(
     failure: str | None = None,
     bench: str = "b",
     suite: str = "S",
+    variant: tuple[tuple[str, str], ...] = (),
     samples: list[Sample] | None = None,
     warmup: bool = False,
     process_samples: list[Sample] | None = None,
@@ -36,7 +37,7 @@ def _run(
     return Run(
         suite=suite,
         benchmark=bench,
-        variant=(),
+        variant=variant,
         run=run,
         command=("x",),
         returncode=returncode,
@@ -268,3 +269,48 @@ def test_build_summary_with_baseline(tmp_path: Path):
     only_id = next(iter(ratios))
     r = ratios[only_id][("runtime", "s")]
     assert abs(r.display_ratio - 2.0) < 1e-9
+
+
+def test_build_summary_compares_single_variant_across_files(tmp_path: Path):
+    # `bench compare clox.json krikafil.json`: same (suite, benchmark) but a
+    # different command in the variant. With one variant per side they must
+    # still align and yield a ratio — not silently drop to nothing.
+    baseline = Report(
+        runs=[
+            _run(
+                i,
+                suite="run",
+                bench="run",
+                variant=(("command", "clox"),),
+                samples=[_smp("runtime", 2.0)],
+            )
+            for i in range(1, 4)
+        ]
+    )
+    bpath = tmp_path / "base.json"
+    bpath.write_text(report_to_json(baseline))
+
+    mine = Report(
+        runs=[
+            _run(
+                i,
+                suite="run",
+                bench="run",
+                variant=(("command", "krikafil"),),
+                samples=[_smp("runtime", 1.0)],
+            )
+            for i in range(1, 4)
+        ]
+    )
+    mpath = tmp_path / "mine.json"
+    mpath.write_text(report_to_json(mine))
+
+    data = build_summary(None, [bpath, mpath])
+    assert "mine" in data.ratios
+    bench_ratios = data.ratios["mine"]
+    assert bench_ratios, "the single benchmark must align across files"
+    only_id = next(iter(bench_ratios))
+    r = bench_ratios[only_id][("runtime", "s")]
+    assert abs(r.display_ratio - 2.0) < 1e-9  # 2.0s baseline / 1.0s = 2x faster
+    gmr = data.geomeans["mine"]["run"][("runtime", "s")]
+    assert gmr.runs_per_benchmark == 3  # the comparee's run count, not 0

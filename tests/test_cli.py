@@ -140,6 +140,41 @@ def test_compare_subcommand(tmp_path: Path):
     assert "Summary" in r.stdout or "better" in r.stdout or "worse" in r.stdout
 
 
+def test_compare_different_commands_aligns(tmp_path: Path):
+    # The headline use case: benchmark two different commands separately, then
+    # compare. The command lives in the variant, but with one variant per file
+    # they must still line up — not report the comparee as 0|0.
+    base = tmp_path / "base.json"
+    mine = tmp_path / "mine.json"
+    _run(
+        "run",
+        "--no-progress",
+        "--runs",
+        "3",
+        "--time",
+        "0",
+        "--json",
+        str(base),
+        "sleep 0.02",
+    )
+    _run(
+        "run",
+        "--no-progress",
+        "--runs",
+        "3",
+        "--time",
+        "0",
+        "--json",
+        str(mine),
+        "sleep 0.01",
+    )
+    r = _run("compare", str(base), str(mine))
+    assert r.returncode == 0, r.stderr
+    assert "mine: 0|0" not in r.stdout  # the bug: comparee dropped to zero runs
+    assert "mine: 0|3" in r.stdout  # comparee's three runs are seen
+    assert "times" in r.stdout  # a real ratio line was emitted
+
+
 def test_compare_single_file_summarizes(tmp_path: Path):
     out = tmp_path / "out.json"
     _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")

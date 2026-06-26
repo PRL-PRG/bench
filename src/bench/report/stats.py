@@ -309,24 +309,65 @@ class SummaryData:
     geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = field(
         default_factory=dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]]
     )
+    # Per comparee: the comparee group paired to each baseline benchmark id
+    # (keyed baseline-first, matching `ratios`). The shared alignment that both
+    # the ratios and the formatter read, so run counts line up across files.
+    comparee_group_by_bid: dict[str, dict[BenchmarkId, BenchmarkGroup]] = field(
+        default_factory=dict[str, dict[BenchmarkId, BenchmarkGroup]]
+    )
+
+
+def align_groups(
+    baseline: GroupedReport, comparee: GroupedReport
+) -> list[tuple[BenchmarkGroup, BenchmarkGroup]]:
+    """Pair baseline groups with comparee groups for comparison.
+
+    Within each `(suite, benchmark)`: when both sides have exactly one variant,
+    pair them regardless of the variant — this is comparing two different
+    commands/binaries on the same workload (e.g. `bench compare clox.json
+    krikafil.json`, where the command lives in the variant). Otherwise pair by
+    exact variant, so matrix variants line up by their parameters.
+    """
+
+    def by_bench(
+        groups: list[BenchmarkGroup],
+    ) -> dict[BenchKey, list[BenchmarkGroup]]:
+        out: dict[BenchKey, list[BenchmarkGroup]] = {}
+        for g in groups:
+            out.setdefault((g.suite, g.benchmark), []).append(g)
+        return out
+
+    comparee_by_bench = by_bench(comparee.groups)
+    pairs: list[tuple[BenchmarkGroup, BenchmarkGroup]] = []
+    for bk, bgs in by_bench(baseline.groups).items():
+        cgs = comparee_by_bench.get(bk)
+        if not cgs:
+            continue
+        if len(bgs) == 1 and len(cgs) == 1:
+            pairs.append((bgs[0], cgs[0]))
+            continue
+        cidx = {g.variant: g for g in cgs}
+        for bg in bgs:
+            cg = cidx.get(bg.variant)
+            if cg is not None:
+                pairs.append((bg, cg))
+    return pairs
 
 
 def _all_ratios(
-    baseline: GroupedReport, comparee: GroupedReport
+    baseline: GroupedReport,
+    comparee: GroupedReport,
+    pairs: list[tuple[BenchmarkGroup, BenchmarkGroup]],
 ) -> dict[BenchmarkId, dict[MetricKey, MetricRatio]]:
+    """Per-benchmark metric ratios, keyed by the *baseline* group's id so the
+    formatter (which iterates baseline groups) can look them up directly."""
     lib: dict[MetricKey, bool] = {}
     lib.update(baseline.lower_is_better)
     lib.update(comparee.lower_is_better)
 
-    bl_index: dict[BenchmarkId, BenchmarkGroup] = {
-        (g.suite, g.benchmark, g.variant): g for g in baseline.groups
-    }
     out: dict[BenchmarkId, dict[MetricKey, MetricRatio]] = {}
-    for cg in comparee.groups:
-        bid: BenchmarkId = (cg.suite, cg.benchmark, cg.variant)
-        bg = bl_index.get(bid)
-        if bg is None:
-            continue
+    for bg, cg in pairs:
+        bid: BenchmarkId = (bg.suite, bg.benchmark, bg.variant)
         per_metric: dict[MetricKey, MetricRatio] = {}
         for mk, cur_vals in cg.metrics.items():
             if mk not in lib:
@@ -346,9 +387,11 @@ def _all_ratios(
 
 def _per_suite_geomean(
     bench_ratios: dict[BenchmarkId, dict[MetricKey, MetricRatio]],
-    comparee: GroupedReport,
+    pairs: list[tuple[BenchmarkGroup, BenchmarkGroup]],
 ) -> dict[str, dict[MetricKey, GeoMeanRatio]]:
-    comp_index = {(g.suite, g.benchmark, g.variant): g for g in comparee.groups}
+    # bench_ratios is keyed by the baseline bid; map those to the paired
+    # comparee group so run counts come from the comparee.
+    comp_index = {(bg.suite, bg.benchmark, bg.variant): cg for bg, cg in pairs}
     by_suite: dict[str, dict[MetricKey, list[tuple[BenchmarkId, MetricRatio]]]] = {}
     for bid, m in bench_ratios.items():
         for mk, mr in m.items():
@@ -418,10 +461,15 @@ def build_summary(
 
     ratios: dict[str, dict[BenchmarkId, dict[MetricKey, MetricRatio]]] = {}
     geomeans: dict[str, dict[str, dict[MetricKey, GeoMeanRatio]]] = {}
+    comparee_group_by_bid: dict[str, dict[BenchmarkId, BenchmarkGroup]] = {}
     for c, cname in zip(comparees, comparee_names):
-        br = _all_ratios(base, c)
+        pairs = align_groups(base, c)
+        comparee_group_by_bid[cname] = {
+            (bg.suite, bg.benchmark, bg.variant): cg for bg, cg in pairs
+        }
+        br = _all_ratios(base, c, pairs)
         ratios[cname] = br
-        geomeans[cname] = _per_suite_geomean(br, c)
+        geomeans[cname] = _per_suite_geomean(br, pairs)
 
     return SummaryData(
         groups=current_stats,
@@ -430,6 +478,7 @@ def build_summary(
         comparee_names=comparee_names,
         ratios=ratios,
         geomeans=geomeans,
+        comparee_group_by_bid=comparee_group_by_bid,
     )
 
 

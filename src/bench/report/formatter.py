@@ -251,10 +251,9 @@ class DefaultSummary(Formatter):
         for c in data.comparees:
             all_lib.update(c.lower_is_better)
 
-        comp_idx: dict[str, dict[BenchmarkId, BenchmarkGroup]] = {
-            cn: {(g.suite, g.benchmark, g.variant): g for g in c.groups}
-            for c, cn in zip(data.comparees, data.comparee_names)
-        }
+        # The shared alignment (keyed by baseline bid) so different commands
+        # still pair up; see stats.align_groups.
+        comp_idx = data.comparee_group_by_bid
 
         lines.append("")
         first = True
@@ -309,12 +308,12 @@ class DefaultSummary(Formatter):
             lines.append(
                 f"      {self._fmt_runs(baseline.name, self._sum(suite_groups))}"
             )
-            for c, cn in zip(data.comparees, data.comparee_names):
-                idx = {(g.suite, g.benchmark, g.variant): g for g in c.groups}
+            for cn in data.comparee_names:
+                idx = comp_idx.get(cn, {})
                 matched = [
-                    idx[(g.suite, g.benchmark, g.variant)]
+                    idx[bid]
                     for g in suite_groups
-                    if (g.suite, g.benchmark, g.variant) in idx
+                    if (bid := (g.suite, g.benchmark, g.variant)) in idx
                 ]
                 lines.append(f"      {self._fmt_runs(cn, self._sum(matched))}")
 
