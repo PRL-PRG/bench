@@ -29,6 +29,12 @@ def _run(*args, env_extra: dict | None = None):
     )
 
 
+def test_bench_version():
+    r = _run("--version")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.startswith("bench ")
+
+
 def test_bench_simple_command():
     r = _run("run", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr

@@ -6,6 +6,7 @@ import argparse
 import dataclasses
 import json
 import sys
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from bench.run import add_runtime_flags, do_run
@@ -41,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
             "See `bench <sub> --help` for the detailed flag set of each "
             "subcommand."
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_pkg_version('bench')}",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
