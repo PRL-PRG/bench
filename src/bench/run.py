@@ -22,8 +22,6 @@ from bench.grammar.benchmark import Benchmark
 from bench.grammar.context import add_dataclass_args, build_dataclass
 from bench.core.checks import run_checks
 from bench.core.environment import (
-    Diagnostic,
-    Environment,
     EnvironmentCollector,
     SystemEnvironment,
 )
@@ -185,9 +183,10 @@ def do_run(
         cli_args,
         reporter,
         with_progress=not cli_args.no_progress,
-        environment=env,
-        diagnostics=env_diagnostics,
     )
+    reporter.set_environment(env, env_diagnostics)
+    if getattr(cli_args, "compare", None):
+        reporter.set_baseline([Path(p) for p in cli_args.compare])
 
     try:
         planned = plan(suites, build_params)
@@ -242,8 +241,6 @@ def _build_reporter(
     summary_reporter: Reporter,
     *,
     with_progress: bool,
-    environment: Environment | None = None,
-    diagnostics: list[Diagnostic] | None = None,
 ) -> Reporter:
     sinks: list[Reporter] = []
     if with_progress:
@@ -252,22 +249,13 @@ def _build_reporter(
     sinks.append(summary_reporter)
 
     if ns.json:
-        sinks.append(
-            JsonReporter(
-                Path(ns.json), environment=environment, diagnostics=diagnostics
-            )
-        )
+        sinks.append(JsonReporter(Path(ns.json)))
 
     if ns.csv:
-        sinks.append(CsvReporter(Path(ns.csv), environment=environment))
+        sinks.append(CsvReporter(Path(ns.csv)))
 
     if ns.dir:
-        sinks.append(
-            DirReporter(Path(ns.dir), environment=environment, diagnostics=diagnostics)
-        )
-
-    if ns.compare and isinstance(summary_reporter, SummaryReporter):
-        summary_reporter.set_baseline([Path(p) for p in ns.compare])
+        sinks.append(DirReporter(Path(ns.dir)))
 
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 

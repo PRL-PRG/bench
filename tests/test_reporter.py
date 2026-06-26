@@ -2,6 +2,7 @@
 
 import csv
 import io
+import json
 from pathlib import Path
 
 from rich.console import Console
@@ -18,6 +19,7 @@ from bench import (
     Time,
     bench,
     report_from_json,
+    run,
     suite,
 )
 from bench.runner.base import plan
@@ -94,6 +96,29 @@ def test_mixed_fans_out(tmp_path: Path):
         plan([_s()], None), None
     )
     assert js.exists() and cs.exists()
+
+
+def test_user_composite_reporter_receives_environment(tmp_path: Path):
+    # A DirReporter the user supplies via `run(reporter=...)` must get the
+    # collected environment injected (not only CLI-built --dir reporters).
+    root = tmp_path / "tree"
+    run(
+        _s(),
+        reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
+        argv=["--no-progress"],
+    )
+    env_file = root / "environment.json"
+    assert env_file.exists()
+    assert "system" in json.loads(env_file.read_text())["environment"]
+
+
+def test_composite_set_baseline_reaches_nested_summary(tmp_path: Path):
+    # --compare must reach a SummaryReporter nested inside a CompositeReporter.
+    summary = SummaryReporter()
+    composite = CompositeReporter(summary, DirReporter(tmp_path / "tree"))
+    base = tmp_path / "base.json"
+    composite.set_baseline([base])
+    assert summary._baseline == [base]
 
 
 def _flagged_run() -> Run:

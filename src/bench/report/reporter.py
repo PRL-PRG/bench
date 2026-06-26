@@ -58,6 +58,20 @@ def _environment_comments(env: Environment | None) -> list[str]:
 class Reporter(abc.ABC):
     """Streaming sink for benchmark progress and results."""
 
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        """Inject the collected machine snapshot. Called once before `start()`.
+
+        Reporters that embed the environment override this; the rest ignore it.
+        """
+        pass
+
+    def set_baseline(self, paths: list[Path]) -> None:
+        """Inject baseline report paths for `--compare`. Called once before
+        `start()`. Only summary reporters use it."""
+        pass
+
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
@@ -89,6 +103,16 @@ class CompositeReporter(Reporter):
 
     def __init__(self, *reporters: Reporter) -> None:
         self.reporters = list(reporters)
+
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        for r in self.reporters:
+            r.set_environment(environment, diagnostics)
+
+    def set_baseline(self, paths: list[Path]) -> None:
+        for r in self.reporters:
+            r.set_baseline(paths)
 
     def start(self, plan: list[Benchmark]) -> None:
         for r in self.reporters:
@@ -158,6 +182,11 @@ class CsvReporter(_BufferingReporter):
         self.delimiter = delimiter
         self._environment = environment
 
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        self._environment = environment
+
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         variant_cols = self._report.variant_keys()
@@ -224,6 +253,12 @@ class JsonReporter(_BufferingReporter):
         self._environment = environment
         self._diagnostics = diagnostics or []
 
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        self._environment = environment
+        self._diagnostics = diagnostics
+
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._report.environment = self._environment
@@ -257,6 +292,12 @@ class DirReporter(Reporter):
         self._diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
+
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        self._environment = environment
+        self._diagnostics = diagnostics
 
     def start(self, plan: list[Benchmark]) -> None:
         self._counters = {}
