@@ -220,6 +220,12 @@ class BuilderSetters:
         """Declare matrix dimensions (variants are their cartesian product)."""
         return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
+    def add_matrix(self, **dims: Sequence[Any]) -> Self:
+        """Add matrix dimensions, merging with any already declared
+        (cf. `with_matrix`, which replaces the whole matrix)."""
+        merged = {**self.matrix, **normalize_matrix(dims)}
+        return dataclasses.replace(self, matrix=MappingProxyType(merged))
+
     def add_matrix_skip(
         self, predicate: SkipFn | None = None, /, **kwargs: Any
     ) -> Self:

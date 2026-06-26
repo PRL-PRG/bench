@@ -48,6 +48,23 @@ def test_bench_two_commands():
     assert "sleep 0.02" in r.stdout
 
 
+def test_bench_matrix_substitution():
+    r = _run("run", "--runs", "1", "-M", "n", "0.01,0.02", "sleep {n}")
+    assert r.returncode == 0, r.stderr
+    assert "sleep 0.01" in r.stdout
+    assert "sleep 0.02" in r.stdout
+
+
+def test_bench_matrix_two_dims():
+    r = _run(
+        "run", "--runs", "1",
+        "-M", "a", "0.01,0.02", "-M", "b", "x,y", "echo {a} {b}",
+    )
+    assert r.returncode == 0, r.stderr
+    for combo in ("0.01 x", "0.01 y", "0.02 x", "0.02 y"):
+        assert combo in r.stdout
+
+
 def test_bench_writes_json(tmp_path: Path):
     out = tmp_path / "out.json"
     r = _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
@@ -176,7 +193,7 @@ def test_compare_missing_file_errors(tmp_path: Path):
 def test_bench_help_describes_subcommand():
     r = _run("run", "--help")
     assert r.returncode == 0
-    assert "Time one or more shell commands" in r.stdout
+    assert "Benchmark one or more shell commands" in r.stdout
     # Per-flag descriptions show up:
     assert "Max measured runs" in r.stdout
     assert "Suppress the progress bar" in r.stdout

@@ -8,9 +8,11 @@ import json
 import sys
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+from typing import Any
 
 from bench.run import add_runtime_flags, do_run
-from bench.grammar.benchmark import bench
+from bench.grammar.benchmark import Benchmark, bench
+from bench.grammar.context import Context
 from bench.core.checks import run_checks
 from bench.core.environment import NoEnvironment, SystemEnvironment
 from bench.core.metric import Time
@@ -55,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             "run",
             help="Benchmark one or more shell commands.",
             description=(
-                "Benchamrk one or more shell commands. Each positional CMD is split with "
+                "Benchmark one or more shell commands. Each positional CMD is split with "
                 "shlex and benchmarked as its own benchmark; results are summarized "
                 "side by side. Example:\n\n"
                 "    bench run --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
@@ -151,6 +153,17 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         help="Metric to highlight in the comparison summary (default: %(default)s).",
     )
     p.add_argument(
+        "-M",
+        metavar=("NAME", "VALUES"),
+        nargs=2,
+        action="append",
+        dest="matrix",
+        default=None,
+        help="Add a matrix dimension NAME with comma-separated VALUES; "
+        "reference values as {NAME} in the command. "
+        "Repeatable. Place before the command.",
+    )
+    p.add_argument(
         "--no-check",
         action="store_true",
         help="Skip the environment snapshot and noise checks.",
@@ -172,11 +185,29 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     if ns.time and ns.time > 0:
         runs_policy |= MaxDuration(ns.time)
 
+    matrix_args: list[list[str]] = ns.matrix or []
+    matrix_dims = {name: tuple(values.split(",")) for name, values in matrix_args}
+    names = list(matrix_dims)
+
+    def cmd(ctx: Context[Any]) -> list[str]:
+        argv = list(ctx.matrix.command)
+        if not names:
+            return argv
+        subst = {n: getattr(ctx.matrix, n) for n in names}
+        return [tok.format(**subst) for tok in argv]
+
+    def label(bm: Benchmark) -> str:
+        argv = list(bm.data["command"])
+        if not names:
+            return " ".join(argv)
+        subst = {n: bm.data[n] for n in names}
+        return " ".join(tok.format(**subst) for tok in argv)
+
     b = (
         bench("run")
         .with_matrix(command=argvs)
-        .with_command(lambda ctx: list(ctx.matrix.command))
-        .with_label(lambda b: " ".join(b.data["command"]))
+        .with_command(cmd)
+        .with_label(label)
         .with_cwd(Path.cwd())
         .with_process_metric(Time())
         .with_runs(runs_policy)
@@ -187,6 +218,8 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     if ns.warmup > 0:
         b = b.with_warmup(ns.warmup)
     s = suite("run", b)
+    if matrix_dims:
+        s = s.add_matrix(**matrix_dims)
 
     metrics = {ns.metric} if ns.metric else None
     reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
