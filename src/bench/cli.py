@@ -28,7 +28,14 @@ from bench.core.environment import (
 from bench.core.execution import record_key
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
-from bench.denoise import denoise_session, is_root, minimize, restore, status
+from bench.denoise import (
+    STATE_PATH,
+    denoise_session,
+    is_root,
+    minimize,
+    restore,
+    status,
+)
 from bench.grammar.suite import SuiteBuilder, suite
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
@@ -216,7 +223,11 @@ def _do_run(
 
     try:
         if denoise:
-            with denoise_session():
+            with denoise_session() as applied:
+                console.print(
+                    f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
+                    f"state saved to {STATE_PATH}"
+                )
                 report = runner.run(planned, build_params)
         else:
             report = runner.run(planned, build_params)
@@ -644,10 +655,12 @@ def _cmd_denoise(ns: argparse.Namespace) -> int:
         return 2
     if ns.action == "minimize":
         applied = minimize()
-        console.print(f"Minimized {len(applied)} setting(s).")
+        console.print(
+            f"Minimized {len(applied)} setting(s); state saved to {STATE_PATH}."
+        )
     elif ns.action == "restore":
         restored = restore()
-        console.print(f"Restored {len(restored)} setting(s).")
+        console.print(f"Restored {len(restored)} setting(s) from {STATE_PATH}.")
     else:
         snapshot = status()
         if not snapshot:

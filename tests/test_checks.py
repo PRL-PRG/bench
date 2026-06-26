@@ -13,6 +13,7 @@ def _clean() -> Environment:
         governors=["performance"],
         turbo_enabled=False,
         aslr=0,
+        transparent_hugepage="never",
         smt_enabled=False,
         swap_in_use=False,
         on_battery=False,
@@ -51,6 +52,12 @@ def test_aslr_enabled_warns_with_setarch_fix():
 
 def test_smt_enabled_warns():
     assert [d.severity for d in run_checks(Environment(smt_enabled=True))] == ["warn"]
+
+
+def test_thp_enabled_warns():
+    diags = run_checks(Environment(transparent_hugepage="always"))
+    assert [d.severity for d in diags] == ["warn"]
+    assert "transparent_hugepage" in (diags[0].fix or "")
 
 
 def test_swap_in_use_warns():

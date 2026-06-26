@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
 
-from bench.utils import read_int, read_text, to_int
+from bench.utils import read_bracketed, read_int, read_text, to_int
 
 # Runs an external command, returning trimmed stdout or None on any failure.
 type EnvRunner = Callable[[list[str]], str | None]
@@ -50,6 +50,7 @@ class Environment:
     governors: list[str] | None = None
     turbo_enabled: bool | None = None
     aslr: int | None = None
+    transparent_hugepage: str | None = None
     smt_enabled: bool | None = None
     swappiness: int | None = None
     swap_in_use: bool | None = None
@@ -149,6 +150,9 @@ def collect_linux(root: Path = Path("/")) -> Environment:
         governors=govs or None,
         turbo_enabled=_linux_turbo(sys_cpu),
         aslr=read_int(proc / "sys/kernel/randomize_va_space"),
+        transparent_hugepage=read_bracketed(
+            root / "sys/kernel/mm/transparent_hugepage/enabled"
+        ),
         smt_enabled=_linux_smt(sys_cpu),
         swappiness=read_int(proc / "sys/vm/swappiness"),
         swap_in_use=_swap_in_use(proc / "swaps"),

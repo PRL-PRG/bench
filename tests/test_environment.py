@@ -27,6 +27,9 @@ def _fake_linux_tree(root: Path) -> None:
     _write(cpu / "cpu1/cpufreq/scaling_governor", "performance\n")
     _write(cpu / "intel_pstate/no_turbo", "0\n")  # turbo on
     _write(cpu / "smt/control", "on\n")
+    _write(
+        root / "sys/kernel/mm/transparent_hugepage/enabled", "always [madvise] never\n"
+    )
     _write(root / "proc/sys/kernel/randomize_va_space", "2\n")
     _write(root / "proc/sys/vm/swappiness", "60\n")
     _write(root / "proc/sys/kernel/perf_event_paranoid", "2\n")
@@ -64,6 +67,7 @@ def test_collect_linux_parses_sysfs(tmp_path: Path):
     assert env.aslr == 2
     assert env.swappiness == 60
     assert env.perf_event_paranoid == 2
+    assert env.transparent_hugepage == "madvise"
     assert env.smt_enabled is True
     assert env.swap_in_use is True
     assert env.on_battery is False
@@ -84,6 +88,7 @@ def test_collect_linux_missing_files_are_none(tmp_path: Path):
     assert env.aslr is None
     assert env.swappiness is None
     assert env.perf_event_paranoid is None
+    assert env.transparent_hugepage is None
     assert env.on_battery is None
     # Common fields are still present.
     assert env.system != ""

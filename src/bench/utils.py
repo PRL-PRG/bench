@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from rich.markup import escape
@@ -55,3 +56,13 @@ def to_int(value: str | None) -> int | None:
 def read_int(path: Path) -> int | None:
     """Read a file and parse it as an int, or `None`."""
     return to_int(read_text(path))
+
+
+def read_bracketed(path: Path) -> str | None:
+    """Read a sysfs multi-choice file (`a [b] c`) and return the selected token
+    inside the brackets, or `None`."""
+    text = read_text(path)
+    if text is None:
+        return None
+    m = re.search(r"\[(\w+)\]", text)
+    return m.group(1) if m else None

@@ -48,6 +48,15 @@ def run_checks(env: Environment) -> list[Diagnostic]:
                 "or sudo sysctl -w kernel.randomize_va_space=0",
             )
         )
+    if env.transparent_hugepage is not None and env.transparent_hugepage != "never":
+        out.append(
+            Diagnostic(
+                "warn",
+                f"Transparent huge pages are '{env.transparent_hugepage}'; "
+                "background compaction adds latency spikes.",
+                "echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
+            )
+        )
     if env.smt_enabled:
         out.append(
             Diagnostic(
