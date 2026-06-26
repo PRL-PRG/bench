@@ -90,8 +90,11 @@ from bench.report.reporter import (
 # Formatters
 from bench.report.formatter import Compact, DefaultSummary, Formatter
 
+# Bench abstraction + run pipeline
+from bench.run import Bench, run
+
 # CLI
-from bench.cli import Bench, main, run
+from bench.cli import main
 
 __all__ = [
     # Atoms

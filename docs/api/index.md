@@ -16,4 +16,4 @@ left.
   [`Report`][bench.core.sample.Report]).
 - **[Runners](runners.md)** - consume planned benchmarks and emit samples.
 - **[Reporting](reporting.md)** - streaming sinks, formatters, and statistics.
-- **[CLI](cli.md)** - the [`run`][bench.cli.run] entry point.
+- **[CLI](cli.md)** - the [`run`][bench.run.run] entry point.

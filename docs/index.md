@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
 Every CLI flag (`--runs`, `--warmup`, `--jobs`, `--json`, `--csv`, `--dir`,
 `--compare`, `--dry`, `--verbose`) also works on a script built with
-[`run`][bench.cli.run].
+[`run`][bench.run.run].
 
 ## Where next
 

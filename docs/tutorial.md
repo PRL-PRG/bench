@@ -36,7 +36,7 @@ but dropped from the statistics). `--runs 5` takes five measured runs.
 
 A script gives you something repeatable and version-controllable. Build a
 [`suite`][bench.grammar.suite.suite] of [`bench`][bench.grammar.benchmark.bench]
-entries and hand it to [`run`][bench.cli.run]:
+entries and hand it to [`run`][bench.run.run]:
 
 ```python
 from bench import Time, bench, run, suite
