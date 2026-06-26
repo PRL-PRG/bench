@@ -59,6 +59,14 @@ type CommandFn = Build[Sequence[StrOrBytesPath]]
 type PathFn = Build[Path]
 type EnvFn = Build[Mapping[str, str]]
 
+# A matrix axis: either an explicit sequence of values or a
+# `(ctx) -> sequence` callable resolved once per benchmark at `create()` time.
+# The callable sees `ctx.params`/`ctx.suite`/`ctx.benchmark` but an empty
+# matrix (sibling axes are not yet resolved). Normalized to the second member
+# of `MatrixAxisValues` for storage.
+type MatrixAxis = Sequence[Any] | Build[Sequence[Any]]
+type MatrixAxisValues = tuple[Any, ...] | Build[Sequence[Any]]
+
 # A label function turns a resolved benchmark into the human-readable variant
 # identifier shown in reports (e.g. `"sleep 0.05"`). It takes the resolved
 # Benchmark (not a Context) because labels reflect the resolved execution.
@@ -122,14 +130,21 @@ type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFn
 
 
 def normalize_matrix(
-    dims: Mapping[str, Sequence[Any]],
-) -> Mapping[str, tuple[Any, ...]]:
+    dims: Mapping[str, MatrixAxis],
+) -> Mapping[str, MatrixAxisValues]:
     """Validate dimension names and freeze `{name: values}` into the canonical
-    `{name: (v, ...)}` mapping shared by `BenchmarkBuilder` and `SuiteBuilder`."""
+    mapping shared by `BenchmarkBuilder` and `SuiteBuilder`. An explicit
+    sequence is frozen to a tuple; a `(ctx) -> sequence` callable is kept as-is
+    and resolved once per benchmark at `create()` time."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
-    return MappingProxyType({name: tuple(values) for name, values in dims.items()})
+    return MappingProxyType(
+        {
+            name: values if callable(values) else tuple(values)
+            for name, values in dims.items()
+        }
+    )
 
 
 def make_skip_rule(
@@ -174,7 +189,7 @@ class BuilderSetters:
         runs: Build[StoppingPolicy]
         outlier_detection: OutlierDetection
         cooldown: float
-        matrix: Mapping[str, tuple[Any, ...]]
+        matrix: Mapping[str, MatrixAxisValues]
         skips: tuple[SkipFn, ...]
         label_fn: LabelFn
 
@@ -216,13 +231,19 @@ class BuilderSetters:
 
     # ----- matrix / skip / label --------------------------------------
 
-    def with_matrix(self, **dims: Sequence[Any]) -> Self:
-        """Declare matrix dimensions (variants are their cartesian product)."""
+    def with_matrix(self, **dims: MatrixAxis) -> Self:
+        """Declare matrix dimensions (variants are their cartesian product).
+
+        Each axis is either an explicit sequence of values or a
+        `(ctx) -> sequence` callable resolved once per benchmark at create()
+        time (it reads `ctx.params`/`ctx.suite`/`ctx.benchmark`, not sibling
+        axes)."""
         return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
-    def add_matrix(self, **dims: Sequence[Any]) -> Self:
+    def add_matrix(self, **dims: MatrixAxis) -> Self:
         """Add matrix dimensions, merging with any already declared
-        (cf. `with_matrix`, which replaces the whole matrix)."""
+        (cf. `with_matrix`, which replaces the whole matrix). An axis may be a
+        sequence or a `(ctx) -> sequence` callable (see `with_matrix`)."""
         merged = {**self.matrix, **normalize_matrix(dims)}
         return dataclasses.replace(self, matrix=MappingProxyType(merged))
 
@@ -329,7 +350,7 @@ class BenchmarkBuilder(BuilderSetters):
     monitor: HarnessMonitor | None = UNSET
 
     data: Mapping[str, Any] = EMPTY_MAPPING
-    matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
+    matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
 
     skips: tuple[SkipFn, ...] = ()
 
@@ -372,7 +393,14 @@ class BenchmarkBuilder(BuilderSetters):
         if not names:
             yield self._resolve_cell(params, suite, ())
             return
-        for combo in itertools.product(*self.matrix.values()):
+        # Resolve callable axes once, before expanding the product. The axis
+        # Context has no per-variant matrix yet (we are defining it), so axes
+        # can read params/suite/benchmark but not sibling axes.
+        axis_ctx: Context[Any] = Context(
+            params=params, suite=suite, benchmark=self.name, matrix=Matrix()
+        )
+        axes = [tuple(v(axis_ctx)) if callable(v) else v for v in self.matrix.values()]
+        for combo in itertools.product(*axes):
             chosen = dict(zip(names, combo))
             variant = tuple(sorted((k, _stringify(v)) for k, v in chosen.items()))
             cell = dataclasses.replace(

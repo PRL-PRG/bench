@@ -1,5 +1,6 @@
 """BenchmarkBuilder: builders, create()/materialize, per-variant builder fields."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -149,6 +150,95 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
     )
     bs = suite("S", b).materialize(None)
     assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}
+
+
+def test_matrix_axis_callable_expands_to_returned_values():
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(vm=lambda ctx: ["clox", "jlox"])
+    )
+    bs = suite("S", b).materialize(None)
+    assert {x.vm for x in bs} == {"clox", "jlox"}
+    assert {x.variant_label for x in bs} == {"vm=clox", "vm=jlox"}
+
+
+def test_matrix_axis_callable_reads_params():
+    @dataclass
+    class P:
+        sizes: list
+
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(size=lambda ctx: ctx.params.sizes)
+    )
+    bs = suite("S", b).materialize(P(sizes=[1, 2, 3]))
+    assert {x.size for x in bs} == {1, 2, 3}
+
+
+def test_matrix_axis_callable_mixes_with_static():
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(vm=lambda ctx: ["clox", "jlox"], size=[100, 200])
+    )
+    bs = suite("S", b).materialize(None)
+    assert {(x.vm, x.size) for x in bs} == {
+        ("clox", 100),
+        ("clox", 200),
+        ("jlox", 100),
+        ("jlox", 200),
+    }
+
+
+def test_matrix_axis_callable_sees_benchmark_name():
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(tag=lambda ctx: [ctx.benchmark])
+    )
+    bs = suite("S", b).materialize(None)
+    assert {x.tag for x in bs} == {"x"}
+
+
+def test_add_matrix_accepts_callable_axis():
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(size=[100])
+        .add_matrix(vm=lambda ctx: ["clox", "jlox"])
+    )
+    bs = suite("S", b).materialize(None)
+    assert {(x.vm, x.size) for x in bs} == {("clox", 100), ("jlox", 100)}
+
+
+def test_suite_level_matrix_axis_callable_applies_per_benchmark():
+    s = (
+        suite("S")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .factory(lambda _ctx: [bench("a"), bench("b")])
+        .with_matrix(tag=lambda ctx: [ctx.benchmark])
+    )
+    bs = s.materialize(None)
+    assert {(x.name, x.tag) for x in bs} == {("a", "a"), ("b", "b")}
+
+
+def test_matrix_axis_callable_empty_yields_no_variants():
+    b = (
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_matrix(vm=lambda ctx: [])
+    )
+    bs = suite("S", b).materialize(None)
+    assert bs == []
 
 
 # ----- builder (per-variant) fields ---------------------------------------

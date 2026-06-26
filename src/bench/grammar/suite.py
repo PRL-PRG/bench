@@ -26,6 +26,7 @@ from bench.grammar.benchmark import (
     CommandFn,
     EnvFn,
     LabelFn,
+    MatrixAxisValues,
     PathFn,
     SkipFn,
     const,
@@ -106,7 +107,7 @@ class SuiteBuilder(BuilderSetters):
     # SuiteBuilder-level default for the harness monitor, benchmark value wins.
     monitor: HarnessMonitor | None = None
     label_fn: LabelFn = default_label
-    matrix: Mapping[str, tuple[Any, ...]] = EMPTY_MAPPING
+    matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
     filters: tuple[Callable[[Benchmark], bool], ...] = ()
 
