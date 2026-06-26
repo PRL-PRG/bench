@@ -16,6 +16,7 @@ from bench import (
     ProgressReporter,
     Sequential,
     SummaryReporter,
+    SystemEnvironment,
     Time,
     bench,
     report_from_json,
@@ -106,6 +107,7 @@ def test_user_composite_reporter_receives_environment(tmp_path: Path):
         _s(),
         reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
         argv=["--no-progress"],
+        environment=SystemEnvironment(),
     )
     env_file = root / "environment.json"
     assert env_file.exists()

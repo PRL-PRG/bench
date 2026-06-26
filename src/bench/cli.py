@@ -164,9 +164,10 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         "Repeatable. Place before the command.",
     )
     p.add_argument(
-        "--no-check",
+        "--check-environment",
         action="store_true",
-        help="Skip the environment snapshot and noise checks.",
+        help="Record the environment snapshot and run the noise checks "
+        "(off by default).",
     )
     p.add_argument(
         "--denoise",
@@ -224,7 +225,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     metrics = {ns.metric} if ns.metric else None
     reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
 
-    environment = NoEnvironment() if ns.no_check else SystemEnvironment()
+    environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
     do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
     return 0
 

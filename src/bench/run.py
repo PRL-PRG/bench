@@ -23,7 +23,7 @@ from bench.grammar.context import add_dataclass_args, build_dataclass
 from bench.core.checks import run_checks
 from bench.core.environment import (
     EnvironmentCollector,
-    SystemEnvironment,
+    NoEnvironment,
 )
 from bench.core.execution import record_key
 from bench.denoise import (
@@ -68,7 +68,7 @@ class Bench:
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
     reporter: Reporter | None = None
-    environment: EnvironmentCollector = SystemEnvironment()
+    environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
     def add_suite(self, s: SuiteBuilder) -> Bench:
@@ -132,7 +132,8 @@ def run(
         reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
         argv: The command-line parameters that will be parsed and use to fill the user-defined context.
         environment: Strategy collecting the machine snapshot recorded with the
-            report and driving the checks.
+            report and driving the checks. Defaults to `NoEnvironment()` (off);
+            pass `SystemEnvironment()` to record the snapshot and run the checks.
         denoise: When True, minimize system noise for the run and restore it afterward.
             Requires root on Linux.
 
@@ -142,7 +143,7 @@ def run(
     app = Bench(
         params=params,
         reporter=reporter,
-        environment=environment or SystemEnvironment(),
+        environment=environment or NoEnvironment(),
         denoise=denoise,
     )
     if callable(suites):  # a SuiteBuilder / list is never callable
@@ -161,7 +162,7 @@ def do_run(
     reporter: Reporter | None,
     build_params: Any,
     *,
-    environment: EnvironmentCollector = SystemEnvironment(),
+    environment: EnvironmentCollector = NoEnvironment(),
     denoise: bool = False,
 ) -> Report:
     """Run already-parsed benchmarks: build the reporter, plan the suites,

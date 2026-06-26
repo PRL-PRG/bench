@@ -37,7 +37,7 @@ def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
         return
     console.print(f"\n[bench.label]{title}:[/]")
     for d in diagnostics:
-        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]⚠[/]"
+        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]!![/]"
         console.print(f"  {tag} {markup_escape(d.message)}")
         if d.fix:
             console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")

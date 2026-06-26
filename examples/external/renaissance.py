@@ -115,7 +115,6 @@ def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkBuilder]:
                 str(reps + warmup),
             ]
         )
-        .with_harness()
         .with_runs(runs if runs is not None else rb.reps)
         .with_warmup(warmup)
         for rb in list_benchmarks(ctx.params)

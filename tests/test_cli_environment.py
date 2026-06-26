@@ -1,4 +1,4 @@
-"""Environment wiring: `bench doctor`, --no-check, and the `run()` strategy."""
+"""Environment wiring: `bench doctor`, --check-environment, and the `run()` strategy."""
 
 import json
 import os
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from bench import NoEnvironment, bench, run, suite
+from bench import NoEnvironment, SystemEnvironment, bench, run, suite
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -39,34 +39,38 @@ def test_doctor_json_is_valid():
     assert data["system"] != ""
 
 
-def test_run_json_embeds_environment(tmp_path: Path):
+def test_run_check_environment_embeds_environment(tmp_path: Path):
     out = tmp_path / "o.json"
-    r = _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
+    r = _run(
+        "run", "--check-environment", "--runs", "2", "--json", str(out), "sleep 0.01"
+    )
     assert r.returncode == 0, r.stderr
     data = json.loads(out.read_text())
     assert data.get("environment") is not None
     assert "system" in data["environment"]
 
 
-def test_run_no_check_omits_environment(tmp_path: Path):
+def test_run_omits_environment_by_default(tmp_path: Path):
     out = tmp_path / "o.json"
-    r = _run("run", "--no-check", "--runs", "2", "--json", str(out), "sleep 0.01")
+    r = _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
     assert r.returncode == 0, r.stderr
     assert json.loads(out.read_text()).get("environment") is None
 
 
-def test_run_csv_has_environment_comments(tmp_path: Path):
+def test_run_check_environment_csv_has_comments(tmp_path: Path):
     out = tmp_path / "o.csv"
-    r = _run("run", "--runs", "2", "--csv", str(out), "sleep 0.01")
+    r = _run(
+        "run", "--check-environment", "--runs", "2", "--csv", str(out), "sleep 0.01"
+    )
     assert r.returncode == 0, r.stderr
     lines = out.read_text().splitlines()
     assert lines[0].startswith("#")
     assert any(line.startswith("suite,benchmark") for line in lines)
 
 
-def test_run_no_check_csv_has_no_comments(tmp_path: Path):
+def test_run_csv_has_no_comments_by_default(tmp_path: Path):
     out = tmp_path / "o.csv"
-    r = _run("run", "--no-check", "--runs", "2", "--csv", str(out), "sleep 0.01")
+    r = _run("run", "--runs", "2", "--csv", str(out), "sleep 0.01")
     assert r.returncode == 0, r.stderr
     assert out.read_text().splitlines()[0].startswith("suite,benchmark")
 
@@ -75,8 +79,13 @@ def _suite():
     return suite("s", bench("b").with_command(["true"]).with_runs(1))
 
 
-def test_run_api_collects_environment_by_default():
+def test_run_api_omits_environment_by_default():
     rep = run(_suite(), argv=["--no-progress"])
+    assert rep.environment is None
+
+
+def test_run_api_collects_with_system_environment():
+    rep = run(_suite(), argv=["--no-progress"], environment=SystemEnvironment())
     assert rep.environment is not None
 
 
