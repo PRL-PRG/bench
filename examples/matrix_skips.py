@@ -8,8 +8,8 @@
 # ///
 """Skipping and slicing matrix cells.
 
-One workload parameterized by `vm` by `size` (see `matrix.py` for the
-plain full-cartesian case). Three benchmarks show the common skip shapes:
+One workload parameterized by `vm` by `size`. Three benchmarks show the
+common skip shapes:
 
   1. `minus_one`: full cartesian minus one cell (drop `VM1` x `500`)
   2. `slice_vm2`: keep only `vm=VM2` (predicate skip)

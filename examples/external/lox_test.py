@@ -4,7 +4,7 @@
 # dependencies = ["bench"]
 #
 # [tool.uv.sources]
-# bench = { path = "..", editable = true }
+# bench = { path = "../..", editable = true }
 # ///
 """Custom Reporter: a pass/fail test runner that sets the process exit code.
 

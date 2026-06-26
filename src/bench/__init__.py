@@ -28,6 +28,7 @@ from bench.core.metric import (
     Time,
     max_rss,
 )
+from bench.perf import PerfStat
 
 # Stopping policies
 from bench.core.policy import (
@@ -118,6 +119,7 @@ __all__ = [
     "Rebench",
     "RUsage",
     "max_rss",
+    "PerfStat",
     # Policies
     "StoppingPolicy",
     "PolicyState",

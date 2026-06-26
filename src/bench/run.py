@@ -15,7 +15,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from rich.markup import escape as markup_escape
 from rich.text import Text
 from rich.tree import Tree
 
@@ -45,6 +44,7 @@ from bench.report.reporter import (
     Reporter,
     SummaryReporter,
     console,
+    print_diagnostics,
 )
 from bench.utils import print_exception
 from bench.core.sample import Report
@@ -102,7 +102,7 @@ class Bench:
             produced = f(build_params)
             collected.extend(produced)
 
-        return _do_run(
+        return do_run(
             collected,
             cli_args,
             self.reporter,
@@ -157,7 +157,7 @@ def run(
     return app.run(argv)
 
 
-def _do_run(
+def do_run(
     suites: list[SuiteBuilder],
     cli_args: argparse.Namespace,
     reporter: Reporter | None,
@@ -214,7 +214,7 @@ def _do_run(
         )
         sys.exit(1)
 
-    _print_diagnostics(env_diagnostics, "Environment checks")
+    print_diagnostics(env_diagnostics, "Environment checks")
 
     runner = _make_runner(cli_args, reporter)
 
@@ -235,17 +235,6 @@ def _do_run(
     report.environment = env
     report.diagnostics = env_diagnostics
     return report
-
-
-def _print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
-    if not diagnostics:
-        return
-    console.print(f"\n[bench.label]{title}:[/]")
-    for d in diagnostics:
-        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]⚠[/]"
-        console.print(f"  {tag} {markup_escape(d.message)}")
-        if d.fix:
-            console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")
 
 
 def _build_reporter(
@@ -301,7 +290,7 @@ def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
 def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="bench")
     _add_user_params(p, params)
-    _add_runtime_flags(p.add_argument_group("bench flags"))
+    add_runtime_flags(p.add_argument_group("bench flags"))
     _add_selection_flags(p.add_argument_group("selection"))
     return p
 
@@ -313,7 +302,7 @@ def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> No
     add_dataclass_args(group_, params)
 
 
-def _add_runtime_flags(
+def add_runtime_flags(
     # argparse exposes no public name for the add_argument_group() return type.
     g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
 ) -> None:

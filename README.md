@@ -350,8 +350,7 @@ all runs including failures.
 The `metric` a CoV policy watches must match what a Metric emits
 (`Time()` emits `elapsed`/`user`/`system`, `FloatPerLine()` defaults to
 `runtime`). A CoV watching a metric nobody emits never converges and runs to
-the `.at_most(n)` cap. See [`examples/convergence.py`](examples/convergence.py),
-[`examples/jit_warmup.py`](examples/jit_warmup.py),
+the `.at_most(n)` cap. See [`examples/jit_warmup.py`](examples/jit_warmup.py),
 [`examples/custom_policy.py`](examples/custom_policy.py).
 
 ### Runner
@@ -434,7 +433,8 @@ compile_matrix/compute/compiler=gcc, opt=O2: 0|3 runs
 Each cell's `Run.variant` carries the dimension values so reporters split by
 dimension. Ranking in the end-of-run "Summary" compares variants *within* a
 benchmark. Cross-benchmark ranking is never emitted (different programs are
-not directly comparable). See [`examples/matrix.py`](examples/matrix.py).
+not directly comparable). See [`examples/matrix_skips.py`](examples/matrix_skips.py)
+and [`examples/external/throughput_sqlite.py`](examples/external/throughput_sqlite.py).
 
 ### Skips: dropping or slicing matrix cells
 

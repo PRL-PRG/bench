@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from bench.run import _add_runtime_flags, _do_run, _print_diagnostics
+from bench.run import add_runtime_flags, do_run
 from bench.grammar.benchmark import bench
 from bench.core.checks import run_checks
 from bench.core.environment import NoEnvironment, SystemEnvironment
@@ -23,7 +23,7 @@ from bench.denoise import (
 )
 from bench.grammar.suite import suite
 from bench.report.formatter import DefaultSummary
-from bench.report.reporter import SummaryReporter, console
+from bench.report.reporter import SummaryReporter, console, print_diagnostics
 from bench.core.sample import report_from_json
 from bench.report.stats import build_summary
 
@@ -108,7 +108,7 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         metavar="CMD",
         help="One or more shell commands to benchmark.",
     )
-    _add_runtime_flags(p)
+    add_runtime_flags(p)
     p.add_argument(
         "--runs",
         type=int,
@@ -186,7 +186,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
 
     environment = NoEnvironment() if ns.no_check else SystemEnvironment()
-    _do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
+    do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
     return 0
 
 
@@ -255,7 +255,7 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
     for name, value in env.display_items():
         console.print(f"  {name}: {value}")
     if diagnostics:
-        _print_diagnostics(diagnostics, "Checks")
+        print_diagnostics(diagnostics, "Checks")
     else:
         console.print("\n[bench.success]No noise sources detected.[/]")
     return exit_code

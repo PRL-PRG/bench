@@ -32,6 +32,17 @@ if TYPE_CHECKING:
     from bench.report.formatter import Formatter
 
 
+def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
+    if not diagnostics:
+        return
+    console.print(f"\n[bench.label]{title}:[/]")
+    for d in diagnostics:
+        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]⚠[/]"
+        console.print(f"  {tag} {markup_escape(d.message)}")
+        if d.fix:
+            console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")
+
+
 # ---------------------------------------------------------------------------
 # Reporter ABC
 # ---------------------------------------------------------------------------
