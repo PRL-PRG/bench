@@ -179,8 +179,6 @@ class DefaultSummary(Formatter):
             f"  [bench.warning]!! statistical outlier(s) detected: {total} ({detail}) !![/]"
         )
 
-    # ----- intra-benchmark ranking (hyperfine-style) -----------------
-
     def _fmt_ranking(self, data: SummaryData, lines: list[str]) -> None:
         """Append "Summary" blocks ranking the variants WITHIN each benchmark.
 

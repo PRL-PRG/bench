@@ -2,7 +2,7 @@
 
 A strategy operating on one metric's pooled values. Detection is informational:
 flagged samples stay in the summary statistics (mean/median/σ are unchanged),
-they are only counted and warned about, as hyperfine does.
+they are only counted and warned about.
 
 `ModifiedZScore` ports hyperfine's modified Z-score / MAD test.
 
@@ -20,14 +20,14 @@ from dataclasses import dataclass
 
 # Minimum modified Z-score for a datapoint to be an outlier. 1.4826 converts the
 # MAD into an estimator for the standard deviation; 10 is the number of standard
-# deviations. (hyperfine's OUTLIER_THRESHOLD.)
+# deviations. (We use the same hyperfine's scaled out OUTLIER_THRESHOLD.)
 OUTLIER_THRESHOLD = 1.4826 * 10.0
 
 
 def modified_zscores(xs: Sequence[float]) -> list[float]:
     """Modified Z-scores `(x_i - median) / MAD`, MAD = median absolute deviation.
 
-    `MAD == 0` is the *exact-fit* case: it happens iff more than half the values
+    `MAD == 0` is the exact-fit case: it happens iff more than half the values
     are tied (Croux et al. 2006 — a property of every robust scale estimator). A
     metric with no robust spread has no meaningful outliers, so we report none
     (every score 0). hyperfine sidesteps this entirely: it only detects on
@@ -61,7 +61,7 @@ class NoDetection(OutlierDetection):
 
 @dataclass(frozen=True, slots=True)
 class ModifiedZScore(OutlierDetection):
-    """hyperfine's test: flag values whose modified Z-score exceeds `threshold`."""
+    """Flags values whose modified Z-score exceeds `threshold`."""
 
     threshold: float = OUTLIER_THRESHOLD
 

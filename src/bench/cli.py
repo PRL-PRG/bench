@@ -53,9 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     _run_subparser(
         sub.add_parser(
             "run",
-            help="Time one or more shell commands (hyperfine-style).",
+            help="Benchmark one or more shell commands.",
             description=(
-                "Time one or more shell commands. Each positional CMD is split with "
+                "Benchamrk one or more shell commands. Each positional CMD is split with "
                 "shlex and benchmarked as its own benchmark; results are summarized "
                 "side by side. Example:\n\n"
                 "    bench run --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     _denoise_subparser(
         sub.add_parser(
             "denoise",
-            help="Minimize/restore system noise knobs (Linux + root).",
+            help="Minimize/restore system noise knobs (requres linux with root access).",
             description=(
                 "Set the CPU governor to performance, disable turbo, and quiet "
                 "perf/swap/ASLR, saving the originals so `restore` can revert "

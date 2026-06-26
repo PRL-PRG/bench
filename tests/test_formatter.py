@@ -159,11 +159,6 @@ def test_compact_filters_by_metric():
     assert "max_rss" not in out_rt
 
 
-# ---------------------------------------------------------------------------
-# Hyperfine-style intra-run ranking in DefaultSummary
-# ---------------------------------------------------------------------------
-
-
 def _strip_markup(s: str) -> str:
     s = s.replace("\\[", "\x00")
     s = re.sub(r"\[/?[^]]*\]", "", s)
