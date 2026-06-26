@@ -393,11 +393,12 @@ def _add_selection_flags(
 
 
 def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
-    """Group planned benchmarks into a `suite → benchmark (variant)` tree.
+    """Group planned benchmarks into a `suite -> benchmark -> variant` tree.
 
-    Each leaf is one resolved benchmark, labeled `name (k=v, …)`, with the
-    explicit `variant_label` (if any) shown dimmed. The root carries a one-line
-    count summary. This is what `--list` prints.
+    A benchmark with several variants becomes a node whose leaves are the
+    per-variant labels; a benchmark with a single variant stays a leaf labeled
+    `name (k=v, ...)`. The root carries a one-line count summary. This is what
+    `--list` prints.
     """
     n_suites = len({b.suite for b in planned})
     n_benchmarks = len({(b.suite, b.name) for b in planned})
@@ -421,7 +422,15 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
 
     for s, bs in by_suite.items():
         node = root.add(Text(s, style="bench.label"))
+        by_name: dict[str, list[Benchmark]] = {}
         for b in bs:
-            leaf = Text(record_key(b.name, b.name, b.variant))
-            node.add(leaf)
+            by_name.setdefault(b.name, []).append(b)
+        for name, variants in by_name.items():
+            if len(variants) > 1:
+                bench_node = node.add(Text(name, style="bench.label"))
+                for b in variants:
+                    bench_node.add(Text(b.variant_label))
+            else:
+                b = variants[0]
+                node.add(Text(record_key(b.name, b.name, b.variant)))
     return root
