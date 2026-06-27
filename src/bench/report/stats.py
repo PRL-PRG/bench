@@ -109,9 +109,11 @@ def group(
                 add_sample(g, s)
 
         # Whole-process samples are collected once, never counted as a run —
-        # unless there were no measured iterations at all (a process-only
-        # benchmark), in which case the session counts as one run.
-        if r.process_samples:
+        # unless the run produced no iterations at all (a process-only run), in
+        # which case it counts as one run. But a run whose only iterations were
+        # warmup (measured == 0 *with* iterations present) is itself warmup: its
+        # process samples are warmup measurements and must be excluded too.
+        if r.process_samples and not (r.iterations and measured == 0):
             g = ensure(r)
             if measured == 0:
                 g.run_counts.successes += 1

@@ -129,6 +129,23 @@ def test_process_only_run_counts_once():
     assert g.metrics[("max_rss", "kB")] == [1024.0]
 
 
+def test_warmup_run_process_samples_excluded():
+    # A process-metric benchmark (e.g. Time) keeps its sample in
+    # process_samples. A warmup run's single iteration is flagged warmup, so its
+    # process sample is a warmup measurement and must be excluded from both the
+    # stats and the run count — just like a warmup iteration sample is.
+    r = Report(
+        runs=[
+            _run(1, warmup=True, process_samples=[_smp("elapsed", 100.0)]),
+            _run(2, process_samples=[_smp("elapsed", 10.0)]),
+            _run(3, process_samples=[_smp("elapsed", 12.0)]),
+        ]
+    )
+    g = group(r).groups[0]
+    assert g.run_counts.successes == 2
+    assert g.metrics[("elapsed", "s")] == [10.0, 12.0]
+
+
 def test_failures_count_into_run_counts():
     r = Report(
         runs=[
