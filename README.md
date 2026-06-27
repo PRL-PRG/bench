@@ -18,7 +18,7 @@ def fib(n):
 
 fib(35)
 
-$ bench run --runs 5 --time 0 'python3.9 fib.py' 'python3.14 fib.py'
+$ bench run --runs 5 'python3.9 fib.py' 'python3.14 fib.py'
 run/python3.9 fib.py: 0|5 runs
   elapsed [s] (mean ± σ):  1.39 ± 0.01    (1.38 … 1.40)
 
@@ -31,8 +31,7 @@ Summary
 ```
 
 `0|5 runs` means **0 failures | 5 successes** — Python 3.14 runs the recursive
-`fib(35)` ~1.5× faster than 3.9. (`--time 0` lifts the default 3-second
-per-command budget so all five runs happen.)
+`fib(35)` ~1.5× faster than 3.9.
 
 ### As a script
 
