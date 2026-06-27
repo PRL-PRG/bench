@@ -6,20 +6,14 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""
+"""Renaissance JVM suite: a harness-based benchmark.
 
-The renaissance benchmark for JVMs.
-
-This is an example of a harness-based benchmark.
-Each renaissance iteration prints a multi-line block:
+Each iteration prints a multi-line block, which `renaissance_monitor` frames
+into one iteration so the metrics can parse it:
 
     ====== mnemonics (functional) [default], iteration 0 started ======
     GC before operation: completed in 4.812 ms, heap usage 121.567 MB -> 3.935 MB.
     ====== mnemonics (functional) [default], iteration 0 completed (1575.265 ms) ======
-
-To bring it into bench, we need to create a benchmark monitor,
-a component which finds individual runs so the run metrics can
-extracts the measurements.
 """
 
 from collections.abc import Iterator

@@ -6,13 +6,7 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""RCP: programmatic suite construction.
-
-Demonstrates:
-- `from_files` discovery driven by ctx (root depends on `ctx.RSH_HOME`).
-- Mixing `Rebench` + `max_rss` in a pipeline.
-- A typed `RcpParams` dataclass for CLI flags.
-"""
+"""RCP: programmatic suite construction with ctx-driven `from_files` discovery."""
 
 import tempfile
 from dataclasses import dataclass

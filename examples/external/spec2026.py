@@ -6,50 +6,16 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""SPEC CPU 2026 via the `runcpu` harness - harness mode.
+"""SPEC CPU 2026 via the `runcpu` harness.
 
-SPEC organises its workloads as *suites* (`intrate`, `intspeed`, `fprate`,
-`fpspeed`) made of *benchmarks* (`706.stockfish_r`, `821.gcc_s`, ..., where `_r` = rate,
-`_s` = speed). Each suite is a JSON manifest `benchspec/CPU/<suite>.bset`
-listing its members.
+Autodiscovers the four reportable suites (those whose `.bset` metric is
+`CINT2026`/`CFP2026`) under `benchspec/CPU/` and wires each as a harness:
+`runcpu` streams one `Success ... runtime=...` line per iteration to a logfile,
+which `spec_monitor` tails and the per-metric `Regex` parses.
 
-Both layers are **autodiscovered**: `discover_suites` globs `benchspec/CPU/`
-and builds one bench suite per reportable SPEC suite (those whose `.bset`
-metric is `CINT2026` or `CFP2026`, the four canonical suites. The ~78 other
-`.bset` files are aggregates like `CPU`/`specrate` or build subsets like
-`fprate_pure_c`, and are skipped). Each suite's member benchmarks come straight
-from its `.bset`. There is no `--suite` flag, so running the script benchmarks
-every suite.
-
-`runcpu` appends one line to a *logfile* (not stdout) as each iteration
-finishes:
-
-```text
-Success 706.stockfish_r base test ratio=0.00, runtime=0.829695, copies=1, ...,
-max_rss_kib=144896, sys_time=0.04, user_time=0.65
-```
-
-That makes it a textbook bench *harness*: one long-running process streaming
-many iterations. `spec_monitor` tails the logfile and frames each `Success`
-line into one observation, and the per-metric `Regex` (anchored to the `Success`
-line) turns it into samples. Because the log grows incrementally, bench sees
-iterations live and the stopping policy can end the run early.
-
-Finding the logfile is the one wrinkle: `runcpu` prints its path only at the
-very end of the run, so the monitor cannot read it from stdout up front.
-Instead `latest_run_log` locates *this run's* log, the `CPU2026.*.log` that
-appears after launch, and the monitor tails it.
-
-Stopping policy: each benchmark uses `FixedRuns(iterations)`, so bench
-collects exactly `--iterations` samples and then kills `runcpu` (skipping its
-lengthy report generation. The OS releases SPEC's `flock` on exit, so the next
-benchmark is unaffected). To stop early once measurements stabilise (worth it
-for long `train`/`ref` runs) raise `--iterations` and swap the policy for
-`CoefficientOfVariation(...)`.
-
-Sequential only is assumed (one `runcpu` at a time, since the newest-logfile lookup
-would race otherwise). SPEC writes its results to the default in-tree
-`$SPEC/result/`.
+The wrinkle: `runcpu` prints its logfile path only at the end, so the monitor
+waits for *this run's* `CPU2026.*.log` to appear, then tails it. Sequential
+only (the newest-logfile lookup would otherwise race).
 """
 
 import json
@@ -85,31 +51,16 @@ class Spec2026Params:
 
 
 def latest_run_log(result_dir: Path) -> Path | None:
-    """The most recently modified `CPU2026.*.log` in `result_dir`.
-
-    Args:
-        result_dir: SPEC's `result/` directory, where `runcpu` writes its logs.
-
-    Returns:
-        The newest logfile by mtime, or `None` if none exist yet.
-    """
+    """The most recently modified `CPU2026.*.log` in `result_dir`, or None."""
     logs = sorted(result_dir.glob("CPU2026.*.log"), key=lambda p: p.stat().st_mtime)
     return logs[-1] if logs else None
 
 
 def make_monitor(result_dir: Path) -> HarnessMonitor:
-    """Build a harness monitor that frames `runcpu`'s logfile into iterations.
+    """Build a harness monitor that tails `runcpu`'s logfile.
 
-    `runcpu` reveals its logfile path only at the end of the run, so the monitor
-    waits for *this run's* log to appear (the `CPU2026.*.log` that shows up after
-    launch, distinct from any pre-existing one), then tails it, yielding each
-    per-iteration `Success ... runtime=...` line as one observation block.
-
-    Args:
-        result_dir: SPEC's `result/` directory to watch.
-
-    Returns:
-        A `HarnessMonitor` closure over `result_dir`.
+    Waits for *this run's* log to appear (runcpu reveals the path only at the
+    end), then yields each per-iteration `Success ... runtime=...` line.
     """
 
     def is_iteration(line: str) -> bool:
@@ -172,22 +123,12 @@ _METRICS = (
 
 
 def discover_suites(p: Spec2026Params) -> list[SuiteBuilder]:
-    """Build one bench suite per reportable SPEC suite found under `--spec-root`.
+    """Build one bench suite per reportable SPEC suite under `--spec-root`.
 
-    Globs `benchspec/CPU/*.bset` and keeps the manifests whose metric is in
-    `SUITE_METRICS` (the four canonical suites). Each suite's benchmarks are read
-    from its `.bset` (minus the validation-only `no_output` entries) and wired as
-    harness benchmarks sharing the log-tailing monitor.
-
-    Passed straight to `run` as the suite factory. bench calls it after parsing
-    the CLI, so `p.spec_root` (where the `.bset` files live) is already resolved.
-
-    Args:
-        p: the parsed params. `p.spec_root` is the cpu2026 install dir
-            (contains `shrc`, `benchspec/`).
-
-    Returns:
-        One `SuiteBuilder` per discovered SPEC suite, ordered by `.bset` filename.
+    Globs `benchspec/CPU/*.bset`, keeps the manifests whose metric is in
+    `SUITE_METRICS`, and wires each suite's members (minus validation-only
+    `no_output` entries) as harness benchmarks sharing the log-tailing monitor.
+    Used as the `run` suite factory.
     """
     spec_root = p.spec_root
     cpu = spec_root / "benchspec" / "CPU"

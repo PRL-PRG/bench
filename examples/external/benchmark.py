@@ -6,13 +6,7 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""Multi-suite R benchmark configuration.
-
-Demonstrates:
-- Five suites sharing a common locale environment.
-- Mixing static and dynamic working directories.
-- `Rebench` metric over many benchmark families.
-"""
+"""Multi-suite R benchmark config: five suites sharing a common locale env."""
 
 from dataclasses import dataclass
 from pathlib import Path

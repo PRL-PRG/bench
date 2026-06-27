@@ -6,14 +6,8 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""Lox: two suites sharing a base, per-suite formatter.
-
-Demonstrates:
-- `.factory(lambda ctx: from_files(..., exclude={...}))` discovery.
-- Multiple suites, each with its own metrics.
-- Per-suite Compact summary via CompositeReporter reporters.
-- Typed `LoxParams` dataclass for CLI flags.
-"""
+"""Lox: two file-discovered suites, each with its own metrics and a per-suite
+Compact summary (via `CompositeReporter`)."""
 
 from dataclasses import dataclass
 from pathlib import Path

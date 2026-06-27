@@ -6,7 +6,7 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""Declarative benchmark script demonstrating matrix execution and custom metrics."""
+"""Matrix benchmark: SQLite insert throughput across journal/sync pragmas."""
 
 import sys
 from pathlib import Path

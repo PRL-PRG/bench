@@ -6,23 +6,13 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""CPython performance benchmarks via pyperformance / pyperf.
+"""CPython benchmarks via pyperformance / pyperf.
 
-`pyperformance run` prints only progress to stdout and writes its results to
-a JSON file. So each bench benchmark runs one pyperformance benchmark into a
-temp JSON, then `pyperf dump`s it to stdout, where every measured value
-appears as::
-
-    - value 1: 183 ms
-    - value 2: 205 ms (+10%)
-
-A Regex over those `value` lines yields the full distribution, one sample
-per value (warmup/calibrate lines are skipped). pyperformance's own multi-run
-machinery does the repetition, so bench runs each benchmark once.
-pyperformance's chatter is redirected to stderr to keep stdout parseable.
-
-Run this from inside the pyperformance virtualenv (so `pyperformance` and
-`pyperf` are on PATH), pointing `--python` at the interpreter under test.
+`pyperformance run` writes JSON, so each bench runs one benchmark into a temp
+file then `pyperf dump`s it; a Regex over the `- value N: 183 ms` lines yields
+one sample per value. pyperformance does its own repetition, so bench runs each
+once. Run from inside the pyperformance venv, with `--python` the interpreter
+under test.
 """
 
 from dataclasses import dataclass

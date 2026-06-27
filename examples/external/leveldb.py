@@ -6,20 +6,11 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""LevelDB `db_bench`: the canonical key/value microbenchmarks.
+"""LevelDB `db_bench` key/value microbenchmarks: one bench per db_bench op.
 
-Each bench benchmark maps to one db_bench operation. db_bench prints one
-result line per operation, e.g.
-
-    fillseq      :       4.805 micros/op,   23.0 MB/s
-    readrandom   :       0.531 micros/op, (5000 of 5000 found)
-    crc32c       :       0.778 micros/op, 5023.3 MB/s (4K per op)
-
-Write/CRC ops are self-contained and report a MB/s throughput. Read/seek ops
-need a populated DB, so we prefix a `fillseq` into the *same* db_bench
-invocation (one open DB, rebuilt fresh on every run). A per-op Regex anchored
-to the operation name picks that op's line out of the output, so the prefixed
-fill is ignored by the read benchmarks.
+db_bench prints one result line per op (`fillseq : 4.805 micros/op, 23.0 MB/s`).
+Read/seek ops need a populated DB, so they prefix a `fillseq` into the *same*
+invocation; a per-op Regex anchored to the op name ignores that fill.
 """
 
 import re

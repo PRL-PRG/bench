@@ -1,3 +1,0 @@
-# Metrics
-
-::: bench.core.metric

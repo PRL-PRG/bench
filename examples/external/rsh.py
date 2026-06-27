@@ -6,18 +6,11 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
-"""RBenchmarking (rsh) configuration - port of reactorlabs/RBenchmarking/rebench.conf.
+"""RBenchmarking (rsh): port of reactorlabs/RBenchmarking/rebench.conf.
 
-Demonstrates:
-- Five suites sharing a single benchmark invocation pattern.
-- Per-benchmark `cmd` overrides (shootout uses `subfolder/name`).
-- Minimal R harness: an inline R profile dumped to a tempfile, wired via
-  `R_PROFILE_USER`. The benchmark file itself is the script `Rscript` runs.
-  `.Last` runs the timing loop after the benchmark file finishes sourcing.
-
-The rebench config defines three executors (GNU-R, PIR-LLVM, FASTR) that differ
-only in the `Rscript` path. Here, the executor is selected at the CLI via
-`--Rscript /path/to/Rscript`.
+The R harness is an inline profile (`_HARNESS_R`) dumped to a tempfile and
+wired via `R_PROFILE_USER`; its `.Last` hook runs the timing loop after the
+benchmark file sources. Pick the interpreter with `--Rscript /path/to/Rscript`.
 """
 
 import os
