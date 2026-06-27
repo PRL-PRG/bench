@@ -119,3 +119,14 @@ and `--denoise` minimizes the knobs for the run and restores them after.
 uv run pytest
 uv run bench run --runs 20 'sleep 0.1' 'sleep 0.2'
 ```
+
+## Acknowledgements
+
+Much of the bench has been inspired by these great tools:
+
+* [hyperfine](https://github.com/sharkdp/hyperfine) - CLI ergonomics and comparison output
+* [ReBench](https://github.com/smarr/ReBench) - configuration-driven design and the built-in `Rebench` metric
+
+## License
+
+[MIT](LICENSE)
