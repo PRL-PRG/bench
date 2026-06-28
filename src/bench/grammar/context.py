@@ -21,7 +21,7 @@ import argparse
 import dataclasses
 import types
 import typing
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +45,34 @@ class Matrix:
 
 
 @dataclass(frozen=True, slots=True)
+class Cli:
+    """The parsed bench runtime/selection flags, exposed on `Context.cli` so
+    builder and reporter callables can branch on the invocation (verbose, dry,
+    jobs, …) — the bench-owned counterpart to the user's `Context.params`."""
+
+    verbose: bool = False
+    dry: bool = False
+    jobs: int = 1
+    no_progress: bool = False
+    json: str | None = None
+    csv: str | None = None
+    dir: str | None = None
+    compare: list[str] | None = None
+    include: list[str] | None = None
+    exclude: list[str] | None = None
+    list_plan: bool = False
+
+    @classmethod
+    def from_namespace(cls, ns: argparse.Namespace) -> Cli:
+        """Pull the known flags off a parsed argparse namespace, ignoring any
+        that aren't present (e.g. a subcommand that omits selection flags)."""
+        present = {
+            f.name: getattr(ns, f.name) for f in fields(cls) if hasattr(ns, f.name)
+        }
+        return cls(**present)
+
+
+@dataclass(frozen=True, slots=True)
 class Context[T]:
     """Context for the benchmark builder callable `with_*(lambda ctx: )` methods."""
 
@@ -52,6 +80,7 @@ class Context[T]:
     suite: str
     benchmark: str | None
     matrix: Matrix
+    cli: Cli = field(default_factory=Cli)  # parsed bench CLI flags
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field
