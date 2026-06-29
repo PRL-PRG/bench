@@ -67,11 +67,6 @@ class Reporter(abc.ABC):
         """
         pass
 
-    def set_baseline(self, paths: list[Path]) -> None:
-        """Inject baseline report paths for `--compare`. Called once before
-        `start()`. Only summary reporters use it."""
-        pass
-
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
@@ -109,10 +104,6 @@ class CompositeReporter(Reporter):
     ) -> None:
         for r in self.reporters:
             r.set_environment(environment, diagnostics)
-
-    def set_baseline(self, paths: list[Path]) -> None:
-        for r in self.reporters:
-            r.set_baseline(paths)
 
     def start(self, plan: list[Benchmark]) -> None:
         for r in self.reporters:
@@ -433,37 +424,34 @@ class ProgressReporter(Reporter):
 
 
 # ---------------------------------------------------------------------------
-# SummaryReporter (delegates to a Formatter, see report/formatter.py)
+# SummaryReporter (renders a Formatter, see report/formatter.py)
 # ---------------------------------------------------------------------------
 
 
 class SummaryReporter(_BufferingReporter):
     """Buffer runs, format on finalize().
 
-    Takes an optional `formatter` (any callable `(Report, baseline=...) -> str`).
-    Defaults to `DefaultSummary`. After the formatter output, appends a
-    `Failures:` block listing every failed run.
+    Takes a single `Formatter` (compose several with `&`). Summarizes the
+    buffered runs once and renders them, defaulting to `DefaultSummary`. After
+    the formatter output, appends a `Failures:` block listing every failed run.
     """
 
     def __init__(
         self,
         formatter: Formatter | None = None,
         *,
-        baseline: list[Path] | None = None,
         target_console: Console | None = None,
     ) -> None:
         from bench.report.formatter import DefaultSummary
 
         super().__init__()
-        self._formatter = formatter or DefaultSummary()
-        self._baseline = baseline or []
+        self._formatter: Formatter = formatter or DefaultSummary()
         self._console = target_console or console
 
-    def set_baseline(self, paths: list[Path]) -> None:
-        self._baseline = list(paths)
-
     def finalize(self) -> None:
-        out = self._formatter(self._report, baseline=self._baseline)
+        from bench.report.summary import summarize
+
+        out = self._formatter(summarize(self._report))
         if out:
             self._console.print(out)
         if self._report.failures:

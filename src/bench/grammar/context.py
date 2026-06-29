@@ -57,7 +57,6 @@ class Cli:
     json: str | None = None
     csv: str | None = None
     dir: str | None = None
-    compare: list[str] | None = None
     include: list[str] | None = None
     exclude: list[str] | None = None
     list_plan: bool = False

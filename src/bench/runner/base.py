@@ -17,6 +17,7 @@ from bench.core.execution import (
     record_key,
 )
 from bench.core.policy import StoppingPolicy
+from bench.grammar.context import Cli
 from bench.grammar.suite import SuiteBuilder
 from bench.report.reporter import Reporter
 from bench.core.sample import Report
@@ -53,12 +54,14 @@ class SuiteMaterializationError(Exception):
         return "\n".join(lines)
 
 
-def plan(suites: list[SuiteBuilder], params: Any = None) -> list[Benchmark]:
+def plan(
+    suites: list[SuiteBuilder], params: Any = None, *, cli: Cli | None = None
+) -> list[Benchmark]:
     """Flatten suites + their deferred factories into resolved benchmarks."""
     out: list[Benchmark] = []
     for s in suites:
         try:
-            out.extend(s.materialize(params))
+            out.extend(s.materialize(params, cli=cli))
         except Exception as cause:
             raise SuiteMaterializationError(s.name, cause) from cause
     return out

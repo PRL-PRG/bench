@@ -114,15 +114,6 @@ def test_user_composite_reporter_receives_environment(tmp_path: Path):
     assert "system" in json.loads(env_file.read_text())["environment"]
 
 
-def test_composite_set_baseline_reaches_nested_summary(tmp_path: Path):
-    # --compare must reach a SummaryReporter nested inside a CompositeReporter.
-    summary = SummaryReporter()
-    composite = CompositeReporter(summary, DirReporter(tmp_path / "tree"))
-    base = tmp_path / "base.json"
-    composite.set_baseline([base])
-    assert summary._baseline == [base]
-
-
 def _flagged_run() -> Run:
     return Run(
         suite="S",

@@ -1,21 +1,24 @@
-"""Formatter output snapshots."""
+"""Formatter output: the rendered tables for each view."""
 
 import re
 from io import StringIO
-from pathlib import Path
 
 from rich.console import Console
 
-from bench.report.theme import BENCHR_THEME
 from bench import (
     Compact,
     DefaultSummary,
+    GroupedSummary,
     Iteration,
     Report,
+    Results,
     Run,
     Sample,
-    report_to_json,
+    Summary,
+    SummaryReporter,
 )
+from bench.report.summary import Stat, summarize
+from bench.report.theme import BENCHR_THEME
 
 
 def _smp(
@@ -44,22 +47,78 @@ def _ok(
         variant=variant,
         run=run,
         command=("x",),
-        returncode=0,
         variant_label=variant_label,
         iterations=[Iteration(samples=list(samples) if samples else [])],
     )
 
 
-def test_default_summary_no_baseline():
+def _vrun(
+    value: float,
+    *,
+    run: int,
+    label: str,
+    bench: str = "b",
+    suite: str = "S",
+    metric: str = "elapsed",
+    unit: str = "s",
+    lower_is_better: bool | None = True,
+) -> Run:
+    return _ok(
+        run,
+        bench=bench,
+        suite=suite,
+        variant=(("k", label),),
+        variant_label=label,
+        samples=[_smp(metric, value, unit=unit, lower_is_better=lower_is_better)],
+    )
+
+
+def _axis_report(values: dict[str, dict[str, float]]) -> Report:
+    """values[axis_value][benchmark] = elapsed; one run each."""
+    runs = []
+    for value, benches in values.items():
+        for b, elapsed in benches.items():
+            runs.append(
+                _ok(
+                    1,
+                    bench=b,
+                    variant=(("interp", value),),
+                    samples=[_smp("elapsed", elapsed)],
+                )
+            )
+    return Report(runs=runs)
+
+
+def _data(report: Report) -> list[Stat]:
+    """The `list[Stat]` a formatter consumes (mirrors SummaryReporter)."""
+    return summarize(report)
+
+
+def _strip(s: str) -> str:
+    """Render like console.print: drop bench tags, turn `\\[` back into `[`."""
+    return re.sub(r"\[bench\.[a-z]+\]|\[/\]", "", s).replace("\\[", "[")
+
+
+def _render(markup: str) -> str:
+    buf = StringIO()
+    Console(file=buf, force_terminal=False, width=200).print(markup)
+    return buf.getvalue()
+
+
+# ----- Results ---------------------------------------------------------------
+
+
+def test_results_table_header_and_rows():
     r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
-    out = DefaultSummary()(r)
+    out = _strip(Results()(_data(r)))
     assert "S/b" in out
-    assert "3" in out and "runs" in out
-    assert "runtime" in out and "ms" in out  # 0.5s -> scaled to 500ms
-    assert "outlier" not in out.lower()  # nothing flagged -> no warning
+    assert "runtime [ms]" in out  # 0.5s -> scaled to ms
+    assert "3 runs" in out
+    assert "500.00" in out
+    assert "outlier" not in out.lower()
 
 
-def test_default_summary_warns_on_outliers():
+def test_results_warns_on_outliers():
     r = Report(
         runs=[
             _ok(1, samples=[_smp("runtime", 1.0)]),
@@ -74,152 +133,43 @@ def test_default_summary_warns_on_outliers():
             ),
         ]
     )
-    out = DefaultSummary()(r)
-    assert "1" in out and "outlier" in out.lower()
-    # The breakdown names the affected metric — never empty parens like "1 ()".
-    assert "runtime: 1" in out
-    assert "()" not in out
-    # Rendering must not raise (the warning style must exist in the theme).
-    Console(file=StringIO(), theme=BENCHR_THEME).print(out)
+    out = Results()(_data(r))
+    assert "outlier" in out.lower() and "runtime" in out
+    Console(file=StringIO(), theme=BENCHR_THEME).print(out)  # styles must exist
 
 
-def test_compact_no_baseline_lists_benchmarks():
-    runs = []
-    for i in range(1, 4):
-        runs.append(_ok(i, bench="a", samples=[_smp("runtime", 0.5)]))
-        runs.append(_ok(i, bench="b", samples=[_smp("runtime", 1.0)]))
-    r = Report(runs=runs)
-    out = Compact("runtime")(r)
-    assert "a:" in out and "b:" in out
-    assert "geomean" in out
+def test_results_unit_label_survives_rich_markup():
+    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    assert "runtime [ms]" in _render(Results()(_data(r)))
 
 
-def test_compact_with_baseline_shows_speedup(tmp_path: Path):
-    baseline = Report(
-        runs=[_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
-    )
-    bpath = tmp_path / "b.json"
-    bpath.write_text(report_to_json(baseline))
-
-    current = Report(
-        runs=[_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
-    )
-    out = Compact("runtime")(current, baseline=[bpath])
-    assert "geometric mean speedup" in out
-    assert "a:" in out
-    assert "2.00" in out or "2.0" in out
-    assert "(3 runs)" in out
-
-
-def test_compact_omits_run_count_when_inconsistent(tmp_path: Path):
-    baseline = Report(
-        runs=(
-            [_ok(i, bench="a", samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
-            + [_ok(i, bench="b", samples=[_smp("runtime", 1.0)]) for i in range(1, 6)]
-        )
-    )
-    bpath = tmp_path / "b.json"
-    bpath.write_text(report_to_json(baseline))
-
-    # a has 3 runs, b has 5, no single honest count to print.
-    current = Report(
-        runs=(
-            [_ok(i, bench="a", samples=[_smp("runtime", 0.5)]) for i in range(1, 4)]
-            + [_ok(i, bench="b", samples=[_smp("runtime", 0.5)]) for i in range(1, 6)]
-        )
-    )
-    out = Compact("runtime")(current, baseline=[bpath])
-    assert "geometric mean speedup" in out
-    assert "runs)" not in out
-
-
-def test_default_summary_with_baseline_includes_runs(tmp_path: Path):
-    baseline = Report(
-        runs=[_ok(i, samples=[_smp("runtime", 1.0)]) for i in range(1, 4)]
-    )
-    bpath = tmp_path / "b.json"
-    bpath.write_text(report_to_json(baseline))
-
-    current = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
-    out = DefaultSummary()(current, baseline=[bpath])
-    assert "Summary (geometric mean of ratios)" in out
-    assert "better" in out
-
-
-def test_compact_filters_by_metric():
+def test_results_shows_variant_in_rows():
     r = Report(
         runs=[
-            _ok(1, samples=[_smp("runtime", 1.0), _smp("max_rss", 1024.0, unit="kB")]),
+            _ok(i, variant=(("vm", "python3.14"),), samples=[_smp("elapsed", 0.5)])
+            for i in range(1, 4)
         ]
     )
-    out_rt = Compact("runtime")(r)
-    out_rss = Compact("max_rss")(r)
-    assert "1.00" in out_rt
-    assert "1.00" in out_rss
-    assert "max_rss" not in out_rt
+    out = _strip(Results()(_data(r)))
+    assert "S/b" in out and "vm=python3.14" in out
 
 
-def _strip_markup(s: str) -> str:
-    s = s.replace("\\[", "\x00")
-    s = re.sub(r"\[/?[^]]*\]", "", s)
-    return s.replace("\x00", "[")
+# ----- Summary (within-benchmark ranking) ------------------------------------
 
 
-def _vrun(
-    value: float,
-    *,
-    run: int,
-    label: str,
-    variant_dim: str = "k",
-    bench: str = "b",
-    suite: str = "S",
-    metric: str = "elapsed",
-    unit: str = "s",
-    lower_is_better: bool | None = True,
-) -> Run:
-    return _ok(
-        run,
-        bench=bench,
-        suite=suite,
-        variant=((variant_dim, label),),
-        variant_label=label,
-        samples=[_smp(metric, value, unit=unit, lower_is_better=lower_is_better)],
-    )
-
-
-def test_default_summary_ranks_variants_within_benchmark():
+def test_ranking_uses_better_worse():
     runs = []
     for i in range(1, 4):
         runs.append(_vrun(0.10, run=i, label="fast"))
         runs.append(_vrun(0.20, run=i, label="slow"))
-    r = Report(runs=runs)
-    text = _strip_markup(DefaultSummary()(r))
-    assert "Summary" in text
-    assert "'fast' [elapsed] was" in text
-    assert "2.00" in text
-    assert "lower than" in text
-    assert "'slow'" in text
+    out = _strip(Summary()(_data(Report(runs=runs))))
+    assert "Summary - S/b" in out
+    assert "fast was" in out and "× better than" in out and "slow" in out
+    assert "2.00" in out
+    assert "worse" not in out and "lower" not in out and "higher" not in out
 
 
-def test_default_summary_no_ranking_across_distinct_benchmarks():
-    runs = []
-    for i in range(1, 4):
-        runs.append(_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]))
-        runs.append(_ok(i, bench="b", samples=[_smp("elapsed", 0.20)]))
-    r = Report(runs=runs)
-    text = _strip_markup(DefaultSummary()(r))
-    assert "Summary" not in text
-
-
-def test_default_summary_no_ranking_with_single_variant():
-    r = Report(
-        runs=[_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)]
-    )
-    text = _strip_markup(DefaultSummary()(r))
-    assert "Summary" not in text
-
-
-def test_default_summary_ranking_uses_higher_for_higher_is_better():
+def test_ranking_uses_better_worse_for_higher_is_better():
     runs = []
     for i in range(1, 4):
         runs.append(
@@ -242,21 +192,129 @@ def test_default_summary_ranking_uses_higher_for_higher_is_better():
                 lower_is_better=False,
             )
         )
-    r = Report(runs=runs)
-    text = _strip_markup(DefaultSummary()(r))
-    assert "'fast' [throughput] was" in text
-    assert "2.00" in text
-    assert "times higher than" in text
-    assert "'slow'" in text
+    out = _strip(Summary()(_data(Report(runs=runs))))
+    assert "fast was" in out and "2.00" in out and "× better than" in out
+    assert "higher" not in out and "lower" not in out and "worse" not in out
 
 
-def test_default_summary_unit_label_survives_rich_markup():
-    # The "[ms]" unit tag must be escaped, otherwise rich eats it as a
-    # markup tag and the rendered summary loses the unit.
-    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
-    out = DefaultSummary()(r)
+def test_ranking_empty_for_single_variant():
+    r = Report(runs=[_ok(i, samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)])
+    assert Summary()(_data(r)) == ""
+
+
+def test_ranking_empty_across_distinct_benchmarks():
+    runs = []
+    for i in range(1, 4):
+        runs.append(_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]))
+        runs.append(_ok(i, bench="b", samples=[_smp("elapsed", 0.20)]))
+    assert Summary()(_data(Report(runs=runs))) == ""
+
+
+def test_summary_axis_compares_axis_values_per_benchmark():
+    # two interpreters over two benchmarks; b is 2x faster everywhere.
+    # Summary(axis="interp") compares them *within each benchmark*, so the header
+    # names the benchmark (unlike GroupedSummary's one suite-wide block).
+    r = _axis_report({"a": {"x": 4.0, "y": 8.0}, "b": {"x": 2.0, "y": 4.0}})
+    out = _strip(Summary(axis="interp")(_data(r)))
+    assert "Summary (geomean) - interp - S/x" in out
+    assert "Summary (geomean) - interp - S/y" in out
+    assert "b was" in out and "2.00" in out and "× better than" in out
+
+
+# ----- GroupedSummary (within-run axis ranking) ------------------------------
+
+
+def test_grouped_summary_ranks_axis_values():
+    # c is 4x, b is 2x faster than a (the slowest).
+    r = _axis_report(
+        {
+            "a": {"x": 4.0, "y": 8.0},
+            "b": {"x": 2.0, "y": 4.0},
+            "c": {"x": 1.0, "y": 2.0},
+        }
+    )
+    out = _strip(GroupedSummary(axis="interp", metric="elapsed")(_data(r)))
+    assert "Summary (geomean) - interp - S" in out
+    assert "c was" in out  # c is the best (reference/subject)
+    assert out.index("than b") < out.index("than a")  # b is closer to best than a
+    assert "× better than" in out and "4.00" in out
+    assert "S/x" not in out and "S/y" not in out  # terse: no per-benchmark detail
+
+
+def test_grouped_summary_axis_absent_is_explicit():
+    r = Report(runs=[_ok(i, samples=[_smp("elapsed", 1.0)]) for i in range(1, 4)])
+    out = _strip(GroupedSummary(axis="vm", metric="elapsed")(_data(r)))
+    assert "not present" in out and "vm" in out
+
+
+def test_grouped_summary_about_the_same():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 1.0}})
+    out = _strip(GroupedSummary(axis="interp", metric="elapsed")(_data(r)))
+    assert "about the same" in out
+    assert "1.00×" not in out
+
+
+def test_grouped_summary_ref_pins_the_baseline():
+    # a is the slowest; without ref, c (the best) is the subject. Pinning ref="a"
+    # makes a the subject and reads the others as it being worse.
+    r = _axis_report(
+        {
+            "a": {"x": 4.0, "y": 8.0},
+            "b": {"x": 2.0, "y": 4.0},
+            "c": {"x": 1.0, "y": 2.0},
+        }
+    )
+    out = _strip(GroupedSummary(axis="interp", metric="elapsed", ref="a")(_data(r)))
+    assert "a was" in out  # the pinned baseline is the subject
+    assert "× worse than" in out  # a is slower than the others
+
+
+# ----- DefaultSummary + composition ------------------------------------------
+
+
+def test_default_summary_composes_results_and_ranking():
+    runs = []
+    for i in range(1, 4):
+        runs.append(_vrun(0.10, run=i, label="fast"))
+        runs.append(_vrun(0.20, run=i, label="slow"))
+    out = _strip(DefaultSummary()(_data(Report(runs=runs))))
+    assert "S/b" in out  # Results block
+    assert "Summary - S/b" in out  # ranking block
+
+
+def test_summary_reporter_renders_composed_formatter():
     buf = StringIO()
-    console = Console(file=buf, force_terminal=False, width=200)
-    console.print(out)
-    rendered = buf.getvalue()
-    assert "runtime [ms]" in rendered
+    rep = SummaryReporter(
+        Results() & GroupedSummary(axis="interp", metric="elapsed"),
+        target_console=Console(file=buf, force_terminal=False, width=200),
+    )
+    for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).runs:
+        rep.run_done(run)
+    rep.finalize()
+    out = buf.getvalue()
+    assert "S/x" in out  # Results
+    assert "Summary (geomean) - interp" in out  # GroupedSummary
+
+
+# ----- Compact ---------------------------------------------------------------
+
+
+def test_compact_no_baseline_lists_benchmarks_and_geomean():
+    runs = [
+        _ok(i, bench=bn, samples=[_smp("runtime", v)])
+        for bn, v in [("a", 0.5), ("b", 0.25)]
+        for i in range(1, 4)
+    ]
+    out = _strip(Compact("runtime")(_data(Report(runs=runs))))
+    assert "a:" in out and "b:" in out and "geomean:" in out
+
+
+def test_compact_filters_by_metric():
+    r = Report(
+        runs=[
+            _ok(i, samples=[_smp("runtime", 0.5), _smp("max_rss", 1024.0, unit="kB")])
+            for i in range(1, 4)
+        ]
+    )
+    out = _strip(Compact("runtime")(_data(r)))
+    assert "runtime" in out and "max_rss" not in out

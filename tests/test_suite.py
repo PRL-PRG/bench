@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bench import FixedRuns, FloatPerLine, Time, bench, from_files, suite
+from bench import Cli, FixedRuns, FloatPerLine, Time, bench, from_files, suite
 
 
 def _b(name: str):
@@ -357,3 +357,19 @@ def test_command_via_matrix_builder():
     )
     bs = list(s.materialize(None))
     assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]
+
+
+# ----- CLI state reaches builder contexts ---------------------------------
+
+
+def test_context_carries_cli_state():
+    seen: list[tuple[bool, int]] = []
+
+    def cmd(ctx):
+        seen.append((ctx.cli.verbose, ctx.cli.jobs))
+        return ["true"]
+
+    s = suite("S", _b("a")).with_command(cmd)
+    s.materialize(None, cli=Cli(verbose=True, jobs=4))
+    s.materialize(None)  # defaults
+    assert seen == [(True, 4), (False, 1)]

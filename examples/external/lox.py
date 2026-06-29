@@ -85,7 +85,7 @@ if __name__ == "__main__":
         [lox_suite, zoo_suite],
         params=LoxParams,
         reporter=CompositeReporter(
-            SummaryReporter(formatter=Compact("runtime", suite="LoxSuite")),
-            SummaryReporter(formatter=Compact("throughput", suite="ZooBatch")),
+            SummaryReporter(Compact("runtime", suite="LoxSuite")),
+            SummaryReporter(Compact("throughput", suite="ZooBatch")),
         ),
     )

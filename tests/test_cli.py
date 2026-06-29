@@ -15,7 +15,7 @@ from bench import Bench, Time, bench, run, suite
 REPO = Path(__file__).resolve().parents[1]
 
 
-def _run(*args, env_extra: dict | None = None):
+def _run(*args, env_extra: dict | None = None, cwd: Path | None = None):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + env.get("PYTHONPATH", "")
     if env_extra:
@@ -25,6 +25,7 @@ def _run(*args, env_extra: dict | None = None):
         capture_output=True,
         text=True,
         env=env,
+        cwd=cwd,
         timeout=60,
     )
 
@@ -57,8 +58,16 @@ def test_bench_matrix_substitution():
 
 def test_bench_matrix_two_dims():
     r = _run(
-        "run", "--runs", "1",
-        "-M", "a", "0.01,0.02", "-M", "b", "x,y", "echo {a} {b}",
+        "run",
+        "--runs",
+        "1",
+        "-M",
+        "a",
+        "0.01,0.02",
+        "-M",
+        "b",
+        "x,y",
+        "echo {a} {b}",
     )
     assert r.returncode == 0, r.stderr
     for combo in ("0.01 x", "0.01 y", "0.02 x", "0.02 y"):
@@ -130,99 +139,75 @@ def test_bench_time_zero_uses_exact_run_count(tmp_path: Path):
     assert len(json.loads(out.read_text())["runs"]) == 3
 
 
-def test_compare_subcommand(tmp_path: Path):
-    a = tmp_path / "a.json"
-    b = tmp_path / "b.json"
-    _run("run", "--runs", "2", "--json", str(a), "sleep 0.01")
-    _run("run", "--runs", "2", "--json", str(b), "sleep 0.01")
-    r = _run("compare", str(a), str(b))
-    assert r.returncode == 0, r.stderr
-    assert "Summary" in r.stdout or "better" in r.stdout or "worse" in r.stdout
-
-
-def test_compare_different_commands_aligns(tmp_path: Path):
-    # The headline use case: benchmark two different commands separately, then
-    # compare. The command lives in the variant, but with one variant per file
-    # they must still line up — not report the comparee as 0|0.
-    base = tmp_path / "base.json"
-    mine = tmp_path / "mine.json"
-    _run(
-        "run",
-        "--no-progress",
-        "--runs",
-        "3",
-        "--time",
-        "0",
-        "--json",
-        str(base),
-        "sleep 0.02",
-    )
-    _run(
-        "run",
-        "--no-progress",
-        "--runs",
-        "3",
-        "--time",
-        "0",
-        "--json",
-        str(mine),
-        "sleep 0.01",
-    )
-    r = _run("compare", str(base), str(mine))
-    assert r.returncode == 0, r.stderr
-    assert "mine: 0|0" not in r.stdout  # the bug: comparee dropped to zero runs
-    assert "mine: 0|3" in r.stdout  # comparee's three runs are seen
-    assert "times" in r.stdout  # a real ratio line was emitted
-
-
-def test_compare_single_file_summarizes(tmp_path: Path):
+def test_show_subcommand(tmp_path: Path):
     out = tmp_path / "out.json"
     _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
-    r = _run("compare", str(out))
+    r = _run("show", str(out))
     assert r.returncode == 0, r.stderr
     assert "elapsed" in r.stdout
 
 
-def test_compare_first_is_baseline_no_current_label(tmp_path: Path):
-    paths: list[str] = []
-    for name in ("a", "b", "c"):
-        p = tmp_path / f"{name}.json"
-        _run(
-            "run",
-            "--no-progress",
-            "--runs",
-            "2",
-            "--time",
-            "0",
-            "--json",
-            str(p),
-            "sleep 0.01",
-        )
-        paths.append(str(p))
-    r = _run("compare", *paths)
-    assert r.returncode == 0, r.stderr
-    assert "current" not in r.stdout  # the special "current" slot is gone
-    assert "was" in r.stdout  # comparees rendered against the baseline
+def test_show_missing_file_errors(tmp_path: Path):
+    r = _run("show", str(tmp_path / "nope.json"))
+    assert r.returncode == 1
+    assert "not found" in r.stderr
 
 
-def test_bench_compare_warns_or_diffs(tmp_path: Path):
-    base = tmp_path / "base.json"
-    _run("run", "--runs", "2", "--json", str(base), "sleep 0.01")
-    r = _run("run", "--runs", "2", "--compare", str(base), "sleep 0.01")
+def test_compare_subcommand(tmp_path: Path):
+    # Two files of the same benchmark become a `compare` matrix axis: the rows
+    # are labeled per file and a geomean head-to-head is printed, with the first
+    # file as the baseline subject.
+    _run("run", "--runs", "2", "--json", str(tmp_path / "a.json"), "sleep 0.01")
+    _run("run", "--runs", "2", "--json", str(tmp_path / "b.json"), "sleep 0.01")
+    # Invoke from the reports' dir with relative names, as a user would.
+    r = _run("compare", "a.json", "b.json", cwd=tmp_path)
     assert r.returncode == 0, r.stderr
-    # Should print the per-benchmark comparison block.
-    assert (
-        "Summary" in r.stdout
-        or "geometric mean" in r.stdout
-        or "better" in r.stdout
-        or "worse" in r.stdout
-    )
+    # rows carry the filename as given as the leading `compare=` dimension
+    assert "compare=a.json" in r.stdout and "compare=b.json" in r.stdout
+    assert "Summary (geomean) - compare" in r.stdout  # the head-to-head block
+    assert "a.json was" in r.stdout  # the first file is the baseline subject
 
 
 def test_compare_missing_file_errors(tmp_path: Path):
-    r = _run("compare", str(tmp_path / "nope.json"))
+    ok = tmp_path / "ok.json"
+    _run("run", "--runs", "2", "--json", str(ok), "sleep 0.01")
+    r = _run("compare", str(ok), str(tmp_path / "nope.json"))
     assert r.returncode == 1
     assert "not found" in r.stderr
+
+
+def test_script_show_replays_through_configured_reporter(tmp_path: Path):
+    # `./my-bench --show r.json` renders a saved report with the script's own
+    # configured formatter (here a GroupedSummary), running nothing.
+    from io import StringIO
+
+    from rich.console import Console
+
+    from bench import GroupedSummary, Results, SummaryReporter, Time
+
+    s = (
+        suite("s")
+        .add(bench("x"))
+        .with_matrix(sleep=["0.01", "0.02"])
+        .with_command(lambda ctx: ["sleep", ctx.matrix.sleep])
+        .with_process_metric(Time(elapsed=True))
+        .with_runs(1)
+    )
+    out = tmp_path / "r.json"
+    run(
+        s,
+        reporter=SummaryReporter(target_console=Console(file=StringIO())),
+        argv=["--no-progress", "--json", str(out)],
+    )
+
+    buf = StringIO()
+    reporter = SummaryReporter(
+        Results() & GroupedSummary(axis="sleep", metric="elapsed"),
+        target_console=Console(file=buf, force_terminal=False, width=200),
+    )
+    run(s, reporter=reporter, argv=["--show", str(out)])
+    text = buf.getvalue()
+    assert "Summary (geomean) - sleep" in text  # the configured GroupedSummary ran
 
 
 def test_bench_help_describes_subcommand():
@@ -265,11 +250,11 @@ def test_bench_surfaces_failure_diagnostics():
 def test_bench_two_commands_prints_summary_ranking():
     r = _run("run", "--no-progress", "--runs", "3", "sleep 0.01", "sleep 0.05")
     assert r.returncode == 0, r.stderr
-    assert "Summary" in r.stdout
-    assert "was" in r.stdout
-    assert "times lower than" in r.stdout
-    # The fastest is named first in the block, sleep 0.01 should be it.
-    assert "'sleep 0.01' [elapsed] was" in r.stdout
+    assert "Summary - run" in r.stdout
+    assert "× better than" in r.stdout
+    # The fastest (sleep 0.01) is the subject, listed before sleep 0.05.
+    ranking = r.stdout.split("Summary - run")[1]
+    assert ranking.index("sleep 0.01") < ranking.index("sleep 0.05")
 
 
 # ----- run(): suite materialization errors --------------------------------

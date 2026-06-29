@@ -17,11 +17,13 @@ from bench import (
     FloatPerLine,
     JsonReporter,
     Parallel,
+    Reporter,
     Sequential,
     SuiteMaterializationError,
     Time,
     bench,
     report_from_json,
+    run,
     suite,
 )
 from bench.runner.base import plan
@@ -431,3 +433,24 @@ def test_plan_wraps_factory_failure_with_suite_name_and_command_output():
     assert "Renaissance Suite" in msg  # which suite failed
     assert "could not open jar" in msg  # captured subprocess output surfaced
     assert ei.value.__cause__ is err  # original chained for uncaught tracebacks
+
+
+def test_run_resolves_reporter_factory_with_cli_state():
+    seen: dict[str, object] = {}
+
+    class _Rec(Reporter):
+        pass
+
+    def factory(ctx):
+        seen["verbose"] = ctx.cli.verbose
+        seen["dry"] = ctx.cli.dry
+        seen["params"] = ctx.params
+        return _Rec()
+
+    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    run(s, reporter=factory, argv=["--dry", "--verbose"])
+    assert seen == {"verbose": True, "dry": True, "params": None}
+
+    seen.clear()
+    run(s, reporter=factory, argv=["--dry"])
+    assert seen["verbose"] is False

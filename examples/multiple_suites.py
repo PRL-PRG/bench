@@ -36,7 +36,7 @@ if __name__ == "__main__":
     run(
         [fast, slow],
         reporter=CompositeReporter(
-            SummaryReporter(formatter=Compact("elapsed", suite="fast")),
-            SummaryReporter(formatter=Compact("elapsed", suite="slow")),
+            SummaryReporter(Compact("elapsed", suite="fast")),
+            SummaryReporter(Compact("elapsed", suite="slow")),
         ),
     )

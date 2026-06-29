@@ -1,5 +1,6 @@
 """RunSource: CommandSource (pull) and HarnessSource (streaming push)."""
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -152,6 +153,45 @@ def test_harness_source_clean_exit_run_succeeds():
     _drain(src)
     run = src.close()[0]
     assert run.returncode == 0 and run.failure is None
+
+
+def test_harness_child_runs_unbuffered_by_default(monkeypatch):
+    # A harness streams per-iteration lines, so its (Python) child must not
+    # block-buffer stdout or every line arrives at once when it exits.
+    monkeypatch.delenv("PYTHONUNBUFFERED", raising=False)
+    child = [
+        sys.executable,
+        "-c",
+        "import os; print(os.environ.get('PYTHONUNBUFFERED', 'UNSET'))",
+    ]
+    src = make_source(_planned_harness(child, FloatPerLine("")))
+    _drain(src)
+    run = src.close()[0]
+    assert run.stdout.strip() == "1"
+
+
+def test_harness_child_unbuffered_flag_preserves_user_env():
+    # A non-empty env replaces the parent env wholesale, so the unbuffered flag
+    # must be merged in without clobbering the user's variables. (Immune to the
+    # test runner's own PYTHONUNBUFFERED for the same reason.)
+    child = [
+        sys.executable,
+        "-c",
+        "import os; print(os.environ.get('PYTHONUNBUFFERED', 'UNSET')); "
+        "print(os.environ.get('FOO', 'UNSET'))",
+    ]
+    s = (
+        suite("H", bench("a").with_command(child))
+        .with_cwd(Path("/tmp"))
+        .with_env({"FOO": "bar"})
+        .with_metric(FloatPerLine(""))
+        .with_runs(1)
+        .with_harness()
+    )
+    src = make_source(plan([s], None)[0])
+    _drain(src)
+    run = src.close()[0]
+    assert run.stdout.split() == ["1", "bar"]
 
 
 def test_harness_source_temp_dir_cleaned_up_after_run():

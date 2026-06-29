@@ -19,7 +19,13 @@ from rich.text import Text
 from rich.tree import Tree
 
 from bench.grammar.benchmark import Benchmark
-from bench.grammar.context import add_dataclass_args, build_dataclass
+from bench.grammar.context import (
+    Cli,
+    Context,
+    Matrix,
+    add_dataclass_args,
+    build_dataclass,
+)
 from bench.core.checks import run_checks
 from bench.core.environment import (
     EnvironmentCollector,
@@ -45,7 +51,7 @@ from bench.report.reporter import (
     print_diagnostics,
 )
 from bench.utils import print_exception
-from bench.core.sample import Report
+from bench.core.sample import Report, report_from_json
 from bench.runner.base import (
     Runner,
     SuiteMaterializationError,
@@ -58,6 +64,9 @@ from bench.runner.sequential import Sequential
 
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
+# A reporter, or a `(ctx) -> Reporter` factory resolved after CLI parsing so it
+# can read `ctx.cli` / `ctx.params` (e.g. pick a verbose vs concise summary).
+type ReporterArg = Reporter | Callable[[Context[Any]], Reporter]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -67,7 +76,7 @@ class Bench:
     suites: tuple[SuiteBuilder, ...] = ()
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
-    reporter: Reporter | None = None
+    reporter: ReporterArg | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
@@ -114,7 +123,7 @@ def run(
     suites: SuiteBuilder | list[SuiteBuilder] | SuiteFactory,
     *,
     params: type | None = None,
-    reporter: Reporter | None = None,
+    reporter: ReporterArg | None = None,
     argv: list[str] | None = None,
     environment: EnvironmentCollector | None = None,
     denoise: bool = False,
@@ -159,7 +168,7 @@ def run(
 def do_run(
     suites: list[SuiteBuilder],
     cli_args: argparse.Namespace,
-    reporter: Reporter | None,
+    reporter: ReporterArg | None,
     build_params: Any,
     *,
     environment: EnvironmentCollector = NoEnvironment(),
@@ -167,8 +176,32 @@ def do_run(
 ) -> Report:
     """Run already-parsed benchmarks: build the reporter, plan the suites,
     apply CLI overrides and hand off to the runner."""
+    cli = Cli.from_namespace(cli_args)
+    # A reporter factory is resolved now that CLI args are parsed, so it can read
+    # ctx.cli / ctx.params (e.g. choose a verbose vs concise summary).
+    if reporter is not None and not isinstance(reporter, Reporter):
+        ctx: Context[Any] = Context(
+            params=build_params,
+            suite="",
+            benchmark=None,
+            matrix=Matrix(),
+            cli=cli,
+        )
+        reporter = reporter(ctx)
     if reporter is None:
         reporter = SummaryReporter(DefaultSummary())
+
+    # `--show FILE`: replay a saved report through the configured reporter (so it
+    # renders with whatever formatter the script set up) and exit — no progress
+    # bar, no re-export, nothing run.
+    show = getattr(cli_args, "show", None)
+    if show:
+        report = report_from_json(Path(show).read_text())
+        reporter.set_environment(report.environment, report.diagnostics)
+        for r in report.runs:
+            reporter.run_done(r)
+        reporter.finalize()
+        return report
 
     if denoise and not is_root():
         console.print(
@@ -186,11 +219,9 @@ def do_run(
         with_progress=not cli_args.no_progress,
     )
     reporter.set_environment(env, env_diagnostics)
-    if getattr(cli_args, "compare", None):
-        reporter.set_baseline([Path(p) for p in cli_args.compare])
 
     try:
-        planned = plan(suites, build_params)
+        planned = plan(suites, build_params, cli=cli)
     except SuiteMaterializationError as e:
         print_exception(e)
         sys.exit(1)
@@ -281,6 +312,14 @@ def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
     _add_user_params(p, params)
     add_runtime_flags(p.add_argument_group("bench flags"))
     _add_selection_flags(p.add_argument_group("selection"))
+    p.add_argument(
+        "--show",
+        type=str,
+        default=None,
+        metavar="JSON",
+        help="Render a previously saved JSON report with this script's "
+        "configured reporter, then exit (run nothing).",
+    )
     return p
 
 
@@ -340,14 +379,6 @@ def add_runtime_flags(
         metavar="DIR",
         help="Write a per-execution tree (stdout/stderr/exitcode/seq) under DIR.",
     )
-    g.add_argument(
-        "--compare",
-        action="append",
-        default=None,
-        metavar="JSON",
-        help="Compare against a baseline JSON report (repeat to add more)."
-        "First is the baseline.",
-    )
 
 
 def _add_selection_flags(
@@ -364,15 +395,14 @@ def _add_selection_flags(
         action="append",
         default=None,
         metavar="REGEX",
-        help="Keep only benchmarks whose key matches REGEX, where the key is "
-        "'suite/benchmark (k=v, ...)'. Repeatable (OR semantics).",
+        help="Keep only benchmarks whose full name matches REGEX. Repeatable (OR semantics).",
     )
     g.add_argument(
         "--exclude",
         action="append",
         default=None,
         metavar="REGEX",
-        help="Drop benchmarks whose key matches REGEX. Repeatable; wins over --include.",
+        help="Drop benchmarks whose full name matches REGEX. Repeatable. Wins over --include.",
     )
 
 

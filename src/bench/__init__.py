@@ -65,7 +65,7 @@ from bench.grammar.benchmark import (
     from_files,
 )
 from bench.grammar.suite import SuiteBuilder, suite
-from bench.grammar.context import Context
+from bench.grammar.context import Cli, Context
 
 # Runners
 from bench.runner.base import (
@@ -89,7 +89,14 @@ from bench.report.reporter import (
 )
 
 # Formatters
-from bench.report.formatter import Compact, DefaultSummary, Formatter
+from bench.report.formatter import (
+    Compact,
+    DefaultSummary,
+    Formatter,
+    GroupedSummary,
+    Results,
+    Summary,
+)
 
 # Bench abstraction + run pipeline
 from bench.run import Bench, run
@@ -146,6 +153,7 @@ __all__ = [
     "SuiteBuilder",
     "suite",
     "Context",
+    "Cli",
     # Runners
     "Runner",
     "Sequential",
@@ -165,6 +173,9 @@ __all__ = [
     "ProgressReporter",
     # Formatters
     "Formatter",
+    "Results",
+    "Summary",
+    "GroupedSummary",
     "DefaultSummary",
     "Compact",
     # CLI

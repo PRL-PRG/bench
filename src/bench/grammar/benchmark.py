@@ -43,7 +43,7 @@ from bench.core.metric import (
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
-from bench.grammar.context import Context, Matrix
+from bench.grammar.context import Cli, Context, Matrix
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
@@ -376,22 +376,29 @@ class BenchmarkBuilder(BuilderSetters):
 
     # ----- creation ----------------------------------------------------
 
-    def create(self, params: Any, *, suite: str) -> Iterator[Benchmark]:
+    def create(
+        self, params: Any, *, suite: str, cli: Cli | None = None
+    ) -> Iterator[Benchmark]:
         """Yield one fully-resolved `Benchmark`.
 
         Expands the matrix (cartesian product), drops cells matched by any skip
         rule (before any builder runs), then resolves every field against the
         variant `Context`.
         """
+        cli = cli or Cli()
         names = list(self.matrix)
         if not names:
-            yield self._resolve_cell(params, suite, ())
+            yield self._resolve_cell(params, suite, (), cli=cli)
             return
         # Resolve callable axes once, before expanding the product. The axis
         # Context has no per-variant matrix yet (we are defining it), so axes
         # can read params/suite/benchmark but not sibling axes.
         axis_ctx: Context[Any] = Context(
-            params=params, suite=suite, benchmark=self.name, matrix=Matrix()
+            params=params,
+            suite=suite,
+            benchmark=self.name,
+            matrix=Matrix(),
+            cli=cli,
         )
         axes = [tuple(v(axis_ctx)) if callable(v) else v for v in self.matrix.values()]
         for combo in itertools.product(*axes):
@@ -404,9 +411,11 @@ class BenchmarkBuilder(BuilderSetters):
             )
             if any(skip(cell) for skip in self.skips):
                 continue
-            yield cell._resolve_cell(params, suite, variant)
+            yield cell._resolve_cell(params, suite, variant, cli=cli)
 
-    def _resolve_cell(self, params: Any, suite: str, variant: Variant) -> Benchmark:
+    def _resolve_cell(
+        self, params: Any, suite: str, variant: Variant, *, cli: Cli | None = None
+    ) -> Benchmark:
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
         variant's matrix values). No field reads another's resolved value."""
@@ -415,6 +424,7 @@ class BenchmarkBuilder(BuilderSetters):
             suite=suite,
             benchmark=self.name,
             matrix=Matrix(dict(self.data)),
+            cli=cli or Cli(),
         )
         env = self.env(ctx)
         execution = Execution(

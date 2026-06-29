@@ -32,7 +32,7 @@ from bench.grammar.benchmark import (
     const,
     default_label,
 )
-from bench.grammar.context import Context, Matrix
+from bench.grammar.context import Cli, Context, Matrix
 from bench.core.execution import (
     EMPTY_MAPPING,
     SuccessFn,
@@ -146,14 +146,16 @@ class SuiteBuilder(BuilderSetters):
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
-    def materialize(self, params: Any) -> list[Benchmark]:
+    def materialize(self, params: Any, *, cli: Cli | None = None) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
+        cli = cli or Cli()
         ctx: Context[Any] = Context(
             params=params,
             suite=self.name,
             benchmark=None,
             matrix=Matrix(),
+            cli=cli,
         )
         collected = list(self.benchmarks)
         for f in self.factories:
@@ -161,7 +163,7 @@ class SuiteBuilder(BuilderSetters):
         out: list[Benchmark] = []
         for b in collected:
             resolved = self._resolve(self._with_suite_matrix(b))
-            out.extend(resolved.create(params, suite=self.name))
+            out.extend(resolved.create(params, suite=self.name, cli=cli))
         for pred in self.filters:
             out = [b for b in out if pred(b)]
         if self.shuffle:

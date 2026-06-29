@@ -25,10 +25,14 @@ from bench.denoise import (
     status,
 )
 from bench.grammar.suite import suite
-from bench.report.formatter import DefaultSummary
+from bench.core.sample import Report, report_from_json
+from bench.report.formatter import (
+    DefaultSummary,
+    Results,
+    Summary,
+)
 from bench.report.reporter import SummaryReporter, console, print_diagnostics
-from bench.core.sample import report_from_json
-from bench.report.stats import build_summary
+from bench.report.summary import merge_reports, summarize
 
 
 # ---------------------------------------------------------------------------
@@ -61,20 +65,31 @@ def main(argv: list[str] | None = None) -> int:
                 "shlex and benchmarked as its own benchmark; results are summarized "
                 "side by side. Example:\n\n"
                 "    bench run --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
-                "Use --json / --csv / --dir to persist outputs and --compare to diff "
-                "against a previously saved JSON baseline."
+                "Use --json / --csv / --dir to persist outputs; summarize a saved "
+                "run later with `bench show` or diff several with `bench compare`."
             ),
             formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+    )
+    _show_subparser(
+        sub.add_parser(
+            "show",
+            help="Summarize a single JSON report from a prior run.",
+            description=(
+                "Load a saved JSON report and print its default summary: "
+                "absolute stats plus the per-benchmark ranking."
+            ),
         )
     )
     _compare_subparser(
         sub.add_parser(
             "compare",
-            help="Summarize or compare JSON reports from prior runs.",
+            help="Compare several JSON reports side by side.",
             description=(
-                "Summarize one or more JSON reports and print ratios against the "
-                "first one as a baseline. With a single file, just pretty-prints "
-                "its summary."
+                "Merge the reports into a synthetic `compare` matrix axis (one "
+                "value per file) and summarize it: absolute stats side by side, "
+                "then the geometric-mean head-to-head. The first file is the "
+                "baseline reference."
             ),
         )
     )
@@ -223,10 +238,37 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         s = s.add_matrix(**matrix_dims)
 
     metrics = {ns.metric} if ns.metric else None
-    reporter = SummaryReporter(formatter=DefaultSummary(metrics=metrics))
+    reporter = SummaryReporter(DefaultSummary(metrics=metrics))
 
     environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
     do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
+    return 0
+
+
+# ----- show ----------------------------------------------------------------
+
+
+def _show_subparser(p: argparse.ArgumentParser) -> None:
+    p.add_argument("file", help="A JSON report to summarize.")
+    p.add_argument(
+        "--metric",
+        type=str,
+        default=None,
+        help="Comma-separated metric filter (e.g. elapsed,max_rss).",
+    )
+    p.set_defaults(_func=_cmd_show)
+
+
+def _cmd_show(ns: argparse.Namespace) -> int:
+    path = Path(ns.file)
+    if not path.exists():
+        print(f"Error: file not found: {path}", file=sys.stderr)
+        return 1
+    metrics = set(ns.metric.split(",")) if ns.metric else None
+    stats = summarize(report_from_json(path.read_text()))
+    out = DefaultSummary(metrics)(stats)
+    if out:
+        console.print(out)
     return 0
 
 
@@ -239,29 +281,28 @@ def _compare_subparser(p: argparse.ArgumentParser) -> None:
         "--metric",
         type=str,
         default=None,
-        help="Comma-separated metric filter (e.g. runtime,max_rss)",
+        help="Comma-separated metric filter (e.g. elapsed,max_rss).",
     )
     p.set_defaults(_func=_cmd_compare)
 
 
 def _cmd_compare(ns: argparse.Namespace) -> int:
-    files = [Path(f) for f in ns.files]
-    for f in files:
-        if not f.exists():
-            print(f"Error: file not found: {f}", file=sys.stderr)
-            return 1
     metrics = set(ns.metric.split(",")) if ns.metric else None
-    if len(files) == 1:
-        # No comparison, just summarize.
-        r = report_from_json(files[0].read_text())
-        data = build_summary(r, [])
-        out = DefaultSummary(metrics=metrics).format(data)
-        if out:
-            console.print(out)
-        return 0
-    # First file is the baseline; all others are comparees.
-    data = build_summary(None, files)
-    out = DefaultSummary(metrics=metrics).format(data)
+    # Name each report by the path as given (e.g. `a.json`) and fold them into
+    # one report tagged by a synthetic `compare` axis, then reuse the ordinary
+    # views over it — the first file is the baseline.
+    named: list[tuple[str, Report]] = []
+    for arg in ns.files:
+        path = Path(arg)
+        if not path.exists():
+            print(f"Error: file not found: {path}", file=sys.stderr)
+            return 1
+        named.append((arg, report_from_json(path.read_text())))
+    stats = summarize(merge_reports(named))
+    # Per-benchmark a-vs-b: fold each benchmark's inner matrix and compare the
+    # files. The first file is the baseline reference.
+    formatter = Results(metrics) & Summary(metrics, axis="compare", ref=named[0][0])
+    out = formatter(stats)
     if out:
         console.print(out)
     return 0

@@ -6,11 +6,13 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Run with --json out.json to save, then --compare out.json to diff.
+"""Save runs with --json, then show or compare them.
 
 Typical workflow:
-    ./compare_baseline.py --json baseline.json
-    ./compare_baseline.py --compare baseline.json
+    ./compare_baseline.py --json a.json      # save a run
+    ./compare_baseline.py --show a.json       # re-render it with this reporter
+    # ... change something, save b.json, then:
+    bench compare a.json b.json               # diff the two, first is baseline
 """
 
 from bench import Time, bench, run, suite
