@@ -6,10 +6,10 @@ format:
 	uv run ruff format .
 
 check-types:
-	uv run pyright
+	uv run --extra dev pyright
 
 test:
-	uv run python -m pytest
+	uv run --extra dev python -m pytest
 
 docs:
 	uv run --group docs mkdocs build --strict
