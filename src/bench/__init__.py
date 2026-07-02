@@ -98,8 +98,8 @@ from bench.report.formatter import (
     Summary,
 )
 
-# Bench abstraction + run pipeline
-from bench.run import Bench, run
+# BenchAppBuilder abstraction + run pipeline
+from bench.run import BenchAppBuilder, bench_app, run
 
 # CLI
 from bench.cli import main
@@ -178,8 +178,10 @@ __all__ = [
     "GroupedSummary",
     "DefaultSummary",
     "Compact",
-    # CLI
-    "Bench",
+    # BenchAppBuilder + run pipeline
+    "BenchAppBuilder",
+    "bench_app",
     "run",
+    # CLI
     "main",
 ]

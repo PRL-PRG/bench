@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from bench import Bench, Time, bench, run, suite
+from bench import Time, bench, bench_app, run, suite
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -313,13 +313,40 @@ def test_bench_combines_static_and_discovered_suites():
     def discover(_p):
         return [_trivial("Disc")]
 
-    report = Bench().add_suite(static).factory(discover).run(argv=["--no-progress"])
+    report = bench_app().add(static).factory(discover).run(argv=["--no-progress"])
     assert {r.suite for r in report.runs} == {"Static", "Disc"}
 
 
 def test_run_still_accepts_a_list_of_suites():
     report = run([_trivial("A"), _trivial("B")], argv=["--no-progress"])
     assert {r.suite for r in report.runs} == {"A", "B"}
+
+
+def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
+    # s1 declares no command, so it inherits the app-level default.
+    s1 = suite("S1", bench("b").with_cwd(Path("/tmp")).with_process_metric(Time()))
+    # s2 sets its own command (which wins over the app default — inner-wins) and
+    # its own cwd (which the app never sets, so it survives untouched).
+    s2 = (
+        suite("S2", bench("c").with_process_metric(Time()))
+        .with_command(["echo", "s2"])
+        .with_cwd(Path("/tmp"))
+    )
+
+    report = (
+        bench_app("demo")
+        .add(s1)
+        .add(s2)
+        .with_command(["true"])
+        .with_runs(1)
+        .run(argv=["--no-progress"])
+    )
+
+    runs = {r.suite: r for r in report.runs}
+    assert set(runs) == {"S1", "S2"}
+    assert runs["S1"].command == ("true",)  # app default filled a suite that set none
+    assert runs["S2"].command == ("echo", "s2")  # inner-wins: suite's command survived
+    assert runs["S2"].cwd == "/tmp"  # suite-only setting the app never set survives
 
 
 # ----- --list / --include / --exclude -------------------------------------

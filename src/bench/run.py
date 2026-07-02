@@ -1,4 +1,4 @@
-"""The `Bench` abstraction and the `run(...)` benchmarking pipeline.
+"""The `BenchAppBuilder` abstraction and the `run(...)` benchmarking pipeline.
 
 Named `run` so that `from bench.run import run` re-binds the public `run`
 symbol on the package, keeping `from bench import run` pointing at the
@@ -19,6 +19,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from bench.grammar.benchmark import Benchmark
+from bench.grammar.builder import BuilderBase
 from bench.grammar.context import (
     Cli,
     Context,
@@ -70,9 +71,18 @@ type ReporterArg = Reporter | Callable[[Context[Any]], Reporter]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Bench:
-    """Top-level run container: static suites + deferred suite factories."""
+class BenchAppBuilder(BuilderBase):
+    """Top-level builder: static suites + deferred suite factories, plus common
+    settings applied to every suite.
 
+    The third builder level after `bench()`/`suite()`, sharing the same
+    `BuilderBase`. The inheritable `.with_*` settings declared here are the
+    weakest layer: they fill fields a suite or benchmark left unset, and a more
+    specific level overrides them (`overlay`). `name` is shown as the description
+    in `--help`.
+    """
+
+    name: str = ""
     suites: tuple[SuiteBuilder, ...] = ()
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
@@ -80,15 +90,15 @@ class Bench:
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
-    def add_suite(self, s: SuiteBuilder) -> Bench:
+    def add(self, s: SuiteBuilder) -> BenchAppBuilder:
         """Register a suite."""
         return dataclasses.replace(self, suites=self.suites + (s,))
 
-    def add_suites(self, *ss: SuiteBuilder) -> Bench:
+    def add_all(self, *ss: SuiteBuilder) -> BenchAppBuilder:
         """Register several suites."""
         return dataclasses.replace(self, suites=self.suites + ss)
 
-    def factory(self, fn: SuiteFactory) -> Bench:
+    def factory(self, fn: SuiteFactory) -> BenchAppBuilder:
         """Register a deferred `(params) -> [SuiteBuilder]` producer.
 
         Resolved at `run` once params are parsed. Its suites are appended after
@@ -97,8 +107,8 @@ class Bench:
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
     def run(self, argv: list[str] | None = None) -> Report:
-        """Parse argv, resolve factories, run every collected suite."""
-        parser = _make_run_parser(self.params)
+        """Parse argv, resolve factories, apply app defaults, run every suite."""
+        parser = _make_run_parser(self.params, description=self.name)
         cli_args = parser.parse_args(argv)
         build_params = (
             build_dataclass(self.params, cli_args) if self.params is not None else None
@@ -108,6 +118,7 @@ class Bench:
         for f in self.factories:
             produced = f(build_params)
             collected.extend(produced)
+        collected = [self.overlay(s) for s in collected]
 
         return do_run(
             collected,
@@ -136,7 +147,7 @@ def run(
         suites: The suite(s) to run. Either a `SuiteBuilder`, a list of `SuiteBuilder`, or a
             deferred `(params) -> [SuiteBuilder]` producer that is called after
             CLI parsing (for suite discovery that depends on `params`). To
-            combine static and discovered suites, build a `Bench` directly.
+            combine static and discovered suites, build a `BenchAppBuilder` directly.
         params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
         reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
         argv: The command-line parameters that will be parsed and use to fill the user-defined context.
@@ -149,7 +160,7 @@ def run(
     Returns:
         The report of running all the benchmarks
     """
-    app = Bench(
+    app = BenchAppBuilder(
         params=params,
         reporter=reporter,
         environment=environment or NoEnvironment(),
@@ -158,11 +169,34 @@ def run(
     if callable(suites):  # a SuiteBuilder / list is never callable
         app = app.factory(suites)
     elif isinstance(suites, SuiteBuilder):
-        app = app.add_suite(suites)
+        app = app.add(suites)
     else:
-        app = app.add_suites(*suites)
+        app = app.add_all(*suites)
 
     return app.run(argv)
+
+
+def bench_app(
+    name: str = "",
+    *,
+    params: type | None = None,
+    reporter: ReporterArg | None = None,
+    environment: EnvironmentCollector | None = None,
+    denoise: bool = False,
+) -> BenchAppBuilder:
+    """Top-level builder combining suites with common settings.
+
+    The counterpart to `suite()`/`bench()` one level up: add suites with
+    `.add(...)`, set shared defaults with `.with_*(...)` (applied to every
+    suite), then `.run()`. `name` is shown as the `--help` description.
+    """
+    return BenchAppBuilder(
+        name=name,
+        params=params,
+        reporter=reporter,
+        environment=environment or NoEnvironment(),
+        denoise=denoise,
+    )
 
 
 def do_run(
@@ -307,8 +341,10 @@ def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
 # ---------------------------------------------------------------------------
 
 
-def _make_run_parser(params: type | None) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="bench")
+def _make_run_parser(
+    params: type | None, description: str = ""
+) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="bench", description=description or None)
     _add_user_params(p, params)
     add_runtime_flags(p.add_argument_group("bench flags"))
     _add_selection_flags(p.add_argument_group("selection"))
