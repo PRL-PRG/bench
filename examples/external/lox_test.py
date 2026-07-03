@@ -8,10 +8,10 @@
 # ///
 """Custom Reporter as a pass/fail test runner that sets the exit code.
 
-Each `.lox` under `tests/` is a test; a `.with_success` policy passes when
+Each `.lox` under `tests/` is a test. A `.with_success` policy passes when
 stdout matches the `// expect:` comments in the source, and a custom `Reporter`
-counts pass/fail and exits non-zero on any failure. Needs a real Lox binary;
-for a *timing* (not testing) Lox config see `lox.py`.
+counts pass/fail and exits non-zero on any failure. Needs a real Lox binary.
+For a *timing* (not testing) Lox config see `lox.py`.
 
 Usage: ./lox_test.py --lox /path/to/lox-interpreter [--cwd .]
 """

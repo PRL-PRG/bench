@@ -1,7 +1,7 @@
-"""fib workload — runs the payload `iterations` times (default 1), printing
+"""fib workload: runs the payload `iterations` times (default 1), printing
 one elapsed-ms line per iteration.
 
-Run once it is an ordinary script (tutorial 1 times the whole process); given a
+Run once it is an ordinary script (tutorial 1 times the whole process). Given a
 loop count it becomes a harness workload (tutorial 3 reads each printed line).
 """
 

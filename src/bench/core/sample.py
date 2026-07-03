@@ -19,7 +19,7 @@ class Sample:
     value: float
     unit: str = ""
     lower_is_better: bool | None = None
-    outlier: bool = False  # flagged by outlier detection; kept in stats
+    outlier: bool = False  # flagged by outlier detection and kept in stats
 
 
 @dataclass(frozen=True, slots=True)

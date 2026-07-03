@@ -99,7 +99,7 @@ from bench.report.formatter import (
 )
 
 # BenchAppBuilder abstraction + run pipeline
-from bench.run import BenchAppBuilder, bench_app, run
+from bench.run import BenchAppBuilder, NoBenchmarksMatchedError, bench_app, run
 
 # CLI
 from bench.cli import main
@@ -181,6 +181,7 @@ __all__ = [
     "Compact",
     # BenchAppBuilder + run pipeline
     "BenchAppBuilder",
+    "NoBenchmarksMatchedError",
     "bench_app",
     "run",
     # CLI

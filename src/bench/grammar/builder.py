@@ -3,7 +3,7 @@
 `BuilderBase` declares every inheritable field once and carries the `with_*`
 setters plus the `overlay` merge that cascades configuration across
 `BenchAppBuilder` -> `SuiteBuilder` -> `BenchmarkBuilder` (defaults < app <
-suite < benchmark; the more specific level wins). It also holds the small
+suite < benchmark: the more specific level wins). It also holds the small
 primitives the builders share: the `Factory[T]` field-builder concept, the `UNSET`
 sentinel, and the matrix/skip/env merge helpers.
 """
@@ -130,7 +130,7 @@ def make_skip_rule(
 
 def _merge_env(base: EnvFactory, over: EnvFactory) -> EnvFactory:
     """Lazy per-key env merge for `overlay`: `base` first, `over` wins. `UNSET`
-    on either side contributes nothing; both unset stays `UNSET`."""
+    on either side contributes nothing. Both unset stays `UNSET`."""
     if base is UNSET:
         return over
     if over is UNSET:
@@ -313,9 +313,9 @@ class BuilderBase:
         """Merge `over` on top of `self` (over wins): the inheritance step used
         at every builder boundary (defaults < app < suite < benchmark).
 
-        Each scalar/builder field takes `over`'s value if set, else `self`'s;
-        `env` merges per key (over wins); `matrix` accumulates with `over`'s dims
-        first (a name on both sides is an error); `skips` concatenate. Returns
+        Each scalar/builder field takes `over`'s value if set, else `self`'s.
+        `env` merges per key (over wins). `matrix` accumulates with `over`'s dims
+        first (a name on both sides is an error). `skips` concatenate. Returns
         `over`'s type, so its own (non-shared) fields survive.
         """
         merged: dict[str, Any] = {}

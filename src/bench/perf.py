@@ -4,7 +4,7 @@ A single `PerfStat` object is the source of truth for the event list. It does
 two things, and only when you ask:
 
   - `wrap(command)` runs your command under `perf stat -e <events>`. This is the
-    only place perf enters the argv; `wrap` is idempotent, so applying it twice
+    only place perf enters the argv. `wrap` is idempotent, so applying it twice
     (or at both suite and benchmark level) never double-prefixes.
   - As a `ProcessMetric`, it parses perf's machine-readable (`-x,`) output from
     the process stderr and emits one Sample per event. It never touches argv.
@@ -19,14 +19,14 @@ Usage::
 
 `perf stat` writes its summary to stderr, which bench captures per process, so
 this works under parallel runs without any shared output file. perf is Linux
-only and needs `perf_event_paranoid` to permit counting; if `perf` is not on
+only and needs `perf_event_paranoid` to permit counting. If `perf` is not on
 PATH the command fails loudly ("Command not found: perf"), which is the right
 signal for a feature you explicitly opted into.
 
 Only symbolic event names are supported (``cache-misses``, ``instructions``,
-``branch-misses``, ...); raw ``cpu/event=.../`` names that embed commas are not
+``branch-misses``, ...). Raw ``cpu/event=.../`` names that embed commas are not
 parsed. Direction (``lower_is_better`` / ``higher_is_better``) applies uniformly
-to every event — fine for a homogeneous set like cache counters.
+to every event, which is fine for a homogeneous set like cache counters.
 """
 
 from __future__ import annotations

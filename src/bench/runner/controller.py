@@ -35,7 +35,7 @@ def _mark_warmup(runs: list[Run], warmup: int) -> list[Run]:
     """Flag the first `warmup` iterations (in pull order, across runs) as warmup.
 
     The Controller knows the warmup boundary (it drove the warmup policy), so it
-    stamps it onto the assembled Runs — the flag then travels with the data."""
+    stamps it onto the assembled Runs. The flag then travels with the data."""
     if warmup <= 0:
         return runs
     remaining = warmup
@@ -71,7 +71,7 @@ def _mark_outliers(runs: list[Run], detection: OutlierDetection) -> list[Run]:
             for s in it.samples:
                 pools.setdefault((s.metric, s.unit), []).append(s.value)
 
-    # 2. Outlier mask per metric; nothing flagged -> leave runs untouched.
+    # 2. Outlier mask per metric. Nothing flagged -> leave runs untouched.
     masks = {k: detection.detect(v) for k, v in pools.items()}
     if not any(any(m) for m in masks.values()):
         return runs
@@ -112,8 +112,8 @@ class Controller:
     Pull one `(Iteration, label)` per slot, feed the stopping policy, count
     warmup iterations, and `close()` the source on convergence (which kills a
     running harness and returns the assembled `Run`(s)). The Controller stamps
-    the warmup iterations onto the runs and records them. It never schedules;
-    the source owns scheduling and spawning.
+    the warmup iterations onto the runs and records them. It never schedules.
+    The source owns scheduling and spawning.
     """
 
     def __init__(

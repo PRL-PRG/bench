@@ -131,7 +131,7 @@ def test_no_detection_leaves_samples_unmarked(monkeypatch):
 
 
 def test_warmup_iterations_excluded_from_detection(monkeypatch):
-    # The big value is in warmup; the measured tail is flat, so nothing is an
+    # The big value is in warmup. The measured tail is flat, so nothing is an
     # outlier and the warmup sample itself is never flagged.
     values = [100.0] + [1.0] * 7
     _patch(monkeypatch, [_obs(v) for v in values], [])
@@ -142,7 +142,7 @@ def test_warmup_iterations_excluded_from_detection(monkeypatch):
 
 
 def test_warmup_boundary_marked_on_iterations(monkeypatch):
-    # warmup=2, runs=3 -> 5 iterations; the first 2 are flagged warmup.
+    # warmup=2, runs=3 -> 5 iterations. The first 2 are flagged warmup.
     closed = []
     _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
     rep = _Collect()

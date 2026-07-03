@@ -74,7 +74,7 @@ def _vrun(
 
 
 def _axis_report(values: dict[str, dict[str, float]]) -> Report:
-    """values[axis_value][benchmark] = elapsed; one run each."""
+    """values[axis_value][benchmark] = elapsed, one run each."""
     runs = []
     for value, benches in values.items():
         for b, elapsed in benches.items():
@@ -211,7 +211,7 @@ def test_ranking_empty_across_distinct_benchmarks():
 
 
 def test_summary_axis_compares_axis_values_per_benchmark():
-    # two interpreters over two benchmarks; b is 2x faster everywhere.
+    # two interpreters over two benchmarks: b is 2x faster everywhere.
     # Summary(axis="interp") compares them *within each benchmark*, so the header
     # names the benchmark (unlike GroupedSummary's one suite-wide block).
     r = _axis_report({"a": {"x": 4.0, "y": 8.0}, "b": {"x": 2.0, "y": 4.0}})
@@ -255,7 +255,7 @@ def test_grouped_summary_about_the_same():
 
 
 def test_grouped_summary_ref_pins_the_baseline():
-    # a is the slowest; without ref, c (the best) is the subject. Pinning ref="a"
+    # a is the slowest. Without ref, c (the best) is the subject. Pinning ref="a"
     # makes a the subject and reads the others as it being worse.
     r = _axis_report(
         {

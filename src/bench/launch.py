@@ -26,7 +26,7 @@ def taskset(cpus: int | str | Iterable[int]) -> list[str]:
 
 
 def nice(n: int) -> list[str]:
-    """`nice -n <n>` (negative values raise priority; needs privilege)."""
+    """`nice -n <n>` (negative values raise priority, which needs privilege)."""
     return ["nice", "-n", str(n)]
 
 

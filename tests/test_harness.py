@@ -206,7 +206,7 @@ def test_harness_process_metric_goes_to_process_samples():
     )
     report = Sequential().run(plan([s], None), None)
     run = report.runs[0]
-    # Per-iteration metrics stay on the iterations; the whole-process Time
+    # Per-iteration metrics stay on the iterations. The whole-process Time
     # (elapsed) lands in process_samples, not on any iteration.
     assert all(s.metric != "elapsed" for o in run.iterations for s in o.samples)
     assert any(s.metric == "elapsed" for s in run.process_samples)

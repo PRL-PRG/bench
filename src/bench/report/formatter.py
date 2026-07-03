@@ -1,8 +1,8 @@
 """Formatters: composable callables that turn a `list[Stat]` into a string.
 
-Each formatter selects a view from `bench.report.summary` and renders it — the
+Each formatter selects a view from `bench.report.summary` and renders it - the
 on-terminal ones with the rich `Renderer`, `Compact` with the plain one. The
-views own all layout and the better/worse vocabulary; these classes only hold
+views own all layout and the better/worse vocabulary. These classes only hold
 configuration (which metric(s), which axis). Formatters compose with `&`:
 `Results() & Summary()` builds one formatter whose output is the parts joined by
 a blank line, so `SummaryReporter` takes a single `Formatter`.
@@ -33,7 +33,7 @@ class Formatter(abc.ABC):
 
 
 class _Composite(Formatter):
-    """Several formatters joined into one; their non-empty output is stitched
+    """Several formatters joined into one. Their non-empty output is stitched
     together with a blank line, flattening nested `&` chains."""
 
     def __init__(self, *parts: Formatter) -> None:
@@ -63,7 +63,7 @@ class Results(_MetricFilter):
 class Summary(_MetricFilter):
     """Rank the variants within each benchmark, best first. With `axis`, fold the
     other (residual) variants within each benchmark and compare the values of that
-    axis instead (e.g. `Summary(axis="vm")`); `ref` pins one value as baseline."""
+    axis instead (e.g. `Summary(axis="vm")`). `ref` pins one value as baseline."""
 
     def __init__(
         self,

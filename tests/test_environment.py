@@ -1,8 +1,8 @@
 """Environment collection strategies.
 
-`SystemEnvironment` reads platform facts (failure -> None per field);
+`SystemEnvironment` reads platform facts (failure -> None per field).
 `NoEnvironment` is the off switch. Linux probes read a sysfs/proc tree (here a
-fake one under tmp_path); macOS probes go through an injected command runner.
+fake one under tmp_path). macOS probes go through an injected command runner.
 """
 
 from pathlib import Path
@@ -75,7 +75,7 @@ def test_collect_linux_parses_sysfs(tmp_path: Path):
 
 
 def test_collect_linux_turbo_via_boost(tmp_path: Path):
-    # No intel_pstate; cpufreq/boost=1 means turbo enabled.
+    # No intel_pstate: cpufreq/boost=1 means turbo enabled.
     _write(tmp_path / "sys/devices/system/cpu/cpufreq/boost", "1\n")
     env = collect_linux(root=tmp_path)
     assert env.turbo_enabled is True
@@ -123,7 +123,7 @@ def test_collect_macos_parses_sysctl():
 
 
 def test_collect_macos_missing_values_are_none():
-    # sysctl/pmset-only fields go None; logical_cpus keeps its os.cpu_count() base.
+    # sysctl/pmset-only fields go None. logical_cpus keeps its os.cpu_count() base.
     env = collect_macos(run=lambda _cmd: None)
     assert env.cpu_model is None
     assert env.physical_cpus is None

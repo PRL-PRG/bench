@@ -85,7 +85,7 @@ class CommandSource(RunSource):
             message = diagnostic_excerpt(result.stdout, result.stderr)
         else:
             # A command is one iteration: its iteration metrics read the chosen
-            # source text; its process metrics read the whole result.
+            # source text, while its process metrics read the whole result.
             it_samples = [
                 s
                 for m, source in b.iteration_metrics
@@ -231,14 +231,15 @@ class HarnessSource(RunSource):
         assert self._live is not None
         handle = HarnessHandle(self._live)
         # No per-iteration runtime is measured for a continuous harness, so each
-        # frame carries its wall-delta since the previous one; summed, that is
-        # the wall-clock the harness has been running (≈ its command runtime).
+        # frame carries its wall-delta since the previous one. Summed, that is
+        # the wall-clock the harness has been running (approximately its command
+        # runtime).
         last = time.monotonic()
         try:
             for block in self._monitor(handle):
                 if self._closed.is_set():
                     break
-                # The monitor frame is the iteration text; its source is fixed
+                # The monitor frame is the iteration text. Its source is fixed
                 # (the streamed output), so each metric's source is ignored here.
                 samples = [
                     s

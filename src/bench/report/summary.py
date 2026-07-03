@@ -1,8 +1,8 @@
-"""Report → Stats → views: the whole analysis layer.
+"""Report -> Stats -> views: the whole analysis layer.
 
 `summarize(report)` is the single reduction from raw runs to a flat `list[Stat]`
-(one row per benchmark-variant × metric). Everything else — ranking within a
-benchmark, ranking the values of a matrix axis — is a small query over that flat
+(one row per benchmark-variant x metric). Everything else - ranking within a
+benchmark, ranking the values of a matrix axis - is a small query over that flat
 list, so there is no nested precomputed bundle to navigate. Comparing report
 files is just `merge_reports` tagging each file as a `compare` axis and reusing
 the same views.
@@ -79,10 +79,10 @@ def summarize(report: Report) -> list[Stat]:
     """Reduce a Report to a flat per-(variant, metric) `list[Stat]`.
 
     Warmup iterations are excluded. Iteration samples and whole-process samples
-    both feed the stats; process samples are not counted as a run unless the run
+    both feed the stats. Process samples are not counted as a run unless the run
     produced no iterations at all (a process-only run). A run that failed before
     producing any iteration counts as one failure. Variants that only ever failed
-    yield no rows here — they surface in the reporter's Failures block.
+    yield no rows here - they surface in the reporter's Failures block.
     """
     accs: dict[tuple[str, str, Variant], _Acc] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
@@ -120,8 +120,8 @@ def summarize(report: Report) -> list[Stat]:
                 a.runs += 1
             for s in it.samples:
                 add(a, s)
-        # Whole-process samples: collected once, never a run — unless the run had
-        # no iterations (process-only → one run). A run whose only iterations were
+        # Whole-process samples: collected once, never a run - unless the run had
+        # no iterations (process-only -> one run). A run whose only iterations were
         # warmup (measured == 0 with iterations present) is itself warmup.
         if r.process_samples and not (r.iterations and measured == 0):
             a = ensure(r)
@@ -192,7 +192,7 @@ def ratio(ref: Stat, other: Stat) -> tuple[float, float] | None:
 
 
 def orient(display: float, sigma: float) -> tuple[float, float, str]:
-    """Flip a sub-1 ratio so it always reads >= 1; pick better/worse. The single
+    """Flip a sub-1 ratio so it always reads >= 1 and pick better/worse. The single
     source of truth for the comparison word."""
     if display >= 1:
         return display, sigma, "better"
@@ -245,9 +245,9 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
     extra `axis` variant dimension set to the report's name. Comparing files is
     then just summarizing the merged report over that synthetic axis.
 
-    The `axis=name` tag goes first — in the variant tuple and, when a
-    `variant_label` is preset, at the front of the label — so the file reads as
-    the outermost dimension; an empty label is left empty to recompute from the
+    The `axis=name` tag goes first - in the variant tuple and, when a
+    `variant_label` is preset, at the front of the label - so the file reads as
+    the outermost dimension. An empty label is left empty to recompute from the
     (now axis-carrying) variant."""
     merged = Report()
     for name, report in named:
@@ -259,7 +259,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
 
 
 # ---------------------------------------------------------------------------
-# Views: list[Stat] -> rendered lines. Results is a table; ranking and axis
+# Views: list[Stat] -> rendered lines. Results is a table. Ranking and axis
 # share the "<subject> was / N× better than <target>" sentence form.
 # ---------------------------------------------------------------------------
 
@@ -305,8 +305,8 @@ def _runs_text(runs: int, failures: int = 0) -> str:
 
 
 def _range_runs_cell(s: Stat, scale: float) -> Cell:
-    """`(min … max) (N runs)` — the range (dropped for a single run) then the run
-    count; failures render as `(f|n runs)`."""
+    """`(min … max) (N runs)` - the range (dropped for a single run) then the run
+    count. Failures render as `(f|n runs)`."""
     parts: list[tuple[str, str | None]] = []
     if s.n >= 2:
         parts += [
@@ -365,7 +365,7 @@ def _was_block(
     show_runs: bool,
 ) -> list[str]:
     """`<header>` / `<subject> was` / one `N× better than <target> (runs)` line
-    per entry. `entries` are `(display, sigma, target_label, runs)`; `display > 1`
+    per entry. `entries` are `(display, sigma, target_label, runs)`. `display > 1`
     means the subject is the better one."""
     rows: list[list[Cell]] = []
     for display, sigma, target, runs in entries:

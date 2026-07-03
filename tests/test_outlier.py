@@ -77,7 +77,7 @@ def test_modified_zscores_zero_when_no_spread():
 
 
 def test_no_outliers_for_near_constant_metric():
-    # Real case: heap_after = 76.252 (×48) + one 76.159. A 0.12% jitter must not
+    # Real case: heap_after = 76.252 (x48) + one 76.159. A 0.12% jitter must not
     # be reported as a statistical outlier just because the rest are bit-identical.
     assert _num_outliers([76.252] * 48 + [76.159]) == 0
 

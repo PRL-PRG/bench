@@ -63,7 +63,7 @@ class Reporter(abc.ABC):
     ) -> None:
         """Inject the collected machine snapshot. Called once before `start()`.
 
-        Reporters that embed the environment override this; the rest ignore it.
+        Reporters that embed the environment override this. The rest ignore it.
         """
         pass
 

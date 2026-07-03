@@ -116,7 +116,7 @@ def test_harness_process_metrics_go_to_process_samples():
     src = make_source(plan([s], None)[0])
     _drain(src)
     run = src.close()[0]
-    # FloatPerLine -> per-iteration samples; Time -> whole-process samples.
+    # FloatPerLine -> per-iteration samples. Time -> whole-process samples.
     assert all(s.metric != "elapsed" for it in run.iterations for s in it.samples)
     assert any(s.metric == "elapsed" for s in run.process_samples)
 

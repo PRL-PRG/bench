@@ -52,11 +52,9 @@ from bench.report.reporter import (
     console,
     print_diagnostics,
 )
-from bench.utils import print_exception
 from bench.core.sample import Report, report_from_json
 from bench.runner.base import (
     Runner,
-    SuiteMaterializationError,
     plan,
 )
 from bench.runner.dry import Dry
@@ -69,6 +67,10 @@ type ReporterFactory = Factory[Reporter]
 type RunnerFactory = Factory[Runner]
 type Filter = Callable[[Benchmark], bool]
 type FilterFactory = Factory[Filter]
+
+
+class NoBenchmarksMatchedError(Exception):
+    """No benchmark matched the --include/--exclude selection."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -102,26 +104,19 @@ class BenchAppBuilder(BuilderBase):
         return dataclasses.replace(self, suites=self.suites + ss)
 
     def factory(self, fn: SuiteFactory) -> BenchAppBuilder:
-        """Register a deferred `(params) -> [SuiteBuilder]` producer.
-
-        Resolved at `run` once params are parsed. Its suites are appended after
-        any manually added ones.
-        """
+        """Register a deferred suite producer."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
     def with_reporter(self, reporter: Reporter | ReporterFactory) -> BenchAppBuilder:
-        """Set the reporter. A bare `Reporter` is wrapped as `lambda _: reporter`
-        (used as-is); pass `(ctx) -> Reporter` to build it from the context."""
+        """Set the reporter."""
         return dataclasses.replace(self, reporter=as_build(reporter))
 
     def with_runner(self, runner: Runner | RunnerFactory) -> BenchAppBuilder:
-        """Set the runner. A bare `Runner` is wrapped as `lambda _: runner`;
-        pass `(ctx) -> Runner` to build it from the context."""
+        """Set the runner."""
         return dataclasses.replace(self, runner=as_build(runner))
 
     def with_filter(self, keep: Filter) -> BenchAppBuilder:
-        """Set the selection filter predicate `(Benchmark) -> bool` (wrapped as a
-        constant factory). Use `with_filter_fn` for a `(ctx) -> predicate`."""
+        """Set the selection filter predicate."""
         return dataclasses.replace(self, filter=const(keep))
 
     def with_filter_fn(self, fn: FilterFactory) -> BenchAppBuilder:
@@ -129,10 +124,7 @@ class BenchAppBuilder(BuilderBase):
         return dataclasses.replace(self, filter=fn)
 
     def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
-        """Resolve factories, apply app defaults, and run every suite.
-
-        `args` is either unparsed CLI tokens (`list[str]`, or `None` to read
-        `sys.argv`) parsed here, or an already-parsed arguments from argparser."""
+        """Resolve factories, apply app defaults, and run every suite."""
 
         if isinstance(args, argparse.Namespace):
             cli_args = args
@@ -157,83 +149,72 @@ class BenchAppBuilder(BuilderBase):
             cli=cli,
         )
 
-        # `--show FILE`: replay a saved report through the configured summary and
-        # exit — no progress bar, no re-export, nothing run.
-        show = getattr(cli_args, "show", None)
-        if show:
-            report = report_from_json(Path(show).read_text())
-            if self.reporter is None:
-                show_reporter: Reporter = SummaryReporter(DefaultSummary())
-            else:
-                show_reporter = self.reporter(ctx)
-            show_reporter.set_environment(report.environment, report.diagnostics)
-            for r in report.runs:
-                show_reporter.run_done(r)
-            show_reporter.finalize()
-            return report
-
-        # TODO: check sudo access
-        if self.denoise and not is_root():
-            console.print(
-                "[bench.failure]--denoise requires root "
-                "(try: sudo bench run --denoise ...)[/]"
-            )
-            sys.exit(2)
-
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
 
-        active_reporter = (
+        reporter = (
             default_reporter(ctx) if self.reporter is None else self.reporter(ctx)
         )
-        active_reporter.set_environment(env, env_diagnostics)
+        reporter.set_environment(env, env_diagnostics)
 
-        try:
-            planned = plan(suites, build_params, cli=cli)
-        except SuiteMaterializationError as e:
-            print_exception(e)
-            sys.exit(1)
+        # --show
+        show = getattr(cli_args, "show", None)
+        if show:
+            return self._do_show(reporter, show)
 
-        try:
-            keep = (self.filter or default_filter)(ctx)
-        except re.error as e:
-            console.print(f"[bench.failure]Invalid --include/--exclude regex: {e}[/]")
-            sys.exit(2)
-        planned = [b for b in planned if keep(b)]
+        planned = plan(suites, build_params, cli=cli)
 
+        # --list: always the full plan, --include/--exclude only affect runs
         if getattr(cli_args, "list_plan", False):
-            console.print(_list_planned_benchmarks(planned))
-            return Report()
+            return self._do_list(planned)
 
+        planned = self._filter_benchmarks(ctx, planned)
         if (cli.include or cli.exclude) and not planned:
-            console.print(
-                "[bench.failure]No benchmarks matched --include/--exclude "
-                "(run with --list to see what's available).[/]"
+            raise NoBenchmarksMatchedError(
+                "No benchmarks matched --include/--exclude "
+                "(run with --list to see what's available)."
             )
-            sys.exit(1)
 
         print_diagnostics(env_diagnostics, "Environment checks")
 
-        active_runner = (self.runner or default_runner)(ctx)
-        active_runner.reporter = active_reporter
+        runner = (self.runner or default_runner)(ctx)
+        runner.reporter = reporter
 
-        try:
-            if self.denoise:
-                with denoise_session() as applied:
-                    console.print(
-                        f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
-                        f"state saved to {STATE_PATH}"
-                    )
-                    report = active_runner.run(planned, build_params)
-            else:
-                report = active_runner.run(planned, build_params)
-        except KeyboardInterrupt:
-            console.print("[bench.failure]Interrupted[/]")
-            sys.exit(1)
+        if self.denoise:
+            if not is_root():
+                raise PermissionError(
+                    "--denoise requires root (try: sudo bench run --denoise ...)"
+                )
+            with denoise_session() as applied:
+                console.print(
+                    f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
+                    f"state saved to {STATE_PATH}"
+                )
+                report = runner.run(planned, build_params)
+        else:
+            report = runner.run(planned, build_params)
 
         report.environment = env
         report.diagnostics = env_diagnostics
         return report
+
+    def _do_show(self, reporter: Reporter, path: str) -> Report:
+        report = report_from_json(Path(path).read_text())
+        reporter.set_environment(report.environment, report.diagnostics)
+        for r in report.runs:
+            reporter.run_done(r)
+        reporter.finalize()
+        return report
+
+    def _do_list(self, planned: list[Benchmark]) -> Report:
+        console.print(_list_planned_benchmarks(planned))
+        return Report()
+
+    def _filter_benchmarks(
+        self, ctx: Context[Any], planned: list[Benchmark]
+    ) -> list[Benchmark]:
+        keep = (self.filter or default_filter)(ctx)
+        return [b for b in planned if keep(b)]
 
 
 def run(*suites: SuiteBuilder) -> Report:
@@ -367,7 +348,7 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
     """Group planned benchmarks into a `suite -> benchmark -> variant` tree.
 
     A benchmark with several variants becomes a node whose leaves are the
-    per-variant labels; a benchmark with a single variant stays a leaf labeled
+    per-variant labels. A benchmark with a single variant stays a leaf labeled
     `name (k=v, ...)`. The root carries a one-line count summary. This is what
     `--list` prints.
     """

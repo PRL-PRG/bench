@@ -35,7 +35,7 @@ def read_text(path: Path) -> str | None:
 
 
 def write_text(path: Path, value: str) -> bool:
-    """Write `value` (newline-terminated) to a file; `False` on failure."""
+    """Write `value` (newline-terminated) to a file, returning `False` on failure."""
     try:
         path.write_text(value + "\n")
         return True

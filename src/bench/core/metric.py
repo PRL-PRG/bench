@@ -59,7 +59,7 @@ def as_metric_source(
 class _MetricBase[T](abc.ABC):
     """A metric reads input of type `T` and emits Samples.
 
-    `extract` parses the input; `process` wraps it with the optional
+    `extract` parses the input. `process` wraps it with the optional
     `predicate` gate and the `direction` override. `IterationMetric` and
     `ProcessMetric` fix `T` to the iteration text and the `ExecutionResult`
     respectively.

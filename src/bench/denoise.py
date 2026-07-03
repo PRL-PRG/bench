@@ -2,10 +2,10 @@
 
 `minimize()` sets the noisy knobs to their quiet values (CPU governor ->
 performance, turbo off, perf_event_paranoid/-1, swappiness/0, ASLR off) and
-saves the originals to a state file; `restore()` writes them back from that
+saves the originals to a state file. `restore()` writes them back from that
 file (so it is crash-safe and runnable standalone). Each knob is skipped unless
 its file exists and is writable, so a missing knob or lack of privilege is
-reported, never fatal — and the whole thing no-ops where the files are absent
+reported, never fatal, and the whole thing no-ops where the files are absent
 (e.g. macOS).
 """
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from bench.utils import read_bracketed, read_text, write_text
 
-# How to read a knob's current value (for save/status). Most are read verbatim;
+# How to read a knob's current value (for save/status). Most are read verbatim.
 # THP-style files (`a [b] c`) need the bracketed token extracted.
 type Reader = Callable[[Path], str | None]
 
@@ -54,7 +54,7 @@ def minimize(root: Path = Path("/"), state_path: Path = STATE_PATH) -> dict[str,
     """Apply quiet values, saving originals to `state_path`. Returns what changed.
 
     Crash-safe: a leftover state file means a previous run never restored, so we
-    revert it first (recovering the true originals); and we persist the originals
+    revert it first (recovering the true originals). We persist the originals
     *before* mutating any knob, so a kill mid-apply is always recoverable via
     `restore`.
     """
@@ -62,7 +62,7 @@ def minimize(root: Path = Path("/"), state_path: Path = STATE_PATH) -> dict[str,
         restore(state_path=state_path)
 
     knobs = _knobs(root)
-    # Read every original first (reads change nothing); skip unreadable knobs.
+    # Read every original first (reads change nothing). Skip unreadable knobs.
     saved: dict[str, str] = {}
     for path, _target, reader in knobs:
         current = reader(path)

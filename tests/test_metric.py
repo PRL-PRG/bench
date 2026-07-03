@@ -1,6 +1,6 @@
 """Metric builtins and combinators.
 
-`IterationMetric.process(text)` parses one iteration's text; `ProcessMetric.
+`IterationMetric.process(text)` parses one iteration's text. `ProcessMetric.
 process(result)` reads the whole ExecutionResult.
 """
 

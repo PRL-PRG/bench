@@ -71,7 +71,7 @@ def plan(
 def format_command(e: Execution) -> str:
     """A copy-pasteable shell command for one execution: `cd DIR && KEY='v' cmd
     args`. The `cd` prefix appears only when the cwd differs from the current
-    directory, env assignments only when present; every part is shell-quoted."""
+    directory, env assignments only when present. Every part is shell-quoted."""
     parts: list[str] = []
     if e.cwd != Path.cwd():
         parts.append(f"cd {shlex.quote(str(e.cwd))} &&")

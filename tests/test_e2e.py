@@ -51,7 +51,7 @@ def test_e2e_warmup_then_measure():
         .with_runs(2),
     )
     report = Sequential().run(plan([s], None), None)
-    # Continuous numbering; the first two iterations are flagged warmup.
+    # Continuous numbering: the first two iterations are flagged warmup.
     assert [r.run for r in report.runs] == [1, 2, 3, 4]
     assert [o.warmup for r in report.runs for o in r.iterations] == [
         True,

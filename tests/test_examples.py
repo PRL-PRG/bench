@@ -4,7 +4,7 @@ Two layers, both parametrized over the top-level ``examples/*.py``:
 
   - **import** (`test_example_imports`): each example builds its suite at module
     import time, so importing it exercises the construction path (metrics,
-    policies, matrix, factories) without running any benchmark. Fast; catches
+    policies, matrix, factories) without running any benchmark. Fast: catches
     breakage like a custom Metric that can't instantiate.
   - **run** (`test_example_runs`): each example is executed as a subprocess and
     must exit 0. This runs the benchmarks end to end, catching runtime breakage

@@ -18,7 +18,7 @@ LOAD_FRACTION = 0.5
 
 
 def run_checks(env: Environment) -> list[Diagnostic]:
-    """Environment-based warnings; checks for `None` fields are skipped."""
+    """Environment-based warnings. Checks for `None` fields are skipped."""
     out: list[Diagnostic] = []
 
     if env.governors is not None and any(g != "performance" for g in env.governors):

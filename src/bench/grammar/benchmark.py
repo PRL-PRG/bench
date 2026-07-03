@@ -89,7 +89,7 @@ class BenchmarkBuilder(BuilderBase):
         """Attach static key/value data, readable as `ctx.data.<key>` (and `b.<key>`).
 
         Merges with any data already set (later keys win). Values are stored
-        verbatim — a list value stays a list; use `.with_matrix(...)` to expand a
+        verbatim - a list value stays a list. Use `.with_matrix(...)` to expand a
         dimension into variants."""
         return dataclasses.replace(self, data={**self.data, **data})
 
@@ -240,7 +240,7 @@ def _stringify(v: Any) -> str:
 def bench(name: str, **data: Any) -> BenchmarkBuilder:
     """Build a BenchmarkBuilder with arbitrary attached data.
 
-    `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available; it is exact
+    `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available. It is exact
     sugar for `bench("zoo").with_data(path=Path("zoo.lox"))`. To add matrix
     dimensions use `.with_matrix(...)`.
     """

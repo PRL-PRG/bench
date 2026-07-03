@@ -1,6 +1,6 @@
 """Active denoise: minimize/restore/status against a (fake) sysfs tree.
 
-The knobs are Linux sysfs/proc files; the functions are rooted so the logic is
+The knobs are Linux sysfs/proc files. The functions are rooted so the logic is
 exercised here against a writable fake tree (and naturally no-op where the
 files are absent, e.g. on macOS).
 """

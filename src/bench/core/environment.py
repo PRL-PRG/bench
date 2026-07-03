@@ -85,7 +85,7 @@ class EnvironmentCollector(abc.ABC):
 
 @dataclass(frozen=True, slots=True)
 class NoEnvironment(EnvironmentCollector):
-    """Collects nothing — the off switch."""
+    """Collects nothing - the off switch."""
 
     def collect(self) -> Environment | None:
         return None

@@ -1,4 +1,4 @@
-"""summary.py core: summarize (the Report→Stat reduction) + analysis math."""
+"""summary.py core: summarize (the Report->Stat reduction) + analysis math."""
 
 from __future__ import annotations
 
@@ -261,7 +261,7 @@ def test_scale_unit_kb_to_mb():
 
 
 def _matrix() -> Report:
-    """vm × {fib, hanoi}; python3.14 is uniformly 2x faster."""
+    """vm x {fib, hanoi}: python3.14 is uniformly 2x faster."""
     runs = []
     for vm, fib, hanoi in [("python3.9", 2.0, 4.0), ("python3.14", 1.0, 2.0)]:
         for i in (1, 2, 3):
@@ -316,7 +316,7 @@ def test_ranking_skips_single_variant():
 
 
 def test_ranking_axis_folds_residual_within_each_benchmark():
-    # bench b, matrix vm x a; "fast" is 2x quicker at every a. ranking(axis="vm")
+    # bench b, matrix vm x a. "fast" is 2x quicker at every a. ranking(axis="vm")
     # folds a (geomean) and compares the vm values within the benchmark.
     runs = []
     for vm, base in [("fast", 1.0), ("slow", 2.0)]:
@@ -348,7 +348,7 @@ def test_by_axis_missing_is_explicit():
 
 
 def test_by_axis_ref_pins_reference():
-    # Without ref, python3.14 (fastest) is the subject; ref pins python3.9 as the
+    # Without ref, python3.14 (fastest) is the subject. ref pins python3.9 as the
     # baseline so it becomes the subject and reads as the worse one.
     out = _strip(
         by_axis(summarize(_matrix()), "vm", RICH, metric="elapsed", ref="python3.9")

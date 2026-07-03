@@ -1,4 +1,4 @@
-"""Towers of Hanoi workload — runs the payload `iterations` times (default 1),
+"""Towers of Hanoi workload: runs the payload `iterations` times (default 1),
 printing one elapsed-ms line per iteration.
 
 Like `fib.py`, it is dual-use: a plain script for tutorial 1, a harness workload

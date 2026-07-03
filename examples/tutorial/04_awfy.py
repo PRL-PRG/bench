@@ -36,7 +36,7 @@ class Params:
 
 
 def awfy_monitor(handle: HarnessHandle) -> Iterator[str]:
-    """Frame each `… runtime: <us>us` line as one iteration, drop the rest."""
+    """Frame each `... runtime: <us>us` line as one iteration, drop the rest."""
     for line in line_monitor(handle):
         if "runtime: " in line:
             yield line
@@ -49,7 +49,7 @@ def command(ctx: Context[Params]) -> list[str]:
     return [ctx.data.vm, str(harness), name, str(n), str(ctx.data.arg)]
 
 
-benchmarks = (
+awfy = (
     suite("AreWeFastYet")
     .add(bench("CD", arg=250))
     .add(bench("DeltaBlue", arg=12000))
@@ -79,6 +79,6 @@ benchmarks = (
 grouped = GroupedSummary(axis="vm", metric="runtime")
 reporter = SummaryReporter(Results() & Summary() & grouped)
 
-bench_app(params=Params, reporter=reporter).add_all(benchmarks).run()
+bench_app("AWFY", params=Params, reporter=reporter).add_all(awfy).run()
 
 # vim: ft=python

@@ -1,7 +1,7 @@
 """Rendering toolkit: a markup-flag renderer, the styling chokepoint, and a table.
 
 A formatter builds rows of `Cell`s and renders them with a `Renderer`. `RICH`
-wraps each styled span in a `[bench.<style>]…[/]` tag; `PLAIN` leaves bare text.
+wraps each styled span in a `[bench.<style>]...[/]` tag. `PLAIN` leaves bare text.
 Either way the text flows through `console.print`, so `tag` always escapes `[`
 (otherwise a literal `[ms]` would be parsed as markup and eaten). Column widths
 are measured on the *visible* text, never the markup, so styling never skews
@@ -43,7 +43,7 @@ class Cell:
 
     @property
     def width(self) -> int:
-        """Visible width — the markup is irrelevant to layout."""
+        """Visible width - the markup is irrelevant to layout."""
         return sum(len(t) for t, _ in self.spans)
 
 
@@ -60,8 +60,8 @@ def cells(*spans: Span, align: str = "l") -> Cell:
 def table(
     r: Renderer, rows: list[list[Cell]], *, indent: str = "  ", gap: int = 3
 ) -> list[str]:
-    """Align `rows` into gap-separated columns. Widths come from visible text;
-    cells are left- or right-padded per their align. Trailing pad is trimmed."""
+    """Align `rows` into gap-separated columns. Widths come from visible text.
+    Cells are left- or right-padded per their align. Trailing pad is trimmed."""
     if not rows:
         return []
     ncols = max(len(row) for row in rows)

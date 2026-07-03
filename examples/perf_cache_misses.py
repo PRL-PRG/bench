@@ -14,7 +14,7 @@ parses those counters back out of stderr. Nothing perf-related touches a benchma
 that doesn't opt in.
 
 Run on a Linux box where `perf` can count (see `bench doctor` /
-`perf_event_paranoid`). On other platforms this still imports fine; it only fails
+`perf_event_paranoid`). On other platforms this still imports fine. It only fails
 if you actually run it without perf.
 """
 

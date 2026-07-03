@@ -10,7 +10,7 @@
 
 db_bench prints one result line per op (`fillseq : 4.805 micros/op, 23.0 MB/s`).
 Read/seek ops need a populated DB, so they prefix a `fillseq` into the *same*
-invocation; a per-op Regex anchored to the op name ignores that fill.
+invocation. A per-op Regex anchored to the op name ignores that fill.
 """
 
 import re

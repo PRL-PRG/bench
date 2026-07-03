@@ -9,7 +9,7 @@
 """RBenchmarking (rsh): port of reactorlabs/RBenchmarking/rebench.conf.
 
 The R harness is an inline profile (`_HARNESS_R`) dumped to a tempfile and
-wired via `R_PROFILE_USER`; its `.Last` hook runs the timing loop after the
+wired via `R_PROFILE_USER`. Its `.Last` hook runs the timing loop after the
 benchmark file sources. Pick the interpreter with `--Rscript /path/to/Rscript`.
 """
 

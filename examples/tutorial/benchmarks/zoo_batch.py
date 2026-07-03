@@ -1,6 +1,6 @@
 """Time-boxed throughput workload: count how many 10k-call batches finish in a
 fixed window. Wall time is ~constant (the window itself), so the meaningful
-signal is the batch count — which tutorial 2 extracts with a custom metric.
+signal is the batch count, which tutorial 2 extracts with a custom metric.
 """
 
 import time
@@ -29,7 +29,7 @@ class Zoo:
         return self.f
 
 
-DURATION = 5.0  # seconds; the fixed measurement window
+DURATION = 5.0  # seconds, the fixed measurement window
 
 zoo = Zoo()
 total = 0

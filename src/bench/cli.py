@@ -33,6 +33,8 @@ from bench.report.formatter import (
 )
 from bench.report.reporter import SummaryReporter, console, print_diagnostics
 from bench.report.summary import merge_reports, summarize
+from bench.runner.base import SuiteMaterializationError
+from bench.utils import print_exception
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +241,17 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .add(s)
         .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
     )
-    app.run(ns)
+    try:
+        app.run(ns)
+    except SuiteMaterializationError as e:
+        print_exception(e)
+        return 1
+    except PermissionError as e:
+        console.print(f"[bench.failure]{e}[/]")
+        return 2
+    except KeyboardInterrupt:
+        console.print("[bench.failure]Interrupted[/]")
+        return 1
     return 0
 
 
@@ -288,7 +300,7 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     metrics = set(ns.metric.split(",")) if ns.metric else None
     # Name each report by the path as given (e.g. `a.json`) and fold them into
     # one report tagged by a synthetic `compare` axis, then reuse the ordinary
-    # views over it — the first file is the baseline.
+    # views over it - the first file is the baseline.
     named: list[tuple[str, Report]] = []
     for arg in ns.files:
         path = Path(arg)

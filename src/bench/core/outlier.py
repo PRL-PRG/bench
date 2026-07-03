@@ -1,7 +1,7 @@
 """OutlierDetection: flags statistical outliers in a metric's sample values.
 
 A strategy operating on one metric's pooled values. Detection is informational:
-flagged samples stay in the summary statistics (mean/median/σ are unchanged),
+flagged samples stay in the summary statistics (mean/median/stdev are unchanged),
 they are only counted and warned about.
 
 `ModifiedZScore` ports hyperfine's modified Z-score / MAD test.
@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 # Minimum modified Z-score for a datapoint to be an outlier. 1.4826 converts the
-# MAD into an estimator for the standard deviation; 10 is the number of standard
+# MAD into an estimator for the standard deviation. 10 is the number of standard
 # deviations. (We use the same hyperfine's scaled out OUTLIER_THRESHOLD.)
 OUTLIER_THRESHOLD = 1.4826 * 10.0
 
@@ -28,7 +28,7 @@ def modified_zscores(xs: Sequence[float]) -> list[float]:
     """Modified Z-scores `(x_i - median) / MAD`, MAD = median absolute deviation.
 
     `MAD == 0` is the exact-fit case: it happens iff more than half the values
-    are tied (Croux et al. 2006 — a property of every robust scale estimator). A
+    are tied (Croux et al. 2006 - a property of every robust scale estimator). A
     metric with no robust spread has no meaningful outliers, so we report none
     (every score 0). hyperfine sidesteps this entirely: it only detects on
     wall-clock time, which always varies (`MAD > 0`), so its `epsilon` guard is
@@ -53,7 +53,7 @@ class OutlierDetection(abc.ABC):
 
 @dataclass(frozen=True, slots=True)
 class NoDetection(OutlierDetection):
-    """Flags nothing — the off switch."""
+    """Flags nothing - the off switch."""
 
     def detect(self, values: Sequence[float]) -> list[bool]:
         return [False] * len(values)

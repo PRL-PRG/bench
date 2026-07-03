@@ -71,7 +71,7 @@ class SharedSelectionParams:
 class SharedBenchParams(SharedSelectionParams):
     """The parsed bench runtime + selection flags, exposed on `Context.cli` so
     the `with_runner`/`with_reporter`/`with_filter` callables can branch on the
-    invocation — the bench-owned counterpart to the user's `Context.params`."""
+    invocation - the bench-owned counterpart to the user's `Context.params`."""
 
     jobs: int = field(
         default=1,

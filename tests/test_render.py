@@ -33,7 +33,7 @@ def test_tag_escapes_bracket_for_both_renderers():
 def test_table_left_aligns_columns_with_gap():
     rows = [[cell("ab"), cell("1")], [cell("abcd"), cell("22")]]
     out = table(PLAIN, rows)
-    # col0 width 4, col1 width 2, gap 3, indent 2; trailing pad trimmed.
+    # col0 width 4, col1 width 2, gap 3, indent 2. Trailing pad trimmed.
     assert out == ["  ab     1", "  abcd   22"]
     # both col1 values start at the same offset (left-aligned)
     assert out[0].index("1") == out[1].index("22")

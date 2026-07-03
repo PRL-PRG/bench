@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -9,7 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from bench import Time, bench, bench_app, run, suite
+from bench import (
+    NoBenchmarksMatchedError,
+    SuiteMaterializationError,
+    Time,
+    bench,
+    bench_app,
+    run,
+    suite,
+)
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -261,14 +270,13 @@ def _boom_factory(ctx):
     raise subprocess.CalledProcessError(1, ["java", "--list"], output=b"jvm exploded\n")
 
 
-def test_run_reports_friendly_materialization_error(capsys):
+def test_run_reports_friendly_materialization_error():
     s = suite("My Suite").factory(_boom_factory)
-    with pytest.raises(SystemExit) as ei:
+    with pytest.raises(SuiteMaterializationError) as ei:
         bench_app().add_all(s).run([])
-    assert ei.value.code == 1
-    err = capsys.readouterr().err
-    assert "Failed to materialize suite 'My Suite'" in err
-    assert "jvm exploded" in err  # the failing command's output is surfaced
+    msg = str(ei.value)
+    assert "Failed to materialize suite 'My Suite'" in msg
+    assert "jvm exploded" in msg  # the failing command's output is surfaced
 
 
 # ----- run(): suite discovery via factory ---------------------------------
@@ -329,7 +337,7 @@ def test_run_sugar_runs_multiple_suites(monkeypatch):
 def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
     # s1 declares no command, so it inherits the app-level default.
     s1 = suite("S1", bench("b").with_cwd(Path("/tmp")).with_process_metric(Time()))
-    # s2 sets its own command (which wins over the app default — inner-wins) and
+    # s2 sets its own command (which wins over the app default - inner-wins) and
     # its own cwd (which the app never sets, so it survives untouched).
     s2 = (
         suite("S2", bench("c").with_process_metric(Time()))
@@ -389,6 +397,15 @@ def test_list_shows_variants(capsys):
     assert "jdk=17" in out
 
 
+def test_list_ignores_include_exclude(capsys):
+    bench_app().add_all(_trivial("Alpha"), _trivial("Beta")).run(
+        ["--list", "--include", "no-such-bench", "--no-progress"]
+    )
+    out = capsys.readouterr().out
+    assert "Alpha" in out
+    assert "Beta" in out
+
+
 def test_include_keeps_only_matching():
     report = (
         bench_app()
@@ -435,15 +452,13 @@ def test_include_selects_single_variant():
     assert [dict(r.variant).get("jdk") for r in report.runs] == ["17"]
 
 
-def test_bad_regex_exits_2():
-    with pytest.raises(SystemExit) as ei:
+def test_bad_regex_raises():
+    with pytest.raises(re.error):
         bench_app().add_all(_trivial("A")).run(["--include", "(", "--no-progress"])
-    assert ei.value.code == 2
 
 
-def test_empty_selection_exits_1():
-    with pytest.raises(SystemExit) as ei:
+def test_empty_selection_raises():
+    with pytest.raises(NoBenchmarksMatchedError):
         bench_app().add_all(_trivial("A")).run(
             ["--include", "no-such-bench", "--no-progress"]
         )
-    assert ei.value.code == 1
