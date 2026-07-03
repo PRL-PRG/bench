@@ -32,7 +32,7 @@ from bench import (
     Regex,
     SuiteBuilder,
     bench,
-    run,
+    bench_app,
     suite,
 )
 
@@ -161,4 +161,4 @@ def discover_suites(p: Spec2026Params) -> list[SuiteBuilder]:
     return suites
 
 
-run(discover_suites, params=Spec2026Params)
+bench_app(params=Spec2026Params).factory(discover_suites).run()

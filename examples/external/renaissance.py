@@ -29,9 +29,9 @@ from bench import (
     Regex,
     Time,
     bench,
+    bench_app,
     line_monitor,
     max_rss,
-    run,
     suite,
 )
 
@@ -136,4 +136,4 @@ renaissance = (
 )
 
 if __name__ == "__main__":
-    run(renaissance, params=Params)
+    bench_app(params=Params).add_all(renaissance).run()

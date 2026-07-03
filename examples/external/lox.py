@@ -20,9 +20,9 @@ from bench import (
     SummaryReporter,
     Time,
     bench,
+    bench_app,
     from_files,
     max_rss,
-    run,
     suite,
 )
 
@@ -81,11 +81,10 @@ zoo_suite = (
 
 
 if __name__ == "__main__":
-    run(
-        [lox_suite, zoo_suite],
+    bench_app(
         params=LoxParams,
         reporter=CompositeReporter(
             SummaryReporter(Compact("runtime", suite="LoxSuite")),
             SummaryReporter(Compact("throughput", suite="ZooBatch")),
         ),
-    )
+    ).add_all(lox_suite, zoo_suite).run()

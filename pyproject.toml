@@ -26,6 +26,9 @@ packages = ["src/bench"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.pyright]
 venvPath = "."
 venv = ".venv"

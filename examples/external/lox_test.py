@@ -29,8 +29,8 @@ from bench import (
     Reporter,
     Run,
     Time,
+    bench_app,
     from_files,
-    run,
     suite,
 )
 from bench.report.reporter import console
@@ -140,7 +140,7 @@ lox_tests = (
 
 if __name__ == "__main__":
     reporter = LoxTestSummary()
-    run(lox_tests, params=TestParams, reporter=reporter)
+    bench_app(params=TestParams, reporter=reporter).add_all(lox_tests).run()
     sys.exit(1 if reporter.failed > 0 else 0)
 
 # vim: ft=python

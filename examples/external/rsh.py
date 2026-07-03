@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import bench as B, Context, FloatPerLine, max_rss, run, suite
+from bench import bench as B, bench_app, Context, FloatPerLine, max_rss, suite
 
 
 _HARNESS_R = r"""
@@ -233,6 +233,6 @@ if __name__ == "__main__":
             f.write(_HARNESS_R)
         env = {"R_PROFILE_USER": harness_path}
         suites = [s.with_env(env) for s in SUITES]
-        run(suites, params=RshParams)
+        bench_app(params=RshParams).add_all(*suites).run()
     finally:
         os.unlink(harness_path)

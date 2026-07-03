@@ -70,7 +70,11 @@ def test_wrap_is_idempotent():
 
 def test_extract_emits_one_sample_per_event():
     stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
-    samples = list(PerfStat(("cache-misses", "cache-references")).process(make_success(stderr=stderr)))
+    samples = list(
+        PerfStat(("cache-misses", "cache-references")).process(
+            make_success(stderr=stderr)
+        )
+    )
     assert samples == [
         Sample(metric="cache-misses", value=12345.0, unit=""),
         Sample(metric="cache-references", value=67890.0, unit=""),
@@ -79,11 +83,25 @@ def test_extract_emits_one_sample_per_event():
 
 def test_extract_skips_not_counted_and_not_supported():
     stderr = "<not counted>,,cache-misses,,,,\n<not supported>,,cache-references,,,,\n"
-    assert list(PerfStat(("cache-misses", "cache-references")).process(make_success(stderr=stderr))) == []
+    assert (
+        list(
+            PerfStat(("cache-misses", "cache-references")).process(
+                make_success(stderr=stderr)
+            )
+        )
+        == []
+    )
 
 
 def test_extract_no_perf_output_emits_nothing():
-    assert list(PerfStat(("cache-misses",)).process(make_success(stderr="just program noise\n"))) == []
+    assert (
+        list(
+            PerfStat(("cache-misses",)).process(
+                make_success(stderr="just program noise\n")
+            )
+        )
+        == []
+    )
     assert list(PerfStat(("cache-misses",)).process(make_success(stderr=""))) == []
 
 

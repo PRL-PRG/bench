@@ -128,20 +128,17 @@ class BenchAppBuilder(BuilderBase):
         """Set the selection filter factory `(ctx) -> (Benchmark -> bool)`."""
         return dataclasses.replace(self, filter=fn)
 
-    def run(
-        self,
-        argv: list[str] | None = None,
-        *,
-        cli_args: argparse.Namespace | None = None,
-    ) -> Report:
+    def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve factories, apply app defaults, and run every suite.
 
-        Parses `argv` — or uses an already-parsed `cli_args` (e.g. from the CLI) —
-        then resolves the reporter/runner/filter stages against the context, plans
-        and filters the suites, and hands off to the runner."""
-        if cli_args is None:
+        `args` is either unparsed CLI tokens (`list[str]`, or `None` to read
+        `sys.argv`) parsed here, or an already-parsed arguments from argparser."""
+
+        if isinstance(args, argparse.Namespace):
+            cli_args = args
+        else:
             parser = _make_run_parser(self.params, description=self.name)
-            cli_args = parser.parse_args(argv)
+            cli_args = parser.parse_args(args)
         build_params = (
             build_dataclass(self.params, cli_args) if self.params is not None else None
         )
@@ -239,51 +236,16 @@ class BenchAppBuilder(BuilderBase):
         return report
 
 
-def run(
-    suites: SuiteBuilder | list[SuiteBuilder] | SuiteFactory,
-    *,
-    params: type | None = None,
-    reporter: Reporter | ReporterFactory | None = None,
-    argv: list[str] | None = None,
-    environment: EnvironmentCollector | None = None,
-    denoise: bool = False,
-) -> Report:
-    """
-    The entrypoint for benchmarking.
-    Parse argv, build the ctx, run the benchmark, emit reports.
+def run(*suites: SuiteBuilder) -> Report:
+    """Run one or more suites with default settings.
 
-    Args:
-        suites: The suite(s) to run. Either a `SuiteBuilder`, a list of `SuiteBuilder`, or a
-            deferred `(params) -> [SuiteBuilder]` producer that is called after
-            CLI parsing (for suite discovery that depends on `params`). To
-            combine static and discovered suites, build a `BenchAppBuilder` directly.
-        params: The user's @dataclass that declares additional CLI flags and forms the user-defined context. Defaults to `None` if omitted.
-        reporter: The reporter to be used for process the result. Defaults to `SummaryReporter`
-        argv: The command-line parameters that will be parsed and use to fill the user-defined context.
-        environment: Strategy collecting the machine snapshot recorded with the
-            report and driving the checks. Defaults to `NoEnvironment()` (off);
-            pass `SystemEnvironment()` to record the snapshot and run the checks.
-        denoise: When True, minimize system noise for the run and restore it afterward.
-            Requires root on Linux.
+    Lightweight sugar for `bench_app(<script>).add_all(*suites).run()`. For
+    anything richer build a `bench_app(...)` directly.
 
     Returns:
-        The report of running all the benchmarks
+        The report of running all the benchmarks.
     """
-    app = bench_app(
-        params=params,
-        reporter=reporter,
-        environment=environment,
-        denoise=denoise,
-    )
-
-    if callable(suites):
-        app = app.factory(suites)
-    elif isinstance(suites, SuiteBuilder):
-        app = app.add(suites)
-    else:
-        app = app.add_all(*suites)
-
-    return app.run(argv)
+    return bench_app(Path(sys.argv[0]).stem).add_all(*suites).run()
 
 
 def bench_app(

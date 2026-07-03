@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from bench import NoEnvironment, SystemEnvironment, bench, run, suite
+from bench import NoEnvironment, SystemEnvironment, bench, bench_app, suite
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -80,17 +80,23 @@ def _suite():
 
 
 def test_run_api_omits_environment_by_default():
-    rep = run(_suite(), argv=["--no-progress"])
+    rep = bench_app().add_all(_suite()).run(["--no-progress"])
     assert rep.environment is None
 
 
 def test_run_api_collects_with_system_environment():
-    rep = run(_suite(), argv=["--no-progress"], environment=SystemEnvironment())
+    rep = (
+        bench_app(environment=SystemEnvironment())
+        .add_all(_suite())
+        .run(["--no-progress"])
+    )
     assert rep.environment is not None
 
 
 def test_run_api_no_environment_strategy():
-    rep = run(_suite(), argv=["--no-progress"], environment=NoEnvironment())
+    rep = (
+        bench_app(environment=NoEnvironment()).add_all(_suite()).run(["--no-progress"])
+    )
     assert rep.environment is None
 
 

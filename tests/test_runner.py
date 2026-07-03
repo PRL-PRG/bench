@@ -24,7 +24,6 @@ from bench import (
     bench,
     bench_app,
     report_from_json,
-    run,
     suite,
 )
 from bench.runner.base import plan
@@ -449,11 +448,11 @@ def test_run_resolves_reporter_factory_with_cli_state():
         return _Rec()
 
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
-    run(s, reporter=factory, argv=["--dry", "--verbose"])
+    bench_app(reporter=factory).add_all(s).run(["--dry", "--verbose"])
     assert seen == {"verbose": True, "dry": True, "params": None}
 
     seen.clear()
-    run(s, reporter=factory, argv=["--dry"])
+    bench_app(reporter=factory).add_all(s).run(["--dry"])
     assert seen["verbose"] is False
 
 
@@ -471,7 +470,7 @@ def test_with_runner_override_wins_over_jobs():
         bench_app()
         .add(s)
         .with_runner(make_runner)
-        .run(argv=["--jobs", "4", "--no-progress"])
+        .run(["--jobs", "4", "--no-progress"])
     )
     assert captured["jobs"] == 4  # ctx.cli still carries the flag
     assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
@@ -490,7 +489,7 @@ def test_with_filter_override_narrows_plan():
         bench_app()
         .add(s)
         .with_filter_fn(lambda ctx: lambda b: b.name == "keep")
-        .run(argv=["--no-progress"])
+        .run(["--no-progress"])
     )
     assert {r.benchmark for r in report.runs} == {"keep"}
 
@@ -508,7 +507,7 @@ def test_with_filter_bare_predicate_narrows_plan():
         bench_app()
         .add(s)
         .with_filter(lambda b: b.name == "keep")
-        .run(argv=["--no-progress"])
+        .run(["--no-progress"])
     )
     assert {r.benchmark for r in report.runs} == {"keep"}
 
@@ -518,7 +517,7 @@ def test_with_reporter_factory_takes_full_control(tmp_path: Path):
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
     # A factory result is used as-is: only the JsonReporter, no --json flag needed.
     bench_app().add(s).with_reporter(lambda ctx: JsonReporter(out)).run(
-        argv=["--no-progress"]
+        ["--no-progress"]
     )
     assert out.exists()
     assert report_from_json(out.read_text()).runs
@@ -530,6 +529,8 @@ def test_bare_reporter_takes_full_control(tmp_path: Path):
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
     # A bare reporter is wrapped as `lambda _: reporter` and used as-is: it IS a
     # JsonReporter, so --json is not needed and its sink is not added.
-    run(s, reporter=JsonReporter(direct), argv=["--no-progress", "--json", str(flag)])
+    bench_app(reporter=JsonReporter(direct)).add_all(s).run(
+        ["--no-progress", "--json", str(flag)]
+    )
     assert direct.exists()  # bare reporter ran, used as-is
     assert not flag.exists()  # --json sink dropped under full control

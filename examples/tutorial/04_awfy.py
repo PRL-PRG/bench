@@ -21,9 +21,9 @@ from bench import (
     Summary,
     SummaryReporter,
     bench,
+    bench_app,
     line_monitor,
     max_rss,
-    run,
     suite,
 )
 
@@ -79,6 +79,6 @@ benchmarks = (
 grouped = GroupedSummary(axis="vm", metric="runtime")
 reporter = SummaryReporter(Results() & Summary() & grouped)
 
-run(benchmarks, params=Params, reporter=reporter)
+bench_app(params=Params, reporter=reporter).add_all(benchmarks).run()
 
 # vim: ft=python

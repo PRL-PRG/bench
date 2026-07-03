@@ -36,7 +36,9 @@ s = (
         ),
     )
     .with_metric(
-        Regex("throughput", r"throughput:\s*([\d.]+)", unit="inserts/sec").higher_is_better()
+        Regex(
+            "throughput", r"throughput:\s*([\d.]+)", unit="inserts/sec"
+        ).higher_is_better()
     )
     .with_runs(3)
 )

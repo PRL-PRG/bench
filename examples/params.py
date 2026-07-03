@@ -15,7 +15,7 @@ Run with defaults, or override:
 
 from dataclasses import dataclass
 
-from bench import Context, Time, bench, run, suite
+from bench import Context, Time, bench, bench_app, suite
 
 
 @dataclass
@@ -34,4 +34,4 @@ s = suite(
 
 
 if __name__ == "__main__":
-    run(s, params=Params)
+    bench_app(params=Params).add_all(s).run()

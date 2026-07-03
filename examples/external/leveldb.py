@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import BenchmarkBuilder, Regex, Time, bench, max_rss, run, suite
+from bench import BenchmarkBuilder, Regex, Time, bench, bench_app, max_rss, suite
 
 
 @dataclass
@@ -79,4 +79,4 @@ leveldb = suite("LevelDB db_bench").add_all(*make_benchmarks()).with_runs(5)
 
 
 if __name__ == "__main__":
-    run(leveldb, params=LevelDBParams)
+    bench_app(params=LevelDBParams).add_all(leveldb).run()

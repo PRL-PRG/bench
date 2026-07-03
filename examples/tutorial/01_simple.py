@@ -7,7 +7,7 @@
 # ///
 from __future__ import annotations
 
-from bench import GroupedSummary, Results, Summary, Time, bench, run, suite
+from bench import GroupedSummary, Results, Summary, Time, bench, bench_app, suite
 from bench.core.metric import max_rss
 from bench.report.reporter import SummaryReporter
 
@@ -24,11 +24,10 @@ s = (
 
 # run(s)
 
-run(
-    s,
+bench_app(
     reporter=SummaryReporter(
         Results() & Summary() & GroupedSummary(axis="vm", metric="elapsed"),
-    ),
-)
+    )
+).add_all(s).run()
 
 # vim: ft=python

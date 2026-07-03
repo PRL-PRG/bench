@@ -11,7 +11,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Rebench, bench as B, run, suite
+from bench import Rebench, bench as B, bench_app, suite
 
 
 HERE = Path(__file__).resolve().parent
@@ -160,4 +160,4 @@ SUITES = [s.with_env(LOCALE) for s in SUITES]
 
 
 if __name__ == "__main__":
-    run(SUITES, params=RParams)
+    bench_app(params=RParams).add_all(*SUITES).run()

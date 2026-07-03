@@ -12,7 +12,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Context, Rebench, from_files, max_rss, run, suite
+from bench import Context, Rebench, bench_app, from_files, max_rss, suite
 
 
 @dataclass
@@ -59,4 +59,4 @@ rcp_suite = (
 
 
 if __name__ == "__main__":
-    run(rcp_suite, params=RcpParams)
+    bench_app(params=RcpParams).add_all(rcp_suite).run()

@@ -12,7 +12,15 @@ Each suite gets its own `SummaryReporter` whose `Compact` formatter is
 scoped with `suite=...`. A `CompositeReporter` fans the run out to both.
 """
 
-from bench import Compact, CompositeReporter, SummaryReporter, Time, bench, run, suite
+from bench import (
+    Compact,
+    CompositeReporter,
+    SummaryReporter,
+    Time,
+    bench,
+    bench_app,
+    suite,
+)
 
 
 fast = (
@@ -33,10 +41,9 @@ slow = (
 
 
 if __name__ == "__main__":
-    run(
-        [fast, slow],
+    bench_app(
         reporter=CompositeReporter(
             SummaryReporter(Compact("elapsed", suite="fast")),
             SummaryReporter(Compact("elapsed", suite="slow")),
-        ),
-    )
+        )
+    ).add_all(fast, slow).run()

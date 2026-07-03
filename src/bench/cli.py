@@ -239,7 +239,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .add(s)
         .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
     )
-    app.run(cli_args=ns)
+    app.run(ns)
     return 0
 
 

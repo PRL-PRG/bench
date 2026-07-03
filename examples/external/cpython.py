@@ -18,7 +18,7 @@ under test.
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Context, Regex, bench, run, suite
+from bench import Context, Regex, bench, bench_app, suite
 
 
 @dataclass
@@ -78,4 +78,4 @@ cpython = (
 
 
 if __name__ == "__main__":
-    run(cpython, params=CpythonParams)
+    bench_app(params=CpythonParams).add_all(cpython).run()

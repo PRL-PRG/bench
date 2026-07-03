@@ -19,8 +19,8 @@ from bench import (
     SystemEnvironment,
     Time,
     bench,
+    bench_app,
     report_from_json,
-    run,
     suite,
 )
 from bench.runner.base import plan
@@ -100,14 +100,16 @@ def test_mixed_fans_out(tmp_path: Path):
 
 
 def test_user_composite_reporter_receives_environment(tmp_path: Path):
-    # A DirReporter the user supplies via `run(reporter=...)` must get the
+    # A DirReporter the user supplies via `bench_app(reporter=...)` must get the
     # collected environment injected (not only CLI-built --dir reporters).
     root = tmp_path / "tree"
-    run(
-        _s(),
-        reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
-        argv=["--no-progress"],
-        environment=SystemEnvironment(),
+    (
+        bench_app(
+            reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
+            environment=SystemEnvironment(),
+        )
+        .add_all(_s())
+        .run(["--no-progress"])
     )
     env_file = root / "environment.json"
     assert env_file.exists()

@@ -195,14 +195,14 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     )
     out = tmp_path / "r.json"
     # Default reporter honors --json (a bare reporter would take full control).
-    run(s, argv=["--no-progress", "--json", str(out)])
+    bench_app().add_all(s).run(["--no-progress", "--json", str(out)])
 
     buf = StringIO()
     reporter = SummaryReporter(
         Results() & GroupedSummary(axis="sleep", metric="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    run(s, reporter=reporter, argv=["--show", str(out)])
+    bench_app(reporter=reporter).add_all(s).run(["--show", str(out)])
     text = buf.getvalue()
     assert "Summary (geomean) - sleep" in text  # the configured GroupedSummary ran
 
@@ -264,7 +264,7 @@ def _boom_factory(ctx):
 def test_run_reports_friendly_materialization_error(capsys):
     s = suite("My Suite").factory(_boom_factory)
     with pytest.raises(SystemExit) as ei:
-        run(s, argv=[])
+        bench_app().add_all(s).run([])
     assert ei.value.code == 1
     err = capsys.readouterr().err
     assert "Failed to materialize suite 'My Suite'" in err
@@ -299,7 +299,11 @@ def test_run_callable_factory_receives_parsed_params():
         seen["label"] = p.label
         return [_trivial("S")]
 
-    report = run(discover, params=_Params, argv=["--label", "hello", "--no-progress"])
+    report = (
+        bench_app(params=_Params)
+        .factory(discover)
+        .run(["--label", "hello", "--no-progress"])
+    )
     assert seen["label"] == "hello"
     assert {r.suite for r in report.runs} == {"S"}
 
@@ -310,12 +314,15 @@ def test_bench_combines_static_and_discovered_suites():
     def discover(_p):
         return [_trivial("Disc")]
 
-    report = bench_app().add(static).factory(discover).run(argv=["--no-progress"])
+    report = bench_app().add(static).factory(discover).run(["--no-progress"])
     assert {r.suite for r in report.runs} == {"Static", "Disc"}
 
 
-def test_run_still_accepts_a_list_of_suites():
-    report = run([_trivial("A"), _trivial("B")], argv=["--no-progress"])
+def test_run_sugar_runs_multiple_suites(monkeypatch):
+    # run(*suites) is sugar for bench_app(<script>).add_all(*suites).run(),
+    # reading the argv from sys.argv.
+    monkeypatch.setattr(sys, "argv", ["prog", "--no-progress"])
+    report = run(_trivial("A"), _trivial("B"))
     assert {r.suite for r in report.runs} == {"A", "B"}
 
 
@@ -336,7 +343,7 @@ def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
         .add(s2)
         .with_command(["true"])
         .with_runs(1)
-        .run(argv=["--no-progress"])
+        .run(["--no-progress"])
     )
 
     runs = {r.suite: r for r in report.runs}
@@ -362,8 +369,10 @@ def _matrix_suite(suite_name: str = "M", bench_name: str = "b", **matrix):
 
 
 def test_list_prints_tree_and_runs_nothing(capsys):
-    report = run(
-        [_trivial("Alpha"), _trivial("Beta")], argv=["--list", "--no-progress"]
+    report = (
+        bench_app()
+        .add_all(_trivial("Alpha"), _trivial("Beta"))
+        .run(["--list", "--no-progress"])
     )
     out = capsys.readouterr().out
     assert "Alpha" in out
@@ -372,60 +381,69 @@ def test_list_prints_tree_and_runs_nothing(capsys):
 
 
 def test_list_shows_variants(capsys):
-    run(_matrix_suite("M", "b", jdk=(11, 17)), argv=["--list", "--no-progress"])
+    bench_app().add_all(_matrix_suite("M", "b", jdk=(11, 17))).run(
+        ["--list", "--no-progress"]
+    )
     out = capsys.readouterr().out
     assert "jdk=11" in out
     assert "jdk=17" in out
 
 
 def test_include_keeps_only_matching():
-    report = run(
-        [_trivial("Keep"), _trivial("Drop")],
-        argv=["--include", "Keep", "--no-progress"],
+    report = (
+        bench_app()
+        .add_all(_trivial("Keep"), _trivial("Drop"))
+        .run(["--include", "Keep", "--no-progress"])
     )
     assert {r.suite for r in report.runs} == {"Keep"}
 
 
 def test_exclude_drops_matching():
-    report = run(
-        [_trivial("Keep"), _trivial("Drop")],
-        argv=["--exclude", "Drop", "--no-progress"],
+    report = (
+        bench_app()
+        .add_all(_trivial("Keep"), _trivial("Drop"))
+        .run(["--exclude", "Drop", "--no-progress"])
     )
     assert {r.suite for r in report.runs} == {"Keep"}
 
 
 def test_exclude_wins_over_include():
-    report = run(
-        [_trivial("A"), _trivial("B")],
-        argv=["--include", ".", "--exclude", "B", "--no-progress"],
+    report = (
+        bench_app()
+        .add_all(_trivial("A"), _trivial("B"))
+        .run(["--include", ".", "--exclude", "B", "--no-progress"])
     )
     assert {r.suite for r in report.runs} == {"A"}
 
 
 def test_include_anchored_regex_targets_whole_suite():
     # `^alpha/` matches "alpha/b" but not "alphabet/b".
-    report = run(
-        [_trivial("alpha"), _trivial("alphabet")],
-        argv=["--include", "^alpha/", "--no-progress"],
+    report = (
+        bench_app()
+        .add_all(_trivial("alpha"), _trivial("alphabet"))
+        .run(["--include", "^alpha/", "--no-progress"])
     )
     assert {r.suite for r in report.runs} == {"alpha"}
 
 
 def test_include_selects_single_variant():
-    report = run(
-        _matrix_suite("M", "b", jdk=(11, 17)),
-        argv=["--include", "jdk=17", "--no-progress"],
+    report = (
+        bench_app()
+        .add_all(_matrix_suite("M", "b", jdk=(11, 17)))
+        .run(["--include", "jdk=17", "--no-progress"])
     )
     assert [dict(r.variant).get("jdk") for r in report.runs] == ["17"]
 
 
 def test_bad_regex_exits_2():
     with pytest.raises(SystemExit) as ei:
-        run(_trivial("A"), argv=["--include", "(", "--no-progress"])
+        bench_app().add_all(_trivial("A")).run(["--include", "(", "--no-progress"])
     assert ei.value.code == 2
 
 
 def test_empty_selection_exits_1():
     with pytest.raises(SystemExit) as ei:
-        run(_trivial("A"), argv=["--include", "no-such-bench", "--no-progress"])
+        bench_app().add_all(_trivial("A")).run(
+            ["--include", "no-such-bench", "--no-progress"]
+        )
     assert ei.value.code == 1
