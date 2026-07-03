@@ -4,15 +4,15 @@
 builder leaves every inheritable field unset. The resolved benchmark carries concrete
 objects and a frozen `Execution`, which can be run.
 
-Every configurable field is set either as a static value or as a `Build[T]` =
+Every configurable field is set either as a static value or as a `Factory[T]` =
 `(ctx) -> value` builder, resolved once per variant.
 
 `create()` expands the matrix (cartesian product of the declared dimensions),
-drops skipped cells, and resolves every field against the variant `Context` in
-a single pass. Variants within a benchmark are what the end-of-run Summary
+resolves every field against the variant `Context`, then drops skipped
+variants. Variants within a benchmark are what the end-of-run Summary
 compares. Comparison across different benchmarks is never emitted.
 
-The shared configuration base (`BuilderBase`), the `Build[T]`/`UNSET` primitives,
+The shared configuration base (`BuilderBase`), the `Factory[T]`/`UNSET` primitives,
 and the matrix/skip helpers live in `bench.grammar.builder`.
 """
 
@@ -45,7 +45,7 @@ from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy
 from bench.grammar.builder import (
     UNSET,
-    Build,
+    Factory,
     BuilderBase,
     as_build,
     const,
@@ -72,7 +72,7 @@ class BenchmarkBuilder(BuilderBase):
     """
 
     name: str = ""
-    stdin: Build[bytes | None] = const(None)  # None = no stdin (never inherited)
+    stdin: Factory[bytes | None] = const(None)  # None = no stdin (never inherited)
     data: Mapping[str, Any] = EMPTY_MAPPING
 
     # ----- attribute access into data ---------------------------------
@@ -93,7 +93,7 @@ class BenchmarkBuilder(BuilderBase):
         dimension into variants."""
         return dataclasses.replace(self, data={**self.data, **data})
 
-    def with_stdin(self, data: bytes | str | Build[bytes]) -> BenchmarkBuilder:
+    def with_stdin(self, data: bytes | str | Factory[bytes]) -> BenchmarkBuilder:
         return dataclasses.replace(
             self,
             stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
@@ -114,9 +114,8 @@ class BenchmarkBuilder(BuilderBase):
     ) -> Iterator[Benchmark]:
         """Yield one fully-resolved `Benchmark`.
 
-        Expands the matrix (cartesian product), drops cells matched by any skip
-        rule (before any builder runs), then resolves every field against the
-        variant `Context`.
+        Expands the matrix (cartesian product), resolves every field against the
+        variant `Context`, then drops any variant matched by a skip rule.
         """
         cli = cli or SharedBenchParams()
         names = list(self.matrix)
@@ -142,9 +141,10 @@ class BenchmarkBuilder(BuilderBase):
                 data=MappingProxyType({**self.data, **chosen}),
                 matrix=EMPTY_MAPPING,
             )
-            if any(skip(cell) for skip in self.skips):
+            benchmark = cell._resolve_cell(params, suite, variant, cli=cli)
+            if any(skip(benchmark) for skip in self.skips):
                 continue
-            yield cell._resolve_cell(params, suite, variant, cli=cli)
+            yield benchmark
 
     def _resolve_cell(
         self,
@@ -184,7 +184,7 @@ class BenchmarkBuilder(BuilderBase):
             variant=variant,
             iteration_metrics=iteration_metrics,
             process_metrics=process_metrics,
-            success=self.success,
+            success=self.success(ctx),
             warmup=self.warmup(ctx),
             runs=self.runs(ctx),
             outlier_detection=self.outlier_detection,

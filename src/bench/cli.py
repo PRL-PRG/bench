@@ -10,7 +10,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
 
-from bench.run import add_runtime_flags, do_run
+from bench.run import add_runtime_flags, bench_app, default_reporter
 from bench.grammar.benchmark import Benchmark, bench
 from bench.grammar.context import Context
 from bench.core.checks import run_checks
@@ -44,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="bench",
         description=(
-            "bench — run, compare, and inspect command-line benchmarks. "
+            "bench - run, compare, and inspect command-line benchmarks. "
             "See `bench <sub> --help` for the detailed flag set of each "
             "subcommand."
         ),
@@ -61,12 +61,9 @@ def main(argv: list[str] | None = None) -> int:
             "run",
             help="Benchmark one or more shell commands.",
             description=(
-                "Benchmark one or more shell commands. Each positional CMD is split with "
-                "shlex and benchmarked as its own benchmark; results are summarized "
-                "side by side. Example:\n\n"
-                "    bench run --runs 20 --warmup 2 'sleep 0.1' 'sleep 0.2'\n\n"
-                "Use --json / --csv / --dir to persist outputs; summarize a saved "
-                "run later with `bench show` or diff several with `bench compare`."
+                "Benchmark one or more shell commands. It creates a single "
+                "benchmark with each CMD acting as one variant. The "
+                "results are thus compared and summarized."
             ),
             formatter_class=argparse.RawDescriptionHelpFormatter,
         )
@@ -75,10 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         sub.add_parser(
             "show",
             help="Summarize a single JSON report from a prior run.",
-            description=(
-                "Load a saved JSON report and print its default summary: "
-                "absolute stats plus the per-benchmark ranking."
-            ),
+            description=("Load a saved JSON report and print its default summary."),
         )
     )
     _compare_subparser(
@@ -87,8 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             help="Compare several JSON reports side by side.",
             description=(
                 "Merge the reports into a synthetic `compare` matrix axis (one "
-                "value per file) and summarize it: absolute stats side by side, "
-                "then the geometric-mean head-to-head. The first file is the "
+                "value per file) and summarize it. The first file is the "
                 "baseline reference."
             ),
         )
@@ -99,8 +92,7 @@ def main(argv: list[str] | None = None) -> int:
             help="Inspect the machine for benchmarking noise sources.",
             description=(
                 "Print the environment snapshot and the noise checks. "
-                "Exits non-zero if any high-severity issue is found, "
-                "so it can gate a benchmarking session in CI."
+                "Exits non-zero if any high-severity issue is found."
             ),
         )
     )
@@ -233,15 +225,21 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         b = b.with_timeout(ns.timeout)
     if ns.warmup > 0:
         b = b.with_warmup(ns.warmup)
-    s = suite("run", b)
     if matrix_dims:
-        s = s.add_matrix(**matrix_dims)
+        b = b.add_matrix(**matrix_dims)
+
+    s = suite("run", b)
 
     metrics = {ns.metric} if ns.metric else None
     reporter = SummaryReporter(DefaultSummary(metrics=metrics))
-
     environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
-    do_run([s], ns, reporter, None, environment=environment, denoise=ns.denoise)
+
+    app = (
+        bench_app("bench", environment=environment, denoise=ns.denoise)
+        .add(s)
+        .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
+    )
+    app.run(cli_args=ns)
     return 0
 
 

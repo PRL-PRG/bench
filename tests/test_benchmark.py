@@ -274,3 +274,15 @@ def test_behavior_field_bare_callable_is_the_value_not_a_builder():
 
     b = _mat(bench("x").with_command(["true"]).with_success(fn))
     assert b.success is fn
+
+
+def test_with_success_fn_resolves_factory_against_ctx():
+    def marker(_r):
+        return None
+
+    def factory(ctx):
+        assert ctx.benchmark == "x"
+        return marker
+
+    b = _mat(bench("x").with_command(["true"]).with_success_fn(factory))
+    assert b.success is marker  # factory(ctx) result is used as the policy

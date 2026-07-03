@@ -20,7 +20,6 @@ from bench import (
     Reporter,
     Sequential,
     SuiteMaterializationError,
-    SummaryReporter,
     Time,
     bench,
     bench_app,
@@ -490,7 +489,25 @@ def test_with_filter_override_narrows_plan():
     report = (
         bench_app()
         .add(s)
-        .with_filter(lambda ctx: lambda b: b.name == "keep")
+        .with_filter_fn(lambda ctx: lambda b: b.name == "keep")
+        .run(argv=["--no-progress"])
+    )
+    assert {r.benchmark for r in report.runs} == {"keep"}
+
+
+def test_with_filter_bare_predicate_narrows_plan():
+    s = (
+        suite("S")
+        .add(bench("keep"))
+        .add(bench("drop"))
+        .with_command(["true"])
+        .with_process_metric(Time())
+    )
+    # A bare `(Benchmark) -> bool` predicate is const-wrapped into the factory.
+    report = (
+        bench_app()
+        .add(s)
+        .with_filter(lambda b: b.name == "keep")
         .run(argv=["--no-progress"])
     )
     assert {r.benchmark for r in report.runs} == {"keep"}
@@ -507,9 +524,12 @@ def test_with_reporter_factory_takes_full_control(tmp_path: Path):
     assert report_from_json(out.read_text()).runs
 
 
-def test_bare_reporter_still_gets_cli_sinks(tmp_path: Path):
-    out = tmp_path / "r.json"
+def test_bare_reporter_takes_full_control(tmp_path: Path):
+    direct = tmp_path / "direct.json"  # the bare reporter itself
+    flag = tmp_path / "flag.json"  # the --json sink (must NOT be written)
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
-    # A bare reporter customizes only the summary; --json is still honored.
-    run(s, reporter=SummaryReporter(), argv=["--no-progress", "--json", str(out)])
-    assert out.exists()
+    # A bare reporter is wrapped as `lambda _: reporter` and used as-is: it IS a
+    # JsonReporter, so --json is not needed and its sink is not added.
+    run(s, reporter=JsonReporter(direct), argv=["--no-progress", "--json", str(flag)])
+    assert direct.exists()  # bare reporter ran, used as-is
+    assert not flag.exists()  # --json sink dropped under full control

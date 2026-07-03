@@ -4,7 +4,7 @@
 setters plus the `overlay` merge that cascades configuration across
 `BenchAppBuilder` -> `SuiteBuilder` -> `BenchmarkBuilder` (defaults < app <
 suite < benchmark; the more specific level wins). It also holds the small
-primitives the builders share: the `Build[T]` field-builder concept, the `UNSET`
+primitives the builders share: the `Factory[T]` field-builder concept, the `UNSET`
 sentinel, and the matrix/skip/env merge helpers.
 """
 
@@ -32,37 +32,31 @@ from bench.grammar.context import Context
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
-    from bench.grammar.benchmark import Benchmark, BenchmarkBuilder
+    from bench.grammar.benchmark import Benchmark
     from bench.runner.source import HarnessMonitor
 
-# A field builder: a `(ctx) -> value` resolved once per variant at create()
-# time. The single concept for "value or function": a setter accepts `T |
-# Build[T]`, where a callable is the builder and anything else is the static
-# value (wrapped).
-type Build[T] = Callable[[Context[Any]], T]
+# A field builder: a `(ctx) -> value` resolved once per variant at create time
+type Factory[T] = Callable[[Context[Any]], T]
 
-type CommandFn = Build[Sequence[StrOrBytesPath]]
-type PathFn = Build[Path]
-type EnvFn = Build[Mapping[str, str]]
+type CommandFactory = Factory[Sequence[StrOrBytesPath]]
+type PathFactory = Factory[Path]
+type EnvFactory = Factory[Mapping[str, str]]
 
-# A matrix axis: either an explicit sequence of values or a
-# `(ctx) -> sequence` callable resolved once per benchmark at `create()` time.
-# The callable sees `ctx.params`/`ctx.suite`/`ctx.benchmark` but an empty
-# matrix (sibling axes are not yet resolved). Normalized to the second member
-# of `MatrixAxisValues` for storage.
-type MatrixAxis = Sequence[Any] | Build[Sequence[Any]]
-type MatrixAxisValues = tuple[Any, ...] | Build[Sequence[Any]]
+# A matrix axis: either an explicit sequence of values or a factory.
+# The factory sees limited context (params, suite and benchmark name)
+type MatrixAxis = Sequence[Any] | Factory[Sequence[Any]]
+# The normalized store form as either KV-pairs or unchanged factory
+type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
 
 # A label function turns a resolved benchmark into the human-readable variant
-# identifier shown in reports (e.g. `"sleep 0.05"`). It takes the resolved
-# Benchmark (not a Context) because labels reflect the resolved execution.
+# identifier shown in reports Benchmark (not a Context) because labels reflect
+# the resolved execution.
 type LabelFn = Callable[[Benchmark], str]
 
-# A skip predicate. Returning truthy drops the variant. Predicate receives the
-# variant-stamped factory cell so it can read `b.vm`, `b.size`, etc.
-type SkipFn = Callable[[BenchmarkBuilder], bool]
+# A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
+type SkipFn = Callable[[Benchmark], bool]
 
-type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFn
+type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFactory
 
 
 _UNSET_MSG = "benchmark field is unset"
@@ -89,26 +83,23 @@ class _Unset:
 UNSET: Any = _Unset()
 
 
-def const(value: Any) -> Build[Any]:
+def const(value: Any) -> Factory[Any]:
     """Wrap a static value as a constant builder."""
     return lambda _ctx: value
 
 
-def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Build[Any]:
-    """Coerce a setter argument into a `Build[T]`: a callable is the builder as
+def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Factory[Any]:
+    """Coerce a setter argument into a `Factory[T]`: a callable is the builder as
     is, anything else is the static value, normalized once and wrapped."""
     if callable(value):
-        return cast("Build[Any]", value)
+        return cast("Factory[Any]", value)
     return const(normalize(value))
 
 
 def normalize_matrix(
     dims: Mapping[str, MatrixAxis],
 ) -> Mapping[str, MatrixAxisValues]:
-    """Validate dimension names and freeze `{name: values}` into the canonical
-    mapping shared by `BenchmarkBuilder` and `SuiteBuilder`. An explicit
-    sequence is frozen to a tuple; a `(ctx) -> sequence` callable is kept as-is
-    and resolved once per benchmark at `create()` time."""
+    """Validate dimension names and freeze `{name: values}` into the canonical mapping."""
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -137,7 +128,7 @@ def make_skip_rule(
     )
 
 
-def _merge_env(base: EnvFn, over: EnvFn) -> EnvFn:
+def _merge_env(base: EnvFactory, over: EnvFactory) -> EnvFactory:
     """Lazy per-key env merge for `overlay`: `base` first, `over` wins. `UNSET`
     on either side contributes nothing; both unset stays `UNSET`."""
     if base is UNSET:
@@ -174,21 +165,18 @@ class BuilderBase:
     (`BenchmarkBuilder`, `SuiteBuilder`, `BenchAppBuilder`).
 
     Every inheritable field is declared here once (defaulting to `UNSET`), so the
-    setters — each returning a replaced copy with the concrete `Self` type — and
-    the `overlay` merge work uniformly on all three. Level-specific fields
-    (`name`, `stdin`, `benchmarks`, `suites`, ...) and the setters that differ
-    (`with_harness`, `with_stdin`, `with_shuffle`) stay on their own class.
-    """
+    setters, each returning a replaced copy with the concrete `Self` type.
+    The `overlay` merge work uniformly on all three."""
 
-    command: CommandFn = UNSET
-    cwd: PathFn = UNSET
-    env: EnvFn = UNSET
-    timeout: Build[float | None] = UNSET
-    iteration_metrics: Build[tuple[tuple[IterationMetric, MetricSource], ...]] = UNSET
-    process_metrics: Build[tuple[ProcessMetric, ...]] = UNSET
-    success: SuccessFn = UNSET
-    warmup: Build[StoppingPolicy] = UNSET
-    runs: Build[StoppingPolicy] = UNSET
+    command: CommandFactory = UNSET
+    cwd: PathFactory = UNSET
+    env: EnvFactory = UNSET
+    timeout: Factory[float | None] = UNSET
+    iteration_metrics: Factory[tuple[tuple[IterationMetric, MetricSource], ...]] = UNSET
+    process_metrics: Factory[tuple[ProcessMetric, ...]] = UNSET
+    success: Factory[SuccessFn] = UNSET
+    warmup: Factory[StoppingPolicy] = UNSET
+    runs: Factory[StoppingPolicy] = UNSET
     outlier_detection: OutlierDetection = UNSET
     cooldown: float = UNSET
     label_fn: LabelFn = UNSET
@@ -202,26 +190,28 @@ class BuilderBase:
     def with_command(self, command: Command) -> Self:
         return dataclasses.replace(self, command=as_build(command, to_argv))
 
-    def with_cwd(self, cwd: str | Path | PathFn) -> Self:
+    def with_cwd(self, cwd: str | Path | PathFactory) -> Self:
         return dataclasses.replace(self, cwd=as_build(cwd, Path))
 
-    def with_env(self, env: Mapping[str, str] | EnvFn) -> Self:
+    def with_env(self, env: Mapping[str, str] | EnvFactory) -> Self:
         return dataclasses.replace(self, env=as_build(env, dict))
 
-    def with_timeout(self, timeout: float | None | Build[float | None]) -> Self:
+    def with_timeout(self, timeout: float | None | Factory[float | None]) -> Self:
         return dataclasses.replace(self, timeout=as_build(timeout))
 
     def with_success(self, fn: SuccessFn) -> Self:
-        """Override the success policy (returns a failure reason, or None)."""
+        return dataclasses.replace(self, success=const(fn))
+
+    def with_success_fn(self, fn: Factory[SuccessFn]) -> Self:
         return dataclasses.replace(self, success=fn)
 
     # ----- policies ---------------------------------------------------
 
-    def with_warmup(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Self:
+    def with_warmup(self, p: int | StoppingPolicy | Factory[StoppingPolicy]) -> Self:
         """Set the warmup policy."""
         return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
 
-    def with_runs(self, p: int | StoppingPolicy | Build[StoppingPolicy]) -> Self:
+    def with_runs(self, p: int | StoppingPolicy | Factory[StoppingPolicy]) -> Self:
         """Set the policy for the measured runs."""
         return dataclasses.replace(self, runs=as_build(p, coerce_policy))
 
@@ -236,7 +226,7 @@ class BuilderBase:
     # ----- matrix / skip / label --------------------------------------
 
     def with_matrix(self, **dims: MatrixAxis) -> Self:
-        """Declare matrix dimensions (variants are their cartesian product)."""
+        """Declare matrix dimensions."""
         return dataclasses.replace(self, matrix=normalize_matrix(dims))
 
     def add_matrix(self, **dims: MatrixAxis) -> Self:
@@ -261,9 +251,9 @@ class BuilderBase:
     # ----- metrics ----------------------------------------------------
 
     def with_metric(
-        self, *metrics: IterationMetric | Build[tuple[IterationMetric, ...]]
+        self, *metrics: IterationMetric | Factory[tuple[IterationMetric, ...]]
     ) -> Self:
-        """Set (replace) the per-iteration metrics, each reading stdout."""
+        """Set the per-iteration metrics, each reading stdout."""
         if len(metrics) == 1 and callable(metrics[0]):
             fn = metrics[0]
 
@@ -285,7 +275,7 @@ class BuilderBase:
     ) -> Self:
         """Append one per-iteration metric reading from `source` ("stdout",
         "stderr", or a `(ExecutionResult) -> str` extractor)."""
-        # Runtime guard for callers not running a type checker: a misfiled
+        # Runtime guard for callers not running a type checker. A
         # process metric would otherwise crash deep in extraction.
         if not isinstance(metric, IterationMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
             _raise_builder_type_error(

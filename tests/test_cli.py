@@ -194,11 +194,8 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
         .with_runs(1)
     )
     out = tmp_path / "r.json"
-    run(
-        s,
-        reporter=SummaryReporter(target_console=Console(file=StringIO())),
-        argv=["--no-progress", "--json", str(out)],
-    )
+    # Default reporter honors --json (a bare reporter would take full control).
+    run(s, argv=["--no-progress", "--json", str(out)])
 
     buf = StringIO()
     reporter = SummaryReporter(
