@@ -131,22 +131,22 @@ class BenchAppBuilder(BuilderBase):
         else:
             parser = _make_run_parser(self.params, description=self.name)
             cli_args = parser.parse_args(args)
-        build_params = (
-            build_dataclass(self.params, cli_args) if self.params is not None else None
-        )
+        # A user's params type is the single source of settings. When they
+        # declare none, SharedBenchParams is the effective type, so the builtin
+        # flags are still generated and honored.
+        effective = self.params if self.params is not None else SharedBenchParams
+        build_params = build_dataclass(effective, cli_args)
 
         collected = list(self.suites)
         for f in self.factories:
             collected.extend(f(build_params))
         suites = [self.overlay(s) for s in collected]
 
-        cli = build_dataclass(SharedBenchParams, cli_args)
         ctx: Context[Any] = Context(
             params=build_params,
             suite="",
             benchmark=None,
             data=Data(),
-            cli=cli,
         )
 
         env = self.environment.collect()
@@ -162,14 +162,17 @@ class BenchAppBuilder(BuilderBase):
         if show:
             return self._do_show(reporter, show)
 
-        planned = plan(suites, build_params, cli=cli)
+        planned = plan(suites, build_params)
 
-        # --list: always the full plan, --include/--exclude only affect runs
+        # --list
         if getattr(cli_args, "list_plan", False):
             return self._do_list(planned)
 
         planned = self._filter_benchmarks(ctx, planned)
-        if (cli.include or cli.exclude) and not planned:
+        selecting = isinstance(build_params, SharedSelectionParams) and (
+            build_params.include or build_params.exclude
+        )
+        if selecting and not planned:
             raise NoBenchmarksMatchedError(
                 "No benchmarks matched --include/--exclude "
                 "(run with --list to see what's available)."
@@ -250,34 +253,38 @@ def bench_app(
 
 def default_reporter(ctx: Context[Any], summary: Reporter | None = None) -> Reporter:
     sinks: list[Reporter] = []
-    cli = ctx.cli
-    if cli.progress:
+    p = ctx.params
+    if p.progress:
         sinks.append(ProgressReporter())
 
     sinks.append(summary or SummaryReporter(DefaultSummary()))
 
-    if cli.json:
-        sinks.append(JsonReporter(Path(cli.json)))
-    if cli.csv:
-        sinks.append(CsvReporter(Path(cli.csv)))
-    if cli.dir:
-        sinks.append(DirReporter(Path(cli.dir)))
+    if p.json:
+        sinks.append(JsonReporter(Path(p.json)))
+    if p.csv:
+        sinks.append(CsvReporter(Path(p.csv)))
+    if p.dir:
+        sinks.append(DirReporter(Path(p.dir)))
 
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
 def default_runner(ctx: Context[Any]) -> Runner:
-    cli = ctx.cli
-    if cli.dry:
-        return Dry(verbose=cli.verbose)
-    if cli.jobs > 1:
-        return Parallel(workers=cli.jobs, verbose=cli.verbose)
-    return Sequential(verbose=cli.verbose)
+    p = ctx.params
+    if p.dry:
+        return Dry(verbose=p.verbose)
+    if p.jobs > 1:
+        return Parallel(workers=p.jobs, verbose=p.verbose)
+    return Sequential(verbose=p.verbose)
 
 
 def default_filter(ctx: Context[Any]) -> Callable[[Benchmark], bool]:
-    inc = [re.compile(p) for p in (ctx.cli.include or [])]
-    exc = [re.compile(p) for p in (ctx.cli.exclude or [])]
+    p = ctx.params
+    # selection is opt-in
+    if not isinstance(p, SharedSelectionParams):
+        return lambda _b: True
+    inc = [re.compile(pat) for pat in (p.include or [])]
+    exc = [re.compile(pat) for pat in (p.exclude or [])]
 
     def keep(b: Benchmark) -> bool:
         key = record_key(b.suite, b.name, b.variant)
@@ -296,16 +303,35 @@ def default_filter(ctx: Context[Any]) -> Callable[[Benchmark], bool]:
 def _make_run_parser(
     params: type | None, description: str = ""
 ) -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="bench", description=description or None)
-    _add_user_params(p, params)
-    add_dataclass_args(
-        p.add_argument_group("bench flags"),
-        SharedBenchParams,
-        skip={"include", "exclude"},
-    )
-    sel = p.add_argument_group("selection")
-    add_dataclass_args(sel, SharedSelectionParams)
-    sel.add_argument(
+    # No prog= override: argparse derives it from sys.argv[0], so a user script
+    # shows its own name (the `bench` console subcommands set their own prog).
+    p = argparse.ArgumentParser(description=description or None)
+
+    # The effective params type carries every flag: the user's own fields plus,
+    # via inheritance, the shared bench/selection flags. Route each field to a
+    # `--help` group by which base declares it (fields the user's type doesn't
+    # inherit simply have no group). Missing groups are skipped entirely.
+    effective = params if params is not None else SharedBenchParams
+    all_names = {f.name for f in dataclasses.fields(effective)}
+    selection_names = {
+        f.name for f in dataclasses.fields(SharedSelectionParams)
+    } & all_names
+    runtime_names = (
+        {f.name for f in dataclasses.fields(SharedBenchParams)} - selection_names
+    ) & all_names
+    user_names = all_names - selection_names - runtime_names
+
+    for title, names in (
+        ("context parameters", user_names),
+        ("bench flags", runtime_names),
+        ("selection", selection_names),
+    ):
+        if names:
+            add_dataclass_args(
+                p.add_argument_group(title), effective, skip=all_names - names
+            )
+
+    p.add_argument(
         "--list",
         action="store_true",
         dest="list_plan",
@@ -320,13 +346,6 @@ def _make_run_parser(
         "then exit (run nothing).",
     )
     return p
-
-
-def _add_user_params(parser: argparse.ArgumentParser, params: type | None) -> None:
-    if params is None:
-        return
-    group_ = parser.add_argument_group("context parameters")
-    add_dataclass_args(group_, params)
 
 
 def add_runtime_flags(

@@ -12,6 +12,7 @@ import pytest
 
 from bench import (
     NoBenchmarksMatchedError,
+    SharedBenchParams,
     SuiteMaterializationError,
     Time,
     bench,
@@ -293,8 +294,8 @@ def _trivial(suite_name: str, bench_name: str = "b"):
     )
 
 
-@dataclass
-class _Params:
+@dataclass(frozen=True)
+class _Params(SharedBenchParams):
     label: str = "x"
 
 

@@ -12,11 +12,11 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Context, Rebench, bench_app, from_files, max_rss, suite
+from bench import Context, Rebench, SharedBenchParams, bench_app, from_files, max_rss, suite
 
 
-@dataclass
-class RcpParams:
+@dataclass(frozen=True)
+class RcpParams(SharedBenchParams):
     RSH_HOME: Path  # path to RSH client
     R_HOME: Path  # R installation root
     output: Path = Path(tempfile.gettempdir()) / "rcp"

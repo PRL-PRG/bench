@@ -17,11 +17,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import BenchmarkBuilder, Regex, Time, bench, bench_app, max_rss, suite
+from bench import BenchmarkBuilder, Regex, SharedBenchParams, Time, bench, bench_app, max_rss, suite
 
 
-@dataclass
-class LevelDBParams:
+@dataclass(frozen=True)
+class LevelDBParams(SharedBenchParams):
     db_bench: Path  # required: path to the built db_bench binary
     num: int = 100000  # key/value pairs written (and read)
 

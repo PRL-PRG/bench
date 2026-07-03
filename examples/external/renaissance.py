@@ -27,6 +27,7 @@ from bench import (
     Context,
     HarnessHandle,
     Regex,
+    SharedBenchParams,
     Time,
     bench,
     bench_app,
@@ -36,8 +37,8 @@ from bench import (
 )
 
 
-@dataclass
-class Params:
+@dataclass(frozen=True)
+class Params(SharedBenchParams):
     java: Path = Path("java")
     renaissance: Path = Path("renaissance-gpl-0.16.1.jar")
     runs: int | None = None

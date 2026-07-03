@@ -44,10 +44,11 @@ class Data:
         return f"Data({self._data!r})"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SharedSelectionParams:
-    """The bench selection flags (`--include`/`--exclude`), reflected onto the
-    CLI and exposed on `Context.cli` for `with_filter(...)` to consume."""
+    """The bench selection flags (`--include`/`--exclude`). A user's params
+    dataclass inherits this to opt into `--include`/`--exclude` on the CLI and
+    have the default `with_filter(...)` honor them."""
 
     include: list[str] | None = field(
         default=None,
@@ -67,11 +68,13 @@ class SharedSelectionParams:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class SharedBenchParams(SharedSelectionParams):
-    """The parsed bench runtime + selection flags, exposed on `Context.cli` so
-    the `with_runner`/`with_reporter`/`with_filter` callables can branch on the
-    invocation - the bench-owned counterpart to the user's `Context.params`."""
+    """The bench runtime + selection flags. A user's params dataclass inherits
+    this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...
+    plus `--include`/`--exclude`) and have the default runner/reporter/filter
+    honor them. When a user declares no params, this is the effective params
+    type, so the builtin flags are always available out of the box."""
 
     jobs: int = field(
         default=1,
@@ -122,13 +125,18 @@ class SharedBenchParams(SharedSelectionParams):
 
 @dataclass(frozen=True, slots=True)
 class Context[T]:
-    """Context for the benchmark builder callable `with_*(lambda ctx: )` methods."""
+    """Context for the benchmark builder callable `with_*(lambda ctx: )` methods.
+
+    `params` is the single object carrying every setting: the user's own fields
+    plus, when their dataclass inherits `SharedBenchParams`/`SharedSelectionParams`,
+    the builtin flags. When the user declares no params, `params` is a
+    `SharedBenchParams` instance so the default pipeline still sees its flags.
+    """
 
     params: T
     suite: str
     benchmark: str | None
     data: Data
-    cli: SharedBenchParams = field(default_factory=SharedBenchParams)
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field

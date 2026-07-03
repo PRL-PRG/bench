@@ -15,11 +15,13 @@ Run with defaults, or override:
 
 from dataclasses import dataclass
 
-from bench import Context, Time, bench, bench_app, suite
+from bench import Context, SharedBenchParams, Time, bench, bench_app, suite
 
 
-@dataclass
-class Params:
+@dataclass(frozen=True)
+class Params(SharedBenchParams):
+    # Inherit SharedBenchParams to keep the builtin flags (-j/--json/--include/
+    # ...); a plain @dataclass would expose only the fields declared here.
     n: int = 100_000  # --n INT       (default: 100000)
     python: str = "python3"  # --python STR  (default: python3)
 

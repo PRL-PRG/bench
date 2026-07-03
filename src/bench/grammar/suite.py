@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from bench.grammar.builder import UNSET, BuilderBase, const
 from bench.grammar.benchmark import Benchmark, BenchmarkBuilder, default_label
-from bench.grammar.context import Context, Data, SharedBenchParams
+from bench.grammar.context import Context, Data
 from bench.core.execution import (
     EMPTY_MAPPING,
     default_success,
@@ -114,18 +114,14 @@ class SuiteBuilder(BuilderBase):
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
-    def materialize(
-        self, params: Any, *, cli: SharedBenchParams | None = None
-    ) -> list[Benchmark]:
+    def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
-        cli = cli or SharedBenchParams()
         ctx: Context[Any] = Context(
             params=params,
             suite=self.name,
             benchmark=None,
             data=Data(),
-            cli=cli,
         )
         collected = list(self.benchmarks)
         for f in self.factories:
@@ -141,7 +137,7 @@ class SuiteBuilder(BuilderBase):
                     f"Benchmark {b.name!r} has no command — set one with "
                     f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
                 )
-            out.extend(resolved.create(params, suite=self.name, cli=cli))
+            out.extend(resolved.create(params, suite=self.name))
         for pred in self.filters:
             out = [b for b in out if pred(b)]
         if self.shuffle:

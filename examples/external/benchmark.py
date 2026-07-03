@@ -11,7 +11,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Rebench, bench as B, bench_app, suite
+from bench import Rebench, SharedBenchParams, bench as B, bench_app, suite
 
 
 HERE = Path(__file__).resolve().parent
@@ -35,8 +35,8 @@ LOCALE = {
 }
 
 
-@dataclass
-class RParams:
+@dataclass(frozen=True)
+class RParams(SharedBenchParams):
     Rpath: Path  # required: path to R install
     iterations: int = 15  # optional
 

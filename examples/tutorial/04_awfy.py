@@ -18,6 +18,7 @@ from bench import (
     HarnessHandle,
     Regex,
     Results,
+    SharedBenchParams,
     Summary,
     SummaryReporter,
     bench,
@@ -28,8 +29,8 @@ from bench import (
 )
 
 
-@dataclass
-class Params:
+@dataclass(frozen=True)
+class Params(SharedBenchParams):
     awfy: Path = Path("are-we-fast-yet/benchmarks/Python")
     runs: int = 10
     warmup: int = 5

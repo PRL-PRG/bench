@@ -374,10 +374,10 @@ def test_context_carries_cli_state():
     seen: list[tuple[bool, int]] = []
 
     def cmd(ctx):
-        seen.append((ctx.cli.verbose, ctx.cli.jobs))
+        seen.append((ctx.params.verbose, ctx.params.jobs))
         return ["true"]
 
     s = suite("S", _b("a")).with_command(cmd)
-    s.materialize(None, cli=SharedBenchParams(verbose=True, jobs=4))
-    s.materialize(None)  # defaults
+    s.materialize(SharedBenchParams(verbose=True, jobs=4))
+    s.materialize(SharedBenchParams())  # defaults
     assert seen == [(True, 4), (False, 1)]

@@ -50,7 +50,7 @@ from bench.grammar.builder import (
     as_build,
     const,
 )
-from bench.grammar.context import Context, Data, SharedBenchParams
+from bench.grammar.context import Context, Data
 
 if TYPE_CHECKING:
     from bench.runner.source import HarnessMonitor
@@ -109,18 +109,15 @@ class BenchmarkBuilder(BuilderBase):
 
     # ----- creation ----------------------------------------------------
 
-    def create(
-        self, params: Any, *, suite: str, cli: SharedBenchParams | None = None
-    ) -> Iterator[Benchmark]:
+    def create(self, params: Any, *, suite: str) -> Iterator[Benchmark]:
         """Yield one fully-resolved `Benchmark`.
 
         Expands the matrix (cartesian product), resolves every field against the
         variant `Context`, then drops any variant matched by a skip rule.
         """
-        cli = cli or SharedBenchParams()
         names = list(self.matrix)
         if not names:
-            yield self._resolve_cell(params, suite, (), cli=cli)
+            yield self._resolve_cell(params, suite, ())
             return
         # Resolve callable axes once, before expanding the product. The axis
         # Context has no per-variant matrix yet (we are defining it), so axes
@@ -130,7 +127,6 @@ class BenchmarkBuilder(BuilderBase):
             suite=suite,
             benchmark=self.name,
             data=Data(),
-            cli=cli,
         )
         axes = [tuple(v(axis_ctx)) if callable(v) else v for v in self.matrix.values()]
         for combo in itertools.product(*axes):
@@ -141,7 +137,7 @@ class BenchmarkBuilder(BuilderBase):
                 data=MappingProxyType({**self.data, **chosen}),
                 matrix=EMPTY_MAPPING,
             )
-            benchmark = cell._resolve_cell(params, suite, variant, cli=cli)
+            benchmark = cell._resolve_cell(params, suite, variant)
             if any(skip(benchmark) for skip in self.skips):
                 continue
             yield benchmark
@@ -151,8 +147,6 @@ class BenchmarkBuilder(BuilderBase):
         params: Any,
         suite: str,
         variant: Variant,
-        *,
-        cli: SharedBenchParams | None = None,
     ) -> Benchmark:
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
@@ -162,7 +156,6 @@ class BenchmarkBuilder(BuilderBase):
             suite=suite,
             benchmark=self.name,
             data=Data(dict(self.data)),
-            cli=cli or SharedBenchParams(),
         )
         env = self.env(ctx)
         execution = Execution(

@@ -18,7 +18,15 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import bench as B, bench_app, Context, FloatPerLine, max_rss, suite
+from bench import (
+    bench as B,
+    bench_app,
+    Context,
+    FloatPerLine,
+    SharedBenchParams,
+    max_rss,
+    suite,
+)
 
 
 _HARNESS_R = r"""
@@ -44,8 +52,8 @@ if (!exists("verifyResult"))
 """
 
 
-@dataclass
-class RshParams:
+@dataclass(frozen=True)
+class RshParams(SharedBenchParams):
     Rscript: Path  # required: Rscript executable (GNU-R, PIR-LLVM, FASTR, ...)
     benchmarks_path: Path  # required: path to RBenchmarking/Benchmarks
     iterations: int = 15  # rebench: iterations (harness inner loop)

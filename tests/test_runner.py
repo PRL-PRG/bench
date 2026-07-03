@@ -442,14 +442,13 @@ def test_run_resolves_reporter_factory_with_cli_state():
         pass
 
     def factory(ctx):
-        seen["verbose"] = ctx.cli.verbose
-        seen["dry"] = ctx.cli.dry
-        seen["params"] = ctx.params
+        seen["verbose"] = ctx.params.verbose
+        seen["dry"] = ctx.params.dry
         return _Rec()
 
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
     bench_app(reporter=factory).add_all(s).run(["--dry", "--verbose"])
-    assert seen == {"verbose": True, "dry": True, "params": None}
+    assert seen == {"verbose": True, "dry": True}
 
     seen.clear()
     bench_app(reporter=factory).add_all(s).run(["--dry"])
@@ -460,7 +459,7 @@ def test_with_runner_override_wins_over_jobs():
     captured: dict[str, object] = {}
 
     def make_runner(ctx):
-        captured["jobs"] = ctx.cli.jobs
+        captured["jobs"] = ctx.params.jobs
         r = Sequential()
         captured["runner"] = r
         return r
@@ -472,7 +471,7 @@ def test_with_runner_override_wins_over_jobs():
         .with_runner(make_runner)
         .run(["--jobs", "4", "--no-progress"])
     )
-    assert captured["jobs"] == 4  # ctx.cli still carries the flag
+    assert captured["jobs"] == 4  # ctx.params carries the runtime flags
     assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
     assert len(report.runs) == 1
 

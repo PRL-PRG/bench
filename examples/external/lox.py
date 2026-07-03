@@ -17,6 +17,7 @@ from bench import (
     CompositeReporter,
     Context,
     FloatPerLine,
+    SharedBenchParams,
     SummaryReporter,
     Time,
     bench,
@@ -30,8 +31,8 @@ from bench import (
 HERE = Path(__file__).resolve().parent
 
 
-@dataclass
-class LoxParams:
+@dataclass(frozen=True)
+class LoxParams(SharedBenchParams):
     lox: Path  # required: path to the lox binary
     cwd: Path = HERE  # script's base dir
 

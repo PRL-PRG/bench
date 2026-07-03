@@ -28,6 +28,7 @@ from bench import (
     ExecutionResult,
     Reporter,
     Run,
+    SharedBenchParams,
     Time,
     bench_app,
     from_files,
@@ -112,8 +113,8 @@ class LoxTestSummary(Reporter):
 # ----------------------------------------------------------------------
 
 
-@dataclass
-class TestParams:
+@dataclass(frozen=True)
+class TestParams(SharedBenchParams):
     lox: Path  # required: lox binary
     cwd: Path = HERE
 

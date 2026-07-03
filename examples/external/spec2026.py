@@ -30,6 +30,7 @@ from bench import (
     HarnessHandle,
     HarnessMonitor,
     Regex,
+    SharedBenchParams,
     SuiteBuilder,
     bench,
     bench_app,
@@ -41,8 +42,8 @@ from bench import (
 SUITE_METRICS = {"CINT2026", "CFP2026"}
 
 
-@dataclass
-class Spec2026Params:
+@dataclass(frozen=True)
+class Spec2026Params(SharedBenchParams):
     spec_root: Path  # required: the cpu2026 dir (shrc, bin/runcpu)
     config: str = "myconfig.cfg"
     size: str = "test"  # test | train | ref
