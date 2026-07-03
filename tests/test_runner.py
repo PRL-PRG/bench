@@ -20,8 +20,10 @@ from bench import (
     Reporter,
     Sequential,
     SuiteMaterializationError,
+    SummaryReporter,
     Time,
     bench,
+    bench_app,
     report_from_json,
     run,
     suite,
@@ -454,3 +456,60 @@ def test_run_resolves_reporter_factory_with_cli_state():
     seen.clear()
     run(s, reporter=factory, argv=["--dry"])
     assert seen["verbose"] is False
+
+
+def test_with_runner_override_wins_over_jobs():
+    captured: dict[str, object] = {}
+
+    def make_runner(ctx):
+        captured["jobs"] = ctx.cli.jobs
+        r = Sequential()
+        captured["runner"] = r
+        return r
+
+    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    report = (
+        bench_app()
+        .add(s)
+        .with_runner(make_runner)
+        .run(argv=["--jobs", "4", "--no-progress"])
+    )
+    assert captured["jobs"] == 4  # ctx.cli still carries the flag
+    assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
+    assert len(report.runs) == 1
+
+
+def test_with_filter_override_narrows_plan():
+    s = (
+        suite("S")
+        .add(bench("keep"))
+        .add(bench("drop"))
+        .with_command(["true"])
+        .with_process_metric(Time())
+    )
+    report = (
+        bench_app()
+        .add(s)
+        .with_filter(lambda ctx: lambda b: b.name == "keep")
+        .run(argv=["--no-progress"])
+    )
+    assert {r.benchmark for r in report.runs} == {"keep"}
+
+
+def test_with_reporter_factory_takes_full_control(tmp_path: Path):
+    out = tmp_path / "r.json"
+    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    # A factory result is used as-is: only the JsonReporter, no --json flag needed.
+    bench_app().add(s).with_reporter(lambda ctx: JsonReporter(out)).run(
+        argv=["--no-progress"]
+    )
+    assert out.exists()
+    assert report_from_json(out.read_text()).runs
+
+
+def test_bare_reporter_still_gets_cli_sinks(tmp_path: Path):
+    out = tmp_path / "r.json"
+    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    # A bare reporter customizes only the summary; --json is still honored.
+    run(s, reporter=SummaryReporter(), argv=["--no-progress", "--json", str(out)])
+    assert out.exists()

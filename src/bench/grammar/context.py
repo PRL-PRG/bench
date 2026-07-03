@@ -26,8 +26,8 @@ from pathlib import Path
 from typing import Any
 
 
-class Matrix:
-    """A benchmark's variant/data payload"""
+class Data:
+    """A benchmark variant's payload: static data merged with its matrix-axis values."""
 
     __slots__ = ("_data",)
 
@@ -41,34 +41,83 @@ class Matrix:
             raise AttributeError(name) from None
 
     def __repr__(self) -> str:
-        return f"Matrix({self._data!r})"
+        return f"Data({self._data!r})"
 
 
 @dataclass(frozen=True, slots=True)
-class Cli:
-    """The parsed bench runtime/selection flags, exposed on `Context.cli` so
-    builder and reporter callables can branch on the invocation (verbose, dry,
-    jobs, …) — the bench-owned counterpart to the user's `Context.params`."""
+class SharedSelectionParams:
+    """The bench selection flags (`--include`/`--exclude`), reflected onto the
+    CLI and exposed on `Context.cli` for `with_filter(...)` to consume."""
 
-    verbose: bool = False
-    dry: bool = False
-    jobs: int = 1
-    no_progress: bool = False
-    json: str | None = None
-    csv: str | None = None
-    dir: str | None = None
-    include: list[str] | None = None
-    exclude: list[str] | None = None
-    list_plan: bool = False
+    include: list[str] | None = field(
+        default=None,
+        metadata={
+            "metavar": "REGEX",
+            "help": "Keep only benchmarks whose full name matches REGEX. "
+            "Repeatable (OR semantics).",
+        },
+    )
+    exclude: list[str] | None = field(
+        default=None,
+        metadata={
+            "metavar": "REGEX",
+            "help": "Drop benchmarks whose full name matches REGEX. "
+            "Repeatable. Wins over --include.",
+        },
+    )
 
-    @classmethod
-    def from_namespace(cls, ns: argparse.Namespace) -> Cli:
-        """Pull the known flags off a parsed argparse namespace, ignoring any
-        that aren't present (e.g. a subcommand that omits selection flags)."""
-        present = {
-            f.name: getattr(ns, f.name) for f in fields(cls) if hasattr(ns, f.name)
-        }
-        return cls(**present)
+
+@dataclass(frozen=True, slots=True)
+class SharedBenchParams(SharedSelectionParams):
+    """The parsed bench runtime + selection flags, exposed on `Context.cli` so
+    the `with_runner`/`with_reporter`/`with_filter` callables can branch on the
+    invocation — the bench-owned counterpart to the user's `Context.params`."""
+
+    jobs: int = field(
+        default=1,
+        metadata={
+            "flags": ("-j",),
+            "metavar": "N",
+            "help": "Run up to N benchmarks in parallel (default: 1, sequential).",
+        },
+    )
+    progress: bool = field(
+        default=True,
+        metadata={"help": "Suppress the progress bar with --no-progress."},
+    )
+    dry: bool = field(
+        default=False,
+        metadata={
+            "action": "store_true",
+            "help": "Show what shall happen but without running anything.",
+        },
+    )
+    verbose: bool = field(
+        default=False,
+        metadata={"flags": ("-v",), "action": "store_true", "help": "Verbose output."},
+    )
+    json: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "FILE",
+            "help": "Write a JSON report of every sample to FILE.",
+        },
+    )
+    csv: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "FILE",
+            "help": "Write a CSV report of every sample to FILE.",
+        },
+    )
+    dir: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "DIR",
+            "help": "Write a per-execution tree "
+            "(stdout/stderr/exitcode/seq) under DIR.",
+        },
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,8 +127,8 @@ class Context[T]:
     params: T
     suite: str
     benchmark: str | None
-    matrix: Matrix
-    cli: Cli = field(default_factory=Cli)  # parsed bench CLI flags
+    data: Data
+    cli: SharedBenchParams = field(default_factory=SharedBenchParams)
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field
@@ -92,8 +141,18 @@ def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
     dc: type,
+    *,
+    skip: set[str] | None = None,
 ) -> None:
-    """Generate `--<name>` arguments from a dataclass's fields."""
+    """Generate `--<name>` arguments from a dataclass's fields.
+
+    Per-field `field(metadata=...)` keys refine the generated argument:
+      - `flags`: extra option strings, e.g. `("-j",)`.
+      - `help`, `metavar`: verbatim overrides.
+      - `action`: an argparse action override, e.g. `"store_true"`.
+    A `list[T]` field becomes a repeatable `action="append"` argument. `skip`
+    omits fields by name (used to split inherited fields across argument groups).
+    """
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")
     try:
@@ -101,15 +160,24 @@ def add_dataclass_args(
     except Exception:
         hints = {}
     for f in fields(dc):
-        flag = "--" + f.name.replace("_", "-")
+        if skip and f.name in skip:
+            continue
+        flags = ["--" + f.name.replace("_", "-"), *f.metadata.get("flags", ())]
         kwargs: dict[str, Any] = {"dest": f.name}
         bare_type, optional = _unwrap_optional(hints.get(f.name, f.type))
-        is_bool = bare_type is bool
-        if is_bool:
+        action = f.metadata.get("action")
+        if action:
+            kwargs["action"] = action
+        elif bare_type is bool:
             kwargs["action"] = argparse.BooleanOptionalAction
+        elif typing.get_origin(bare_type) is list:
+            elem = typing.get_args(bare_type)[0]
+            kwargs["action"] = "append"
+            kwargs["type"] = _coerce_type(elem)
+            kwargs["metavar"] = f.metadata.get("metavar", _metavar(elem))
         else:
             kwargs["type"] = _coerce_type(bare_type)
-            kwargs["metavar"] = _metavar(bare_type)
+            kwargs["metavar"] = f.metadata.get("metavar", _metavar(bare_type))
 
         factory = f.default_factory
         has_default = (
@@ -118,14 +186,16 @@ def add_dataclass_args(
         if has_default:
             default: Any = f.default if factory is dataclasses.MISSING else factory()
             kwargs["default"] = default
-            kwargs["help"] = f"(default: {default})"
+            kwargs["help"] = f.metadata.get("help", f"(default: {default})")
         elif optional:
             kwargs["default"] = None
-            kwargs["help"] = "(optional)"
+            kwargs["help"] = f.metadata.get("help", "(optional)")
         else:
             kwargs["required"] = True
+            if "help" in f.metadata:
+                kwargs["help"] = f.metadata["help"]
 
-        parser.add_argument(flag, **kwargs)
+        parser.add_argument(*flags, **kwargs)
 
 
 def build_dataclass(dc: type, namespace: argparse.Namespace) -> Any:

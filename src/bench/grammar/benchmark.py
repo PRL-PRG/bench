@@ -50,7 +50,7 @@ from bench.grammar.builder import (
     as_build,
     const,
 )
-from bench.grammar.context import Cli, Context, Matrix
+from bench.grammar.context import Context, Data, SharedBenchParams
 
 if TYPE_CHECKING:
     from bench.runner.source import HarnessMonitor
@@ -85,6 +85,14 @@ class BenchmarkBuilder(BuilderBase):
 
     # ----- with_* setters (shared ones live on BuilderBase) -----------
 
+    def with_data(self, **data: Any) -> BenchmarkBuilder:
+        """Attach static key/value data, readable as `ctx.data.<key>` (and `b.<key>`).
+
+        Merges with any data already set (later keys win). Values are stored
+        verbatim — a list value stays a list; use `.with_matrix(...)` to expand a
+        dimension into variants."""
+        return dataclasses.replace(self, data={**self.data, **data})
+
     def with_stdin(self, data: bytes | str | Build[bytes]) -> BenchmarkBuilder:
         return dataclasses.replace(
             self,
@@ -102,7 +110,7 @@ class BenchmarkBuilder(BuilderBase):
     # ----- creation ----------------------------------------------------
 
     def create(
-        self, params: Any, *, suite: str, cli: Cli | None = None
+        self, params: Any, *, suite: str, cli: SharedBenchParams | None = None
     ) -> Iterator[Benchmark]:
         """Yield one fully-resolved `Benchmark`.
 
@@ -110,7 +118,7 @@ class BenchmarkBuilder(BuilderBase):
         rule (before any builder runs), then resolves every field against the
         variant `Context`.
         """
-        cli = cli or Cli()
+        cli = cli or SharedBenchParams()
         names = list(self.matrix)
         if not names:
             yield self._resolve_cell(params, suite, (), cli=cli)
@@ -122,7 +130,7 @@ class BenchmarkBuilder(BuilderBase):
             params=params,
             suite=suite,
             benchmark=self.name,
-            matrix=Matrix(),
+            data=Data(),
             cli=cli,
         )
         axes = [tuple(v(axis_ctx)) if callable(v) else v for v in self.matrix.values()]
@@ -139,7 +147,12 @@ class BenchmarkBuilder(BuilderBase):
             yield cell._resolve_cell(params, suite, variant, cli=cli)
 
     def _resolve_cell(
-        self, params: Any, suite: str, variant: Variant, *, cli: Cli | None = None
+        self,
+        params: Any,
+        suite: str,
+        variant: Variant,
+        *,
+        cli: SharedBenchParams | None = None,
     ) -> Benchmark:
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
@@ -148,8 +161,8 @@ class BenchmarkBuilder(BuilderBase):
             params=params,
             suite=suite,
             benchmark=self.name,
-            matrix=Matrix(dict(self.data)),
-            cli=cli or Cli(),
+            data=Data(dict(self.data)),
+            cli=cli or SharedBenchParams(),
         )
         env = self.env(ctx)
         execution = Execution(
@@ -227,10 +240,11 @@ def _stringify(v: Any) -> str:
 def bench(name: str, **data: Any) -> BenchmarkBuilder:
     """Build a BenchmarkBuilder with arbitrary attached data.
 
-    `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available. To add
-    matrix dimensions use `.with_matrix(...)`.
+    `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available; it is exact
+    sugar for `bench("zoo").with_data(path=Path("zoo.lox"))`. To add matrix
+    dimensions use `.with_matrix(...)`.
     """
-    return BenchmarkBuilder(name=name, data=dict(data) if data else EMPTY_MAPPING)
+    return BenchmarkBuilder(name=name).with_data(**data)
 
 
 def from_files(

@@ -5,7 +5,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from bench import Cli, FixedRuns, FloatPerLine, Time, bench, from_files, suite
+from bench import (
+    FixedRuns,
+    FloatPerLine,
+    SharedBenchParams,
+    Time,
+    bench,
+    from_files,
+    suite,
+)
 
 
 def _b(name: str):
@@ -234,7 +242,7 @@ def test_with_matrix_expands_and_stamps_variant():
         suite(
             "M",
             _b("compute")
-            .with_command(lambda ctx: ["x", "-" + ctx.matrix.opt])
+            .with_command(lambda ctx: ["x", "-" + ctx.data.opt])
             .with_matrix(opt=["O0", "O2"]),
         )
         .with_cwd(Path("/tmp"))
@@ -251,8 +259,8 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
     s = (
         suite(
             "M",
-            _b("a").with_command(lambda ctx: ["x", ctx.matrix.vm]),
-            _b("b").with_command(lambda ctx: ["y", ctx.matrix.vm]),
+            _b("a").with_command(lambda ctx: ["x", ctx.data.vm]),
+            _b("b").with_command(lambda ctx: ["y", ctx.data.vm]),
         )
         .with_matrix(vm=["v8", "jsc"])
         .with_cwd(Path("/tmp"))
@@ -286,7 +294,7 @@ def test_with_skip_kwargs_drops_variant():
         suite(
             "M",
             _b("c")
-            .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+            .with_command(lambda ctx: ["x", ctx.data.vm, str(ctx.data.size)])
             .with_matrix(vm=["v8", "jsc"], size=[100, 500])
             .add_matrix_skip(vm="v8", size=500),
         )
@@ -303,7 +311,7 @@ def test_with_skip_predicate_drops_variant():
         suite(
             "M",
             _b("c")
-            .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+            .with_command(lambda ctx: ["x", ctx.data.vm, str(ctx.data.size)])
             .with_matrix(vm=["v8", "jsc"], size=[100, 500])
             .add_matrix_skip(lambda b: b.vm != "jsc"),
         )
@@ -319,7 +327,7 @@ def test_suite_skip_unions_with_benchmark_skip():
     s = suite(
         "M",
         _b("c")
-        .with_command(lambda ctx: ["x", ctx.matrix.vm, str(ctx.matrix.size)])
+        .with_command(lambda ctx: ["x", ctx.data.vm, str(ctx.data.size)])
         .with_matrix(vm=["v8", "jsc"], size=[100, 500])
         .add_matrix_skip(vm="v8", size=500),
     ).add_matrix_skip(vm="jsc", size=100)
@@ -344,13 +352,13 @@ def test_with_label_overrides_default():
 
 
 def test_command_via_matrix_builder():
-    """Per-variant command is wired explicitly via a builder reading ctx.matrix."""
+    """Per-variant command is wired explicitly via a builder reading ctx.data."""
     s = (
         suite(
             "M",
             _b("c")
             .with_matrix(cmd=[["echo", "a"], ["echo", "b"]])
-            .with_command(lambda ctx: list(ctx.matrix.cmd)),
+            .with_command(lambda ctx: list(ctx.data.cmd)),
         )
         .with_cwd(Path("/tmp"))
         .with_process_metric(Time())
@@ -370,6 +378,6 @@ def test_context_carries_cli_state():
         return ["true"]
 
     s = suite("S", _b("a")).with_command(cmd)
-    s.materialize(None, cli=Cli(verbose=True, jobs=4))
+    s.materialize(None, cli=SharedBenchParams(verbose=True, jobs=4))
     s.materialize(None)  # defaults
     assert seen == [(True, 4), (False, 1)]

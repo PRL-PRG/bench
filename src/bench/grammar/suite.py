@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from bench.grammar.builder import UNSET, BuilderBase, const
 from bench.grammar.benchmark import Benchmark, BenchmarkBuilder, default_label
-from bench.grammar.context import Cli, Context, Matrix
+from bench.grammar.context import Context, Data, SharedBenchParams
 from bench.core.execution import (
     EMPTY_MAPPING,
     default_success,
@@ -114,15 +114,17 @@ class SuiteBuilder(BuilderBase):
         """Make every contained benchmark a harness benchmark."""
         return dataclasses.replace(self, harness=True, monitor=monitor)
 
-    def materialize(self, params: Any, *, cli: Cli | None = None) -> list[Benchmark]:
+    def materialize(
+        self, params: Any, *, cli: SharedBenchParams | None = None
+    ) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
-        cli = cli or Cli()
+        cli = cli or SharedBenchParams()
         ctx: Context[Any] = Context(
             params=params,
             suite=self.name,
             benchmark=None,
-            matrix=Matrix(),
+            data=Data(),
             cli=cli,
         )
         collected = list(self.benchmarks)

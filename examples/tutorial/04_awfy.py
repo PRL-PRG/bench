@@ -46,7 +46,7 @@ def command(ctx: Context[Params]) -> list[str]:
     name = str(ctx.benchmark)
     n = ctx.params.warmup + ctx.params.runs
     harness = ctx.params.awfy / "harness.py"
-    return [ctx.matrix.vm, str(harness), name, str(n), str(ctx.matrix.arg)]
+    return [ctx.data.vm, str(harness), name, str(n), str(ctx.data.arg)]
 
 
 benchmarks = (

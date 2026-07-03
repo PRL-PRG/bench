@@ -23,9 +23,9 @@ from bench import FloatPerLine, bench, run, suite
 
 
 def cmd(ctx):
-    # Axis values reach the callable via `ctx.matrix` (ctx.matrix.vm, ...).
-    base_ms = 50 if ctx.matrix.vm == "VM2" else 100
-    total_ms = base_ms + ctx.matrix.size // 50
+    # Axis values reach the callable via `ctx.data` (ctx.data.vm, ...).
+    base_ms = 50 if ctx.data.vm == "VM2" else 100
+    total_ms = base_ms + ctx.data.size // 50
     return ["sh", "-c", f"sleep {total_ms / 1000.0}; echo {total_ms}"]
 
 

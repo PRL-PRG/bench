@@ -250,7 +250,7 @@ def test_value_field_bare_callable_resolved_per_variant():
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_matrix(size=[100, 200])
-        .with_timeout(lambda ctx: ctx.matrix.size / 1000)
+        .with_timeout(lambda ctx: ctx.data.size / 1000)
     )
     bs = suite("S", b).materialize(None)
     assert {x.execution.timeout for x in bs} == {0.1, 0.2}
@@ -262,7 +262,7 @@ def test_dynamic_runs_resolved_per_variant():
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_matrix(n=[2, 5])
-        .with_runs(lambda ctx: FixedRuns(ctx.matrix.n))
+        .with_runs(lambda ctx: FixedRuns(ctx.data.n))
     )
     bs = suite("S", b).materialize(None)
     assert {x.runs.max_runs() for x in bs} == {2, 5}

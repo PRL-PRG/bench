@@ -37,7 +37,7 @@ class LoxParams:
 
 
 def lox_cmd(ctx: Context[LoxParams]):
-    return [str(ctx.params.lox), str(ctx.matrix.path)]
+    return [str(ctx.params.lox), str(ctx.data.path)]
 
 
 def _bench_root(ctx: LoxParams) -> Path:
@@ -71,7 +71,7 @@ zoo_suite = (
     .with_command(
         lambda ctx: [
             str(ctx.params.lox),
-            str((_bench_root(ctx.params) / ctx.matrix.path).name),
+            str((_bench_root(ctx.params) / ctx.data.path).name),
         ]
     )
     .with_timeout(12)

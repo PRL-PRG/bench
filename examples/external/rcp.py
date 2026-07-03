@@ -40,7 +40,7 @@ def _cmd(ctx: Context[RcpParams]):
         "--runs",
         str(p.iterations),
         "--rcp",
-        str(ctx.matrix.path.with_suffix("")),
+        str(ctx.data.path.with_suffix("")),
     ]
 
 

@@ -54,9 +54,9 @@ class RshParams:
 def _cmd(ctx: Context[RshParams]):
     return [
         str(ctx.params.Rscript),
-        f"{ctx.matrix.cmd}.r",
+        f"{ctx.data.cmd}.r",
         str(ctx.params.iterations),
-        str(ctx.matrix.extra_args),
+        str(ctx.data.extra_args),
     ]
 
 

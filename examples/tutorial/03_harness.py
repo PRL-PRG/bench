@@ -18,7 +18,7 @@ s = (
     .with_matrix(vm=["python3.9", "python3.14", "pypy3"], runs=range(2))
     .with_command(
         lambda ctx: [
-            ctx.matrix.vm,
+            ctx.data.vm,
             f"benchmarks/{ctx.benchmark}.py",
             str(WARMUP + RUNS),
         ]

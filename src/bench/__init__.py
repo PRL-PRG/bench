@@ -65,7 +65,7 @@ from bench.grammar.benchmark import (
     from_files,
 )
 from bench.grammar.suite import SuiteBuilder, suite
-from bench.grammar.context import Cli, Context
+from bench.grammar.context import Context, SharedBenchParams, SharedSelectionParams
 
 # Runners
 from bench.runner.base import (
@@ -153,7 +153,8 @@ __all__ = [
     "SuiteBuilder",
     "suite",
     "Context",
-    "Cli",
+    "SharedBenchParams",
+    "SharedSelectionParams",
     # Runners
     "Runner",
     "Sequential",

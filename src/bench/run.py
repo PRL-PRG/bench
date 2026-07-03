@@ -21,9 +21,10 @@ from rich.tree import Tree
 from bench.grammar.benchmark import Benchmark
 from bench.grammar.builder import BuilderBase
 from bench.grammar.context import (
-    Cli,
     Context,
-    Matrix,
+    Data,
+    SharedBenchParams,
+    SharedSelectionParams,
     add_dataclass_args,
     build_dataclass,
 )
@@ -57,7 +58,6 @@ from bench.runner.base import (
     Runner,
     SuiteMaterializationError,
     plan,
-    select,
 )
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
@@ -65,9 +65,9 @@ from bench.runner.sequential import Sequential
 
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
-# A reporter, or a `(ctx) -> Reporter` factory resolved after CLI parsing so it
-# can read `ctx.cli` / `ctx.params` (e.g. pick a verbose vs concise summary).
 type ReporterArg = Reporter | Callable[[Context[Any]], Reporter]
+type RunnerFn = Callable[[Context[Any]], Runner]
+type FilterFn = Callable[[Context[Any]], Callable[[Benchmark], bool]]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -87,6 +87,8 @@ class BenchAppBuilder(BuilderBase):
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
     reporter: ReporterArg | None = None
+    runner: RunnerFn | None = None
+    filter: FilterFn | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
@@ -105,6 +107,28 @@ class BenchAppBuilder(BuilderBase):
         any manually added ones.
         """
         return dataclasses.replace(self, factories=self.factories + (fn,))
+
+    def with_reporter(self, fn: ReporterArg) -> BenchAppBuilder:
+        """Set the reporter.
+
+        A bare `Reporter` customizes just the summary — the progress bar and the
+        `--json`/`--csv`/`--dir` sinks are still applied. A `(ctx) -> Reporter`
+        factory takes full control (its result is used as-is); call
+        `default_reporter(ctx)` inside it to keep the default composition."""
+        return dataclasses.replace(self, reporter=fn)
+
+    def with_runner(self, fn: RunnerFn) -> BenchAppBuilder:
+        """Set the runner factory `(ctx) -> Runner`.
+
+        Replaces the default that picks Dry/Parallel/Sequential from `ctx.cli`
+        (`--dry`, `--jobs`)."""
+        return dataclasses.replace(self, runner=fn)
+
+    def with_filter(self, fn: FilterFn) -> BenchAppBuilder:
+        """Set the selection filter factory `(ctx) -> (Benchmark -> bool)`.
+
+        Replaces the default `--include`/`--exclude` regex filter."""
+        return dataclasses.replace(self, filter=fn)
 
     def run(self, argv: list[str] | None = None) -> Report:
         """Parse argv, resolve factories, apply app defaults, run every suite."""
@@ -127,6 +151,8 @@ class BenchAppBuilder(BuilderBase):
             build_params,
             environment=self.environment,
             denoise=self.denoise,
+            runner=self.runner,
+            filter=self.filter,
         )
 
 
@@ -207,34 +233,36 @@ def do_run(
     *,
     environment: EnvironmentCollector = NoEnvironment(),
     denoise: bool = False,
+    runner: RunnerFn | None = None,
+    filter: FilterFn | None = None,
 ) -> Report:
-    """Run already-parsed benchmarks: build the reporter, plan the suites,
-    apply CLI overrides and hand off to the runner."""
-    cli = Cli.from_namespace(cli_args)
-    # A reporter factory is resolved now that CLI args are parsed, so it can read
-    # ctx.cli / ctx.params (e.g. choose a verbose vs concise summary).
-    if reporter is not None and not isinstance(reporter, Reporter):
-        ctx: Context[Any] = Context(
-            params=build_params,
-            suite="",
-            benchmark=None,
-            matrix=Matrix(),
-            cli=cli,
-        )
-        reporter = reporter(ctx)
-    if reporter is None:
-        reporter = SummaryReporter(DefaultSummary())
+    """Run already-parsed benchmarks: resolve the reporter/runner/filter stages
+    against `ctx`, plan and filter the suites, and hand off to the runner."""
+    cli = build_dataclass(SharedBenchParams, cli_args)
+    ctx: Context[Any] = Context(
+        params=build_params,
+        suite="",
+        benchmark=None,
+        data=Data(),
+        cli=cli,
+    )
 
-    # `--show FILE`: replay a saved report through the configured reporter (so it
-    # renders with whatever formatter the script set up) and exit — no progress
-    # bar, no re-export, nothing run.
+    # `--show FILE`: replay a saved report through the configured summary (a bare
+    # reporter, a factory's result, or the default) and exit — no progress bar, no
+    # re-export, nothing run.
     show = getattr(cli_args, "show", None)
     if show:
         report = report_from_json(Path(show).read_text())
-        reporter.set_environment(report.environment, report.diagnostics)
+        if isinstance(reporter, Reporter):
+            show_reporter: Reporter = reporter
+        elif reporter is None:
+            show_reporter = SummaryReporter(DefaultSummary())
+        else:
+            show_reporter = reporter(ctx)
+        show_reporter.set_environment(report.environment, report.diagnostics)
         for r in report.runs:
-            reporter.run_done(r)
-        reporter.finalize()
+            show_reporter.run_done(r)
+        show_reporter.finalize()
         return report
 
     if denoise and not is_root():
@@ -247,12 +275,8 @@ def do_run(
     env = environment.collect()
     env_diagnostics = run_checks(env) if env is not None else []
 
-    reporter = _build_reporter(
-        cli_args,
-        reporter,
-        with_progress=not cli_args.no_progress,
-    )
-    reporter.set_environment(env, env_diagnostics)
+    active_reporter = _resolve_reporter(reporter, ctx)
+    active_reporter.set_environment(env, env_diagnostics)
 
     try:
         planned = plan(suites, build_params, cli=cli)
@@ -260,19 +284,18 @@ def do_run(
         print_exception(e)
         sys.exit(1)
 
-    includes = getattr(cli_args, "include", None)
-    excludes = getattr(cli_args, "exclude", None)
     try:
-        planned = select(planned, includes, excludes)
+        keep = (filter or default_filter)(ctx)
     except re.error as e:
         console.print(f"[bench.failure]Invalid --include/--exclude regex: {e}[/]")
         sys.exit(2)
+    planned = [b for b in planned if keep(b)]
 
     if getattr(cli_args, "list_plan", False):
         console.print(_list_planned_benchmarks(planned))
         return Report()
 
-    if (includes or excludes) and not planned:
+    if (cli.include or cli.exclude) and not planned:
         console.print(
             "[bench.failure]No benchmarks matched --include/--exclude "
             "(run with --list to see what's available).[/]"
@@ -281,7 +304,8 @@ def do_run(
 
     print_diagnostics(env_diagnostics, "Environment checks")
 
-    runner = _make_runner(cli_args, reporter)
+    active_runner = (runner or default_runner)(ctx)
+    active_runner.reporter = active_reporter
 
     try:
         if denoise:
@@ -290,9 +314,9 @@ def do_run(
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                report = runner.run(planned, build_params)
+                report = active_runner.run(planned, build_params)
         else:
-            report = runner.run(planned, build_params)
+            report = active_runner.run(planned, build_params)
     except KeyboardInterrupt:
         console.print("[bench.failure]Interrupted[/]")
         sys.exit(1)
@@ -302,38 +326,58 @@ def do_run(
     return report
 
 
-def _build_reporter(
-    ns: argparse.Namespace,
-    summary_reporter: Reporter,
-    *,
-    with_progress: bool,
-) -> Reporter:
+def _resolve_reporter(reporter: ReporterArg | None, ctx: Context[Any]) -> Reporter:
+    """Resolve the reporter stage. A `(ctx) -> Reporter` factory takes full
+    control (its result is used as-is); a bare `Reporter` or `None` is treated as
+    the summary and wrapped by `default_reporter` (progress bar + the
+    `--json`/`--csv`/`--dir` sinks)."""
+    if reporter is None or isinstance(reporter, Reporter):
+        return default_reporter(ctx, summary=reporter)
+    return reporter(ctx)
+
+
+def default_reporter(ctx: Context[Any], summary: Reporter | None = None) -> Reporter:
+    """The built-in reporter: a progress bar (unless `--no-progress`), the
+    `summary` (default `SummaryReporter(DefaultSummary())`), and the
+    `--json`/`--csv`/`--dir` sinks."""
     sinks: list[Reporter] = []
-    if with_progress:
+    if ctx.cli.progress:
         sinks.append(ProgressReporter())
-
-    sinks.append(summary_reporter)
-
-    if ns.json:
-        sinks.append(JsonReporter(Path(ns.json)))
-
-    if ns.csv:
-        sinks.append(CsvReporter(Path(ns.csv)))
-
-    if ns.dir:
-        sinks.append(DirReporter(Path(ns.dir)))
-
+    sinks.append(summary or SummaryReporter(DefaultSummary()))
+    if ctx.cli.json:
+        sinks.append(JsonReporter(Path(ctx.cli.json)))
+    if ctx.cli.csv:
+        sinks.append(CsvReporter(Path(ctx.cli.csv)))
+    if ctx.cli.dir:
+        sinks.append(DirReporter(Path(ctx.cli.dir)))
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
-def _make_runner(ns: argparse.Namespace, reporter: Reporter) -> Runner:
-    if ns.dry:
-        return Dry(verbose=ns.verbose)
+def default_runner(ctx: Context[Any]) -> Runner:
+    """The built-in runner: Dry for `--dry`, Parallel for `--jobs > 1`, else
+    Sequential. The pipeline injects the reporter afterward."""
+    cli = ctx.cli
+    if cli.dry:
+        return Dry(verbose=cli.verbose)
+    if cli.jobs > 1:
+        return Parallel(workers=cli.jobs, verbose=cli.verbose)
+    return Sequential(verbose=cli.verbose)
 
-    if ns.jobs > 1:
-        return Parallel(workers=ns.jobs, reporter=reporter, verbose=ns.verbose)
 
-    return Sequential(reporter=reporter, verbose=ns.verbose)
+def default_filter(ctx: Context[Any]) -> Callable[[Benchmark], bool]:
+    """The built-in selection filter: keep benchmarks matching any `--include`
+    regex (OR) and no `--exclude` regex (exclude wins). Compiles eagerly so a bad
+    pattern raises `re.error` before the run starts."""
+    inc = [re.compile(p) for p in (ctx.cli.include or [])]
+    exc = [re.compile(p) for p in (ctx.cli.exclude or [])]
+
+    def keep(b: Benchmark) -> bool:
+        key = record_key(b.suite, b.name, b.variant)
+        if inc and not any(r.search(key) for r in inc):
+            return False
+        return not any(r.search(key) for r in exc)
+
+    return keep
 
 
 # ---------------------------------------------------------------------------
@@ -346,15 +390,26 @@ def _make_run_parser(
 ) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="bench", description=description or None)
     _add_user_params(p, params)
-    add_runtime_flags(p.add_argument_group("bench flags"))
-    _add_selection_flags(p.add_argument_group("selection"))
+    add_dataclass_args(
+        p.add_argument_group("bench flags"),
+        SharedBenchParams,
+        skip={"include", "exclude"},
+    )
+    sel = p.add_argument_group("selection")
+    add_dataclass_args(sel, SharedSelectionParams)
+    sel.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_plan",
+        help="List the suite/benchmark/variant tree and exit (run nothing).",
+    )
     p.add_argument(
         "--show",
         type=str,
         default=None,
         metavar="JSON",
-        help="Render a previously saved JSON report with this script's "
-        "configured reporter, then exit (run nothing).",
+        help="Render a previously saved JSON report with the default summary, "
+        "then exit (run nothing).",
     )
     return p
 
@@ -370,76 +425,10 @@ def add_runtime_flags(
     # argparse exposes no public name for the add_argument_group() return type.
     g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
 ) -> None:
-    g.add_argument(
-        "--jobs",
-        "-j",
-        type=int,
-        default=1,
-        metavar="N",
-        help="Run up to N benchmarks in parallel (default: 1, sequential).",
-    )
-    g.add_argument(
-        "--no-progress",
-        action="store_true",
-        help="Suppress the progress bar.",
-    )
-    g.add_argument(
-        "--dry",
-        action="store_true",
-        help="Show what shall happen but without running anything.",
-    )
-    g.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Verbose output.",
-    )
-    g.add_argument(
-        "--json",
-        type=str,
-        default=None,
-        metavar="FILE",
-        help="Write a JSON report of every sample to FILE.",
-    )
-    g.add_argument(
-        "--csv",
-        type=str,
-        default=None,
-        metavar="FILE",
-        help="Write a CSV report of every sample to FILE.",
-    )
-    g.add_argument(
-        "--dir",
-        type=str,
-        default=None,
-        metavar="DIR",
-        help="Write a per-execution tree (stdout/stderr/exitcode/seq) under DIR.",
-    )
-
-
-def _add_selection_flags(
-    g: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
-) -> None:
-    g.add_argument(
-        "--list",
-        action="store_true",
-        dest="list_plan",
-        help="List the suite/benchmark/variant tree and exit (run nothing).",
-    )
-    g.add_argument(
-        "--include",
-        action="append",
-        default=None,
-        metavar="REGEX",
-        help="Keep only benchmarks whose full name matches REGEX. Repeatable (OR semantics).",
-    )
-    g.add_argument(
-        "--exclude",
-        action="append",
-        default=None,
-        metavar="REGEX",
-        help="Drop benchmarks whose full name matches REGEX. Repeatable. Wins over --include.",
-    )
+    """Add the shared bench runtime flags (jobs/progress/dry/verbose/json/csv/dir)
+    to an argument group. Used by the `bench run` console subcommand, which has no
+    selection flags of its own."""
+    add_dataclass_args(g, SharedBenchParams, skip={"include", "exclude"})
 
 
 # ---------------------------------------------------------------------------

@@ -123,7 +123,7 @@ def _test_root(ctx: TestParams) -> Path:
 
 
 def lox_cmd(ctx: Context[TestParams]) -> list[str]:
-    return [str(ctx.params.lox), str(ctx.matrix.path)]
+    return [str(ctx.params.lox), str(ctx.data.path)]
 
 
 lox_tests = (

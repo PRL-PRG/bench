@@ -63,7 +63,7 @@ areWeFast = (
             "harness.r",
             str(ctx.benchmark),
             str(ctx.params.iterations),
-            str(ctx.matrix.size),
+            str(ctx.data.size),
         ]
     )
     .with_metric(Rebench())
@@ -91,14 +91,14 @@ shootout = (
     .add(_shootout("reversecomplement", "reversecomplement", 150000))
     .add(_shootout("spectralnorm", "spectralnorm", 1200))
     .add(_shootout("spectralnorm_math", "spectralnorm", 1200))
-    .with_cwd(lambda ctx: BENCHMARKS / "shootout" / ctx.matrix.subfolder)
+    .with_cwd(lambda ctx: BENCHMARKS / "shootout" / ctx.data.subfolder)
     .with_command(
         lambda ctx: [
             _rscript(ctx.params),
             "harness.r",
             str(ctx.benchmark),
             str(ctx.params.iterations),
-            str(ctx.matrix.arg),
+            str(ctx.data.arg),
         ]
     )
     .with_metric(Rebench())
@@ -118,7 +118,7 @@ realThing = (
             "harness.r",
             str(ctx.benchmark),
             str(ctx.params.iterations),
-            str(ctx.matrix.size),
+            str(ctx.data.size),
         ]
     )
     .with_metric(Rebench())

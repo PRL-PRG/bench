@@ -206,10 +206,10 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     names = list(matrix_dims)
 
     def cmd(ctx: Context[Any]) -> list[str]:
-        argv = list(ctx.matrix.command)
+        argv = list(ctx.data.command)
         if not names:
             return argv
-        subst = {n: getattr(ctx.matrix, n) for n in names}
+        subst = {n: getattr(ctx.data, n) for n in names}
         return [tok.format(**subst) for tok in argv]
 
     def label(bm: Benchmark) -> str:

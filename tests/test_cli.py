@@ -189,7 +189,7 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
         suite("s")
         .add(bench("x"))
         .with_matrix(sleep=["0.01", "0.02"])
-        .with_command(lambda ctx: ["sleep", ctx.matrix.sleep])
+        .with_command(lambda ctx: ["sleep", ctx.data.sleep])
         .with_process_metric(Time(elapsed=True))
         .with_runs(1)
     )

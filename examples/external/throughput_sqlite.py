@@ -20,8 +20,8 @@ def sqlite_cmd(ctx):
     return [
         sys.executable,
         str(SQLITE_BENCH),
-        ctx.matrix.journal,
-        ctx.matrix.sync,
+        ctx.data.journal,
+        ctx.data.sync,
     ]
 
 
