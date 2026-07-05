@@ -47,6 +47,7 @@ from bench.grammar.builder import (
     UNSET,
     Factory,
     BuilderBase,
+    HarnessMonitorFactory,
     as_build,
     const,
 )
@@ -104,8 +105,15 @@ class BenchmarkBuilder(BuilderBase):
         streams all iterations, where each line (or framed block) becomes one
         observation.
 
-        `monitor` frames the output stream into iterations."""
-        return dataclasses.replace(self, harness=True, monitor=monitor)
+        `monitor` frames the output stream into iterations. Use
+        `with_monitor_fn` instead if the monitor needs to read `ctx`."""
+        m = monitor if monitor is UNSET else const(monitor)
+        return dataclasses.replace(self, harness=True, monitor=m)
+
+    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> BenchmarkBuilder:
+        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) ->
+        HarnessMonitor`, built per-variant instead of a single reusable value."""
+        return dataclasses.replace(self, harness=True, monitor=fn)
 
     # ----- creation ----------------------------------------------------
 
@@ -183,7 +191,7 @@ class BenchmarkBuilder(BuilderBase):
             outlier_detection=self.outlier_detection,
             cooldown=self.cooldown,
             harness=self.harness,
-            monitor=self.monitor,
+            monitor=self.monitor(ctx),
             data=self.data,
         )
         return dataclasses.replace(b, variant_label=self.label_fn(b))

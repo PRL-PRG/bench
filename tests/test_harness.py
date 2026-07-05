@@ -53,6 +53,26 @@ def test_bench_level_with_harness_in_command_suite():
     assert h.harness and not c.harness
 
 
+def test_harness_monitor_fn_builds_from_context():
+    # Mirrors with_filter/with_filter_fn: with_harness(monitor=...) takes a
+    # direct monitor, with_monitor_fn takes a (ctx) -> HarnessMonitor factory
+    # for when the monitor needs ctx.
+    def make_monitor(ctx):
+        def read(handle):
+            yield from line_monitor(handle)
+
+        return read
+
+    s = (
+        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")).with_monitor_fn(make_monitor))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_runs(2)
+    )
+    report = Sequential().run(plan([s], None), None)
+    assert [o.samples[0].value for o in report.runs[0].iterations] == [1.0, 2.0]
+
+
 # ----- streaming kill integration ---------------------------------
 
 

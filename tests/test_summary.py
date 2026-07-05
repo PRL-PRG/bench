@@ -90,7 +90,7 @@ def test_summarize_excludes_warmup():
         ]
     )
     s = _only(summarize(r))
-    assert s.n == 1 and s.mean == 0.5 and s.runs == 1
+    assert s.n == 1 and s.mean == 0.5 and s.runs == 1 and s.warmups == 1
 
 
 def test_summarize_process_samples_not_counted_as_runs():

@@ -56,6 +56,10 @@ type LabelFn = Callable[[Benchmark], str]
 # A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
 type SkipFn = Callable[[Benchmark], bool]
 
+# A harness monitor, built once per variant (parallels Factory[T] for every
+# other field) rather than reused as-is - see with_harness/with_monitor_fn.
+type HarnessMonitorFactory = Factory[HarnessMonitor | None]
+
 type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFactory
 
 
@@ -181,7 +185,7 @@ class BuilderBase:
     cooldown: float = UNSET
     label_fn: LabelFn = UNSET
     harness: bool = UNSET
-    monitor: HarnessMonitor | None = UNSET
+    monitor: HarnessMonitorFactory | None = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
 

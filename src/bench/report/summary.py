@@ -50,6 +50,7 @@ class Stat:
     min: float
     max: float
     runs: int
+    warmups: int
     failures: int
     outliers: int
 
@@ -68,6 +69,7 @@ class _Acc:
 
     variant_label: str = ""
     runs: int = 0
+    warmups: int = 0
     failures: int = 0
     values: dict[MetricKey, list[float]] = field(
         default_factory=dict[MetricKey, list[float]]
@@ -78,11 +80,13 @@ class _Acc:
 def summarize(report: Report) -> list[Stat]:
     """Reduce a Report to a flat per-(variant, metric) `list[Stat]`.
 
-    Warmup iterations are excluded. Iteration samples and whole-process samples
-    both feed the stats. Process samples are not counted as a run unless the run
-    produced no iterations at all (a process-only run). A run that failed before
-    producing any iteration counts as one failure. Variants that only ever failed
-    yield no rows here - they surface in the reporter's Failures block.
+    Warmup iterations are excluded from the stats but counted separately
+    (`Stat.warmups`), so a formatter can show how many were discarded.
+    Iteration samples and whole-process samples both feed the stats. Process
+    samples are not counted as a run unless the run produced no iterations at
+    all (a process-only run). A run that failed before producing any
+    iteration counts as one failure. Variants that only ever failed yield no
+    rows here - they surface in the reporter's Failures block.
     """
     accs: dict[tuple[str, str, Variant], _Acc] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
@@ -110,9 +114,10 @@ def summarize(report: Report) -> list[Stat]:
             continue
         measured = 0
         for it in r.iterations:
-            if it.warmup:
-                continue
             a = ensure(r)
+            if it.warmup:
+                a.warmups += 1
+                continue
             measured += 1
             if it.is_failure():
                 a.failures += 1
@@ -162,6 +167,7 @@ def _stat(
         min=min(values),
         max=max(values),
         runs=a.runs,
+        warmups=a.warmups,
         failures=a.failures,
         outliers=a.outliers.get(mk, 0),
     )
@@ -305,8 +311,14 @@ def _runs_text(runs: int, failures: int = 0) -> str:
 
 
 def _range_runs_cell(s: Stat, scale: float) -> Cell:
-    """`(min … max) (N runs)` - the range (dropped for a single run) then the run
-    count. Failures render as `(f|n runs)`."""
+    """`(min … max) (N runs)` - the range (dropped for fewer than 2 samples)
+    then counts: sample count (only when it differs from the run count - a
+    run's metric can yield several samples in one go, e.g. a regex matching
+    multiple lines of one execution's output, and a multi-sample range next
+    to "(1 run)" would otherwise read as if that one run were internally
+    inconsistent), warmup count (only when bench's own warmup policy
+    discarded any runs), then the run count. No singular/plural variants -
+    always "samples"/"warmup"/"runs". Failures render as `(f|n runs)`."""
     parts: list[tuple[str, str | None]] = []
     if s.n >= 2:
         parts += [
@@ -316,15 +328,21 @@ def _range_runs_cell(s: Stat, scale: float) -> Cell:
             (_num(s.max * scale), "max"),
             (") ", None),
         ]
-    word = "run" if s.runs + s.failures == 1 else "runs"
     if s.failures:
         parts += [
             ("(", None),
             (str(s.failures), "failure"),
-            (f"|{s.runs} {word})", None),
+            (f"|{s.runs} runs)", None),
         ]
-    else:
-        parts += [(f"({s.runs} {word})", None)]
+        return cells(*parts)
+
+    counts: list[str] = []
+    if s.n != s.runs:
+        counts.append(f"{s.n} samples")
+    if s.warmups:
+        counts.append(f"{s.warmups} warmup")
+    counts.append(f"{s.runs} runs")
+    parts += [(f"({', '.join(counts)})", None)]
     return cells(*parts)
 
 

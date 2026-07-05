@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from bench.grammar.builder import UNSET, BuilderBase, const
+from bench.grammar.builder import UNSET, BuilderBase, HarnessMonitorFactory, const
 from bench.grammar.benchmark import Benchmark, BenchmarkBuilder, default_label
 from bench.grammar.context import Context, Data
 from bench.core.execution import (
@@ -59,7 +59,7 @@ DEFAULTS = BuilderBase(
     outlier_detection=ModifiedZScore(),
     cooldown=0.0,
     harness=False,
-    monitor=None,
+    monitor=const(None),
     label_fn=default_label,
 )
 
@@ -111,8 +111,16 @@ class SuiteBuilder(BuilderBase):
         return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
 
     def with_harness(self, monitor: HarnessMonitor | None = None) -> SuiteBuilder:
-        """Make every contained benchmark a harness benchmark."""
-        return dataclasses.replace(self, harness=True, monitor=monitor)
+        """Make every contained benchmark a harness benchmark.
+
+        `monitor` frames the output stream into iterations. Use
+        `with_monitor_fn` instead if the monitor needs to read `ctx`."""
+        return dataclasses.replace(self, harness=True, monitor=const(monitor))
+
+    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> SuiteBuilder:
+        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) ->
+        HarnessMonitor`, built per-variant instead of a single reusable value."""
+        return dataclasses.replace(self, harness=True, monitor=fn)
 
     def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""

@@ -40,6 +40,7 @@ def _ok(
     variant=(),
     variant_label: str = "",
     samples: list[Sample] | None = None,
+    warmup: bool = False,
 ) -> Run:
     return Run(
         suite=suite,
@@ -48,7 +49,7 @@ def _ok(
         run=run,
         command=("x",),
         variant_label=variant_label,
-        iterations=[Iteration(samples=list(samples) if samples else [])],
+        iterations=[Iteration(samples=list(samples) if samples else [], warmup=warmup)],
     )
 
 
@@ -141,6 +142,43 @@ def test_results_warns_on_outliers():
 def test_results_unit_label_survives_rich_markup():
     r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     assert "runtime [ms]" in _render(Results()(_data(r)))
+
+
+def test_results_shows_sample_count_when_multiple_samples_per_run():
+    # One execution can yield several samples in one go (e.g. a regex matching
+    # multiple lines of output) - the sample count must be visible alongside
+    # the run count, or a multi-sample min...max range next to "(1 run)" reads
+    # as if that single run were internally inconsistent.
+    r = Report(
+        runs=[
+            _ok(1, samples=[_smp("runtime", 0.5), _smp("runtime", 0.52), _smp("runtime", 0.48)])
+        ]
+    )
+    out = _strip(Results()(_data(r)))
+    assert "3 samples, 1 run" in out
+
+
+def test_results_omits_sample_count_when_it_matches_run_count():
+    # Common case (one sample per run): unchanged, no redundant count shown.
+    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    out = _strip(Results()(_data(r)))
+    assert "3 runs" in out
+    assert "samples" not in out
+
+
+def test_results_shows_warmup_count_when_bench_discarded_runs():
+    # bench's own warmup policy discards whole runs (not just values within
+    # one run, unlike e.g. cpython.py's old pyperformance-level warmup) - the
+    # discarded count is shown alongside samples/runs, with no singular form.
+    r = Report(
+        runs=[
+            _ok(1, samples=[_smp("runtime", 9.9)], warmup=True),
+            _ok(2, samples=[_smp("runtime", 0.5), _smp("runtime", 0.52)]),
+            _ok(3, samples=[_smp("runtime", 0.48)]),
+        ]
+    )
+    out = _strip(Results()(_data(r)))
+    assert "3 samples, 1 warmup, 2 runs" in out
 
 
 def test_results_shows_variant_in_rows():
