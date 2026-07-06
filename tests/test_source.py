@@ -1,4 +1,4 @@
-"""RunSource: CommandSource (pull) and HarnessSource (streaming push)."""
+"""ExecutionSource: CommandSource (pull) and HarnessSource (streaming push)."""
 
 import sys
 import threading

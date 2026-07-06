@@ -1,11 +1,11 @@
-"""RunSource: produces Iterations and assembles Runs for one benchmark-variant.
+"""ExecutionSource: produces Iterations and assembles Executions for one benchmark-variant.
 
 `CommandSource` spawns one process per iteration (pull): each iteration is a
-finished Run with a single `Iteration`. `HarnessSource` spawns one long-running
+finished Execution with a single `Iteration`. `HarnessSource` spawns one long-running
 process and frames its output into many `Iteration`s (push), all belonging to a
-single `Run`, killable via close(). The `Controller` drives either uniformly: it
+single `Execution`, killable via close(). The `Controller` drives either uniformly: it
 pulls `Iteration`s (driving the stopping policy) and, when done, collects the
-assembled `Run`(s) via `close()`.
+assembled `Execution`(s) via `close()`.
 """
 
 from __future__ import annotations
@@ -21,23 +21,31 @@ from typing import Any
 
 from bench.core.execution import (
     SPAWN_FAIL_RC,
-    ExecutionResult,
+    InvocationResult,
     default_success,
     format_identifier,
 )
 from bench.core.process import LiveProcess, execute, spawn_streaming
-from bench.core.sample import Iteration, Run, diagnostic_excerpt
+from bench.core.sample import Iteration, Execution, Sample, diagnostic_excerpt
 from bench.grammar.benchmark import Benchmark
 from bench.runner.base import format_benchmark_verbose
 
 
-class RunSource(abc.ABC):
-    """Produces Iterations and assembles Runs for one benchmark-variant.
+def _with_elapsed(samples: list[Sample], result: InvocationResult) -> list[Sample]:
+    """Wall-clock elapsed is intrinsic to every run (`result.runtime`), so record
+    it once, prepended, unless a metric already produced an `elapsed` sample."""
+    if result.runtime is None or any(s.metric == "elapsed" for s in samples):
+        return samples
+    return [Sample("elapsed", result.runtime, unit="s", lower_is_better=True), *samples]
+
+
+class ExecutionSource(abc.ABC):
+    """Produces Iterations and assembles Executions for one benchmark-variant.
 
     Two-method surface: pull `(Iteration, label)` pairs with `next()` (the
     label is the benchmark-variant display identifier, for live progress only),
-    then `close()` to release resources and get the assembled `Run`(s). A
-    command yields one `Run` per iteration. A harness yields one `Run`
+    then `close()` to release resources and get the assembled `Execution`(s). A
+    command yields one `Execution` per iteration. A harness yields one `Execution`
     holding all its iterations.
     """
 
@@ -49,26 +57,26 @@ class RunSource(abc.ABC):
         The source owns its own sequencing, callers just pull."""
 
     @abc.abstractmethod
-    def close(self) -> list[Run]:
+    def close(self) -> list[Execution]:
         """Release resources (kill a running harness) and return the assembled
-        `Run`(s)."""
+        `Execution`(s)."""
 
 
-class CommandSource(RunSource):
-    """One process per iteration. Each iteration is its own finished Run."""
+class CommandSource(ExecutionSource):
+    """One process per iteration. Each iteration is its own finished Execution."""
 
     def __init__(self, b: Benchmark, *, verbose: bool = False) -> None:
         self._b = b
         self._verbose = verbose
         self._run = 0
-        self._runs: list[Run] = []
+        self._runs: list[Execution] = []
 
     def next(self) -> tuple[Iteration, str]:
         self._run += 1
         b = self._b
         if self._verbose and self._run == 1:
             print(format_benchmark_verbose(b, self._run))
-        result = execute(b.execution)
+        result = execute(b.invocation)
 
         success = b.success if b.success is not None else default_success
         reason = success(result)
@@ -91,13 +99,15 @@ class CommandSource(RunSource):
                 for m, source in b.iteration_metrics
                 for s in m.process(source(result))
             ]
-            process_samples = [s for m in b.process_metrics for s in m.process(result)]
+            process_samples = _with_elapsed(
+                [s for m in b.process_metrics for s in m.process(result)], result
+            )
             it = Iteration(samples=it_samples, runtime=runtime)
             message = ""
 
-        ex = b.execution
+        ex = b.invocation
         self._runs.append(
-            Run(
+            Execution(
                 suite=b.suite,
                 benchmark=b.name,
                 variant=b.variant,
@@ -118,7 +128,7 @@ class CommandSource(RunSource):
         )
         return it, label
 
-    def close(self) -> list[Run]:
+    def close(self) -> list[Execution]:
         return self._runs
 
 
@@ -173,7 +183,7 @@ _DONE = object()
 _ZERO_DELIVERY = "no iterations parsed from harness output"
 
 
-class HarnessSource(RunSource):
+class HarnessSource(ExecutionSource):
     """One process, framed into many iterations, killable mid-flight via close()."""
 
     def __init__(self, b: Benchmark, *, verbose: bool = False) -> None:
@@ -184,19 +194,19 @@ class HarnessSource(RunSource):
         self._monitor: HarnessMonitor = b.monitor or line_monitor
         self._q: queue.Queue[Any] = queue.Queue()
         self._taken: list[Iteration] = []
-        self._proc_result: ExecutionResult | None = None
+        self._proc_result: InvocationResult | None = None
         self._monitor_failure: str | None = None
-        self._run: Run | None = None
+        self._run: Execution | None = None
         self._closed = threading.Event()
         self._reader: threading.Thread | None = None
         if verbose:
             print(format_benchmark_verbose(b, 1))
         try:
-            self._live: LiveProcess | None = spawn_streaming(b.execution)
+            self._live: LiveProcess | None = spawn_streaming(b.invocation)
         except FileNotFoundError as e:
             self._live = None
-            self._proc_result = ExecutionResult(
-                b.execution, SPAWN_FAIL_RC, failure=str(e)
+            self._proc_result = InvocationResult(
+                b.invocation, SPAWN_FAIL_RC, failure=str(e)
             )
             self._q.put(_DONE)
             return
@@ -209,8 +219,8 @@ class HarnessSource(RunSource):
         try:
             result = self._live.finish(killed=killed)
         except Exception as e:
-            result = ExecutionResult(
-                self._b.execution, SPAWN_FAIL_RC, failure=f"harness finish failed: {e}"
+            result = InvocationResult(
+                self._b.invocation, SPAWN_FAIL_RC, failure=f"harness finish failed: {e}"
             )
         # A harness we killed ourselves on convergence is expected termination,
         # not a failure. Only judge a process that ended on its own. A monitor
@@ -268,7 +278,7 @@ class HarnessSource(RunSource):
         self._taken.append(item)
         return item, self._label
 
-    def close(self) -> list[Run]:
+    def close(self) -> list[Execution]:
         self._closed.set()
         if self._live is not None and self._live.is_alive():
             self._live.kill()
@@ -276,7 +286,7 @@ class HarnessSource(RunSource):
             self._run = self._assemble()
         return [self._run]
 
-    def _assemble(self) -> Run:
+    def _assemble(self) -> Execution:
         if self._reader is not None:
             self._reader.join(timeout=5)
         result = self._proc_result
@@ -284,7 +294,9 @@ class HarnessSource(RunSource):
 
         iterations = list(self._taken)
         process_samples = (
-            [s for m in self._process_metrics for s in m.process(result)]
+            _with_elapsed(
+                [s for m in self._process_metrics for s in m.process(result)], result
+            )
             if not result.is_failure()
             else []
         )
@@ -297,9 +309,9 @@ class HarnessSource(RunSource):
         message = (
             diagnostic_excerpt(result.stdout, result.stderr) if run_failure else ""
         )
-        ex = self._b.execution
+        ex = self._b.invocation
         b = self._b
-        return Run(
+        return Execution(
             suite=b.suite,
             benchmark=b.name,
             variant=b.variant,
@@ -319,7 +331,7 @@ class HarnessSource(RunSource):
         )
 
 
-def make_source(b: Benchmark, *, verbose: bool = False) -> RunSource:
+def make_source(b: Benchmark, *, verbose: bool = False) -> ExecutionSource:
     if b.harness:
         return HarnessSource(b, verbose=verbose)
     return CommandSource(b, verbose=verbose)

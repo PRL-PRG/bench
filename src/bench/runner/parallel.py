@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from bench.core.process import install_sigint_handler, interrupted
-from bench.core.sample import Iteration, Report, Run
+from bench.core.sample import Iteration, Report, Execution
 from bench.grammar.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
@@ -36,7 +36,7 @@ class _LockedReport(Report):
         self._report = report
         self._lock = lock
 
-    def add(self, run: Run) -> None:
+    def add(self, run: Execution) -> None:
         with self._lock:
             self._report.add(run)
 
@@ -46,13 +46,21 @@ class _LockedReporter(Reporter):
         self._reporter = reporter
         self._lock = lock
 
+    def benchmark_start(self, b: Benchmark) -> None:
+        with self._lock:
+            self._reporter.benchmark_start(b)
+
     def iteration(self, it: Iteration, label: str) -> None:
         with self._lock:
             self._reporter.iteration(it, label)
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
         with self._lock:
             self._reporter.run_done(run)
+
+    def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
+        with self._lock:
+            self._reporter.benchmark_done(b, executions)
 
 
 class Parallel(Runner):

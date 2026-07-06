@@ -1,16 +1,16 @@
-"""Execution / ExecutionResult shape and run identifiers."""
+"""Invocation / InvocationResult shape and run identifiers."""
 
 import time
 from pathlib import Path
 
-from bench import Execution, ExecutionResult
+from bench import Invocation, InvocationResult
 from bench.core.execution import format_identifier
 from bench.core.process import spawn_streaming
 
 
 def test_execution_result_failure():
-    e = Execution(command=("x",), cwd=Path("/tmp"))
-    f = ExecutionResult(execution=e, returncode=-1, failure="boom")
+    e = Invocation(command=("x",), cwd=Path("/tmp"))
+    f = InvocationResult(invocation=e, returncode=-1, failure="boom")
     assert f.is_failure()
     assert f.failure == "boom"
     assert f.returncode == -1
@@ -23,7 +23,7 @@ def test_format_identifier():
 
 
 def test_spawn_streaming_writes_incrementally_then_finishes():
-    exe = Execution(
+    exe = Invocation(
         command=("sh", "-c", "echo a; sleep 0.05; echo b"), cwd=Path("/tmp")
     )
     live = spawn_streaming(exe)
@@ -39,7 +39,7 @@ def test_spawn_streaming_writes_incrementally_then_finishes():
 
 
 def test_spawn_streaming_finish_killed_marks_timeout_like():
-    exe = Execution(command=("sleep", "5"), cwd=Path("/tmp"))
+    exe = Invocation(command=("sleep", "5"), cwd=Path("/tmp"))
     live = spawn_streaming(exe)
     res = live.finish(killed=True)
     assert res.returncode == 124
@@ -49,7 +49,7 @@ def test_spawn_streaming_finish_after_is_alive_polling():
     # A monitor tails by polling is_alive(), that must not reap the child out
     # from under finish()'s rusage-bearing wait4. Poll to completion, then
     # finish() must still return a valid result (with rusage).
-    exe = Execution(command=("sh", "-c", "echo a; echo b"), cwd=Path("/tmp"))
+    exe = Invocation(command=("sh", "-c", "echo a; echo b"), cwd=Path("/tmp"))
     live = spawn_streaming(exe)
     deadline = time.monotonic() + 5
     while live.is_alive() and time.monotonic() < deadline:
@@ -66,7 +66,7 @@ def test_spawn_streaming_finish_cancels_timeout_timer():
     # A generous timeout that should never fire for a fast command: finish()
     # must return promptly (the unfired Timer must be cancelled, not left to
     # block interpreter exit for the whole timeout window).
-    exe = Execution(command=("sh", "-c", "sleep 0.05"), cwd=Path("/tmp"), timeout=30)
+    exe = Invocation(command=("sh", "-c", "sleep 0.05"), cwd=Path("/tmp"), timeout=30)
     live = spawn_streaming(exe)
     t = time.monotonic()
     res = live.finish()

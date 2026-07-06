@@ -11,21 +11,26 @@ from typing import TYPE_CHECKING, Any
 
 from cattrs import unstructure
 
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.markup import escape as markup_escape
 from rich.progress import (
     BarColumn,
+    MofNCompleteColumn,
     Progress as RichProgress,
     SpinnerColumn,
+    Task,
     TaskID,
     TextColumn,
     TimeElapsedColumn,
+    TimeRemainingColumn,
 )
+from rich.text import Text
 
 from bench.grammar.benchmark import Benchmark
 from bench.core.environment import Diagnostic, Environment
-from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC
-from bench.core.sample import Iteration, Report, Run, Sample, report_to_json
+from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
+from bench.core.sample import Iteration, Report, Execution, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
@@ -70,10 +75,16 @@ class Reporter(abc.ABC):
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
+    def benchmark_start(self, b: Benchmark) -> None:
+        pass
+
     def iteration(self, it: Iteration, label: str) -> None:
         pass
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
+        pass
+
+    def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
         pass
 
     def finalize(self) -> None:
@@ -88,7 +99,7 @@ class _BufferingReporter(Reporter):
         self._report = Report()
         self._lock = threading.Lock()
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
         with self._lock:
             self._report.add(run)
 
@@ -109,13 +120,21 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.start(plan)
 
+    def benchmark_start(self, b: Benchmark) -> None:
+        for r in self.reporters:
+            r.benchmark_start(b)
+
     def iteration(self, it: Iteration, label: str) -> None:
         for r in self.reporters:
             r.iteration(it, label)
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
         for r in self.reporters:
             r.run_done(run)
+
+    def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
+        for r in self.reporters:
+            r.benchmark_done(b, executions)
 
     def finalize(self) -> None:
         for r in self.reporters:
@@ -191,7 +210,7 @@ class CsvReporter(_BufferingReporter):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
-            for r in self._report.runs:
+            for r in self._report.executions:
                 variant_map = dict(r.variant)
                 base: dict[str, Any] = {
                     "suite": r.suite,
@@ -304,7 +323,7 @@ class DirReporter(Reporter):
                 )
             )
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
         key = (run.suite, run.benchmark)
         with self._lock:
             self._counters[key] = self._counters.get(key, 0) + 1
@@ -328,99 +347,184 @@ class DirReporter(Reporter):
         (run_dir / "exitcode").write_text(f"{run.returncode}\n")
 
 
-# ---------------------------------------------------------------------------
-# ProgressReporter: live spinner + bar while the run is in flight
-# ---------------------------------------------------------------------------
+def _fmt_est(seconds: float) -> str:
+    if seconds <= 0:
+        return ""
+    if seconds < 1.0:
+        return f"{seconds * 1000:.0f}ms"
+    return f"{seconds:.2f}s"
+
+
+def _bench_total(b: Benchmark) -> int | None:
+    """Iterations a benchmark should produce (warmup + runs), or None if either
+    policy is unbounded."""
+    w, m = b.warmup.max_runs(), b.runs.max_runs()
+    if w is None or m is None:
+        return None
+    return w + m
+
+
+class _EtaColumn(TimeRemainingColumn):
+    """ETA prefixed with 'ETA', blank when the total is unknown or a single
+    iteration, where there is nothing to estimate."""
+
+    def render(self, task: Task) -> Text:
+        if task.total is None or task.total <= 1:
+            return Text("")
+        return Text("ETA ") + super().render(task)
 
 
 class ProgressReporter(Reporter):
-    """Live progress over the planned benchmarks, one tick per observation.
+    """Live progress on a terminal.
 
-    On a terminal, renders a progress bar and clears itself before the
-    SummaryReporter prints. On a non-terminal it falls back to plain
-    one-line-per-observation output. Total is known when every benchmark's
-    policies expose a `max_runs()`, otherwise displays `?`.
+    A top bar labelled with the app name tracks how many benchmarks finished and
+    how many failed. Under it, each running benchmark shows a "Benchmark: name"
+    header and a bar with its elapsed estimate, progress, and ETA. Bars stretch to
+    the screen edge. When a benchmark finishes its bar is replaced by a persistent
+    summary line printed above the live region, carrying the same elapsed stats as
+    the final summary (or FAILED). Off a terminal it falls back to one plain line
+    per iteration.
+
+    Each benchmark runs start to finish on one thread, so the bar it owns is held
+    on a thread-local.
     """
 
-    def __init__(self, target_console: Console | None = None) -> None:
+    def __init__(
+        self, target_console: Console | None = None, app_name: str = ""
+    ) -> None:
         self._console = target_console or console
         self._is_tty = self._console.is_terminal
-        self._task_id: TaskID | None = None
-        self._failures = 0
-        self._successes = 0
-        self._total: int | None = None
+        self._app_label = markup_escape(app_name) if app_name else "Benchmarks"
         self._lock = threading.Lock()
-        self._progress = (
-            RichProgress(
-                SpinnerColumn(),
+        self._local = threading.local()
+        self._passed = 0
+        self._failed = 0
+        self._overall_task: TaskID | None = None
+        self._active: dict[int, tuple[RichProgress, str]] = {}
+        self._next_slot = 0
+        if self._is_tty:
+            self._overall: RichProgress | None = RichProgress(
+                TextColumn(f"[bench.label]{self._app_label}[/]"),
+                BarColumn(bar_width=None),
+                MofNCompleteColumn(),
+                TextColumn("({task.fields[failed]} failed)"),
                 TimeElapsedColumn(),
-                BarColumn(),
-                TextColumn(
-                    "([bench.failure]{task.fields[failures]}[/]"
-                    "|[bench.success]{task.fields[successes]}[/]"
-                    "|{task.fields[total_str]})"
-                ),
-                TextColumn("[bench.in_process]{task.description}[/]"),
+                console=self._console,
+            )
+            self._live: Live | None = Live(
+                Group(),
                 console=self._console,
                 transient=True,
+                refresh_per_second=12,
             )
-            if self._is_tty
-            else None
-        )
+        else:
+            self._overall = None
+            self._live = None
 
     def start(self, plan: list[Benchmark]) -> None:
-        self._total = self._compute_total(plan)
-        if self._progress is not None:
-            self._progress.start()
-            self._task_id = self._progress.add_task(
-                "Running",
-                total=self._total,
-                failures=0,
-                successes=0,
-                total_str=str(self._total) if self._total is not None else "?",
-            )
+        if self._live is None:
+            return
+        if len(plan) > 1 and self._overall is not None:
+            self._overall_task = self._overall.add_task("", total=len(plan), failed=0)
+        self._live.update(self._group())
+        self._live.start()
+
+    def benchmark_start(self, b: Benchmark) -> None:
+        self._local.n = 0
+        self._local.total = _bench_total(b)
+        self._local.runtime = 0.0
+        if self._live is None:
+            return
+        total = self._local.total
+        total_str = str(total) if total is not None else "?"
+        name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
+        prog = RichProgress(
+            SpinnerColumn(),
+            TextColumn("elapsed estimate: {task.fields[est]}"),
+            BarColumn(bar_width=None),
+            TextColumn("{task.completed}/{task.fields[total_str]}"),
+            _EtaColumn(),
+            console=self._console,
+        )
+        task_id = prog.add_task("", total=total, total_str=total_str, est="")
+        with self._lock:
+            slot = self._next_slot
+            self._next_slot += 1
+            self._active[slot] = (prog, f"Benchmark: {name}")
+            self._live.update(self._group())
+        self._local.slot = slot
+        self._local.prog = prog
+        self._local.task_id = task_id
 
     def iteration(self, it: Iteration, label: str) -> None:
+        self._local.n = getattr(self._local, "n", 0) + 1
+        if self._live is None:
+            self._print_plain(
+                it, label, self._local.n, getattr(self._local, "total", None)
+            )
+            return
+        prog = getattr(self._local, "prog", None)
+        task_id = getattr(self._local, "task_id", None)
+        if prog is None or task_id is None:
+            return
+        self._local.runtime += it.runtime
+        prog.update(task_id, est=_fmt_est(self._local.runtime / self._local.n))
+        prog.advance(task_id)
+
+    def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
+        if self._live is None:
+            return
+        failed = any(e.is_failure() for e in executions)
+        name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
         with self._lock:
-            if not it.is_failure():
-                self._successes += 1
+            if failed:
+                self._failed += 1
             else:
-                self._failures += 1
-            if self._progress is not None and self._task_id is not None:
-                self._progress.update(
-                    self._task_id,
-                    description=markup_escape(label),
-                    failures=self._failures,
-                    successes=self._successes,
-                )
-                self._progress.advance(self._task_id)
-            else:
-                self._print_plain(it, label)
+                self._passed += 1
+            if self._overall is not None and self._overall_task is not None:
+                self._overall.update(self._overall_task, failed=self._failed)
+                self._overall.advance(self._overall_task)
+            self._console.print(self._summary_line(name, executions))
+            self._active.pop(getattr(self._local, "slot", -1), None)
+            self._live.update(self._group())
+        self._local.slot = None
+        self._local.prog = None
+        self._local.task_id = None
 
     def finalize(self) -> None:
-        if self._progress is not None and self._task_id is not None:
-            self._progress.stop()
+        if self._live is not None:
+            self._live.stop()
+            if self._passed or self._failed:
+                self._console.print()
 
-    # ----- helpers ---------------------------------------------------
+    def _group(self) -> Group:
+        parts: list[Any] = []
+        if self._overall_task is not None and self._overall is not None:
+            parts.append(self._overall)
+        for prog, header in self._active.values():
+            parts.append(Group(Text(header), prog))
+        return Group(*parts)
 
-    def _print_plain(self, it: Iteration, label: str) -> None:
-        n = self._failures + self._successes
-        total_str = str(self._total) if self._total is not None else "?"
+    @staticmethod
+    def _summary_line(name: str, executions: list[Execution]) -> str:
+        from bench.report.summary import stat_line, summarize
+
+        stats = summarize(Report(executions=list(executions)))
+        elapsed = next((s for s in stats if s.metric == "elapsed"), None)
+        head = f"[bench.label]Benchmark:[/] {markup_escape(name)}"
+        if elapsed is None:
+            return f"{head}: [bench.failure]FAILED[/]"
+        return f"{head}: {stat_line(elapsed)}"
+
+    def _print_plain(
+        self, it: Iteration, label: str, n: int, total: int | None
+    ) -> None:
+        total_str = str(total) if total is not None else "?"
         if not it.is_failure():
             tag = "[bench.success]ok[/]"
         else:
             tag = f"[bench.failure]FAIL[/] ({it.failure})"
         self._console.print(f"[{n}|{total_str}] {markup_escape(label)} {tag}")
-
-    @staticmethod
-    def _compute_total(plan: list[Benchmark]) -> int | None:
-        total = 0
-        for b in plan:
-            w, m = b.warmup.max_runs(), b.runs.max_runs()
-            if w is None or m is None:
-                return None
-            total += w + m
-        return total
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +565,7 @@ class SummaryReporter(_BufferingReporter):
                 self._console.print("  " + self._failure_line(run))
 
     @staticmethod
-    def _failure_line(run: Run) -> str:
+    def _failure_line(run: Execution) -> str:
         if run.returncode == TIMEOUT_RC:
             verdict = f"[bench.failure]timeout (exit {TIMEOUT_RC})[/]"
         elif run.returncode == SPAWN_FAIL_RC:

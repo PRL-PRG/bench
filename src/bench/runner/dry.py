@@ -59,6 +59,6 @@ class Dry(Runner):
             identifier = format_identifier(
                 b.suite, b.name, b.variant, run, b.variant_label
             )
-            block = f"{identifier}: `{format_command(b.execution)}`"
+            block = f"{identifier}: `{format_command(b.invocation)}`"
 
         print(f"{block} {marker}" if marker else block)

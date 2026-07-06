@@ -1,18 +1,18 @@
-"""Controller: per-benchmark feedback loop over a fake RunSource.
+"""Controller: per-benchmark feedback loop over a fake ExecutionSource.
 
-The Controller is tested in isolation: a fake ``RunSource`` (so no real
+The Controller is tested in isolation: a fake ``ExecutionSource`` (so no real
 processes spawn) and a collecting ``Reporter``. ``make_source`` is monkeypatched
 so the Controller pulls from the fake.
 """
 
 from pathlib import Path
 
-from bench import FixedRuns, Iteration, NoDetection, Run, Sample, bench, suite
+from bench import FixedRuns, Iteration, NoDetection, Execution, Sample, bench, suite
 from bench.runner.base import plan
 from bench.core.sample import Report
 from bench.report.reporter import Reporter
 from bench.runner.controller import Controller
-from bench.runner.source import RunSource
+from bench.runner.source import ExecutionSource
 
 
 class _Collect(Reporter):
@@ -29,8 +29,8 @@ class _Collect(Reporter):
         self.runs.append(run)
 
 
-class _FakeSource(RunSource):
-    """Command-like fake: yields the given Iterations. close() returns one Run
+class _FakeSource(ExecutionSource):
+    """Command-like fake: yields the given Iterations. close() returns one Execution
     per taken iteration."""
 
     def __init__(self, iterations, closed):
@@ -43,10 +43,10 @@ class _FakeSource(RunSource):
         self._taken.append(it)
         return it, "S/b"
 
-    def close(self) -> list[Run]:
+    def close(self) -> list[Execution]:
         self._closed.append(True)
         return [
-            Run(
+            Execution(
                 suite="S",
                 benchmark="b",
                 variant=(),
@@ -88,8 +88,12 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     report = Report()
     Controller(rep).run_benchmark(_planned(FixedRuns(3)), report)
 
-    assert [r.run for r in report.runs] == [1, 2, 3]
-    assert [r.iterations[0].samples[0].value for r in report.runs] == [1.0, 2.0, 3.0]
+    assert [r.run for r in report.executions] == [1, 2, 3]
+    assert [r.iterations[0].samples[0].value for r in report.executions] == [
+        1.0,
+        2.0,
+        3.0,
+    ]
     assert len(rep.runs) == 3
     assert len(rep.iterations) == 3
     assert rep.labels[0] == "S/b"
@@ -103,7 +107,7 @@ def test_stops_when_policy_converges(monkeypatch):
     report = Report()
     Controller(_Collect()).run_benchmark(_planned(FixedRuns(2)), report)
 
-    assert len(report.runs) == 2
+    assert len(report.executions) == 2
     assert closed == [True]
 
 
@@ -115,7 +119,7 @@ def test_outliers_marked_across_runs(monkeypatch):
     report = Report()
     Controller(_Collect()).run_benchmark(_planned(FixedRuns(8)), report)
 
-    flags = [r.iterations[0].samples[0].outlier for r in report.runs]
+    flags = [r.iterations[0].samples[0].outlier for r in report.executions]
     assert flags == [False] * 7 + [True]
 
 
@@ -127,7 +131,7 @@ def test_no_detection_leaves_samples_unmarked(monkeypatch):
         _planned(FixedRuns(8), outlier_detection=NoDetection()), report
     )
 
-    assert all(not r.iterations[0].samples[0].outlier for r in report.runs)
+    assert all(not r.iterations[0].samples[0].outlier for r in report.executions)
 
 
 def test_warmup_iterations_excluded_from_detection(monkeypatch):
@@ -138,7 +142,7 @@ def test_warmup_iterations_excluded_from_detection(monkeypatch):
     report = Report()
     Controller(_Collect()).run_benchmark(_planned(FixedRuns(7), warmup=1), report)
 
-    assert all(not r.iterations[0].samples[0].outlier for r in report.runs)
+    assert all(not r.iterations[0].samples[0].outlier for r in report.executions)
 
 
 def test_warmup_boundary_marked_on_iterations(monkeypatch):
@@ -149,8 +153,8 @@ def test_warmup_boundary_marked_on_iterations(monkeypatch):
     report = Report()
     Controller(rep).run_benchmark(_planned(FixedRuns(3), warmup=2), report)
 
-    assert len(report.runs) == 5
-    assert [r.iterations[0].warmup for r in report.runs] == [
+    assert len(report.executions) == 5
+    assert [r.iterations[0].warmup for r in report.executions] == [
         True,
         True,
         False,

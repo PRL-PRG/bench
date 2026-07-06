@@ -17,7 +17,7 @@ from bench.runner.base import plan
 def _all_samples(report):
     return [
         (r, s)
-        for r in report.runs
+        for r in report.executions
         for s in (
             *(s for o in r.iterations for s in o.samples),
             *r.process_samples,
@@ -52,8 +52,8 @@ def test_e2e_warmup_then_measure():
     )
     report = Sequential().run(plan([s], None), None)
     # Continuous numbering: the first two iterations are flagged warmup.
-    assert [r.run for r in report.runs] == [1, 2, 3, 4]
-    assert [o.warmup for r in report.runs for o in r.iterations] == [
+    assert [r.run for r in report.executions] == [1, 2, 3, 4]
+    assert [o.warmup for r in report.executions for o in r.iterations] == [
         True,
         True,
         False,

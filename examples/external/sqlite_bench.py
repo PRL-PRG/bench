@@ -18,7 +18,7 @@ try:
 
     start = time.time()
     inserts = 0
-    # Run for exactly 1 second
+    # Execution for exactly 1 second
     while time.time() - start < 1.0:
         conn.execute("INSERT INTO test (data) VALUES ('benchmark');")
         conn.commit()

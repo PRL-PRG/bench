@@ -12,7 +12,7 @@ from bench import (
     Iteration,
     Report,
     Results,
-    Run,
+    Execution,
     Sample,
     Summary,
     SummaryReporter,
@@ -41,8 +41,8 @@ def _ok(
     variant_label: str = "",
     samples: list[Sample] | None = None,
     warmup: bool = False,
-) -> Run:
-    return Run(
+) -> Execution:
+    return Execution(
         suite=suite,
         benchmark=bench,
         variant=variant,
@@ -63,7 +63,7 @@ def _vrun(
     metric: str = "elapsed",
     unit: str = "s",
     lower_is_better: bool | None = True,
-) -> Run:
+) -> Execution:
     return _ok(
         run,
         bench=bench,
@@ -87,7 +87,7 @@ def _axis_report(values: dict[str, dict[str, float]]) -> Report:
                     samples=[_smp("elapsed", elapsed)],
                 )
             )
-    return Report(runs=runs)
+    return Report(executions=runs)
 
 
 def _data(report: Report) -> list[Stat]:
@@ -110,7 +110,7 @@ def _render(markup: str) -> str:
 
 
 def test_results_table_header_and_rows():
-    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    r = Report(executions=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     out = _strip(Results()(_data(r)))
     assert "S/b" in out
     assert "runtime [ms]" in out  # 0.5s -> scaled to ms
@@ -121,7 +121,7 @@ def test_results_table_header_and_rows():
 
 def test_results_warns_on_outliers():
     r = Report(
-        runs=[
+        executions=[
             _ok(1, samples=[_smp("runtime", 1.0)]),
             _ok(2, samples=[_smp("runtime", 1.0)]),
             _ok(
@@ -140,7 +140,7 @@ def test_results_warns_on_outliers():
 
 
 def test_results_unit_label_survives_rich_markup():
-    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    r = Report(executions=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     assert "runtime [ms]" in _render(Results()(_data(r)))
 
 
@@ -150,8 +150,15 @@ def test_results_shows_sample_count_when_multiple_samples_per_run():
     # the run count, or a multi-sample min...max range next to "(1 run)" reads
     # as if that single run were internally inconsistent.
     r = Report(
-        runs=[
-            _ok(1, samples=[_smp("runtime", 0.5), _smp("runtime", 0.52), _smp("runtime", 0.48)])
+        executions=[
+            _ok(
+                1,
+                samples=[
+                    _smp("runtime", 0.5),
+                    _smp("runtime", 0.52),
+                    _smp("runtime", 0.48),
+                ],
+            )
         ]
     )
     out = _strip(Results()(_data(r)))
@@ -160,7 +167,7 @@ def test_results_shows_sample_count_when_multiple_samples_per_run():
 
 def test_results_omits_sample_count_when_it_matches_run_count():
     # Common case (one sample per run): unchanged, no redundant count shown.
-    r = Report(runs=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    r = Report(executions=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
     out = _strip(Results()(_data(r)))
     assert "3 runs" in out
     assert "samples" not in out
@@ -171,7 +178,7 @@ def test_results_shows_warmup_count_when_bench_discarded_runs():
     # one run, unlike e.g. cpython.py's old pyperformance-level warmup) - the
     # discarded count is shown alongside samples/runs, with no singular form.
     r = Report(
-        runs=[
+        executions=[
             _ok(1, samples=[_smp("runtime", 9.9)], warmup=True),
             _ok(2, samples=[_smp("runtime", 0.5), _smp("runtime", 0.52)]),
             _ok(3, samples=[_smp("runtime", 0.48)]),
@@ -183,7 +190,7 @@ def test_results_shows_warmup_count_when_bench_discarded_runs():
 
 def test_results_shows_variant_in_rows():
     r = Report(
-        runs=[
+        executions=[
             _ok(i, variant=(("vm", "python3.14"),), samples=[_smp("elapsed", 0.5)])
             for i in range(1, 4)
         ]
@@ -200,7 +207,7 @@ def test_ranking_uses_better_worse():
     for i in range(1, 4):
         runs.append(_vrun(0.10, run=i, label="fast"))
         runs.append(_vrun(0.20, run=i, label="slow"))
-    out = _strip(Summary()(_data(Report(runs=runs))))
+    out = _strip(Summary()(_data(Report(executions=runs))))
     assert "Summary - S/b" in out
     assert "fast was" in out and "× better than" in out and "slow" in out
     assert "2.00" in out
@@ -230,13 +237,15 @@ def test_ranking_uses_better_worse_for_higher_is_better():
                 lower_is_better=False,
             )
         )
-    out = _strip(Summary()(_data(Report(runs=runs))))
+    out = _strip(Summary()(_data(Report(executions=runs))))
     assert "fast was" in out and "2.00" in out and "× better than" in out
     assert "higher" not in out and "lower" not in out and "worse" not in out
 
 
 def test_ranking_empty_for_single_variant():
-    r = Report(runs=[_ok(i, samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)])
+    r = Report(
+        executions=[_ok(i, samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)]
+    )
     assert Summary()(_data(r)) == ""
 
 
@@ -245,7 +254,7 @@ def test_ranking_empty_across_distinct_benchmarks():
     for i in range(1, 4):
         runs.append(_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]))
         runs.append(_ok(i, bench="b", samples=[_smp("elapsed", 0.20)]))
-    assert Summary()(_data(Report(runs=runs))) == ""
+    assert Summary()(_data(Report(executions=runs))) == ""
 
 
 def test_summary_axis_compares_axis_values_per_benchmark():
@@ -280,7 +289,7 @@ def test_grouped_summary_ranks_axis_values():
 
 
 def test_grouped_summary_axis_absent_is_explicit():
-    r = Report(runs=[_ok(i, samples=[_smp("elapsed", 1.0)]) for i in range(1, 4)])
+    r = Report(executions=[_ok(i, samples=[_smp("elapsed", 1.0)]) for i in range(1, 4)])
     out = _strip(GroupedSummary(axis="vm", metric="elapsed")(_data(r)))
     assert "not present" in out and "vm" in out
 
@@ -315,7 +324,7 @@ def test_default_summary_composes_results_and_ranking():
     for i in range(1, 4):
         runs.append(_vrun(0.10, run=i, label="fast"))
         runs.append(_vrun(0.20, run=i, label="slow"))
-    out = _strip(DefaultSummary()(_data(Report(runs=runs))))
+    out = _strip(DefaultSummary()(_data(Report(executions=runs))))
     assert "S/b" in out  # Results block
     assert "Summary - S/b" in out  # ranking block
 
@@ -326,7 +335,7 @@ def test_summary_reporter_renders_composed_formatter():
         Results() & GroupedSummary(axis="interp", metric="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).runs:
+    for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).executions:
         rep.run_done(run)
     rep.finalize()
     out = buf.getvalue()
@@ -343,13 +352,13 @@ def test_compact_no_baseline_lists_benchmarks_and_geomean():
         for bn, v in [("a", 0.5), ("b", 0.25)]
         for i in range(1, 4)
     ]
-    out = _strip(Compact("runtime")(_data(Report(runs=runs))))
+    out = _strip(Compact("runtime")(_data(Report(executions=runs))))
     assert "a:" in out and "b:" in out and "geomean:" in out
 
 
 def test_compact_filters_by_metric():
     r = Report(
-        runs=[
+        executions=[
             _ok(i, samples=[_smp("runtime", 0.5), _smp("max_rss", 1024.0, unit="kB")])
             for i in range(1, 4)
         ]

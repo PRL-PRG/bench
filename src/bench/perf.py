@@ -34,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from bench.core.execution import ExecutionResult, to_argv
+from bench.core.execution import InvocationResult, to_argv
 from bench.core.metric import ProcessMetric
 from bench.core.sample import Sample
 
@@ -68,7 +68,7 @@ class PerfStat(ProcessMetric):
             return [str(a) for a in argv]
         return [*prefix, *(str(a) for a in argv)]
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: InvocationResult) -> Iterable[Sample]:
         counts: dict[str, str] = {}
         for line in (result.stderr or "").splitlines():
             parts = line.split(",")

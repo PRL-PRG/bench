@@ -35,11 +35,7 @@ def _run_samples(r):
 
 
 def _all_samples(report):
-    return [s for r in report.runs for s in _run_samples(r)]
-
-
-def _runs_with_samples(report):
-    return [(r, s) for r in report.runs for s in _run_samples(r)]
+    return [s for r in report.executions for s in _run_samples(r)]
 
 
 def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
@@ -71,7 +67,8 @@ def test_sequential_three_runs_yields_three_samples():
         .with_runs(3),
     )
     report = Sequential().run(plan([s], None), None)
-    pairs = _runs_with_samples(report)
+    # Only the FloatPerLine iteration samples; elapsed is a separate process metric.
+    pairs = [(r, s) for r in report.executions for o in r.iterations for s in o.samples]
     assert len(pairs) == 3
     assert [r.run for r, _ in pairs] == [1, 2, 3]
 
@@ -135,7 +132,7 @@ def test_parallel_runs_convergence_benchmarks():
     )
     report = Parallel(workers=2).run(plan([s], None), None)
     by_bench = {}
-    for r in report.runs:
+    for r in report.executions:
         by_bench.setdefault(r.benchmark, []).append(r)
     # Both benchmarks produced records and converged (constant 1.0 -> CoV 0).
     assert set(by_bench) == {"conv0", "conv1"}
@@ -159,13 +156,13 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
         ],
     )
     report = Parallel(workers=4).run(plan([s], None), None)
-    assert len(report.runs) == n_bench * n_runs
+    assert len(report.executions) == n_bench * n_runs
     by_bench = {}
-    for r in report.runs:
+    for r in report.executions:
         by_bench.setdefault(r.benchmark, []).append(r)
     assert set(by_bench) == {f"b{i}" for i in range(n_bench)}
     assert all(len(records) == n_runs for records in by_bench.values())
-    # Run numbers are 1..n_runs per benchmark, no torn/duplicated entries.
+    # Execution numbers are 1..n_runs per benchmark, no torn/duplicated entries.
     for records in by_bench.values():
         assert sorted(r.run for r in records) == list(range(1, n_runs + 1))
 
@@ -310,7 +307,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
     r = report_from_json(json_path.read_text())
     assert len(r.failures) >= 1
     assert r.failures[0].failure == "interrupted"
-    assert len(r.runs) == 1  # later scheduled runs never started
+    assert len(r.executions) == 1  # later scheduled runs never started
 
 
 def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
@@ -408,13 +405,13 @@ def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
     report = Sequential().run(plan([s], None), None)
     # Time is a process metric, so the default `elapsed` lands in process_samples.
-    assert [s.metric for s in report.runs[0].process_samples] == ["elapsed"]
+    assert [s.metric for s in report.executions[0].process_samples] == ["elapsed"]
 
 
 def test_plan_default_params():
     s = suite("s", bench("a").with_command(["true"]))
     report = Sequential().run(plan([s]))
-    assert len(report.runs) == 1
+    assert len(report.executions) == 1
 
 
 def test_plan_wraps_factory_failure_with_suite_name_and_command_output():
@@ -473,7 +470,7 @@ def test_with_runner_override_wins_over_jobs():
     )
     assert captured["jobs"] == 4  # ctx.params carries the runtime flags
     assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
-    assert len(report.runs) == 1
+    assert len(report.executions) == 1
 
 
 def test_with_filter_override_narrows_plan():
@@ -490,7 +487,7 @@ def test_with_filter_override_narrows_plan():
         .with_filter_fn(lambda ctx: lambda b: b.name == "keep")
         .run(["--no-progress"])
     )
-    assert {r.benchmark for r in report.runs} == {"keep"}
+    assert {r.benchmark for r in report.executions} == {"keep"}
 
 
 def test_with_filter_bare_predicate_narrows_plan():
@@ -508,7 +505,7 @@ def test_with_filter_bare_predicate_narrows_plan():
         .with_filter(lambda b: b.name == "keep")
         .run(["--no-progress"])
     )
-    assert {r.benchmark for r in report.runs} == {"keep"}
+    assert {r.benchmark for r in report.executions} == {"keep"}
 
 
 def test_with_reporter_factory_takes_full_control(tmp_path: Path):
@@ -519,7 +516,7 @@ def test_with_reporter_factory_takes_full_control(tmp_path: Path):
         ["--no-progress"]
     )
     assert out.exists()
-    assert report_from_json(out.read_text()).runs
+    assert report_from_json(out.read_text()).executions
 
 
 def test_bare_reporter_takes_full_control(tmp_path: Path):

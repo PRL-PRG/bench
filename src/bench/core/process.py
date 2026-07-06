@@ -28,8 +28,8 @@ from types import FrameType
 from bench.core.execution import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
-    Execution,
-    ExecutionResult,
+    Invocation,
+    InvocationResult,
 )
 
 _INTERRUPTED = threading.Event()
@@ -126,8 +126,8 @@ def _resolve_command(command: tuple[str, ...]) -> list[str]:
     return cmd
 
 
-def execute(exe: Execution) -> ExecutionResult:
-    """Spawn one subprocess and return an ExecutionResult.
+def execute(exe: Invocation) -> InvocationResult:
+    """Spawn one subprocess and return an InvocationResult.
 
     Honors `exe.timeout` (returncode `TIMEOUT_RC` on timeout), captures
     stdout/stderr, and includes `rusage` via `os.wait4`. Pure mechanism,
@@ -136,7 +136,9 @@ def execute(exe: Execution) -> ExecutionResult:
     try:
         cmd = _resolve_command(exe.command)
     except FileNotFoundError as e:
-        return ExecutionResult(execution=exe, returncode=SPAWN_FAIL_RC, failure=str(e))
+        return InvocationResult(
+            invocation=exe, returncode=SPAWN_FAIL_RC, failure=str(e)
+        )
 
     stdout_f = tempfile.TemporaryFile()
     stderr_f = tempfile.TemporaryFile()
@@ -188,8 +190,8 @@ def execute(exe: Execution) -> ExecutionResult:
         stderr = stderr_f.read().decode(errors="replace")
 
         if interrupted():
-            return ExecutionResult(
-                execution=exe,
+            return InvocationResult(
+                invocation=exe,
                 returncode=os.waitstatus_to_exitcode(waitstatus),
                 stdout=stdout,
                 stderr=stderr,
@@ -204,8 +206,8 @@ def execute(exe: Execution) -> ExecutionResult:
 
         # execute() records facts only. Judging success is the Runner's job
         # (see default_success / Benchmark.with_success).
-        return ExecutionResult(
-            execution=exe,
+        return InvocationResult(
+            invocation=exe,
             returncode=returncode,
             stdout=stdout,
             stderr=stderr,
@@ -213,8 +215,8 @@ def execute(exe: Execution) -> ExecutionResult:
             rusage=rusage,
         )
     except OSError as e:
-        return ExecutionResult(
-            execution=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}"
+        return InvocationResult(
+            invocation=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}"
         )
     finally:
         if proc is not None:
@@ -228,7 +230,7 @@ class LiveProcess:
     """A spawned-but-not-yet-reaped process writing to named output files."""
 
     proc: subprocess.Popen[bytes]
-    execution: Execution
+    invocation: Invocation
     stdout_path: Path
     stderr_path: Path
     _start: float
@@ -290,7 +292,7 @@ class LiveProcess:
             with contextlib.suppress(ProcessLookupError, OSError):
                 self.proc.kill()
 
-    def finish(self, *, killed: bool = False) -> ExecutionResult:
+    def finish(self, *, killed: bool = False) -> InvocationResult:
         if self.timer is not None:
             self.timer.cancel()
         if killed:
@@ -303,8 +305,8 @@ class LiveProcess:
         stderr = self.stderr_path.read_text(errors="replace")
         shutil.rmtree(self.stdout_path.parent, ignore_errors=True)
         if interrupted():
-            return ExecutionResult(
-                self.execution,
+            return InvocationResult(
+                self.invocation,
                 os.waitstatus_to_exitcode(waitstatus),
                 stdout,
                 stderr,
@@ -317,16 +319,16 @@ class LiveProcess:
             if self._killed.is_set()
             else os.waitstatus_to_exitcode(waitstatus)
         )
-        return ExecutionResult(self.execution, rc, stdout, stderr, runtime, rusage)
+        return InvocationResult(self.invocation, rc, stdout, stderr, runtime, rusage)
 
 
-def spawn_streaming(exe: Execution) -> LiveProcess:
+def spawn_streaming(exe: Invocation) -> LiveProcess:
     """Spawn a process writing stdout/stderr to named temp files, and return a
     LiveProcess to be reaped via .finish(). Honors exe.timeout (a Timer kills
     on expiry, .finish() then reports TIMEOUT_RC).
 
     Raises FileNotFoundError if the command is not found (caller converts to
-    a failed ExecutionResult if needed).
+    a failed InvocationResult if needed).
     """
     cmd = _resolve_command(exe.command)
 

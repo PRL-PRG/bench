@@ -68,7 +68,7 @@ def test_with_timeout_accepts_ctx_callable():
         .with_timeout(lambda ctx: float(ctx.params.t))
     )
     b = s.materialize(SimpleNamespace(t=30))[0]
-    assert b.execution.timeout == 30.0
+    assert b.invocation.timeout == 30.0
 
 
 def test_with_metric_accepts_ctx_callable():
@@ -94,21 +94,21 @@ def test_suite_callable_runs_still_loses_to_benchmark_override():
 def test_with_command_propagates_when_unset():
     s = suite("S", _b("a")).with_command(["x"])
     b = _mat(s)[0]
-    assert b.execution.command == ("x",)
+    assert b.invocation.command == ("x",)
 
 
 def test_with_command_order_independent():
     before = suite("S").with_command(["x"]).add(_b("a"))
     after = suite("S").add(_b("a")).with_command(["x"])
     b1, b2 = _mat(before)[0], _mat(after)[0]
-    assert b1.execution.command == b2.execution.command == ("x",)
+    assert b1.invocation.command == b2.invocation.command == ("x",)
 
 
 def test_defaults_reach_factory_benchmarks():
     s = suite("S").with_command(["true"]).with_runs(4).factory(lambda ctx: [bench("f")])
     b = _mat(s)[0]
     assert b.runs == FixedRuns(4)
-    assert b.execution.command == ("true",)
+    assert b.invocation.command == ("true",)
 
 
 def test_materialize_missing_command_fails_fast():
@@ -120,7 +120,7 @@ def test_with_env_merges():
     a = _b("a").with_command(["true"]).with_env({"X": "1", "Y": "from_b"})
     s = suite("S", a).with_env({"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    env = b.execution.env
+    env = b.invocation.env
     # benchmark wins for Y
     assert env["X"] == "1" and env["Y"] == "from_b" and env["Z"] == "1"
 
@@ -133,7 +133,7 @@ def test_env_merge_both_callable():
     )
     s = suite("S", a).with_env(lambda ctx: {"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
-    assert b.execution.env == {"X": "a", "Y": "from_b", "Z": "1"}
+    assert b.invocation.env == {"X": "a", "Y": "from_b", "Z": "1"}
 
 
 def test_suite_warmup_respects_explicit_zero():
@@ -364,7 +364,7 @@ def test_command_via_matrix_builder():
         .with_process_metric(Time())
     )
     bs = list(s.materialize(None))
-    assert sorted(b.execution.command for b in bs) == [("echo", "a"), ("echo", "b")]
+    assert sorted(b.invocation.command for b in bs) == [("echo", "a"), ("echo", "b")]
 
 
 # ----- CLI state reaches builder contexts ---------------------------------

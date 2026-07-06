@@ -5,12 +5,12 @@ from types import SimpleNamespace
 from typing import Any
 
 from bench import (
-    Execution,
-    ExecutionResult,
+    Invocation,
+    InvocationResult,
 )
 
 
-def make_execution(**overrides: Any) -> Execution:
+def make_execution(**overrides: Any) -> Invocation:
     defaults: dict[str, Any] = dict(
         command=("echo", "hi"),
         cwd=Path("/tmp"),
@@ -19,14 +19,14 @@ def make_execution(**overrides: Any) -> Execution:
         stdin=None,
     )
     defaults.update(overrides)
-    return Execution(**defaults)
+    return Invocation(**defaults)
 
 
 def make_success(
     stdout: str = "", stderr: str = "", runtime: float = 1.0, rusage=None, **exe_kw
-) -> ExecutionResult:
-    return ExecutionResult(
-        execution=make_execution(**exe_kw),
+) -> InvocationResult:
+    return InvocationResult(
+        invocation=make_execution(**exe_kw),
         returncode=0,
         stdout=stdout,
         stderr=stderr,
@@ -43,9 +43,9 @@ def make_failure(
     rusage=None,
     failure: str | None = None,
     **exe_kw,
-) -> ExecutionResult:
-    return ExecutionResult(
-        execution=make_execution(**exe_kw),
+) -> InvocationResult:
+    return InvocationResult(
+        invocation=make_execution(**exe_kw),
         returncode=returncode,
         stdout=stdout,
         stderr=stderr,

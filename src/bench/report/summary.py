@@ -15,9 +15,9 @@ import statistics
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, replace
 
-from bench.core.execution import Variant
-from bench.core.sample import Report, Run, Sample
-from bench.report.render import Cell, Renderer, cell, cells, table, tag
+from bench.core.execution import Variant, format_benchmark
+from bench.core.sample import Report, Execution, Sample
+from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
 
 type MetricKey = tuple[str, str]  # (metric, unit)
 type BenchKey = tuple[str, str]  # (suite, benchmark)
@@ -32,8 +32,8 @@ type BenchKey = tuple[str, str]  # (suite, benchmark)
 class Stat:
     """Stats for one (benchmark variant, metric), reduced from a Report.
 
-    `runs`/`failures` are the variant's successful/failed run counts (shared by
-    every metric of that variant). Outliers are counted but kept in the stats.
+    `runs`/`failures` are the variant's successful/failed iteration counts (shared
+    by every metric of that variant). Outliers are counted but kept in the stats.
     """
 
     suite: str
@@ -65,7 +65,7 @@ class Stat:
 
 @dataclass(slots=True)
 class _Acc:
-    """Mutable accumulator for one benchmark variant while walking the runs."""
+    """Mutable accumulator for one benchmark variant while walking the executions."""
 
     variant_label: str = ""
     runs: int = 0
@@ -81,17 +81,17 @@ def summarize(report: Report) -> list[Stat]:
     """Reduce a Report to a flat per-(variant, metric) `list[Stat]`.
 
     Warmup iterations are excluded from the stats but counted separately
-    (`Stat.warmups`), so a formatter can show how many were discarded.
-    Iteration samples and whole-process samples both feed the stats. Process
-    samples are not counted as a run unless the run produced no iterations at
-    all (a process-only run). A run that failed before producing any
-    iteration counts as one failure. Variants that only ever failed yield no
-    rows here - they surface in the reporter's Failures block.
+    (`Stat.warmups`), so a formatter can show how many were discarded. Iteration
+    samples and whole-process samples both feed the stats. Whole-process samples
+    do not add to the iteration count unless the execution produced no iterations
+    at all (a process-only execution). An execution that failed before producing
+    any iteration counts as one failure. Variants that only ever failed yield no
+    rows here, they surface in the reporter's Failures block.
     """
     accs: dict[tuple[str, str, Variant], _Acc] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
 
-    def ensure(r: Run) -> _Acc:
+    def ensure(r: Execution) -> _Acc:
         key = (r.suite, r.benchmark, r.variant)
         a = accs.get(key)
         if a is None:
@@ -108,7 +108,7 @@ def summarize(report: Report) -> list[Stat]:
         if s.outlier:
             a.outliers[mk] = a.outliers.get(mk, 0) + 1
 
-    for r in report.runs:
+    for r in report.executions:
         if not r.iterations and r.is_failure():
             ensure(r).failures += 1
             continue
@@ -257,7 +257,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
     (now axis-carrying) variant."""
     merged = Report()
     for name, report in named:
-        for run in report.runs:
+        for run in report.executions:
             variant = ((axis, name),) + run.variant
             label = f"{axis}={name}, {run.variant_label}" if run.variant_label else ""
             merged.add(replace(run, variant=variant, variant_label=label))
@@ -272,7 +272,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
 
 def bench_label(suite: str, benchmark: str) -> str:
     """`suite/benchmark`, collapsing the stutter when the two names match."""
-    return benchmark if suite == benchmark else f"{suite}/{benchmark}"
+    return format_benchmark(suite, benchmark, ())
 
 
 def _vlabel(s: Stat) -> str:
@@ -305,20 +305,27 @@ def _mean_cell(s: Stat, scale: float, unit: str = "", p: int = 2) -> Cell:
     )
 
 
-def _runs_text(runs: int, failures: int = 0) -> str:
-    word = "run" if runs + failures == 1 else "runs"
-    return f"({runs} {word})"
+def _counts_text(
+    runs: int, failures: int, *, samples: int | None = None, warmups: int = 0
+) -> str:
+    """`(… N runs, M failed)` count suffix, shared by the summary and ranking
+    lines. Sample count appears only when given and different from the run count
+    (a run's metric can yield several samples in one go, e.g. a regex matching
+    multiple lines of one execution's output). Warmup count appears only when the
+    warmup policy discarded any. No singular/plural variants."""
+    parts: list[str] = []
+    if samples is not None and samples != runs:
+        parts.append(f"{samples} samples")
+    if warmups:
+        parts.append(f"{warmups} warmup")
+    parts.append(f"{runs} runs")
+    parts.append(f"{failures} failed")
+    return f"({', '.join(parts)})"
 
 
 def _range_runs_cell(s: Stat, scale: float) -> Cell:
-    """`(min … max) (N runs)` - the range (dropped for fewer than 2 samples)
-    then counts: sample count (only when it differs from the run count - a
-    run's metric can yield several samples in one go, e.g. a regex matching
-    multiple lines of one execution's output, and a multi-sample range next
-    to "(1 run)" would otherwise read as if that one run were internally
-    inconsistent), warmup count (only when bench's own warmup policy
-    discarded any runs), then the run count. No singular/plural variants -
-    always "samples"/"warmup"/"runs". Failures render as `(f|n runs)`."""
+    """`(min … max) (N runs, M failed)` - the range (dropped for fewer than 2
+    samples) then the shared count suffix (see `_counts_text`)."""
     parts: list[tuple[str, str | None]] = []
     if s.n >= 2:
         parts += [
@@ -328,22 +335,16 @@ def _range_runs_cell(s: Stat, scale: float) -> Cell:
             (_num(s.max * scale), "max"),
             (") ", None),
         ]
-    if s.failures:
-        parts += [
-            ("(", None),
-            (str(s.failures), "failure"),
-            (f"|{s.runs} runs)", None),
-        ]
-        return cells(*parts)
-
-    counts: list[str] = []
-    if s.n != s.runs:
-        counts.append(f"{s.n} samples")
-    if s.warmups:
-        counts.append(f"{s.warmups} warmup")
-    counts.append(f"{s.runs} runs")
-    parts += [(f"({', '.join(counts)})", None)]
+    parts += [(_counts_text(s.runs, s.failures, samples=s.n, warmups=s.warmups), None)]
     return cells(*parts)
+
+
+def stat_line(s: Stat, r: Renderer = RICH) -> str:
+    """One-line `mean ± σ unit (min … max) (N runs, M failed)` for a single Stat,
+    matching the final summary. The unit is rendered inline."""
+    scale, ushow = scale_unit(s.mean, s.unit)
+    row = [_mean_cell(s, scale, ushow), _range_runs_cell(s, scale)]
+    return table(r, [row], indent="", gap=1)[0]
 
 
 def _delta_than_cell(display: float, sigma: float, p: int = 2) -> Cell:
@@ -378,18 +379,18 @@ def _was_block(
     r: Renderer,
     header: str,
     subject: str,
-    entries: list[tuple[float, float, str, int]],
+    entries: list[tuple[float, float, str, int, int]],
     *,
     show_runs: bool,
 ) -> list[str]:
-    """`<header>` / `<subject> was` / one `N× better than <target> (runs)` line
-    per entry. `entries` are `(display, sigma, target_label, runs)`. `display > 1`
-    means the subject is the better one."""
+    """`<header>` / `<subject> was` / one `N× better than <target> (runs, failed)`
+    line per entry. `entries` are `(display, sigma, target_label, runs, failures)`.
+    `display > 1` means the subject is the better one."""
     rows: list[list[Cell]] = []
-    for display, sigma, target, runs in entries:
+    for display, sigma, target, runs, failures in entries:
         row = [_delta_than_cell(display, sigma), cell(target, "name")]
         if show_runs:
-            row.append(cell(_runs_text(runs)))
+            row.append(cell(_counts_text(runs, failures)))
         rows.append(row)
     return [
         header,
@@ -474,7 +475,7 @@ def _axis_block(
         ref_val = (min if lib else max)(scores, key=lambda v: scores[v])
     ref_map = byval[ref_val]
 
-    entries: list[tuple[float, float, str, int]] = []
+    entries: list[tuple[float, float, str, int, int]] = []
     for v, m in byval.items():
         if v == ref_val:
             continue
@@ -484,7 +485,7 @@ def _axis_block(
         if not pairs:
             continue
         geo, sig = geomean_ratio(pairs)
-        entries.append((geo, sig, v, 0))
+        entries.append((geo, sig, v, 0, 0))
     entries.sort(key=lambda e: e[0])  # closest to the reference first
     if not entries:
         return []
@@ -524,12 +525,12 @@ def ranking(
                 + tag(r, "metric", metric)
                 + ")"
             )
-            entries: list[tuple[float, float, str, int]] = []
+            entries: list[tuple[float, float, str, int, int]] = []
             for s in ranked[1:]:
                 rr = ratio(s, best)  # best relative to s -> reads "better"
                 if rr is None:
                     continue
-                entries.append((rr[0], rr[1], _vlabel(s), s.runs))
+                entries.append((rr[0], rr[1], _vlabel(s), s.runs, s.failures))
             if entries:
                 blocks.append(
                     _was_block(r, header, _vlabel(best), entries, show_runs=True)

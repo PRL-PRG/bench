@@ -3,7 +3,7 @@
 Two kinds, distinguished by what they read:
 
   - `IterationMetric` parses one iteration's text into Samples.
-  - `ProcessMetric` reads the whole `ExecutionResult`.
+  - `ProcessMetric` reads the whole `InvocationResult`.
 
 Both carry an optional `direction` and `predicate`.
 """
@@ -18,22 +18,22 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal, Self
 
-from bench.core.execution import ExecutionResult
+from bench.core.execution import InvocationResult
 from bench.core.sample import Sample
 
 # None = no direction, True = lower is better, False = higher is better
 type Direction = bool | None
 
 # A MetricSource pulls the text an IterationMetric parses out of the
-# ExecutionResult.
-type MetricSource = Callable[[ExecutionResult], str]
+# InvocationResult.
+type MetricSource = Callable[[InvocationResult], str]
 
 
-def StdoutMetricSource(result: ExecutionResult) -> str:
+def StdoutMetricSource(result: InvocationResult) -> str:
     return result.stdout or ""
 
 
-def StderrMetricSource(result: ExecutionResult) -> str:
+def StderrMetricSource(result: InvocationResult) -> str:
     return result.stderr or ""
 
 
@@ -61,7 +61,7 @@ class _MetricBase[T](abc.ABC):
 
     `extract` parses the input. `process` wraps it with the optional
     `predicate` gate and the `direction` override. `IterationMetric` and
-    `ProcessMetric` fix `T` to the iteration text and the `ExecutionResult`
+    `ProcessMetric` fix `T` to the iteration text and the `InvocationResult`
     respectively.
     """
 
@@ -100,8 +100,8 @@ class IterationMetric(_MetricBase[str]):
 
 
 @dataclass(frozen=True)
-class ProcessMetric(_MetricBase[ExecutionResult]):
-    """Read whole-process Samples from an ExecutionResult."""
+class ProcessMetric(_MetricBase[InvocationResult]):
+    """Read whole-process Samples from an InvocationResult."""
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +256,7 @@ class RUsage(ProcessMetric):
     metric: str
     unit: str = ""
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: InvocationResult) -> Iterable[Sample]:
         if result.rusage is None:
             return
         value = float(getattr(result.rusage, self.field))
@@ -282,7 +282,7 @@ class Time(ProcessMetric):
         if not (self.elapsed or self.user or self.system):
             raise ValueError("Time() needs at least one of elapsed/user/system")
 
-    def extract(self, result: ExecutionResult) -> Iterable[Sample]:
+    def extract(self, result: InvocationResult) -> Iterable[Sample]:
         if self.elapsed and result.runtime is not None:
             yield Sample(metric="elapsed", value=result.runtime, unit="s")
         if result.rusage is not None:

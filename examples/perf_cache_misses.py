@@ -13,7 +13,7 @@ runs the command under `perf stat -e <events>`, and `with_process_metric(counter
 parses those counters back out of stderr. Nothing perf-related touches a benchmark
 that doesn't opt in.
 
-Run on a Linux box where `perf` can count (see `bench doctor` /
+Execution on a Linux box where `perf` can count (see `bench doctor` /
 `perf_event_paranoid`). On other platforms this still imports fine. It only fails
 if you actually run it without perf.
 """

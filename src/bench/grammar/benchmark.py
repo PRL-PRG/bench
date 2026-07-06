@@ -2,7 +2,7 @@
 
 `BenchmarkBuilder` is the builder for `Benchmark`, one fully resolved variant. The
 builder leaves every inheritable field unset. The resolved benchmark carries concrete
-objects and a frozen `Execution`, which can be run.
+objects and a frozen `Invocation`, which can be run.
 
 Every configurable field is set either as a static value or as a `Factory[T]` =
 `(ctx) -> value` builder, resolved once per variant.
@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from bench.core.execution import (
     EMPTY_MAPPING,
-    Execution,
+    Invocation,
     SuccessFn,
     Variant,
     format_variant,
@@ -39,7 +39,6 @@ from bench.core.metric import (
     IterationMetric,
     MetricSource,
     ProcessMetric,
-    Time,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy
@@ -166,7 +165,7 @@ class BenchmarkBuilder(BuilderBase):
             data=Data(dict(self.data)),
         )
         env = self.env(ctx)
-        execution = Execution(
+        invocation = Invocation(
             command=tuple(os.fsdecode(a) for a in self.command(ctx)),
             cwd=Path(self.cwd(ctx)),
             env=env if env else EMPTY_MAPPING,
@@ -175,13 +174,10 @@ class BenchmarkBuilder(BuilderBase):
         )
         iteration_metrics = self.iteration_metrics(ctx)
         process_metrics = self.process_metrics(ctx)
-        # Bare benchmark (no metrics declared at all): measure wall time.
-        if not iteration_metrics and not process_metrics:
-            process_metrics = (Time(),)
         b = Benchmark(
             suite=suite,
             name=self.name,
-            execution=execution,
+            invocation=invocation,
             variant=variant,
             iteration_metrics=iteration_metrics,
             process_metrics=process_metrics,
@@ -203,7 +199,7 @@ class Benchmark:
 
     suite: str
     name: str
-    execution: Execution
+    invocation: Invocation
     variant: Variant
     iteration_metrics: tuple[tuple[IterationMetric, MetricSource], ...]
     process_metrics: tuple[ProcessMetric, ...]

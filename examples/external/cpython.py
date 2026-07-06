@@ -18,8 +18,8 @@ warmup (excluded from stats, still visible in the report/--json); the
 framework default of keeping exactly one more after that is what's kept as
 the measurement - a harness process runs once, so it contributes once.
 
-Wanting more independent measurements is a --repeat concern, not --warmup or
-runs: --repeat spawns that many separate pyperformance processes (matrix
+Wanting more independent measurements is a --runs concern, not --warmup or
+runs: --runs spawns that many separate pyperformance processes (matrix
 variants), each contributing its own kept sample and its own report row.
 
 The default suite is discovered from `pyperformance list`, so this tracks
@@ -105,7 +105,7 @@ class CpythonParams(SharedBenchParams):
         default_factory=list,
         metadata={"help": "pyperformance --hook (repeatable): perf_record, pystats."},
     )
-    repeat: int = field(
+    runs: int = field(
         default=1,
         metadata={
             "help": "How many independent times to run this benchmark "
@@ -115,7 +115,7 @@ class CpythonParams(SharedBenchParams):
     warmup: int = field(
         default=0,
         metadata={
-            "help": "How many of each repeat's leading measured values "
+            "help": "How many of each runs's leading measured values "
             "to discard as warmup before keeping the next one."
         },
     )
@@ -137,9 +137,9 @@ def command(ctx: Context[CpythonParams]) -> list[str]:
     p = ctx.params
     out = p.output.resolve()
     name = ctx.benchmark
-    repeat = ctx.data.repeat
-    raw = out / "raw" / f"{name}.{repeat}.json"
-    log = out / "raw" / f"{name}.{repeat}.log"
+    runs = ctx.data.runs
+    raw = out / "raw" / f"{name}.{runs}.json"
+    log = out / "raw" / f"{name}.{runs}.log"
 
     opts = ""
     if p.rigorous:
@@ -161,7 +161,7 @@ def command(ctx: Context[CpythonParams]) -> list[str]:
 
 def monitor(ctx: Context[CpythonParams]) -> HarnessMonitor:
     p = ctx.params
-    raw = p.output.resolve() / "raw" / f"{ctx.benchmark}.{ctx.data.repeat}.json"
+    raw = p.output.resolve() / "raw" / f"{ctx.benchmark}.{ctx.data.runs}.json"
 
     def read(handle: HarnessHandle) -> Iterator[str]:
         while handle.is_alive():
@@ -186,7 +186,7 @@ cpython = (
     .factory(lambda ctx: [bench(n) for n in list_benchmarks()])
     .with_command(command)
     .with_monitor_fn(monitor)
-    .with_matrix(repeat=lambda ctx: range(ctx.params.repeat))
+    .with_matrix(runs=lambda ctx: range(ctx.params.runs))
     .with_warmup(lambda ctx: FixedRuns(ctx.params.warmup))
     .with_metric(FloatPerLine("s").lower_is_better())
 )

@@ -10,7 +10,7 @@ from typing import Any
 
 from bench.grammar.benchmark import Benchmark
 from bench.core.execution import (
-    Execution,
+    Invocation,
     default_success,
     format_identifier,
 )
@@ -65,7 +65,7 @@ def plan(
     return out
 
 
-def format_command(e: Execution) -> str:
+def format_command(e: Invocation) -> str:
     """A copy-pasteable shell command for one execution: `cd DIR && KEY='v' cmd
     args`. The `cd` prefix appears only when the cwd differs from the current
     directory, env assignments only when present. Every part is shell-quoted."""
@@ -91,7 +91,7 @@ def _metric_name(m: Any) -> str:
 
 
 def format_benchmark_verbose(b: Benchmark, run: int) -> str:
-    e = b.execution
+    e = b.invocation
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"

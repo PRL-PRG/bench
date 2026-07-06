@@ -2,8 +2,8 @@
 
 # Atoms
 from bench.core.execution import (
-    Execution,
-    ExecutionResult,
+    Invocation,
+    InvocationResult,
     Variant,
     Verdict,
     default_success,
@@ -11,7 +11,7 @@ from bench.core.execution import (
 from bench.core.sample import (
     Iteration,
     Report,
-    Run,
+    Execution,
     Sample,
     report_from_json,
     report_to_json,
@@ -106,14 +106,14 @@ from bench.cli import main
 
 __all__ = [
     # Atoms
-    "Execution",
-    "ExecutionResult",
+    "Invocation",
+    "InvocationResult",
     "Variant",
     "Verdict",
     "default_success",
     "Sample",
     "Iteration",
-    "Run",
+    "Execution",
     "Report",
     "report_from_json",
     "report_to_json",

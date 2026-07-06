@@ -1,4 +1,4 @@
-"""Controller: the per-benchmark feedback loop over a RunSource."""
+"""Controller: the per-benchmark feedback loop over an ExecutionSource."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from collections.abc import Generator
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.policy import StoppingPolicy
 from bench.core.process import interrupted
-from bench.core.sample import Iteration, Report, Run, Sample
+from bench.core.sample import Iteration, Report, Execution, Sample
 from bench.grammar.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.source import make_source
@@ -31,15 +31,15 @@ def benchmarking_loop(
             state.observe(iteration)
 
 
-def _mark_warmup(runs: list[Run], warmup: int) -> list[Run]:
+def _mark_warmup(runs: list[Execution], warmup: int) -> list[Execution]:
     """Flag the first `warmup` iterations (in pull order, across runs) as warmup.
 
     The Controller knows the warmup boundary (it drove the warmup policy), so it
-    stamps it onto the assembled Runs. The flag then travels with the data."""
+    stamps it onto the assembled Executions. The flag then travels with the data."""
     if warmup <= 0:
         return runs
     remaining = warmup
-    out: list[Run] = []
+    out: list[Execution] = []
     for run in runs:
         if remaining <= 0:
             out.append(run)
@@ -55,7 +55,9 @@ def _mark_warmup(runs: list[Run], warmup: int) -> list[Run]:
     return out
 
 
-def _mark_outliers(runs: list[Run], detection: OutlierDetection) -> list[Run]:
+def _mark_outliers(
+    runs: list[Execution], detection: OutlierDetection
+) -> list[Execution]:
     """Flag outlier Samples per (metric, unit), pooled across the measured
     (non-warmup) iterations of all runs, i.e., the same values that reach the stats."""
 
@@ -79,7 +81,7 @@ def _mark_outliers(runs: list[Run], detection: OutlierDetection) -> list[Run]:
     # 3. Re-walk in the same order, consuming each metric's mask, rebuilding
     #    only the runs/iterations/samples that actually change.
     cursors = {k: iter(m) for k, m in masks.items()}
-    out: list[Run] = []
+    out: list[Execution] = []
     for run in runs:
         new_iters: list[Iteration] = []
         run_changed = False
@@ -107,11 +109,11 @@ def _mark_outliers(runs: list[Run], detection: OutlierDetection) -> list[Run]:
 
 
 class Controller:
-    """Drive `benchmarking_loop` over one benchmark-variant's RunSource.
+    """Drive `benchmarking_loop` over one benchmark-variant's ExecutionSource.
 
     Pull one `(Iteration, label)` per slot, feed the stopping policy, count
     warmup iterations, and `close()` the source on convergence (which kills a
-    running harness and returns the assembled `Run`(s)). The Controller stamps
+    running harness and returns the assembled `Execution`(s)). The Controller stamps
     the warmup iterations onto the runs and records them. It never schedules.
     The source owns scheduling and spawning.
     """
@@ -129,6 +131,7 @@ class Controller:
         if interrupted():
             return
 
+        self.reporter.benchmark_start(b)
         source = make_source(b, verbose=self.verbose)
 
         warmup_iters = 0
@@ -170,3 +173,4 @@ class Controller:
             for run in runs:
                 report.add(run)
                 self.reporter.run_done(run)
+            self.reporter.benchmark_done(b, runs)

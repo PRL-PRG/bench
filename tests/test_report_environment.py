@@ -7,7 +7,7 @@ from bench.core.environment import Diagnostic, Environment
 from bench.core.sample import (
     Iteration,
     Report,
-    Run,
+    Execution,
     Sample,
     report_from_json,
     report_to_json,
@@ -15,8 +15,8 @@ from bench.core.sample import (
 from bench.report.reporter import CsvReporter, DirReporter, JsonReporter
 
 
-def _run() -> Run:
-    return Run(
+def _run() -> Execution:
+    return Execution(
         suite="s",
         benchmark="b",
         iterations=[Iteration(samples=[Sample("elapsed", 1.0, "s")])],
@@ -27,14 +27,16 @@ def test_report_environment_roundtrips():
     env = Environment(
         system="Linux", governors=["performance"], load_avg=[0.1, 0.2, 0.3]
     )
-    rep = Report(runs=[], environment=env, diagnostics=[Diagnostic("high", "m", "f")])
+    rep = Report(
+        executions=[], environment=env, diagnostics=[Diagnostic("high", "m", "f")]
+    )
     back = report_from_json(report_to_json(rep))
     assert back.environment == env
     assert back.diagnostics[0].severity == "high"
 
 
 def test_old_json_without_environment_loads():
-    back = report_from_json('{"runs": []}')
+    back = report_from_json('{"executions": []}')
     assert back.environment is None
     assert back.diagnostics == []
 

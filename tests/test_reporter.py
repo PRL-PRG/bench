@@ -3,6 +3,7 @@
 import csv
 import io
 import json
+import re
 from pathlib import Path
 
 from rich.console import Console
@@ -24,7 +25,7 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
-from bench.core.sample import Iteration, Run, Sample
+from bench.core.sample import Iteration, Execution, Sample
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
@@ -32,7 +33,7 @@ from bench.report.theme import BENCHR_THEME
 def test_dirreporter_writes_on_run_done(tmp_path):
     rep = _DirReporter(tmp_path)
     rep.start([])
-    run = Run(
+    run = Execution(
         suite="S",
         benchmark="b",
         variant=(),
@@ -66,14 +67,17 @@ def test_csv_writer(tmp_path: Path):
     text = out.read_text()
     lines = text.splitlines()
     assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
-    assert len(lines) == 3  # header + 2 rows
+    assert sum(1 for ln in lines[1:] if ",runtime," in ln) == 2  # 2 runs
+    assert (
+        sum(1 for ln in lines[1:] if ",elapsed," in ln) == 2
+    )  # elapsed always measured
 
 
 def test_json_writer_round_trip(tmp_path: Path):
     out = tmp_path / "r.json"
     Sequential(reporter=JsonReporter(out)).run(plan([_s()], None), None)
     r = report_from_json(out.read_text())
-    all_samples = [s for run in r.runs for o in run.iterations for s in o.samples]
+    all_samples = [s for run in r.executions for o in run.iterations for s in o.samples]
     assert len(all_samples) == 2
     assert all(s.metric == "runtime" for s in all_samples)
 
@@ -116,8 +120,8 @@ def test_user_composite_reporter_receives_environment(tmp_path: Path):
     assert "system" in json.loads(env_file.read_text())["environment"]
 
 
-def _flagged_run() -> Run:
-    return Run(
+def _flagged_run() -> Execution:
+    return Execution(
         suite="S",
         benchmark="b",
         variant=(),
@@ -155,7 +159,7 @@ def test_json_persists_outlier_flag(tmp_path: Path):
     rep.finalize()
     samples = [
         s
-        for run in report_from_json(out.read_text()).runs
+        for run in report_from_json(out.read_text()).executions
         for it in run.iterations
         for s in it.samples
     ]
@@ -318,3 +322,102 @@ def test_summary_failure_line_escapes_identifier_markup():
     )
     Sequential(reporter=SummaryReporter(target_console=c)).run(plan([s], None), None)
     assert "[v1]" in buf.getvalue()
+
+
+def test_progress_plain_count_scopes_per_benchmark():
+    # In non-TTY mode each benchmark restarts its own [n|total] iteration count.
+    c, buf = _string_console()
+    s = suite(
+        "S",
+        bench("a")
+        .with_command(["sh", "-c", "echo ok"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(2),
+        bench("b")
+        .with_command(["sh", "-c", "echo ok"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(2),
+    )
+    Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
+    text = buf.getvalue()
+    assert text.count("[1|2]") == 2 and text.count("[2|2]") == 2
+    assert "S/a" in text and "S/b" in text
+
+
+def test_progress_overall_counts_any_failure_as_failed_benchmark():
+    # On a TTY the overall bar tallies whole benchmarks: two failing iterations
+    # count as one failed benchmark, not two.
+    buf = io.StringIO()
+    c = Console(theme=BENCHR_THEME, file=buf, force_terminal=True, width=120)
+    rep = ProgressReporter(target_console=c)
+    s = suite(
+        "S",
+        bench("ok")
+        .with_command(["sh", "-c", "echo ok"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(2),
+        bench("bad")
+        .with_command(["sh", "-c", "exit 7"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(2),
+    )
+    Sequential(reporter=rep).run(plan([s], None), None)
+    assert rep._passed == 1 and rep._failed == 1
+
+
+def test_summary_channel_keeps_progress_and_swaps_summary():
+    # bench_app(summary=...) must keep the progress bar (and CLI sinks) while
+    # replacing only the default summary.
+    from types import SimpleNamespace
+
+    from bench.run import default_reporter
+    from bench.report.reporter import CompositeReporter, ProgressReporter
+
+    marker = SummaryReporter()
+    ctx = SimpleNamespace(
+        params=SimpleNamespace(progress=True, json=None, csv=None, dir=None)
+    )
+    rep = default_reporter(ctx, marker)
+    assert isinstance(rep, CompositeReporter)
+    assert any(isinstance(r, ProgressReporter) for r in rep.reporters)
+    assert marker in rep.reporters
+
+
+def test_eta_column_blank_for_single_or_unknown_total():
+    from types import SimpleNamespace
+
+    from bench.report.reporter import _EtaColumn
+
+    col = _EtaColumn()
+    assert str(col.render(SimpleNamespace(total=1))) == ""
+    assert str(col.render(SimpleNamespace(total=None))) == ""
+
+
+def test_progress_overall_label_is_app_name():
+    assert ProgressReporter(app_name="MyApp")._app_label == "MyApp"
+    assert ProgressReporter()._app_label == "Benchmarks"
+
+
+def test_progress_prints_completed_summary_scrollback():
+    # On a TTY, a finished benchmark leaves a persistent summary line above the
+    # (transient) bars, with the same elapsed stats as the final summary.
+    buf = io.StringIO()
+    c = Console(
+        theme=BENCHR_THEME, file=buf, force_terminal=True, no_color=True, width=120
+    )
+    s = suite(
+        "S",
+        bench("a")
+        .with_command(["sh", "-c", "echo ok"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(3),
+    )
+    Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
+    out = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
+    assert "Benchmark: S/a" in out
+    assert "(3 runs, 0 failed)" in out

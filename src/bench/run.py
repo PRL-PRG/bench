@@ -90,6 +90,7 @@ class BenchAppBuilder(BuilderBase):
     factories: tuple[SuiteFactory, ...] = ()
     params: type | None = None
     reporter: ReporterFactory | None = None
+    summary: ReporterFactory | None = None
     runner: RunnerFactory | None = None
     filter: FilterFactory | None = None
     environment: EnvironmentCollector = NoEnvironment()
@@ -110,6 +111,11 @@ class BenchAppBuilder(BuilderBase):
     def with_reporter(self, reporter: Reporter | ReporterFactory) -> BenchAppBuilder:
         """Set the reporter."""
         return dataclasses.replace(self, reporter=as_build(reporter))
+
+    def with_summary(self, summary: Reporter | ReporterFactory) -> BenchAppBuilder:
+        """Swap the summary while keeping the default progress bar and the
+        --json/--csv/--dir sinks. Ignored when a full reporter is set."""
+        return dataclasses.replace(self, summary=as_build(summary))
 
     def with_runner(self, runner: Runner | RunnerFactory) -> BenchAppBuilder:
         """Set the runner."""
@@ -152,9 +158,11 @@ class BenchAppBuilder(BuilderBase):
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
 
-        reporter = (
-            default_reporter(ctx) if self.reporter is None else self.reporter(ctx)
-        )
+        if self.reporter is not None:
+            reporter = self.reporter(ctx)
+        else:
+            summary = self.summary(ctx) if self.summary is not None else None
+            reporter = default_reporter(ctx, summary, app_name=self.name)
         reporter.set_environment(env, env_diagnostics)
 
         # --show
@@ -204,7 +212,7 @@ class BenchAppBuilder(BuilderBase):
     def _do_show(self, reporter: Reporter, path: str) -> Report:
         report = report_from_json(Path(path).read_text())
         reporter.set_environment(report.environment, report.diagnostics)
-        for r in report.runs:
+        for r in report.executions:
             reporter.run_done(r)
         reporter.finalize()
         return report
@@ -237,25 +245,34 @@ def bench_app(
     *,
     params: type | None = None,
     reporter: Reporter | ReporterFactory | None = None,
+    summary: Reporter | ReporterFactory | None = None,
     environment: EnvironmentCollector | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
-    """Top-level builder combining suites with common settings."""
+    """Top-level builder combining suites with common settings.
+
+    Pass `summary` to swap the summary while keeping the default progress bar and
+    the --json/--csv/--dir sinks. Pass `reporter` to replace the whole reporter
+    (progress included).
+    """
 
     return BenchAppBuilder(
         name=name,
         params=params,
         reporter=as_build(reporter) if reporter is not None else None,
+        summary=as_build(summary) if summary is not None else None,
         environment=environment or NoEnvironment(),
         denoise=denoise,
     )
 
 
-def default_reporter(ctx: Context[Any], summary: Reporter | None = None) -> Reporter:
+def default_reporter(
+    ctx: Context[Any], summary: Reporter | None = None, app_name: str = ""
+) -> Reporter:
     sinks: list[Reporter] = []
     p = ctx.params
     if p.progress:
-        sinks.append(ProgressReporter())
+        sinks.append(ProgressReporter(app_name=app_name))
 
     sinks.append(summary or SummaryReporter(DefaultSummary()))
 

@@ -12,7 +12,7 @@ import re
 from collections.abc import Iterable
 
 from bench import (
-    ExecutionResult,
+    InvocationResult,
     IterationMetric,
     Sample,
     bench,
@@ -32,7 +32,7 @@ class TaggedFloat(IterationMetric):
             yield Sample(metric="custom_time", value=float(m.group(1)), unit="s")
 
 
-def succeeded(pr: ExecutionResult) -> str | None:
+def succeeded(pr: InvocationResult) -> str | None:
     """Success policy: exit zero AND stdout contains 'OK'.
 
     Returns `None` on success, or a failure reason string otherwise.

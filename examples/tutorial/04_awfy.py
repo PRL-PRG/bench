@@ -78,8 +78,8 @@ awfy = (
 
 
 grouped = GroupedSummary(axis="vm", metric="runtime")
-reporter = SummaryReporter(Results() & Summary() & grouped)
+summary = SummaryReporter(Results() & Summary() & grouped)
 
-bench_app("AWFY", params=Params, reporter=reporter).add_all(awfy).run()
+bench_app("AWFY", params=Params, summary=summary).add_all(awfy).run()
 
 # vim: ft=python

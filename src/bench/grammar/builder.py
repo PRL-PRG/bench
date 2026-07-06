@@ -278,7 +278,7 @@ class BuilderBase:
         source: Literal["stdout", "stderr"] | MetricSource = "stdout",
     ) -> Self:
         """Append one per-iteration metric reading from `source` ("stdout",
-        "stderr", or a `(ExecutionResult) -> str` extractor)."""
+        "stderr", or a `(InvocationResult) -> str` extractor)."""
         # Runtime guard for callers not running a type checker. A
         # process metric would otherwise crash deep in extraction.
         if not isinstance(metric, IterationMetric):  # pyright: ignore[reportUnnecessaryIsInstance]

@@ -13,7 +13,7 @@ from bench.core.execution import Variant, format_identifier, record_key
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """One parsed metric value. Identity lives on the enclosing Run."""
+    """One parsed metric value such as a time in seconds. Belongs to an Iteration."""
 
     metric: str
     value: float
@@ -24,7 +24,8 @@ class Sample:
 
 @dataclass(frozen=True, slots=True)
 class Iteration:
-    """One measured iteration: samples (possibly multi-metric) with optional failure."""
+    """One measurement. A command benchmark produces one Iteration per Execution,
+    a harness produces many. Holds the parsed Samples and an optional failure."""
 
     samples: list[Sample] = field(default_factory=list[Sample])
     failure: str | None = None
@@ -36,8 +37,9 @@ class Iteration:
 
 
 @dataclass(frozen=True, slots=True)
-class Run:
-    """One process execution: identity + command + outcome + iterations."""
+class Execution:
+    """One subprocess run start to finish. Holds the Iterations measured from it,
+    one for a command benchmark and many for a harness, plus any whole-process Samples."""
 
     suite: str
     benchmark: str
@@ -87,19 +89,20 @@ def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
 
 @dataclass(slots=True)
 class Report:
-    """The accumulating Runs, each carrying its Iterations."""
+    """All Executions from a benchmarking session, plus the machine environment
+    and diagnostics."""
 
-    runs: list[Run] = field(default_factory=list[Run])
+    executions: list[Execution] = field(default_factory=list[Execution])
     environment: Environment | None = None
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
 
     @property
-    def failures(self) -> list[Run]:
-        """Runs whose process failed (returncode-bearing failures)."""
-        return [r for r in self.runs if r.is_failure()]
+    def failures(self) -> list[Execution]:
+        """Executions whose process failed (returncode-bearing failures)."""
+        return [ex for ex in self.executions if ex.is_failure()]
 
     def iterations(self) -> list[Iteration]:
-        return [it for r in self.runs for it in r.iterations]
+        return [it for ex in self.executions for it in ex.iterations]
 
     def metrics(self) -> list[str]:
         """Distinct metric names across iterations and whole-process samples,
@@ -107,25 +110,21 @@ class Report:
         return list(
             dict.fromkeys(
                 s.metric
-                for r in self.runs
+                for ex in self.executions
                 for s in (
-                    *(s for it in r.iterations for s in it.samples),
-                    *r.process_samples,
+                    *(s for it in ex.iterations for s in it.samples),
+                    *ex.process_samples,
                 )
             )
         )
 
     def variant_keys(self) -> list[str]:
-        """Stable list of matrix-dimension names across all runs, first-seen order."""
-        return list(dict.fromkeys(k for r in self.runs for k, _ in r.variant))
+        """Stable list of matrix-dimension names across all executions, first-seen order."""
+        return list(dict.fromkeys(k for ex in self.executions for k, _ in ex.variant))
 
-    def add(self, run: Run) -> None:
-        self.runs.append(run)
+    def add(self, execution: Execution) -> None:
+        self.executions.append(execution)
 
-
-# ---------------------------------------------------------------------------
-# JSON serialization
-# ---------------------------------------------------------------------------
 
 _OUTPUT_FIELDS = ("stdout", "stderr", "env")
 
@@ -137,9 +136,9 @@ def report_to_json(
     `include_output`."""
     raw = unstructure(report)
     if not include_output:
-        for run in raw.get("runs", []):
+        for ex in raw.get("executions", []):
             for f in _OUTPUT_FIELDS:
-                run.pop(f, None)
+                ex.pop(f, None)
     return json.dumps(raw, indent=indent)
 
 

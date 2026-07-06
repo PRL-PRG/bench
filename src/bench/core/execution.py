@@ -1,6 +1,6 @@
-"""Execution: the pure atom of a benchmark run.
+"""Invocation: the pure atom of a benchmark run.
 
-An Execution is a description of how to start one subprocess: command,
+An Invocation is a description of how to start one subprocess: command,
 working directory, environment, optional timeout, optional stdin payload.
 """
 
@@ -25,7 +25,7 @@ def to_argv(command: Any) -> tuple[Any, ...]:
 
 
 @dataclass(frozen=True, slots=True)
-class Execution:
+class Invocation:
     """Pure description of one subprocess invocation."""
 
     command: tuple[str, ...]
@@ -36,8 +36,8 @@ class Execution:
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionResult:
-    """Outcome of running one Execution.
+class InvocationResult:
+    """Outcome of running one Invocation.
 
        `failure` is the human-readable reason a run is treated as failed, or
        `None` for a success.
@@ -50,7 +50,7 @@ class ExecutionResult:
                      no real exit code, `failure` set by `execute`)
     """
 
-    execution: Execution
+    invocation: Invocation
     returncode: int
     stdout: str = ""
     stderr: str = ""
@@ -63,15 +63,15 @@ class ExecutionResult:
 
 
 type Verdict = str | None  # None = success, str = failure reason
-type SuccessFn = Callable[[ExecutionResult], Verdict]
+type SuccessFn = Callable[[InvocationResult], Verdict]
 
 
-# Conventional returncode sentinels (see ExecutionResult docstring above).
+# Conventional returncode sentinels (see InvocationResult docstring above).
 TIMEOUT_RC = 124
 SPAWN_FAIL_RC = -1
 
 
-def default_success(result: ExecutionResult) -> Verdict:
+def default_success(result: InvocationResult) -> Verdict:
     """Default success policy: clean exit passes, anything else fails."""
     if result.failure is not None:  # spawn failure already judged by execute()
         return result.failure
@@ -99,12 +99,24 @@ def _bench_head(suite: str, benchmark: str) -> str:
     return benchmark if suite == benchmark else f"{suite}/{benchmark}"
 
 
-def record_key(suite: str, benchmark: str, variant: Variant) -> str:
-    """Canonical benchmark-variant key: `suite/benchmark (k=v, ...)`.
+def format_benchmark(
+    suite: str,
+    benchmark: str,
+    variant: Variant,
+    variant_label: str = "",
+) -> str:
+    """Resolved benchmark-variant name: `suite/benchmark` with the variant label
+    or the `(k=v, ...)` suffix appended."""
+    head = _bench_head(suite, benchmark)
+    if variant_label:
+        return f"{head}/{variant_label}"
+    return f"{head}{format_variant(variant)}"
 
-    Built from the variant tuple.
-    """
-    return f"{_bench_head(suite, benchmark)}{format_variant(variant)}"
+
+def record_key(suite: str, benchmark: str, variant: Variant) -> str:
+    """Canonical benchmark-variant key `suite/benchmark (k=v, ...)`, built from the
+    variant tuple (ignores any variant label)."""
+    return format_benchmark(suite, benchmark, variant)
 
 
 def format_identifier(
@@ -114,10 +126,5 @@ def format_identifier(
     run: int,
     variant_label: str = "",
 ) -> str:
-    """Canonical run label: `suite/benchmark[/label or (k=v, ...)] #run`."""
-    head = _bench_head(suite, benchmark)
-    if variant_label:
-        head = f"{head}/{variant_label}"
-    else:
-        head = f"{head}{format_variant(variant)}"
-    return f"{head} #{run}"
+    """Canonical run label: the benchmark name followed by `#run`."""
+    return f"{format_benchmark(suite, benchmark, variant, variant_label)} #{run}"

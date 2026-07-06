@@ -90,10 +90,10 @@ def test_bench_writes_json(tmp_path: Path):
     assert r.returncode == 0, r.stderr
     assert out.exists()
     data = json.loads(out.read_text())
-    assert "runs" in data
+    assert "executions" in data
     all_samples = [
         s
-        for r in data["runs"]
+        for r in data["executions"]
         for s in (
             [s for o in r.get("iterations", []) for s in o.get("samples", [])]
             + r.get("process_samples", [])
@@ -128,7 +128,7 @@ def test_bench_time_bound_caps_runs(tmp_path: Path):
         "sleep 0.05",
     )
     assert r.returncode == 0, r.stderr
-    n = len(json.loads(out.read_text())["runs"])
+    n = len(json.loads(out.read_text())["executions"])
     assert 1 <= n < 100  # stopped by --time well before the run cap
 
 
@@ -146,7 +146,7 @@ def test_bench_time_zero_uses_exact_run_count(tmp_path: Path):
         "sleep 0.01",
     )
     assert r.returncode == 0, r.stderr
-    assert len(json.loads(out.read_text())["runs"]) == 3
+    assert len(json.loads(out.read_text())["executions"]) == 3
 
 
 def test_show_subcommand(tmp_path: Path):
@@ -314,7 +314,7 @@ def test_run_callable_factory_receives_parsed_params():
         .run(["--label", "hello", "--no-progress"])
     )
     assert seen["label"] == "hello"
-    assert {r.suite for r in report.runs} == {"S"}
+    assert {r.suite for r in report.executions} == {"S"}
 
 
 def test_bench_combines_static_and_discovered_suites():
@@ -324,7 +324,7 @@ def test_bench_combines_static_and_discovered_suites():
         return [_trivial("Disc")]
 
     report = bench_app().add(static).factory(discover).run(["--no-progress"])
-    assert {r.suite for r in report.runs} == {"Static", "Disc"}
+    assert {r.suite for r in report.executions} == {"Static", "Disc"}
 
 
 def test_run_sugar_runs_multiple_suites(monkeypatch):
@@ -332,7 +332,7 @@ def test_run_sugar_runs_multiple_suites(monkeypatch):
     # reading the argv from sys.argv.
     monkeypatch.setattr(sys, "argv", ["prog", "--no-progress"])
     report = run(_trivial("A"), _trivial("B"))
-    assert {r.suite for r in report.runs} == {"A", "B"}
+    assert {r.suite for r in report.executions} == {"A", "B"}
 
 
 def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
@@ -355,7 +355,7 @@ def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
         .run(["--no-progress"])
     )
 
-    runs = {r.suite: r for r in report.runs}
+    runs = {r.suite: r for r in report.executions}
     assert set(runs) == {"S1", "S2"}
     assert runs["S1"].command == ("true",)  # app default filled a suite that set none
     assert runs["S2"].command == ("echo", "s2")  # inner-wins: suite's command survived
@@ -386,7 +386,7 @@ def test_list_prints_tree_and_runs_nothing(capsys):
     out = capsys.readouterr().out
     assert "Alpha" in out
     assert "Beta" in out
-    assert not report.runs  # listing executes nothing
+    assert not report.executions  # listing executes nothing
 
 
 def test_list_shows_variants(capsys):
@@ -413,7 +413,7 @@ def test_include_keeps_only_matching():
         .add_all(_trivial("Keep"), _trivial("Drop"))
         .run(["--include", "Keep", "--no-progress"])
     )
-    assert {r.suite for r in report.runs} == {"Keep"}
+    assert {r.suite for r in report.executions} == {"Keep"}
 
 
 def test_exclude_drops_matching():
@@ -422,7 +422,7 @@ def test_exclude_drops_matching():
         .add_all(_trivial("Keep"), _trivial("Drop"))
         .run(["--exclude", "Drop", "--no-progress"])
     )
-    assert {r.suite for r in report.runs} == {"Keep"}
+    assert {r.suite for r in report.executions} == {"Keep"}
 
 
 def test_exclude_wins_over_include():
@@ -431,7 +431,7 @@ def test_exclude_wins_over_include():
         .add_all(_trivial("A"), _trivial("B"))
         .run(["--include", ".", "--exclude", "B", "--no-progress"])
     )
-    assert {r.suite for r in report.runs} == {"A"}
+    assert {r.suite for r in report.executions} == {"A"}
 
 
 def test_include_anchored_regex_targets_whole_suite():
@@ -441,7 +441,7 @@ def test_include_anchored_regex_targets_whole_suite():
         .add_all(_trivial("alpha"), _trivial("alphabet"))
         .run(["--include", "^alpha/", "--no-progress"])
     )
-    assert {r.suite for r in report.runs} == {"alpha"}
+    assert {r.suite for r in report.executions} == {"alpha"}
 
 
 def test_include_selects_single_variant():
@@ -450,7 +450,7 @@ def test_include_selects_single_variant():
         .add_all(_matrix_suite("M", "b", jdk=(11, 17)))
         .run(["--include", "jdk=17", "--no-progress"])
     )
-    assert [dict(r.variant).get("jdk") for r in report.runs] == ["17"]
+    assert [dict(r.variant).get("jdk") for r in report.executions] == ["17"]
 
 
 def test_bad_regex_raises():

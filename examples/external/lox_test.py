@@ -25,9 +25,9 @@ from pathlib import Path
 
 from bench import (
     Context,
-    ExecutionResult,
+    InvocationResult,
     Reporter,
-    Run,
+    Execution,
     SharedBenchParams,
     Time,
     bench_app,
@@ -59,11 +59,11 @@ def _expected_lines(source: Path) -> list[str] | None:
         return None
 
 
-def lox_expect(result: ExecutionResult) -> str | None:
+def lox_expect(result: InvocationResult) -> str | None:
     """Success iff stdout lines equal the // expect: comments in the source."""
     if result.returncode != 0:
         return f"exit code {result.returncode}"
-    source = Path(result.execution.command[-1])
+    source = Path(result.invocation.command[-1])
     expected = _expected_lines(source)
     if expected is None:
         return f"source not found: {source}"
@@ -84,7 +84,7 @@ class LoxTestSummary(Reporter):
         self.failed = 0
         self.failed_tests: list[str] = []
 
-    def run_done(self, run: Run) -> None:
+    def run_done(self, run: Execution) -> None:
         if run.is_failure():
             self.failed += 1
             self.failed_tests.append(f"{run.suite}/{run.benchmark}")

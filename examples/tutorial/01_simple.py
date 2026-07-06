@@ -25,7 +25,7 @@ s = (
 # run(s)
 
 bench_app(
-    reporter=SummaryReporter(
+    summary=SummaryReporter(
         Results() & Summary() & GroupedSummary(axis="vm", metric="elapsed"),
     )
 ).add_all(s).run()

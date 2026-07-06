@@ -1,8 +1,8 @@
-"""Sample, Observation, Run, Report, and JSON round-trip."""
+"""Sample, Observation, Execution, Report, and JSON round-trip."""
 
 from typing import Any
 
-from bench import Iteration, Report, Run, Sample, report_from_json, report_to_json
+from bench import Iteration, Report, Execution, Sample, report_from_json, report_to_json
 
 
 def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:
@@ -17,7 +17,7 @@ def _it(
     return Iteration(samples=list(samples), failure=failure, warmup=warmup)
 
 
-def _run(variant=(), iterations=None, **kw) -> Run:
+def _run(variant=(), iterations=None, **kw) -> Execution:
     base: dict[str, Any] = dict(
         suite="S",
         benchmark="B",
@@ -29,12 +29,12 @@ def _run(variant=(), iterations=None, **kw) -> Run:
         iterations=iterations if iterations is not None else [_it(_smp())],
     )
     base.update(kw)
-    return Run(**base)
+    return Execution(**base)
 
 
 def test_variant_keys_orders_first_seen():
     r = Report(
-        runs=[
+        executions=[
             _run(variant=(("a", "1"),)),
             _run(variant=(("b", "2"),)),
             _run(variant=(("a", "3"),)),
@@ -46,7 +46,7 @@ def test_variant_keys_orders_first_seen():
 def test_metrics_distinct():
     # Distinct names span both iteration samples and whole-process samples.
     r = Report(
-        runs=[
+        executions=[
             _run(iterations=[_it(_smp(metric="x"), _smp(metric="y"))]),
             _run(
                 iterations=[_it(_smp(metric="x"))], process_samples=[_smp(metric="z")]
@@ -63,12 +63,12 @@ def test_iteration_can_fail():
 
 def test_json_round_trip():
     r = Report(
-        runs=[
+        executions=[
             _run(
                 iterations=[_it(_smp(), warmup=True), _it(_smp())],
                 process_samples=[_smp(metric="max_rss", value=2048, unit="kB")],
             ),
-            Run(
+            Execution(
                 suite="S",
                 benchmark="B",
                 variant=(("opt", "O2"),),
@@ -83,32 +83,32 @@ def test_json_round_trip():
     )
     text = report_to_json(r)
     r2 = report_from_json(text)
-    assert r2.runs == r.runs  # warmup flag + process_samples survive
+    assert r2.executions == r.executions  # warmup flag + process_samples survive
     assert r2.failures == r.failures
 
 
 def test_json_excludes_output_by_default():
-    r = Report(runs=[_run(stdout="big-out", stderr="big-err", env={"X": "1"})])
+    r = Report(executions=[_run(stdout="big-out", stderr="big-err", env={"X": "1"})])
     text = report_to_json(r)
     assert "big-out" not in text and "big-err" not in text
     back = report_from_json(text)
     assert (
-        back.runs[0].stdout == ""
-        and back.runs[0].stderr == ""
-        and back.runs[0].env == {}
+        back.executions[0].stdout == ""
+        and back.executions[0].stderr == ""
+        and back.executions[0].env == {}
     )
 
 
 def test_json_includes_output_when_requested():
-    r = Report(runs=[_run(stdout="big-out", stderr="big-err")])
+    r = Report(executions=[_run(stdout="big-out", stderr="big-err")])
     text = report_to_json(r, include_output=True)
     assert "big-out" in text and "big-err" in text
-    assert report_from_json(text).runs[0].stdout == "big-out"
+    assert report_from_json(text).executions[0].stdout == "big-out"
 
 
 def test_failures_are_failed_runs():
     r = Report(
-        runs=[
+        executions=[
             _run(),
             _run(returncode=1, failure="exit 1", iterations=[_it(failure="exit 1")]),
         ]

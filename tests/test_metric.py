@@ -1,7 +1,7 @@
 """Metric builtins and combinators.
 
 `IterationMetric.process(text)` parses one iteration's text. `ProcessMetric.
-process(result)` reads the whole ExecutionResult.
+process(result)` reads the whole InvocationResult.
 """
 
 import re
@@ -88,7 +88,7 @@ def test_rebench_metric():
     assert any(s.metric == "gc-rate" for s in samples)
 
 
-# ----- process metrics (read ExecutionResult) -------------------------------
+# ----- process metrics (read InvocationResult) -------------------------------
 
 
 def test_time_metric_emits_optional_fields():

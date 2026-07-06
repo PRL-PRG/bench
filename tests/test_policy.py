@@ -2,7 +2,7 @@
 
 Protocol: ``policy.start()`` returns a ``PolicyState``. ``observe(observation)``
 feeds one ``Iteration``. ``satisfied()`` reports whether the policy has
-converged (and is also valid before any observation). Run numbering lives in
+converged (and is also valid before any observation). Execution numbering lives in
 the caller. A policy keeps its own counter if it needs one.
 """
 

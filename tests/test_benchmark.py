@@ -33,7 +33,7 @@ def test_runs_sugar_equivalent_to_fixed_runs():
 def test_materialize_stamps_identity():
     b = _mat(_base())
     assert (b.suite, b.name) == ("S", "b")
-    assert b.execution.command == ("sh", "-c", "echo 1")
+    assert b.invocation.command == ("sh", "-c", "echo 1")
 
 
 def test_missing_command_raises_on_materialize():
@@ -79,17 +79,17 @@ def test_unset_raises_on_any_use():
 
 def test_with_stdin_str_is_encoded():
     b = _mat(bench("x").with_command(["cat"]).with_stdin("hello"))
-    assert b.execution.stdin == b"hello"
+    assert b.invocation.stdin == b"hello"
 
 
 def test_with_stdin_bytes_passthrough():
     b = _mat(bench("x").with_command(["cat"]).with_stdin(b"\x00\x01"))
-    assert b.execution.stdin == b"\x00\x01"
+    assert b.invocation.stdin == b"\x00\x01"
 
 
 def test_default_cwd_is_invokers_cwd():
     b = _mat(bench("x").with_command(["true"]))
-    assert b.execution.cwd == Path.cwd()
+    assert b.invocation.cwd == Path.cwd()
 
 
 def test_with_metric_replaces_not_appends():
@@ -253,7 +253,7 @@ def test_value_field_bare_callable_resolved_per_variant():
         .with_timeout(lambda ctx: ctx.data.size / 1000)
     )
     bs = suite("S", b).materialize(None)
-    assert {x.execution.timeout for x in bs} == {0.1, 0.2}
+    assert {x.invocation.timeout for x in bs} == {0.1, 0.2}
 
 
 def test_dynamic_runs_resolved_per_variant():

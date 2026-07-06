@@ -64,13 +64,18 @@ def test_harness_monitor_fn_builds_from_context():
         return read
 
     s = (
-        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")).with_monitor_fn(make_monitor))
+        suite(
+            "H",
+            bench("a")
+            .with_command(_echo_lines("1.0", "2.0"))
+            .with_monitor_fn(make_monitor),
+        )
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("ms").lower_is_better())
         .with_runs(2)
     )
     report = Sequential().run(plan([s], None), None)
-    assert [o.samples[0].value for o in report.runs[0].iterations] == [1.0, 2.0]
+    assert [o.samples[0].value for o in report.executions[0].iterations] == [1.0, 2.0]
 
 
 # ----- streaming kill integration ---------------------------------
@@ -91,7 +96,9 @@ def test_harness_killed_when_policy_converges():
     t = time.monotonic()
     report = Sequential().run(plan([s], None), None)
     elapsed = time.monotonic() - t
-    assert len(report.runs) < 50, f"expected early stop, got {len(report.runs)} runs"
+    assert len(report.executions) < 50, (
+        f"expected early stop, got {len(report.executions)} runs"
+    )
     assert elapsed < 20, f"expected fast kill, took {elapsed:.1f}s"
     assert report.failures == []
 
@@ -102,8 +109,8 @@ def test_harness_killed_when_policy_converges():
 def test_one_execution_is_one_run_with_observations():
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"), warmup=2, runs=3)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    run = report.runs[0]
+    assert len(report.executions) == 1
+    run = report.executions[0]
     assert [o.samples[0].value for o in run.iterations] == [1.0, 2.0, 3.0, 4.0, 5.0]
     assert [o.warmup for o in run.iterations] == [True, True, False, False, False]
     assert report.failures == []
@@ -114,8 +121,8 @@ def test_multi_metric_iterations_pair_up():
     s = _harness_suite(cmd, runs=2, metric=FloatPerLine("ms"))
     s = s.with_metric(Regex("t", r"t: ([\d.]+)"), Regex("m", r"m: ([\d.]+)"))
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    obs = report.runs[0].iterations
+    assert len(report.executions) == 1
+    obs = report.executions[0].iterations
     assert [(smp.metric, smp.value) for smp in obs[0].samples] == [
         ("t", 1.0),
         ("m", 10.0),
@@ -125,22 +132,22 @@ def test_multi_metric_iterations_pair_up():
 def test_failed_execution_is_one_failed_record():
     s = _harness_suite(["sh", "-c", "exit 3"], runs=5)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    assert report.runs[0].failure == "exit code 3"
+    assert len(report.executions) == 1
+    assert report.executions[0].failure == "exit code 3"
 
 
 def test_timeout_is_one_failed_record():
     s = _harness_suite(["sleep", "5"], runs=2).with_timeout(0.1)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    assert report.runs[0].returncode == 124
+    assert len(report.executions) == 1
+    assert report.executions[0].returncode == 124
 
 
 def test_no_parsable_output_is_a_loud_failure():
     s = _harness_suite(["sh", "-c", "echo hello"], runs=3)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    assert "no iterations parsed" in (report.runs[0].failure or "")
+    assert len(report.executions) == 1
+    assert "no iterations parsed" in (report.executions[0].failure or "")
 
 
 def test_under_delivery_records_what_was_delivered():
@@ -148,8 +155,8 @@ def test_under_delivery_records_what_was_delivered():
     # keep what was delivered (no synthetic short-delivery failure).
     s = _harness_suite(_echo_lines("1.0", "2.0"), runs=3)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    assert [o.samples[0].value for o in report.runs[0].iterations] == [1.0, 2.0]
+    assert len(report.executions) == 1
+    assert [o.samples[0].value for o in report.executions[0].iterations] == [1.0, 2.0]
     assert report.failures == []
 
 
@@ -169,9 +176,9 @@ def test_monitor_exception_fails_the_run():
         .with_runs(3)
     )
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
+    assert len(report.executions) == 1
     assert len(report.failures) == 1
-    assert "boom" in (report.runs[0].failure or "")
+    assert "boom" in (report.executions[0].failure or "")
 
 
 def test_monitor_exception_after_delivery_records_one_failed_run():
@@ -197,8 +204,8 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
     report = Sequential().run(plan([s], None), None)
     # One run: failed (the monitor broke), but the two delivered observations
     # are kept.
-    assert len(report.runs) == 1
-    run = report.runs[0]
+    assert len(report.executions) == 1
+    run = report.executions[0]
     good = [o for o in run.iterations if not o.is_failure()]
     assert len(good) == 2
     assert report.failures == [run]
@@ -210,8 +217,8 @@ def test_over_delivery_stops_at_policy():
     # the harness, so extra iterations are not kept.
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
     report = Sequential().run(plan([s], None), None)
-    assert len(report.runs) == 1
-    assert len(report.runs[0].iterations) == 2
+    assert len(report.executions) == 1
+    assert len(report.executions[0].iterations) == 2
     assert report.failures == []
 
 
@@ -225,7 +232,7 @@ def test_harness_process_metric_goes_to_process_samples():
         .with_harness()
     )
     report = Sequential().run(plan([s], None), None)
-    run = report.runs[0]
+    run = report.executions[0]
     # Per-iteration metrics stay on the iterations. The whole-process Time
     # (elapsed) lands in process_samples, not on any iteration.
     assert all(s.metric != "elapsed" for o in run.iterations for s in o.samples)
@@ -246,7 +253,7 @@ def test_harness_process_metric_reaches_json_file(tmp_path: Path):
     Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
     loaded = report_from_json(out.read_text())
     assert any(
-        s.metric == "elapsed" for run in loaded.runs for s in run.process_samples
+        s.metric == "elapsed" for run in loaded.executions for s in run.process_samples
     )
 
 
@@ -268,13 +275,13 @@ def test_parallel_runs_harness_benchmarks():
     )
     report = Parallel(workers=2).run(plan([s], None), None)
     by_bench = {}
-    for r in report.runs:
+    for r in report.executions:
         by_bench.setdefault(r.benchmark, []).extend(
             s.value for o in r.iterations for s in o.samples
         )
     assert by_bench == {"a": [1.0, 2.0], "b": [3.0, 4.0]}
     # Each benchmark's first iteration is flagged warmup.
-    for r in report.runs:
+    for r in report.executions:
         assert r.iterations[0].warmup and not r.iterations[1].warmup
 
 
