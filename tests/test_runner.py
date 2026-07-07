@@ -63,7 +63,7 @@ def test_sequential_three_runs_yields_three_samples():
         bench("p")
         .with_command(["sh", "-c", "echo 0.5"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s").lower_is_better())
+        .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
         .with_runs(3),
     )
     report = Sequential().run(plan([s], None), None)
@@ -123,7 +123,7 @@ def test_parallel_runs_convergence_benchmarks():
             bench(f"conv{i}")
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
-            .with_metric(FloatPerLine("s").lower_is_better())
+            .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
             .with_runs(
                 CoefficientOfVariation("runtime", threshold=0.5, window=2, min_runs=2)
             )
@@ -150,7 +150,7 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
             bench(f"b{i}")
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
-            .with_metric(FloatPerLine("s").lower_is_better())
+            .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
             .with_runs(n_runs)
             for i in range(n_bench)
         ],

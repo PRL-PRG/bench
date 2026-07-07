@@ -26,30 +26,30 @@ from conftest import make_success, make_rusage
 
 
 def test_float_per_line_basic():
-    samples = list(FloatPerLine("s").process("1.5\n2.5\n"))
+    samples = list(FloatPerLine("s", metric="runtime").process("1.5\n2.5\n"))
     assert [s.value for s in samples] == [1.5, 2.5]
     assert all(s.unit == "s" and s.metric == "runtime" for s in samples)
 
 
 def test_float_per_line_skips_garbage():
-    samples = list(FloatPerLine("s").process("garbage\n1.0\nmore\n2.0\n"))
+    samples = list(FloatPerLine("s", metric="runtime").process("garbage\n1.0\nmore\n2.0\n"))
     assert [s.value for s in samples] == [1.0, 2.0]
 
 
 def test_float_per_line_empty_text_emits_nothing():
-    assert list(FloatPerLine("s").process("")) == []
+    assert list(FloatPerLine("s", metric="runtime").process("")) == []
 
 
 def test_line_select_last_and_nth():
     text = "1\n2\n3\n"
-    assert list(FloatPerLine("s").last_line().process(text))[0].value == 3
-    assert list(FloatPerLine("s").nth(2).process(text))[0].value == 2
+    assert list(FloatPerLine("s", metric="runtime").last_line().process(text))[0].value == 3
+    assert list(FloatPerLine("s", metric="runtime").nth(2).process(text))[0].value == 2
 
 
 def test_direction_decorator():
-    proc = FloatPerLine("s").lower_is_better()
+    proc = FloatPerLine("s", metric="runtime").lower_is_better()
     assert next(iter(proc.process("1\n"))).lower_is_better is True
-    proc = FloatPerLine("s").higher_is_better()
+    proc = FloatPerLine("s", metric="runtime").higher_is_better()
     assert next(iter(proc.process("1\n"))).lower_is_better is False
 
 

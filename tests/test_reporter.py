@@ -56,7 +56,7 @@ def _s():
         bench("a")
         .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s").last_line().lower_is_better())
+        .with_metric(FloatPerLine("s", metric="runtime").last_line().lower_is_better())
         .with_runs(2),
     )
 
@@ -436,7 +436,7 @@ def test_progress_harness_finished_line_labels_elapsed_and_says_harness():
         bench("h")
         .with_command(["sh", "-c", "echo 1.0; echo 2.0"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms"))
+        .with_metric(FloatPerLine("ms", metric="runtime"))
         .with_harness()
         .with_runs(2),
     )
@@ -471,7 +471,7 @@ def test_progress_harness_bar_drops_estimate_and_eta():
     harness = _columns(
         bench("h")
         .with_command(["sh", "-c", "echo 1.0"])
-        .with_metric(FloatPerLine("ms"))
+        .with_metric(FloatPerLine("ms", metric="runtime"))
         .with_harness()
     )
     command = _columns(bench("c").with_command(["true"]).with_process_metric(Time()))

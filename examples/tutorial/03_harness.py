@@ -24,7 +24,7 @@ s = (
         ]
     )
     .with_harness()  # one process streams all iterations
-    .with_metric(FloatPerLine("ms").lower_is_better())
+    .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
     .with_warmup(WARMUP)
     .with_runs(RUNS)
 )

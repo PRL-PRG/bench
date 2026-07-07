@@ -72,7 +72,7 @@ def test_with_timeout_accepts_ctx_callable():
 
 
 def test_with_metric_accepts_ctx_callable():
-    m = FloatPerLine("s")
+    m = FloatPerLine("s", metric="runtime")
     s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: (m,))
     b = s.materialize(None)[0]
     assert [im for im, _src in b.iteration_metrics] == [m]

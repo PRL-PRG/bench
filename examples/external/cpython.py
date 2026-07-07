@@ -188,7 +188,7 @@ cpython = (
     .with_monitor_fn(monitor)
     .with_matrix(runs=lambda ctx: range(ctx.params.runs))
     .with_warmup(lambda ctx: FixedRuns(ctx.params.warmup))
-    .with_metric(FloatPerLine("s").lower_is_better())
+    .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
 )
 
 

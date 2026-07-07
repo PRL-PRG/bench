@@ -46,7 +46,7 @@ def test_e2e_warmup_then_measure():
         bench("a")
         .with_command(["sh", "-c", "echo 0.01"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s").lower_is_better())
+        .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
         .with_warmup(2)
         .with_runs(2),
     )

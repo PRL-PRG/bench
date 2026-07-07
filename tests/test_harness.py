@@ -28,7 +28,7 @@ def _harness_suite(command, *, warmup=0, runs=1, metric=None):
     return (
         suite("H", bench("a").with_command(command))
         .with_cwd(Path("/tmp"))
-        .with_metric(metric or FloatPerLine("ms").lower_is_better())
+        .with_metric(metric or FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_warmup(warmup)
         .with_runs(runs)
         .with_harness()
@@ -71,7 +71,7 @@ def test_harness_monitor_fn_builds_from_context():
             .with_monitor_fn(make_monitor),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(2)
     )
     report = Sequential().run(plan([s], None), None)
@@ -87,7 +87,7 @@ def test_harness_killed_when_policy_converges():
     s = (
         suite("H", bench("a").with_command(cmd).with_harness())
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("").lower_is_better())
+        .with_metric(FloatPerLine("", metric="runtime").lower_is_better())
         .with_warmup(
             CoefficientOfVariation("runtime", threshold=0.01, window=3, min_runs=3)
         )
@@ -118,7 +118,7 @@ def test_one_execution_is_one_run_with_observations():
 
 def test_multi_metric_iterations_pair_up():
     cmd = ["sh", "-c", "echo 't: 1.0 m: 10'; echo 't: 2.0 m: 20'"]
-    s = _harness_suite(cmd, runs=2, metric=FloatPerLine("ms"))
+    s = _harness_suite(cmd, runs=2, metric=FloatPerLine("ms", metric="runtime"))
     s = s.with_metric(Regex("t", r"t: ([\d.]+)"), Regex("m", r"m: ([\d.]+)"))
     report = Sequential().run(plan([s], None), None)
     assert len(report.executions) == 1
@@ -172,7 +172,7 @@ def test_monitor_exception_fails_the_run():
             .with_harness(monitor=boom),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(3)
     )
     report = Sequential().run(plan([s], None), None)
@@ -198,7 +198,7 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
             .with_harness(monitor=boom_after_two),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(5)
     )
     report = Sequential().run(plan([s], None), None)
@@ -228,7 +228,7 @@ def test_harness_process_metric_reaches_json_file(tmp_path: Path):
     s = (
         suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms"))
+        .with_metric(FloatPerLine("ms", metric="runtime"))
         .with_process_metric(Time())
         .with_runs(2)
         .with_harness()
@@ -251,7 +251,7 @@ def test_parallel_runs_harness_benchmarks():
             bench("b").with_command(_echo_lines("3.0", "4.0")),
         )
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms").lower_is_better())
+        .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_warmup(1)
         .with_runs(1)
         .with_harness()

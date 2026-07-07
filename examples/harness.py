@@ -39,7 +39,7 @@ def vm_command(ctx):
 s = (
     suite("fakevm", bench("fib"), bench("sort"))
     .with_command(vm_command)
-    .with_metric(FloatPerLine("ms").lower_is_better())
+    .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
     .with_warmup(WARMUP)
     .with_runs(RUNS)
     .with_harness()

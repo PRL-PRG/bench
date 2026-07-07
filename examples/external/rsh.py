@@ -76,7 +76,7 @@ def _suite_cwd(subdir: str):
 # Suites
 # ----------------------------------------------------------------------
 
-_ITER = (FloatPerLine("us").lower_is_better(),)
+_ITER = (FloatPerLine("us", metric="runtime").lower_is_better(),)
 _PROC = (max_rss(),)
 
 

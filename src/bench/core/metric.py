@@ -110,8 +110,8 @@ class FloatPerLine(IterationMetric):
     of range emits nothing.
     """
 
-    unit: str = "s"
-    metric: str = "runtime"
+    unit: str
+    metric: str
     line: int | None = None
 
     def __post_init__(self) -> None:

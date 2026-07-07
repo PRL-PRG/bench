@@ -48,7 +48,7 @@ s = (
         .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
         .add_matrix_skip(lambda b: b.size != 500),
     )
-    .with_metric(FloatPerLine("ms").lower_is_better())
+    .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
     .with_runs(5)
 )
 

@@ -57,7 +57,7 @@ lox_suite = (
     .with_timeout(20)
     .with_runs(10)
     .with_metric(
-        FloatPerLine("s").last_line().lower_is_better(),
+        FloatPerLine("s", metric="runtime").last_line().lower_is_better(),
     )
     .with_process_metric(
         max_rss(),

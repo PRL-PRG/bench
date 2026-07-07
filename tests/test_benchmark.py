@@ -19,7 +19,7 @@ def _base():
         bench("b")
         .with_command(["sh", "-c", "echo 1"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s"))
+        .with_metric(FloatPerLine("s", metric="runtime"))
     )
 
 
@@ -90,8 +90,8 @@ def test_with_metric_replaces_not_appends():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms"))
-        .with_metric(FloatPerLine("s"))
+        .with_metric(FloatPerLine("ms", metric="runtime"))
+        .with_metric(FloatPerLine("s", metric="runtime"))
     )
     assert len(b.iteration_metrics) == 1
     m = b.iteration_metrics[0][0]
@@ -102,7 +102,7 @@ def test_with_metric_takes_several_in_one_call():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms"), FloatPerLine("s"))
+        .with_metric(FloatPerLine("ms", metric="runtime"), FloatPerLine("s", metric="runtime"))
     )
     assert len(b.iteration_metrics) == 2
 
@@ -111,8 +111,8 @@ def test_add_metric_appends_with_source():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms"))
-        .add_metric(FloatPerLine("s"), "stderr")
+        .with_metric(FloatPerLine("ms", metric="runtime"))
+        .add_metric(FloatPerLine("s", metric="runtime"), "stderr")
     )
     assert len(b.iteration_metrics) == 2
 
@@ -125,7 +125,7 @@ def test_with_metric_rejects_process_metric():
 def test_with_process_metric_rejects_iteration_metric():
     with pytest.raises(TypeError):
         bench("x").with_command(["true"]).with_process_metric(
-            FloatPerLine("s")  # type: ignore[arg-type]
+            FloatPerLine("s", metric="runtime")  # type: ignore[arg-type]
         )
 
 
