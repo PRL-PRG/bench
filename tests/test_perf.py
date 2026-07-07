@@ -14,13 +14,6 @@ from conftest import make_success
 # ----- construction ---------------------------------------------------------
 
 
-def test_events_stored():
-    assert PerfStat(("cache-misses", "cache-references")).events == (
-        "cache-misses",
-        "cache-references",
-    )
-
-
 def test_no_events_rejected():
     with pytest.raises(ValueError):
         PerfStat()

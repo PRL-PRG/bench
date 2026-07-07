@@ -28,7 +28,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
-from bench.core.execution import (
+from bench.core.invocation import (
     EMPTY_MAPPING,
     Invocation,
     SuccessFn,
@@ -43,10 +43,8 @@ from bench.core.metric import (
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy
 from bench.grammar.builder import (
-    UNSET,
     Factory,
     BuilderBase,
-    HarnessMonitorFactory,
     as_build,
     const,
 )
@@ -61,27 +59,31 @@ def default_label(b: Benchmark) -> str:
     return format_variant(b.variant).strip(" ()")
 
 
-@dataclass(frozen=True, slots=True)
-class BenchmarkBuilder(BuilderBase):
-    """A benchmark *spec*: a builder-style API configuring a workload that
-    `.create()` expands into one resolved `Benchmark` per surviving variant.
+class _DataAttrs:
+    """Expose a `data` mapping's keys as read-only attributes (`b.<key>`)."""
 
-    `data` holds arbitrary user-supplied keyword args, readable as attributes.
-    Every inheritable field defaults to unset and so it will inherit the suite's
-    default unless explicitely set.
-    """
-
-    name: str = ""
-    stdin: Factory[bytes | None] = const(None)  # None = no stdin (never inherited)
-    data: Mapping[str, Any] = EMPTY_MAPPING
-
-    # ----- attribute access into data ---------------------------------
+    __slots__ = ()
 
     def __getattr__(self, name: str) -> Any:
         data = object.__getattribute__(self, "data")
         if name in data:
             return data[name]
         raise AttributeError(name)
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkBuilder(BuilderBase, _DataAttrs):
+    """A benchmark *spec*: a builder-style API configuring a workload that
+    `.create()` expands into one resolved `Benchmark` per surviving variant.
+
+    `data` holds arbitrary user-supplied keyword args, readable as attributes.
+    Every inheritable field defaults to unset and so inherits the suite's
+    default unless explicitly set.
+    """
+
+    name: str = ""
+    stdin: Factory[bytes | None] = const(None)  # None = no stdin (never inherited)
+    data: Mapping[str, Any] = EMPTY_MAPPING
 
     # ----- with_* setters (shared ones live on BuilderBase) -----------
 
@@ -99,25 +101,10 @@ class BenchmarkBuilder(BuilderBase):
             stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
         )
 
-    def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> BenchmarkBuilder:
-        """Mark this benchmark as a *harness*: the command is executed once and
-        streams all iterations, where each line (or framed block) becomes one
-        observation.
-
-        `monitor` frames the output stream into iterations. Use
-        `with_monitor_fn` instead if the monitor needs to read `ctx`."""
-        m = monitor if monitor is UNSET else const(monitor)
-        return dataclasses.replace(self, harness=True, monitor=m)
-
-    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> BenchmarkBuilder:
-        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) ->
-        HarnessMonitor`, built per-variant instead of a single reusable value."""
-        return dataclasses.replace(self, harness=True, monitor=fn)
-
     # ----- creation ----------------------------------------------------
 
     def create(self, params: Any, *, suite: str) -> Iterator[Benchmark]:
-        """Yield one fully-resolved `Benchmark`.
+        """Yield one fully-resolved `Benchmark` per surviving matrix variant.
 
         Expands the matrix (cartesian product), resolves every field against the
         variant `Context`, then drops any variant matched by a skip rule.
@@ -194,7 +181,7 @@ class BenchmarkBuilder(BuilderBase):
 
 
 @dataclass(frozen=True, slots=True)
-class Benchmark:
+class Benchmark(_DataAttrs):
     """One fully-resolved benchmark variant."""
 
     suite: str

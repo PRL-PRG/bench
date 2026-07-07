@@ -1,13 +1,13 @@
 """Opt-in hardware counters via Linux `perf stat`.
 
-A single `PerfStat` object is the source of truth for the event list. It does
-two things, and only when you ask:
+A single `PerfStat` object owns the event list and does two things, on request:
 
-  - `wrap(command)` runs your command under `perf stat -e <events>`. This is the
-    only place perf enters the argv. `wrap` is idempotent, so applying it twice
-    (or at both suite and benchmark level) never double-prefixes.
+  - `wrap(command)` runs the command under `perf stat -e <events>` - the only
+    place perf enters the argv. It is idempotent, so applying it at both suite
+    and benchmark level never double-prefixes.
   - As a `ProcessMetric`, it parses perf's machine-readable (`-x,`) output from
-    the process stderr and emits one Sample per event. It never touches argv.
+    the process stderr (captured per process, so parallel runs need no shared
+    file), one Sample per event.
 
 Usage::
 
@@ -17,16 +17,10 @@ Usage::
         .with_command(counters.wrap("./workload"))
         .with_process_metric(counters)
 
-`perf stat` writes its summary to stderr, which bench captures per process, so
-this works under parallel runs without any shared output file. perf is Linux
-only and needs `perf_event_paranoid` to permit counting. If `perf` is not on
-PATH the command fails loudly ("Command not found: perf"), which is the right
-signal for a feature you explicitly opted into.
-
-Only symbolic event names are supported (``cache-misses``, ``instructions``,
-``branch-misses``, ...). Raw ``cpu/event=.../`` names that embed commas are not
-parsed. Direction (``lower_is_better`` / ``higher_is_better``) applies uniformly
-to every event, which is fine for a homogeneous set like cache counters.
+perf is Linux-only and needs `perf_event_paranoid` to permit counting; a missing
+`perf` fails loudly. Only symbolic event names are supported (raw
+`cpu/event=.../` names that embed commas are not). Direction applies to every
+event.
 """
 
 from __future__ import annotations
@@ -34,18 +28,18 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from bench.core.execution import InvocationResult, to_argv
+from bench.core.invocation import InvocationResult, to_argv
 from bench.core.metric import ProcessMetric
-from bench.core.sample import Sample
+from bench.core.model import Sample
 
 
 @dataclass(frozen=True)
 class PerfStat(ProcessMetric):
     """Run a command under `perf stat` and read its counters from stderr.
 
-    `events` is a tuple of symbolic perf event names. `direction`/`predicate`
-    and the `lower_is_better`/`higher_is_better`/`when` combinators come from
-    the `ProcessMetric` base unchanged.
+    `events` is a tuple of symbolic perf event names. `direction` and the
+    `lower_is_better`/`higher_is_better` combinators come from the
+    `ProcessMetric` base unchanged.
     """
 
     events: tuple[str, ...] = ()

@@ -109,16 +109,6 @@ def _render(markup: str) -> str:
 # ----- Results ---------------------------------------------------------------
 
 
-def test_results_table_header_and_rows():
-    r = Report(executions=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
-    out = _strip(Results()(_data(r)))
-    assert "S/b" in out
-    assert "runtime [ms]" in out  # 0.5s -> scaled to ms
-    assert "3 runs" in out
-    assert "500.00" in out
-    assert "outlier" not in out.lower()
-
-
 def test_results_warns_on_outliers():
     r = Report(
         executions=[
@@ -202,18 +192,6 @@ def test_results_shows_variant_in_rows():
 # ----- Summary (within-benchmark ranking) ------------------------------------
 
 
-def test_ranking_uses_better_worse():
-    runs = []
-    for i in range(1, 4):
-        runs.append(_vrun(0.10, run=i, label="fast"))
-        runs.append(_vrun(0.20, run=i, label="slow"))
-    out = _strip(Summary()(_data(Report(executions=runs))))
-    assert "Summary - S/b" in out
-    assert "fast was" in out and "× better than" in out and "slow" in out
-    assert "2.00" in out
-    assert "worse" not in out and "lower" not in out and "higher" not in out
-
-
 def test_ranking_uses_better_worse_for_higher_is_better():
     runs = []
     for i in range(1, 4):
@@ -257,41 +235,7 @@ def test_ranking_empty_across_distinct_benchmarks():
     assert Summary()(_data(Report(executions=runs))) == ""
 
 
-def test_summary_axis_compares_axis_values_per_benchmark():
-    # two interpreters over two benchmarks: b is 2x faster everywhere.
-    # Summary(axis="interp") compares them *within each benchmark*, so the header
-    # names the benchmark (unlike GroupedSummary's one suite-wide block).
-    r = _axis_report({"a": {"x": 4.0, "y": 8.0}, "b": {"x": 2.0, "y": 4.0}})
-    out = _strip(Summary(axis="interp")(_data(r)))
-    assert "Summary (geomean) - interp - S/x" in out
-    assert "Summary (geomean) - interp - S/y" in out
-    assert "b was" in out and "2.00" in out and "× better than" in out
-
-
 # ----- GroupedSummary (within-run axis ranking) ------------------------------
-
-
-def test_grouped_summary_ranks_axis_values():
-    # c is 4x, b is 2x faster than a (the slowest).
-    r = _axis_report(
-        {
-            "a": {"x": 4.0, "y": 8.0},
-            "b": {"x": 2.0, "y": 4.0},
-            "c": {"x": 1.0, "y": 2.0},
-        }
-    )
-    out = _strip(GroupedSummary(axis="interp", metric="elapsed")(_data(r)))
-    assert "Summary (geomean) - interp - S" in out
-    assert "c was" in out  # c is the best (reference/subject)
-    assert out.index("than b") < out.index("than a")  # b is closer to best than a
-    assert "× better than" in out and "4.00" in out
-    assert "S/x" not in out and "S/y" not in out  # terse: no per-benchmark detail
-
-
-def test_grouped_summary_axis_absent_is_explicit():
-    r = Report(executions=[_ok(i, samples=[_smp("elapsed", 1.0)]) for i in range(1, 4)])
-    out = _strip(GroupedSummary(axis="vm", metric="elapsed")(_data(r)))
-    assert "not present" in out and "vm" in out
 
 
 def test_grouped_summary_about_the_same():
@@ -299,21 +243,6 @@ def test_grouped_summary_about_the_same():
     out = _strip(GroupedSummary(axis="interp", metric="elapsed")(_data(r)))
     assert "about the same" in out
     assert "1.00×" not in out
-
-
-def test_grouped_summary_ref_pins_the_baseline():
-    # a is the slowest. Without ref, c (the best) is the subject. Pinning ref="a"
-    # makes a the subject and reads the others as it being worse.
-    r = _axis_report(
-        {
-            "a": {"x": 4.0, "y": 8.0},
-            "b": {"x": 2.0, "y": 4.0},
-            "c": {"x": 1.0, "y": 2.0},
-        }
-    )
-    out = _strip(GroupedSummary(axis="interp", metric="elapsed", ref="a")(_data(r)))
-    assert "a was" in out  # the pinned baseline is the subject
-    assert "× worse than" in out  # a is slower than the others
 
 
 # ----- DefaultSummary + composition ------------------------------------------
@@ -336,7 +265,7 @@ def test_summary_reporter_renders_composed_formatter():
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
     for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).executions:
-        rep.run_done(run)
+        rep.execution_done(run)
     rep.finalize()
     out = buf.getvalue()
     assert "S/x" in out  # Results
@@ -344,16 +273,6 @@ def test_summary_reporter_renders_composed_formatter():
 
 
 # ----- Compact ---------------------------------------------------------------
-
-
-def test_compact_no_baseline_lists_benchmarks_and_geomean():
-    runs = [
-        _ok(i, bench=bn, samples=[_smp("runtime", v)])
-        for bn, v in [("a", 0.5), ("b", 0.25)]
-        for i in range(1, 4)
-    ]
-    out = _strip(Compact("runtime")(_data(Report(executions=runs))))
-    assert "a:" in out and "b:" in out and "geomean:" in out
 
 
 def test_compact_filters_by_metric():

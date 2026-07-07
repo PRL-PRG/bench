@@ -93,30 +93,19 @@ def format_variant(variant: Variant) -> str:
     return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
 
 
-def _bench_head(suite: str, benchmark: str) -> str:
-    """`suite/benchmark`, collapsing the stutter when the two names match
-    (common for one-off CLI runs)."""
-    return benchmark if suite == benchmark else f"{suite}/{benchmark}"
-
-
 def format_benchmark(
     suite: str,
     benchmark: str,
     variant: Variant,
     variant_label: str = "",
 ) -> str:
-    """Resolved benchmark-variant name: `suite/benchmark` with the variant label
-    or the `(k=v, ...)` suffix appended."""
-    head = _bench_head(suite, benchmark)
+    """Resolved benchmark-variant name: `suite/benchmark` (collapsing the stutter
+    when the two names match) with the variant label or `(k=v, ...)` suffix
+    appended."""
+    head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
     if variant_label:
         return f"{head}/{variant_label}"
     return f"{head}{format_variant(variant)}"
-
-
-def record_key(suite: str, benchmark: str, variant: Variant) -> str:
-    """Canonical benchmark-variant key `suite/benchmark (k=v, ...)`, built from the
-    variant tuple (ignores any variant label)."""
-    return format_benchmark(suite, benchmark, variant)
 
 
 def format_identifier(

@@ -25,12 +25,12 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
-from bench.core.sample import Iteration, Execution, Sample
+from bench.core.model import Iteration, Execution, Sample
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
 
-def test_dirreporter_writes_on_run_done(tmp_path):
+def test_dirreporter_writes_on_execution_done(tmp_path):
     rep = _DirReporter(tmp_path)
     rep.start([])
     run = Execution(
@@ -45,7 +45,7 @@ def test_dirreporter_writes_on_run_done(tmp_path):
         stderr="",
         iterations=[Iteration(samples=[])],
     )
-    rep.run_done(run)
+    rep.execution_done(run)
     assert (tmp_path / "S" / "b" / "1" / "stdout").read_text() == "hi\n"
     assert (tmp_path / "S" / "b" / "1" / "exitcode").read_text() == "0\n"
 
@@ -143,7 +143,7 @@ def _flagged_run() -> Execution:
 def test_csv_includes_outlier_column(tmp_path: Path):
     out = tmp_path / "r.csv"
     rep = CsvReporter(out)
-    rep.run_done(_flagged_run())
+    rep.execution_done(_flagged_run())
     rep.finalize()
     rows = list(csv.DictReader(out.open()))
     assert "outlier" in rows[0]
@@ -155,7 +155,7 @@ def test_csv_includes_outlier_column(tmp_path: Path):
 def test_json_persists_outlier_flag(tmp_path: Path):
     out = tmp_path / "r.json"
     rep = JsonReporter(out)
-    rep.run_done(_flagged_run())
+    rep.execution_done(_flagged_run())
     rep.finalize()
     samples = [
         s
@@ -397,11 +397,6 @@ def test_eta_column_blank_for_single_or_unknown_total():
     assert str(col.render(SimpleNamespace(total=None))) == ""
 
 
-def test_progress_overall_label_is_app_name():
-    assert ProgressReporter(app_name="MyApp")._app_label == "MyApp"
-    assert ProgressReporter()._app_label == "Benchmarks"
-
-
 def test_progress_prints_completed_summary_scrollback():
     # On a TTY, a finished benchmark leaves a persistent summary line above the
     # (transient) bars, with the same elapsed stats as the final summary.
@@ -419,5 +414,69 @@ def test_progress_prints_completed_summary_scrollback():
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
     out = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
-    assert "Benchmark: S/a" in out
+    assert "Finished: S/a" in out
     assert "(3 runs, 0 failed)" in out
+
+
+def _progress_output(s) -> str:
+    buf = io.StringIO()
+    c = Console(
+        theme=BENCHR_THEME, file=buf, force_terminal=True, no_color=True, width=120
+    )
+    Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None), None)
+    return re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
+
+
+def test_progress_harness_finished_line_labels_elapsed_and_says_harness():
+    # A harness is one streaming process: its `elapsed` is a single whole-process
+    # measurement, so the Finished line labels it and shows "(harness)" instead
+    # of the per-iteration sample/run/warmup counts.
+    s = suite(
+        "S",
+        bench("h")
+        .with_command(["sh", "-c", "echo 1.0; echo 2.0"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("ms"))
+        .with_harness()
+        .with_runs(2),
+    )
+    out = _progress_output(s)
+    assert "Finished: S/h" in out
+    assert "elapsed [" in out and "(harness)" in out
+    assert "samples" not in out and "runs" not in out
+
+
+def test_progress_harness_bar_drops_estimate_and_eta():
+    # Command bars carry an "elapsed estimate" column and an ETA; harness bars
+    # carry neither (nothing to estimate for one streaming process).
+    from rich.progress import TextColumn
+
+    from bench.report.reporter import _EtaColumn
+
+    c = Console(theme=BENCHR_THEME, file=io.StringIO(), force_terminal=True, width=120)
+
+    def _columns(bench_builder):
+        s = suite("S", bench_builder.with_cwd(Path("/tmp")).with_runs(1))
+        b = plan([s], None)[0]
+        rep = ProgressReporter(target_console=c)
+        rep.benchmark_start(b)
+        return rep._local.prog.columns
+
+    def _has_estimate(cols) -> bool:
+        return any(
+            isinstance(col, TextColumn) and "elapsed estimate" in col.text_format
+            for col in cols
+        )
+
+    harness = _columns(
+        bench("h")
+        .with_command(["sh", "-c", "echo 1.0"])
+        .with_metric(FloatPerLine("ms"))
+        .with_harness()
+    )
+    command = _columns(bench("c").with_command(["true"]).with_process_metric(Time()))
+
+    assert not _has_estimate(harness)
+    assert not any(isinstance(col, _EtaColumn) for col in harness)
+    assert _has_estimate(command)
+    assert any(isinstance(col, _EtaColumn) for col in command)

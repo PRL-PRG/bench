@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from bench.core.environment import Diagnostic, Environment
-from bench.core.sample import (
+from bench.core.model import (
     Iteration,
     Report,
     Execution,
@@ -46,7 +46,7 @@ def test_json_reporter_embeds_environment(tmp_path: Path):
     r = JsonReporter(
         tmp_path / "o.json", environment=env, diagnostics=[Diagnostic("warn", "m", "f")]
     )
-    r.run_done(_run())
+    r.execution_done(_run())
     r.finalize()
     data = json.loads((tmp_path / "o.json").read_text())
     assert data["environment"]["cpu_model"] == "X"
@@ -56,7 +56,7 @@ def test_json_reporter_embeds_environment(tmp_path: Path):
 def test_csv_reporter_writes_environment_comments(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
     r = CsvReporter(tmp_path / "o.csv", environment=env)
-    r.run_done(_run())
+    r.execution_done(_run())
     r.finalize()
     text = (tmp_path / "o.csv").read_text()
     assert text.splitlines()[0].startswith("#")
@@ -68,7 +68,7 @@ def test_dir_reporter_writes_environment_json(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
     r = DirReporter(tmp_path, environment=env)
     r.start([])
-    r.run_done(_run())
+    r.execution_done(_run())
     r.finalize()
     data = json.loads((tmp_path / "environment.json").read_text())
     assert data["environment"]["cpu_model"] == "X"

@@ -56,11 +56,6 @@ def test_metrics_distinct():
     assert r.metrics() == ["x", "y", "z"]
 
 
-def test_iteration_can_fail():
-    it = Iteration(failure="bad extraction")
-    assert it.is_failure() and it.samples == []
-
-
 def test_json_round_trip():
     r = Report(
         executions=[

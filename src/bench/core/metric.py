@@ -5,7 +5,7 @@ Two kinds, distinguished by what they read:
   - `IterationMetric` parses one iteration's text into Samples.
   - `ProcessMetric` reads the whole `InvocationResult`.
 
-Both carry an optional `direction` and `predicate`.
+Both carry an optional `direction`.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from typing import Literal, Self
 
-from bench.core.execution import InvocationResult
-from bench.core.sample import Sample
+from bench.core.invocation import InvocationResult
+from bench.core.model import Sample
 
 # None = no direction, True = lower is better, False = higher is better
 type Direction = bool | None
@@ -59,21 +59,17 @@ def as_metric_source(
 class _MetricBase[T](abc.ABC):
     """A metric reads input of type `T` and emits Samples.
 
-    `extract` parses the input. `process` wraps it with the optional
-    `predicate` gate and the `direction` override. `IterationMetric` and
-    `ProcessMetric` fix `T` to the iteration text and the `InvocationResult`
-    respectively.
+    `extract` parses the input. `process` applies the optional `direction`
+    override. `IterationMetric` and `ProcessMetric` fix `T` to the iteration
+    text and the `InvocationResult` respectively.
     """
 
     direction: Direction = field(default=None, kw_only=True)
-    predicate: Callable[[T], bool] | None = field(default=None, kw_only=True)
 
     @abc.abstractmethod
     def extract(self, data: T, /) -> Iterable[Sample]: ...
 
     def process(self, data: T) -> Iterator[Sample]:
-        if self.predicate is not None and not self.predicate(data):
-            return
         yield from self._emit(self.extract(data))
 
     def _emit(self, samples: Iterable[Sample]) -> Iterator[Sample]:
@@ -88,10 +84,6 @@ class _MetricBase[T](abc.ABC):
 
     def higher_is_better(self) -> Self:
         return dataclasses.replace(self, direction=False)
-
-    def when(self, predicate: Callable[[T], bool]) -> Self:
-        """Run this metric only when `predicate(data)` is true."""
-        return dataclasses.replace(self, predicate=predicate)
 
 
 @dataclass(frozen=True)
@@ -145,10 +137,6 @@ class FloatPerLine(IterationMetric):
     def last_line(self) -> Self:
         """Parse only the last non-empty line."""
         return dataclasses.replace(self, line=-1)
-
-    def first_line(self) -> Self:
-        """Parse only the first non-empty line."""
-        return dataclasses.replace(self, line=1)
 
     def nth(self, i: int) -> Self:
         """Parse only the i-th non-empty line (1-based, negatives from the end)."""

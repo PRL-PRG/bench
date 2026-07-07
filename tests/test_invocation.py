@@ -1,20 +1,11 @@
-"""Invocation / InvocationResult shape and run identifiers."""
+"""Invocation, run identifiers, and streaming spawn."""
 
 import time
 from pathlib import Path
 
-from bench import Invocation, InvocationResult
-from bench.core.execution import format_identifier
+from bench import Invocation
+from bench.core.invocation import format_identifier
 from bench.core.process import spawn_streaming
-
-
-def test_execution_result_failure():
-    e = Invocation(command=("x",), cwd=Path("/tmp"))
-    f = InvocationResult(invocation=e, returncode=-1, failure="boom")
-    assert f.is_failure()
-    assert f.failure == "boom"
-    assert f.returncode == -1
-    assert f.stdout == "" and f.stderr == "" and f.runtime is None
 
 
 def test_format_identifier():

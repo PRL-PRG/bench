@@ -27,12 +27,8 @@ OUTLIER_THRESHOLD = 1.4826 * 10.0
 def modified_zscores(xs: Sequence[float]) -> list[float]:
     """Modified Z-scores `(x_i - median) / MAD`, MAD = median absolute deviation.
 
-    `MAD == 0` is the exact-fit case: it happens iff more than half the values
-    are tied (Croux et al. 2006 - a property of every robust scale estimator). A
-    metric with no robust spread has no meaningful outliers, so we report none
-    (every score 0). hyperfine sidesteps this entirely: it only detects on
-    wall-clock time, which always varies (`MAD > 0`), so its `epsilon` guard is
-    never exercised. The `MAD == 0` branch has no effect when `MAD > 0`."""
+    `MAD == 0` means more than half the values are tied: no robust spread, hence
+    no meaningful outliers, so every score is 0."""
     median = statistics.median(xs)
     deviations = [abs(x - median) for x in xs]
     mad = statistics.median(deviations)

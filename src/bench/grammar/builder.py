@@ -17,7 +17,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self, cast
 
-from bench.core.execution import EMPTY_MAPPING, SuccessFn, to_argv
+from bench.core.invocation import EMPTY_MAPPING, SuccessFn, to_argv
 from bench.core.metric import (
     IterationMetric,
     MetricSource,
@@ -168,9 +168,9 @@ class BuilderBase:
     """Shared configuration fields and `with_*` setters for the three builders
     (`BenchmarkBuilder`, `SuiteBuilder`, `BenchAppBuilder`).
 
-    Every inheritable field is declared here once (defaulting to `UNSET`), so the
-    setters, each returning a replaced copy with the concrete `Self` type.
-    The `overlay` merge work uniformly on all three."""
+    Every inheritable field is declared here once (defaulting to `UNSET`). The
+    `with_*` setters each return a replaced copy typed as the concrete `Self`, and
+    the `overlay` merge works uniformly across all three builders."""
 
     command: CommandFactory = UNSET
     cwd: PathFactory = UNSET
@@ -310,6 +310,23 @@ class BuilderBase:
                     "use with_metric for iteration metrics like Regex or FloatPerLine",
                 )
         return dataclasses.replace(self, process_metrics=const(tuple(metrics)))
+
+    # ----- harness ----------------------------------------------------
+
+    def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> Self:
+        """Mark as a harness: the command runs once and streams all iterations,
+        each non-empty line (or framed block) an observation. On a suite or app
+        it applies to every contained benchmark.
+
+        `monitor` frames the output stream. Use `with_monitor_fn` if the monitor
+        needs to read `ctx`."""
+        m = monitor if monitor is UNSET else const(monitor)
+        return dataclasses.replace(self, harness=True, monitor=m)
+
+    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> Self:
+        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) -> HarnessMonitor`,
+        built per-variant instead of a single reusable value."""
+        return dataclasses.replace(self, harness=True, monitor=fn)
 
     # ----- inheritance ------------------------------------------------
 

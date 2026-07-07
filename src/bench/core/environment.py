@@ -131,16 +131,24 @@ def _base() -> Environment:
 # Linux
 # ---------------------------------------------------------------------------
 
+# Filesystem locations of the Linux tuning knobs, shared with `bench.denoise` so
+# a path change is a one-file edit. The governor glob and turbo files are under
+# `CPU_DIR`; paranoid/swappiness/aslr under `/proc`; THP under the root.
+CPU_DIR = "sys/devices/system/cpu"
+GOVERNOR_GLOB = "cpu[0-9]*/cpufreq/scaling_governor"
+NO_TURBO = "intel_pstate/no_turbo"
+CPUFREQ_BOOST = "cpufreq/boost"
+THP_ENABLED = "sys/kernel/mm/transparent_hugepage/enabled"
+PERF_EVENT_PARANOID = "sys/kernel/perf_event_paranoid"
+SWAPPINESS = "sys/vm/swappiness"
+ASLR = "sys/kernel/randomize_va_space"
+
 
 def collect_linux(root: Path = Path("/")) -> Environment:
-    sys_cpu = root / "sys/devices/system/cpu"
+    sys_cpu = root / CPU_DIR
     proc = root / "proc"
     govs = sorted(
-        {
-            g
-            for p in sys_cpu.glob("cpu[0-9]*/cpufreq/scaling_governor")
-            if (g := read_text(p)) is not None
-        }
+        {g for p in sys_cpu.glob(GOVERNOR_GLOB) if (g := read_text(p)) is not None}
     )
     cpu_model, physical = _parse_cpuinfo(read_text(proc / "cpuinfo"))
     return dataclasses.replace(
@@ -149,23 +157,21 @@ def collect_linux(root: Path = Path("/")) -> Environment:
         physical_cpus=physical,
         governors=govs or None,
         turbo_enabled=_linux_turbo(sys_cpu),
-        aslr=read_int(proc / "sys/kernel/randomize_va_space"),
-        transparent_hugepage=read_bracketed(
-            root / "sys/kernel/mm/transparent_hugepage/enabled"
-        ),
+        aslr=read_int(proc / ASLR),
+        transparent_hugepage=read_bracketed(root / THP_ENABLED),
         smt_enabled=_linux_smt(sys_cpu),
-        swappiness=read_int(proc / "sys/vm/swappiness"),
+        swappiness=read_int(proc / SWAPPINESS),
         swap_in_use=_swap_in_use(proc / "swaps"),
-        perf_event_paranoid=read_int(proc / "sys/kernel/perf_event_paranoid"),
+        perf_event_paranoid=read_int(proc / PERF_EVENT_PARANOID),
         on_battery=_on_battery(root / "sys/class/power_supply"),
     )
 
 
 def _linux_turbo(sys_cpu: Path) -> bool | None:
-    no_turbo = read_text(sys_cpu / "intel_pstate/no_turbo")
+    no_turbo = read_text(sys_cpu / NO_TURBO)
     if no_turbo is not None:
         return no_turbo == "0"
-    boost = read_text(sys_cpu / "cpufreq/boost")
+    boost = read_text(sys_cpu / CPUFREQ_BOOST)
     if boost is not None:
         return boost == "1"
     return None

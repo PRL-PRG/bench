@@ -29,8 +29,8 @@ from rich.text import Text
 
 from bench.grammar.benchmark import Benchmark
 from bench.core.environment import Diagnostic, Environment
-from bench.core.execution import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
-from bench.core.sample import Iteration, Report, Execution, Sample, report_to_json
+from bench.core.invocation import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
+from bench.core.model import Iteration, Report, Execution, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
@@ -81,7 +81,7 @@ class Reporter(abc.ABC):
     def iteration(self, it: Iteration, label: str) -> None:
         pass
 
-    def run_done(self, run: Execution) -> None:
+    def execution_done(self, execution: Execution) -> None:
         pass
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
@@ -91,17 +91,31 @@ class Reporter(abc.ABC):
         pass
 
 
+class _EnvironmentAware:
+    """Mixin for sinks that embed the machine snapshot; stores what
+    `set_environment` injects."""
+
+    _environment: Environment | None
+    _diagnostics: list[Diagnostic]
+
+    def set_environment(
+        self, environment: Environment | None, diagnostics: list[Diagnostic]
+    ) -> None:
+        self._environment = environment
+        self._diagnostics = diagnostics
+
+
 class _BufferingReporter(Reporter):
     """Base for reporters that accumulate a Report and render it at
-    `finalize()`. Gives subclasses a thread-safe `run_done`."""
+    `finalize()`. Gives subclasses a thread-safe `execution_done`."""
 
     def __init__(self) -> None:
         self._report = Report()
         self._lock = threading.Lock()
 
-    def run_done(self, run: Execution) -> None:
+    def execution_done(self, execution: Execution) -> None:
         with self._lock:
-            self._report.add(run)
+            self._report.add(execution)
 
 
 class CompositeReporter(Reporter):
@@ -128,9 +142,9 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.iteration(it, label)
 
-    def run_done(self, run: Execution) -> None:
+    def execution_done(self, execution: Execution) -> None:
         for r in self.reporters:
-            r.run_done(run)
+            r.execution_done(execution)
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
         for r in self.reporters:
@@ -170,7 +184,7 @@ def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
     }
 
 
-class CsvReporter(_BufferingReporter):
+class CsvReporter(_EnvironmentAware, _BufferingReporter):
     """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
@@ -191,11 +205,7 @@ class CsvReporter(_BufferingReporter):
         self.path = path
         self.delimiter = delimiter
         self._environment = environment
-
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        self._environment = environment
+        self._diagnostics = []
 
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,7 +253,7 @@ class CsvReporter(_BufferingReporter):
 # ---------------------------------------------------------------------------
 
 
-class JsonReporter(_BufferingReporter):
+class JsonReporter(_EnvironmentAware, _BufferingReporter):
     """Buffer runs in memory, write a single JSON file on finalize().
 
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
@@ -263,12 +273,6 @@ class JsonReporter(_BufferingReporter):
         self._environment = environment
         self._diagnostics = diagnostics or []
 
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        self._environment = environment
-        self._diagnostics = diagnostics
-
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._report.environment = self._environment
@@ -283,8 +287,8 @@ class JsonReporter(_BufferingReporter):
 # ---------------------------------------------------------------------------
 
 
-class DirReporter(Reporter):
-    """Per-run tree at `<out>/<suite>/<bench>/<n>/`.
+class DirReporter(_EnvironmentAware, Reporter):
+    """Per-execution tree at `<out>/<suite>/<bench>/<n>/`.
 
     Files: stdout, stderr, exitcode, seq (cwd + cmd + info). Directories count
     up per (suite, benchmark) in completion order.
@@ -323,28 +327,28 @@ class DirReporter(Reporter):
                 )
             )
 
-    def run_done(self, run: Execution) -> None:
-        key = (run.suite, run.benchmark)
+    def execution_done(self, execution: Execution) -> None:
+        key = (execution.suite, execution.benchmark)
         with self._lock:
             self._counters[key] = self._counters.get(key, 0) + 1
             n = self._counters[key]
 
-        run_dir = self.root / run.suite / run.benchmark / str(n)
-        run_dir.mkdir(parents=True, exist_ok=True)
+        exec_dir = self.root / execution.suite / execution.benchmark / str(n)
+        exec_dir.mkdir(parents=True, exist_ok=True)
 
         lines = [
-            f"cwd={run.cwd}",
-            f"command={' '.join(run.command)}",
-            f"run={run.run}",
+            f"cwd={execution.cwd}",
+            f"command={' '.join(execution.command)}",
+            f"run={execution.run}",
         ]
-        lines.extend(f"variant[{k}]={v}" for k, v in run.variant)
-        if run.variant_label:
-            lines.append(f"variant_label={run.variant_label}")
-        (run_dir / "seq").write_text("\n".join(lines) + "\n")
+        lines.extend(f"variant[{k}]={v}" for k, v in execution.variant)
+        if execution.variant_label:
+            lines.append(f"variant_label={execution.variant_label}")
+        (exec_dir / "seq").write_text("\n".join(lines) + "\n")
 
-        (run_dir / "stdout").write_text(run.stdout)
-        (run_dir / "stderr").write_text(run.stderr)
-        (run_dir / "exitcode").write_text(f"{run.returncode}\n")
+        (exec_dir / "stdout").write_text(execution.stdout)
+        (exec_dir / "stderr").write_text(execution.stderr)
+        (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
 
 
 def _fmt_est(seconds: float) -> str:
@@ -377,24 +381,21 @@ class _EtaColumn(TimeRemainingColumn):
 class ProgressReporter(Reporter):
     """Live progress on a terminal.
 
-    A top bar labelled with the app name tracks how many benchmarks finished and
-    how many failed. Under it, each running benchmark shows a "Benchmark: name"
-    header and a bar with its elapsed estimate, progress, and ETA. Bars stretch to
-    the screen edge. When a benchmark finishes its bar is replaced by a persistent
-    summary line printed above the live region, carrying the same elapsed stats as
-    the final summary (or FAILED). Off a terminal it falls back to one plain line
-    per iteration.
+    A top `Progress` bar tracks how many benchmarks finished and how many failed.
+    Under it, each running benchmark has a bar with its progress count; command
+    benchmarks also show an elapsed estimate and ETA (a harness is one streaming
+    process, so it shows neither). Bars stretch to the screen edge. When a
+    benchmark finishes its bar is replaced by a persistent summary line printed
+    above the live region, carrying the same elapsed stats as the final summary
+    (or FAILED).
 
     Each benchmark runs start to finish on one thread, so the bar it owns is held
     on a thread-local.
     """
 
-    def __init__(
-        self, target_console: Console | None = None, app_name: str = ""
-    ) -> None:
+    def __init__(self, target_console: Console | None = None) -> None:
         self._console = target_console or console
         self._is_tty = self._console.is_terminal
-        self._app_label = markup_escape(app_name) if app_name else "Benchmarks"
         self._lock = threading.Lock()
         self._local = threading.local()
         self._passed = 0
@@ -404,7 +405,7 @@ class ProgressReporter(Reporter):
         self._next_slot = 0
         if self._is_tty:
             self._overall: RichProgress | None = RichProgress(
-                TextColumn(f"[bench.label]{self._app_label}[/]"),
+                TextColumn("[bench.label]Progress[/]"),
                 BarColumn(bar_width=None),
                 MofNCompleteColumn(),
                 TextColumn("({task.fields[failed]} failed)"),
@@ -433,24 +434,27 @@ class ProgressReporter(Reporter):
         self._local.n = 0
         self._local.total = _bench_total(b)
         self._local.runtime = 0.0
+        self._local.harness = b.harness
         if self._live is None:
             return
         total = self._local.total
         total_str = str(total) if total is not None else "?"
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
-        prog = RichProgress(
-            SpinnerColumn(),
-            TextColumn("elapsed estimate: {task.fields[est]}"),
-            BarColumn(bar_width=None),
-            TextColumn("{task.completed}/{task.fields[total_str]}"),
-            _EtaColumn(),
-            console=self._console,
-        )
+        # A harness is one streaming process: its per-iteration elapsed estimate
+        # and ETA are meaningless, so show only the spinner and progress count.
+        columns: list[Any] = [SpinnerColumn()]
+        if not b.harness:
+            columns.append(TextColumn("elapsed estimate: {task.fields[est]}"))
+        columns.append(BarColumn(bar_width=None))
+        columns.append(TextColumn("{task.completed}/{task.fields[total_str]}"))
+        if not b.harness:
+            columns.append(_EtaColumn())
+        prog = RichProgress(*columns, console=self._console)
         task_id = prog.add_task("", total=total, total_str=total_str, est="")
         with self._lock:
             slot = self._next_slot
             self._next_slot += 1
-            self._active[slot] = (prog, f"Benchmark: {name}")
+            self._active[slot] = (prog, f"Running: {name}")
             self._live.update(self._group())
         self._local.slot = slot
         self._local.prog = prog
@@ -468,7 +472,8 @@ class ProgressReporter(Reporter):
         if prog is None or task_id is None:
             return
         self._local.runtime += it.runtime
-        prog.update(task_id, est=_fmt_est(self._local.runtime / self._local.n))
+        if not self._local.harness:
+            prog.update(task_id, est=_fmt_est(self._local.runtime / self._local.n))
         prog.advance(task_id)
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
@@ -484,7 +489,7 @@ class ProgressReporter(Reporter):
             if self._overall is not None and self._overall_task is not None:
                 self._overall.update(self._overall_task, failed=self._failed)
                 self._overall.advance(self._overall_task)
-            self._console.print(self._summary_line(name, executions))
+            self._console.print(self._summary_line(b, name, executions))
             self._active.pop(getattr(self._local, "slot", -1), None)
             self._live.update(self._group())
         self._local.slot = None
@@ -506,14 +511,21 @@ class ProgressReporter(Reporter):
         return Group(*parts)
 
     @staticmethod
-    def _summary_line(name: str, executions: list[Execution]) -> str:
-        from bench.report.summary import stat_line, summarize
+    def _summary_line(b: Benchmark, name: str, executions: list[Execution]) -> str:
+        from bench.report.summary import scale_unit, stat_line, summarize
 
         stats = summarize(Report(executions=list(executions)))
         elapsed = next((s for s in stats if s.metric == "elapsed"), None)
-        head = f"[bench.label]Benchmark:[/] {markup_escape(name)}"
+        head = f"[bench.label]Finished:[/] {markup_escape(name)}"
         if elapsed is None:
             return f"{head}: [bench.failure]FAILED[/]"
+        if b.harness:
+            # One streaming process: `elapsed` is its whole wall-clock, a single
+            # measurement, so the per-iteration run/warmup counts do not apply.
+            scale, unit = scale_unit(elapsed.mean, elapsed.unit)
+            value = f"[bench.value]{elapsed.mean * scale:.2f}[/]"
+            label = markup_escape(f"{elapsed.metric} [{unit}] (harness)")
+            return f"{head}: {value} {label}"
         return f"{head}: {stat_line(elapsed)}"
 
     def _print_plain(
@@ -561,20 +573,22 @@ class SummaryReporter(_BufferingReporter):
         if self._report.failures:
             self._console.print()
             self._console.print("[bench.label]Failures:[/]")
-            for run in self._report.failures:
-                self._console.print("  " + self._failure_line(run))
+            for execution in self._report.failures:
+                self._console.print("  " + self._failure_line(execution))
 
     @staticmethod
-    def _failure_line(run: Execution) -> str:
-        if run.returncode == TIMEOUT_RC:
+    def _failure_line(execution: Execution) -> str:
+        if execution.returncode == TIMEOUT_RC:
             verdict = f"[bench.failure]timeout (exit {TIMEOUT_RC})[/]"
-        elif run.returncode == SPAWN_FAIL_RC:
-            verdict = f"[bench.failure]spawn failed[/]: {run.failure or 'unknown'}"
+        elif execution.returncode == SPAWN_FAIL_RC:
+            verdict = (
+                f"[bench.failure]spawn failed[/]: {execution.failure or 'unknown'}"
+            )
         else:
-            verdict = f"[bench.failure]exit {run.returncode}[/]"
+            verdict = f"[bench.failure]exit {execution.returncode}[/]"
         return (
-            f"[bench.failure]✗[/] {markup_escape(run.identifier())}"
-            f" — {verdict}: {markup_escape(run.message) or '(no output)'}"
+            f"[bench.failure]✗[/] {markup_escape(execution.identifier())}"
+            f" - {verdict}: {markup_escape(execution.message) or '(no output)'}"
         )
 
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from cattrs import structure, unstructure
 
 from bench.core.environment import Diagnostic, Environment
-from bench.core.execution import Variant, format_identifier, record_key
+from bench.core.invocation import Variant, format_identifier
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,10 +70,6 @@ class Execution:
             variant_label=self.variant_label,
         )
 
-    def key(self) -> str:
-        """Canonical benchmark-variant key (see `record_key`)."""
-        return record_key(self.suite, self.benchmark, self.variant)
-
 
 def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
     """Last non-empty line of stderr (then stdout), truncated, for failures."""
@@ -100,9 +96,6 @@ class Report:
     def failures(self) -> list[Execution]:
         """Executions whose process failed (returncode-bearing failures)."""
         return [ex for ex in self.executions if ex.is_failure()]
-
-    def iterations(self) -> list[Iteration]:
-        return [it for ex in self.executions for it in ex.iterations]
 
     def metrics(self) -> list[str]:
         """Distinct metric names across iterations and whole-process samples,

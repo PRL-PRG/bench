@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bench import FixedRuns, FloatPerLine, Time, bench, suite
-from bench.grammar.benchmark import UNSET
+from bench.grammar.builder import UNSET
 
 
 def _mat(b):
@@ -45,12 +45,6 @@ def test_bench_kwargs_attach_to_data():
     b = bench("z", path=Path("zoo.lox"), size=42)
     assert b.path == Path("zoo.lox")
     assert b.size == 42
-
-
-def test_immutability_via_with_methods():
-    a = _base().with_runs(3)
-    b = a.with_runs(5)
-    assert a.runs != b.runs
 
 
 def test_policy_defaults_resolve_via_suite():

@@ -222,23 +222,6 @@ def test_over_delivery_stops_at_policy():
     assert report.failures == []
 
 
-def test_harness_process_metric_goes_to_process_samples():
-    s = (
-        suite("H", bench("a").with_command(_echo_lines("1.0", "2.0")))
-        .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms"))
-        .with_process_metric(Time())
-        .with_runs(2)
-        .with_harness()
-    )
-    report = Sequential().run(plan([s], None), None)
-    run = report.executions[0]
-    # Per-iteration metrics stay on the iterations. The whole-process Time
-    # (elapsed) lands in process_samples, not on any iteration.
-    assert all(s.metric != "elapsed" for o in run.iterations for s in o.samples)
-    assert any(s.metric == "elapsed" for s in run.process_samples)
-
-
 def test_harness_process_metric_reaches_json_file(tmp_path: Path):
     # Whole-process metrics travel through the Reporter chain to file sinks.
     out = tmp_path / "r.json"

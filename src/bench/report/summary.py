@@ -1,11 +1,9 @@
 """Report -> Stats -> views: the whole analysis layer.
 
-`summarize(report)` is the single reduction from raw runs to a flat `list[Stat]`
-(one row per benchmark-variant x metric). Everything else - ranking within a
-benchmark, ranking the values of a matrix axis - is a small query over that flat
-list, so there is no nested precomputed bundle to navigate. Comparing report
-files is just `merge_reports` tagging each file as a `compare` axis and reusing
-the same views.
+`summarize(report)` reduces raw runs to a flat `list[Stat]` (one row per
+benchmark-variant x metric). Every view - ranking within a benchmark, ranking a
+matrix axis - is a small query over that flat list. Comparing report files is
+`merge_reports` tagging each file as a `compare` axis and reusing the views.
 """
 
 from __future__ import annotations
@@ -15,8 +13,8 @@ import statistics
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, replace
 
-from bench.core.execution import Variant, format_benchmark
-from bench.core.sample import Report, Execution, Sample
+from bench.core.invocation import Variant, format_benchmark
+from bench.core.model import Report, Execution, Sample
 from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
 
 type MetricKey = tuple[str, str]  # (metric, unit)
@@ -80,13 +78,11 @@ class _Acc:
 def summarize(report: Report) -> list[Stat]:
     """Reduce a Report to a flat per-(variant, metric) `list[Stat]`.
 
-    Warmup iterations are excluded from the stats but counted separately
-    (`Stat.warmups`), so a formatter can show how many were discarded. Iteration
-    samples and whole-process samples both feed the stats. Whole-process samples
-    do not add to the iteration count unless the execution produced no iterations
-    at all (a process-only execution). An execution that failed before producing
-    any iteration counts as one failure. Variants that only ever failed yield no
-    rows here, they surface in the reporter's Failures block.
+    Warmup iterations are excluded from the stats but counted (`Stat.warmups`).
+    Iteration and whole-process samples both feed the stats; whole-process
+    samples add to the run count only for a process-only execution (no
+    iterations). A variant that only ever failed yields no rows here - it
+    surfaces in the reporter's Failures block.
     """
     accs: dict[tuple[str, str, Variant], _Acc] = {}  # insertion-ordered
     lib: dict[MetricKey, bool] = {}
@@ -247,20 +243,23 @@ def group_by[K: Hashable](
 
 
 def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Report:
-    """Fold `(name, Report)` pairs into one Report, tagging every run with an
-    extra `axis` variant dimension set to the report's name. Comparing files is
-    then just summarizing the merged report over that synthetic axis.
+    """Fold `(name, Report)` pairs into one Report, tagging every execution with
+    an extra `axis` dimension set to the report's name, so comparing files is just
+    summarizing over that synthetic axis.
 
-    The `axis=name` tag goes first - in the variant tuple and, when a
-    `variant_label` is preset, at the front of the label - so the file reads as
-    the outermost dimension. An empty label is left empty to recompute from the
-    (now axis-carrying) variant."""
+    The `axis=name` tag goes first (in the variant tuple, and at the front of a
+    preset label) so the file reads as the outermost dimension. An empty label
+    stays empty, recomputed later from the now axis-carrying variant."""
     merged = Report()
     for name, report in named:
-        for run in report.executions:
-            variant = ((axis, name),) + run.variant
-            label = f"{axis}={name}, {run.variant_label}" if run.variant_label else ""
-            merged.add(replace(run, variant=variant, variant_label=label))
+        for execution in report.executions:
+            variant = ((axis, name),) + execution.variant
+            label = (
+                f"{axis}={name}, {execution.variant_label}"
+                if execution.variant_label
+                else ""
+            )
+            merged.add(replace(execution, variant=variant, variant_label=label))
     return merged
 
 
@@ -308,11 +307,10 @@ def _mean_cell(s: Stat, scale: float, unit: str = "", p: int = 2) -> Cell:
 def _counts_text(
     runs: int, failures: int, *, samples: int | None = None, warmups: int = 0
 ) -> str:
-    """`(… N runs, M failed)` count suffix, shared by the summary and ranking
-    lines. Sample count appears only when given and different from the run count
-    (a run's metric can yield several samples in one go, e.g. a regex matching
-    multiple lines of one execution's output). Warmup count appears only when the
-    warmup policy discarded any. No singular/plural variants."""
+    """`(N runs, M failed)` count suffix for the summary and ranking lines.
+    Sample count appears only when given and different from the run count (one
+    run's metric can yield several samples); warmup count only when any were
+    discarded."""
     parts: list[str] = []
     if samples is not None and samples != runs:
         parts.append(f"{samples} samples")
@@ -507,7 +505,15 @@ def ranking(
     other (residual) variants within each benchmark by geomean and compare the
     values of that axis (e.g. python3.14 vs python3.9)."""
     if axis is not None:
-        return _ranking_by_axis(stats, r, axis, metrics=metrics, ref=ref)
+        return _axis_view(
+            stats,
+            axis,
+            r,
+            key=lambda s: (s.suite, s.benchmark, s.mk),
+            head=lambda s: bench_label(s.suite, s.benchmark),
+            metrics=metrics,
+            ref=ref,
+        )
     blocks: list[list[str]] = []
     for (suite, bench), grp in group_by(stats, lambda s: s.bench).items():
         for (metric, _unit), rows_stats in group_by(grp, lambda s: s.mk).items():
@@ -538,25 +544,32 @@ def ranking(
     return _join_blocks(blocks)
 
 
-def _ranking_by_axis(
+def _axis_view(
     stats: list[Stat],
-    r: Renderer,
     axis: str,
+    r: Renderer,
     *,
+    key: Callable[[Stat], Hashable],
+    head: Callable[[Stat], str],
+    metric: str | None = None,
     metrics: set[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
+    """Shared engine for the axis views: group axial stats by `key`, then emit one
+    `_axis_block` per group headed by `head`. Drives both the per-benchmark
+    ranking-by-axis and the per-suite `by_axis`."""
     axial = [s for s in stats if _axis_value(s, axis) is not None]
     if not axial:
         return _axis_missing(r, axis)
     blocks: list[list[str]] = []
-    for (suite, bench, (metric_, _unit)), grp in group_by(
-        axial, lambda s: (s.suite, s.benchmark, s.mk)
-    ).items():
+    for grp in group_by(axial, key).values():
+        metric_ = grp[0].metric
+        if metric is not None and metric_ != metric:
+            continue
         if not _keep(metric_, metrics):
             continue
         header = (
-            tag(r, "label", f"Summary (geomean) - {axis} - {bench_label(suite, bench)}")
+            tag(r, "label", f"Summary (geomean) - {axis} - {head(grp[0])}")
             + " ("
             + tag(r, "metric", metric_)
             + ")"
@@ -577,25 +590,16 @@ def by_axis(
     metrics: set[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
-    axial = [s for s in stats if _axis_value(s, axis) is not None]
-    if not axial:
-        return _axis_missing(r, axis)
-    blocks: list[list[str]] = []
-    for (suite, (metric_, _unit)), grp in group_by(
-        axial, lambda s: (s.suite, s.mk)
-    ).items():
-        if metric is not None and metric_ != metric:
-            continue
-        if not _keep(metric_, metrics):
-            continue
-        header = (
-            tag(r, "label", f"Summary (geomean) - {axis} - {suite}")
-            + " ("
-            + tag(r, "metric", metric_)
-            + ")"
-        )
-        blocks.append(_axis_block(grp, axis, r, header, ref=ref))
-    return _join_blocks(blocks)
+    return _axis_view(
+        stats,
+        axis,
+        r,
+        key=lambda s: (s.suite, s.mk),
+        head=lambda s: s.suite,
+        metric=metric,
+        metrics=metrics,
+        ref=ref,
+    )
 
 
 # ----- Compact: terse plain-text for CI / commit messages -------------------

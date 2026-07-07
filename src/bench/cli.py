@@ -10,9 +10,9 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
 
-from bench.run import add_runtime_flags, bench_app, default_reporter
+from bench.run import bench_app, default_reporter
 from bench.grammar.benchmark import Benchmark, bench
-from bench.grammar.context import Context
+from bench.grammar.context import Context, SharedBenchParams, add_dataclass_args
 from bench.core.checks import run_checks
 from bench.core.environment import NoEnvironment, SystemEnvironment
 from bench.core.metric import Time
@@ -25,7 +25,7 @@ from bench.denoise import (
     status,
 )
 from bench.grammar.suite import suite
-from bench.core.sample import Report, report_from_json
+from bench.core.model import Report, report_from_json
 from bench.report.formatter import (
     DefaultSummary,
     Results,
@@ -125,7 +125,9 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         metavar="CMD",
         help="One or more shell commands to benchmark.",
     )
-    add_runtime_flags(p)
+    # Shared runtime flags (jobs/progress/dry/verbose/json/csv/dir); `bench run`
+    # has no selection flags of its own, so skip include/exclude.
+    add_dataclass_args(p, SharedBenchParams, skip={"include", "exclude"})
     p.add_argument(
         "--runs",
         type=int,

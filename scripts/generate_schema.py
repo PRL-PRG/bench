@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter
 
-from bench.core.sample import Report
+from bench.core.model import Report
 
 OUTPUT = Path(__file__).resolve().parent.parent / "schema.json"
 

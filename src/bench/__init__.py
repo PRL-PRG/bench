@@ -1,14 +1,14 @@
 """bench - a benchmarking framework."""
 
 # Atoms
-from bench.core.execution import (
+from bench.core.invocation import (
     Invocation,
     InvocationResult,
     Variant,
     Verdict,
     default_success,
 )
-from bench.core.sample import (
+from bench.core.model import (
     Iteration,
     Report,
     Execution,

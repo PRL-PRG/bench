@@ -17,6 +17,16 @@ import os
 from collections.abc import Callable, Generator
 from pathlib import Path
 
+from bench.core.environment import (
+    ASLR,
+    CPU_DIR,
+    CPUFREQ_BOOST,
+    GOVERNOR_GLOB,
+    NO_TURBO,
+    PERF_EVENT_PARANOID,
+    SWAPPINESS,
+    THP_ENABLED,
+)
 from bench.utils import read_bracketed, read_text, write_text
 
 # How to read a knob's current value (for save/status). Most are read verbatim.
@@ -30,23 +40,21 @@ STATE_PATH = Path("/var/tmp/bench-denoise-state.json")
 
 def _knobs(root: Path) -> list[tuple[Path, str, Reader]]:
     """(path, quiet-value, reader) for every knob that exists on this host."""
-    cpu = root / "sys/devices/system/cpu"
+    cpu = root / CPU_DIR
+    proc = root / "proc"
     out: list[tuple[Path, str, Reader]] = [
-        (p, "performance", read_text)
-        for p in sorted(cpu.glob("cpu[0-9]*/cpufreq/scaling_governor"))
+        (p, "performance", read_text) for p in sorted(cpu.glob(GOVERNOR_GLOB))
     ]
-    no_turbo = cpu / "intel_pstate/no_turbo"
-    boost = cpu / "cpufreq/boost"
+    no_turbo = cpu / NO_TURBO
+    boost = cpu / CPUFREQ_BOOST
     if no_turbo.exists():
         out.append((no_turbo, "1", read_text))
     elif boost.exists():
         out.append((boost, "0", read_text))
-    out.append((root / "proc/sys/kernel/perf_event_paranoid", "-1", read_text))
-    out.append((root / "proc/sys/vm/swappiness", "0", read_text))
-    out.append((root / "proc/sys/kernel/randomize_va_space", "0", read_text))
-    out.append(
-        (root / "sys/kernel/mm/transparent_hugepage/enabled", "never", read_bracketed)
-    )
+    out.append((proc / PERF_EVENT_PARANOID, "-1", read_text))
+    out.append((proc / SWAPPINESS, "0", read_text))
+    out.append((proc / ASLR, "0", read_text))
+    out.append((root / THP_ENABLED, "never", read_bracketed))
     return [(p, v, r) for p, v, r in out if p.exists()]
 
 

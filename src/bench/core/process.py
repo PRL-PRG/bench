@@ -25,7 +25,7 @@ from collections.abc import Generator
 from pathlib import Path
 from types import FrameType
 
-from bench.core.execution import (
+from bench.core.invocation import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
     Invocation,

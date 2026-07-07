@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 import shlex
 import subprocess
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 from bench.grammar.benchmark import Benchmark
-from bench.core.execution import (
+from bench.core.invocation import (
     Invocation,
     default_success,
     format_identifier,
 )
 from bench.core.policy import StoppingPolicy
+from bench.core.process import install_sigint_handler, interrupted
 from bench.grammar.suite import SuiteBuilder
 from bench.report.reporter import Reporter
-from bench.core.sample import Report
+from bench.core.model import Report
 
 
 class _NoopReporter(Reporter):
@@ -144,6 +147,21 @@ class Runner(abc.ABC):
     ) -> None:
         self.reporter = reporter or _NoopReporter()
         self.verbose = verbose
+
+    @contextlib.contextmanager
+    def _session(self, planned: list[Benchmark]) -> Generator[Report]:
+        """Start the reporter, yield a fresh Report to fill under a SIGINT
+        handler, and finalize on exit. Raises KeyboardInterrupt if Ctrl+C fired
+        while the body ran."""
+        self.reporter.start(planned)
+        report = Report()
+        try:
+            with install_sigint_handler():
+                yield report
+                if interrupted():
+                    raise KeyboardInterrupt
+        finally:
+            self.reporter.finalize()
 
     @abc.abstractmethod
     def run(self, planned: list[Benchmark], params: Any = None) -> Report: ...

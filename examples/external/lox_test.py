@@ -84,10 +84,10 @@ class LoxTestSummary(Reporter):
         self.failed = 0
         self.failed_tests: list[str] = []
 
-    def run_done(self, run: Execution) -> None:
-        if run.is_failure():
+    def execution_done(self, execution: Execution) -> None:
+        if execution.is_failure():
             self.failed += 1
-            self.failed_tests.append(f"{run.suite}/{run.benchmark}")
+            self.failed_tests.append(f"{execution.suite}/{execution.benchmark}")
         else:
             self.passed += 1
 

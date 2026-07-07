@@ -9,7 +9,7 @@ from pathlib import Path
 
 from bench import FixedRuns, Iteration, NoDetection, Execution, Sample, bench, suite
 from bench.runner.base import plan
-from bench.core.sample import Report
+from bench.core.model import Report
 from bench.report.reporter import Reporter
 from bench.runner.controller import Controller
 from bench.runner.source import ExecutionSource
@@ -25,7 +25,7 @@ class _Collect(Reporter):
         self.iterations.append(it)
         self.labels.append(label)
 
-    def run_done(self, run):
+    def execution_done(self, run):
         self.runs.append(run)
 
 

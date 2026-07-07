@@ -9,7 +9,7 @@ from collections.abc import Generator
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.policy import StoppingPolicy
 from bench.core.process import interrupted
-from bench.core.sample import Iteration, Report, Execution, Sample
+from bench.core.model import Iteration, Report, Execution, Sample
 from bench.grammar.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.source import make_source
@@ -31,61 +31,62 @@ def benchmarking_loop(
             state.observe(iteration)
 
 
-def _mark_warmup(runs: list[Execution], warmup: int) -> list[Execution]:
-    """Flag the first `warmup` iterations (in pull order, across runs) as warmup.
-
-    The Controller knows the warmup boundary (it drove the warmup policy), so it
-    stamps it onto the assembled Executions. The flag then travels with the data."""
+def _mark_warmup(executions: list[Execution], warmup: int) -> list[Execution]:
+    """Flag the first `warmup` iterations (in pull order, across executions) as
+    warmup. The Controller knows the warmup boundary (it drove the warmup
+    policy), so it stamps it onto the assembled Executions. The flag then travels
+    with the data."""
     if warmup <= 0:
-        return runs
+        return executions
     remaining = warmup
     out: list[Execution] = []
-    for run in runs:
+    for execution in executions:
         if remaining <= 0:
-            out.append(run)
+            out.append(execution)
             continue
         new_iters: list[Iteration] = []
-        for it in run.iterations:
+        for it in execution.iterations:
             if remaining > 0:
                 new_iters.append(dataclasses.replace(it, warmup=True))
                 remaining -= 1
             else:
                 new_iters.append(it)
-        out.append(dataclasses.replace(run, iterations=new_iters))
+        out.append(dataclasses.replace(execution, iterations=new_iters))
     return out
 
 
 def _mark_outliers(
-    runs: list[Execution], detection: OutlierDetection
+    executions: list[Execution], detection: OutlierDetection
 ) -> list[Execution]:
     """Flag outlier Samples per (metric, unit), pooled across the measured
-    (non-warmup) iterations of all runs, i.e., the same values that reach the stats."""
+    (non-warmup) iterations of all executions, i.e., the same values that reach
+    the stats."""
 
     if isinstance(detection, NoDetection):
-        return runs
+        return executions
 
     # 1. Pool values per metric in traversal order.
     pools: dict[tuple[str, str], list[float]] = {}
-    for run in runs:
-        for it in run.iterations:
+    for execution in executions:
+        for it in execution.iterations:
             if it.warmup:
                 continue
             for s in it.samples:
                 pools.setdefault((s.metric, s.unit), []).append(s.value)
 
-    # 2. Outlier mask per metric. Nothing flagged -> leave runs untouched.
+    # 2. Outlier mask per metric. Nothing flagged -> leave executions untouched.
     masks = {k: detection.detect(v) for k, v in pools.items()}
     if not any(any(m) for m in masks.values()):
-        return runs
+        return executions
 
     # 3. Re-walk in the same order, consuming each metric's mask, rebuilding
-    #    only the runs/iterations/samples that actually change.
+    #    only the executions/iterations/samples that actually change.
     cursors = {k: iter(m) for k, m in masks.items()}
     out: list[Execution] = []
-    for run in runs:
+    for execution in executions:
         new_iters: list[Iteration] = []
-        run_changed = False
-        for it in run.iterations:
+        execution_changed = False
+        for it in execution.iterations:
             if it.warmup:
                 new_iters.append(it)
                 continue
@@ -99,11 +100,13 @@ def _mark_outliers(
                     new_samples.append(s)
             if it_changed:
                 new_iters.append(dataclasses.replace(it, samples=new_samples))
-                run_changed = True
+                execution_changed = True
             else:
                 new_iters.append(it)
         out.append(
-            dataclasses.replace(run, iterations=new_iters) if run_changed else run
+            dataclasses.replace(execution, iterations=new_iters)
+            if execution_changed
+            else execution
         )
     return out
 
@@ -114,7 +117,7 @@ class Controller:
     Pull one `(Iteration, label)` per slot, feed the stopping policy, count
     warmup iterations, and `close()` the source on convergence (which kills a
     running harness and returns the assembled `Execution`(s)). The Controller stamps
-    the warmup iterations onto the runs and records them. It never schedules.
+    the warmup iterations onto the executions and records them. It never schedules.
     The source owns scheduling and spawning.
     """
 
@@ -168,9 +171,9 @@ class Controller:
                 except StopIteration:
                     break
         finally:
-            runs = _mark_warmup(source.close(), warmup_iters)
-            runs = _mark_outliers(runs, b.outlier_detection)
-            for run in runs:
-                report.add(run)
-                self.reporter.run_done(run)
-            self.reporter.benchmark_done(b, runs)
+            executions = _mark_warmup(source.close(), warmup_iters)
+            executions = _mark_outliers(executions, b.outlier_detection)
+            for execution in executions:
+                report.add(execution)
+                self.reporter.execution_done(execution)
+            self.reporter.benchmark_done(b, executions)

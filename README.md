@@ -1,6 +1,6 @@
 # bench
 
-A benchmarking framework and command-line tool.
+A lightweight Python benchmarking framework and command-line tool.
 
 Two ways to use it:
 
@@ -30,8 +30,7 @@ Summary - run (elapsed)
 ```
 
 `(5 runs)` is the count of successful runs - Python 3.14 runs the recursive
-`fib(35)` ~1.5x faster than 3.9. A run that crashes never enters the stats; it
-is listed under a separate `Failures:` block instead.
+`fib(35)` ~1.5x faster than 3.9.
 
 ### As a script
 
@@ -62,22 +61,28 @@ script, and CLI flags override what the script set in code. See
 
 ## How it works
 
-A run is a pipeline: you build **suites** of **benchmarks**, the framework
-resolves them into concrete variants, executes each one collecting
+Running `bench` is a pipeline: you build **suites** of **benchmarks**, the
+framework resolves them into concrete variants, executes each one collecting
 measurements, and produces a **report**.
 
-The building blocks:
+The building blocks, from the outside in:
 
 * **Suite** - a named collection of benchmarks plus the defaults they inherit.
-* **Benchmark** - command + cwd + env + metrics + stopping policy + variants.
-* **Run** - one process execution: identity + outcome + its iterations (plus any whole-process samples).
-* **Iteration** - one measured iteration: a bag of samples (or a failure).
+* **Benchmark** - command + cwd + env + metrics + stopping policy + variants;
+  resolves to one **Invocation** per variant.
+* **Invocation** - the pure spec of how to start one subprocess (command, cwd, env, timeout, stdin).
+* **Execution** - one subprocess run of an Invocation, start to finish: identity
+  + outcome + its **Iterations** (plus any whole-process **Samples**).
+* **Iteration** - one measurement: a bag of **Samples** (or a failure).
 * **Sample** - one metric value (name, value, unit).
-* **Report** - the list of runs, JSON round-trippable.
+* **Report** - the list of Executions, JSON round-trippable.
 
-A failed run still produces a `Run` (with `failure` set and no samples), so a
-crashing benchmark is listed under a `Failures:` block with its reason - and a
-variant that only sometimes fails shows a `(failures|runs)` count next to its
+A command benchmark produces many Executions of one Iteration each; a harness
+produces one Execution of many Iterations.
+
+A failed run still produces an `Execution` (with `failure` set and no samples),
+so a crashing benchmark is listed under a `Failures:` block with its reason - and
+a variant that only sometimes fails shows a `(failures|runs)` count next to its
 stats - instead of poisoning the stats with fake numbers.
 
 The pieces you plug in:
@@ -99,7 +104,7 @@ The pieces you plug in:
 dimension values, each cell a variant. **Harness** benchmarks
 (`.with_harness()`) run the command once and let the process iterate
 internally (e.g. for JIT warmup), each reported iteration becoming an
-`Iteration` of that single run.
+`Iteration` of that single Execution.
 
 **Outputs**: live progress to the terminal, plus optional `--json`, `--csv`, and
 `--dir` (per-execution tree). `bench compare a.json b.json ...` diffs saved

@@ -19,14 +19,15 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from bench.core.execution import (
+from bench.core.invocation import (
     SPAWN_FAIL_RC,
     InvocationResult,
+    Verdict,
     default_success,
     format_identifier,
 )
 from bench.core.process import LiveProcess, execute, spawn_streaming
-from bench.core.sample import Iteration, Execution, Sample, diagnostic_excerpt
+from bench.core.model import Iteration, Execution, Sample, diagnostic_excerpt
 from bench.grammar.benchmark import Benchmark
 from bench.runner.base import format_benchmark_verbose
 
@@ -37,6 +38,45 @@ def _with_elapsed(samples: list[Sample], result: InvocationResult) -> list[Sampl
     if result.runtime is None or any(s.metric == "elapsed" for s in samples):
         return samples
     return [Sample("elapsed", result.runtime, unit="s", lower_is_better=True), *samples]
+
+
+def _apply_verdict(result: InvocationResult, reason: Verdict) -> InvocationResult:
+    """Record `reason` as the failure on `result`, unless it already failed."""
+    if reason is not None and result.failure is None:
+        return dataclasses.replace(result, failure=reason)
+    return result
+
+
+def _make_execution(
+    b: Benchmark,
+    result: InvocationResult,
+    *,
+    run: int,
+    iterations: list[Iteration],
+    process_samples: list[Sample],
+    failure: str | None,
+    message: str,
+) -> Execution:
+    """Assemble an Execution from a resolved benchmark and its process result."""
+    ex = b.invocation
+    return Execution(
+        suite=b.suite,
+        benchmark=b.name,
+        variant=b.variant,
+        variant_label=b.variant_label,
+        run=run,
+        command=ex.command,
+        cwd=str(ex.cwd),
+        env=dict(ex.env),
+        returncode=result.returncode,
+        runtime=result.runtime,
+        failure=failure,
+        message=message,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        iterations=iterations,
+        process_samples=process_samples,
+    )
 
 
 class ExecutionSource(abc.ABC):
@@ -69,7 +109,7 @@ class CommandSource(ExecutionSource):
         self._b = b
         self._verbose = verbose
         self._run = 0
-        self._runs: list[Execution] = []
+        self._executions: list[Execution] = []
 
     def next(self) -> tuple[Iteration, str]:
         self._run += 1
@@ -79,9 +119,7 @@ class CommandSource(ExecutionSource):
         result = execute(b.invocation)
 
         success = b.success if b.success is not None else default_success
-        reason = success(result)
-        if reason is not None and result.failure is None:
-            result = dataclasses.replace(result, failure=reason)
+        result = _apply_verdict(result, success(result))
 
         label = format_identifier(
             b.suite, b.name, b.variant, self._run, b.variant_label
@@ -105,31 +143,21 @@ class CommandSource(ExecutionSource):
             it = Iteration(samples=it_samples, runtime=runtime)
             message = ""
 
-        ex = b.invocation
-        self._runs.append(
-            Execution(
-                suite=b.suite,
-                benchmark=b.name,
-                variant=b.variant,
-                variant_label=b.variant_label,
+        self._executions.append(
+            _make_execution(
+                b,
+                result,
                 run=self._run,
-                command=ex.command,
-                cwd=str(ex.cwd),
-                env=dict(ex.env),
-                returncode=result.returncode,
-                runtime=result.runtime,
-                failure=result.failure,
-                message=message,
-                stdout=result.stdout,
-                stderr=result.stderr,
                 iterations=[it],
                 process_samples=process_samples,
+                failure=result.failure,
+                message=message,
             )
         )
         return it, label
 
     def close(self) -> list[Execution]:
-        return self._runs
+        return self._executions
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +224,7 @@ class HarnessSource(ExecutionSource):
         self._taken: list[Iteration] = []
         self._proc_result: InvocationResult | None = None
         self._monitor_failure: str | None = None
-        self._run: Execution | None = None
+        self._execution: Execution | None = None
         self._closed = threading.Event()
         self._reader: threading.Thread | None = None
         if verbose:
@@ -231,9 +259,7 @@ class HarnessSource(ExecutionSource):
             reason = self._b.success(result)
         else:
             reason = None
-        if reason is not None and result.failure is None:
-            result = dataclasses.replace(result, failure=reason)
-        self._proc_result = result
+        self._proc_result = _apply_verdict(result, reason)
 
     def _read(self) -> None:
         # _DONE must always reach the queue (even on error) so a consumer's
@@ -282,9 +308,9 @@ class HarnessSource(ExecutionSource):
         self._closed.set()
         if self._live is not None and self._live.is_alive():
             self._live.kill()
-        if self._run is None:
-            self._run = self._assemble()
-        return [self._run]
+        if self._execution is None:
+            self._execution = self._assemble()
+        return [self._execution]
 
     def _assemble(self) -> Execution:
         if self._reader is not None:
@@ -309,25 +335,14 @@ class HarnessSource(ExecutionSource):
         message = (
             diagnostic_excerpt(result.stdout, result.stderr) if run_failure else ""
         )
-        ex = self._b.invocation
-        b = self._b
-        return Execution(
-            suite=b.suite,
-            benchmark=b.name,
-            variant=b.variant,
-            variant_label=b.variant_label,
+        return _make_execution(
+            self._b,
+            result,
             run=1,
-            command=ex.command,
-            cwd=str(ex.cwd),
-            env=dict(ex.env),
-            returncode=result.returncode,
-            runtime=result.runtime,
-            failure=run_failure,
-            message=message,
-            stdout=result.stdout,
-            stderr=result.stderr,
             iterations=iterations,
             process_samples=process_samples,
+            failure=run_failure,
+            message=message,
         )
 
 

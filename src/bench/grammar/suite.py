@@ -14,20 +14,17 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from bench.grammar.builder import UNSET, BuilderBase, HarnessMonitorFactory, const
+from bench.grammar.builder import UNSET, BuilderBase, const
 from bench.grammar.benchmark import Benchmark, BenchmarkBuilder, default_label
 from bench.grammar.context import Context, Data
-from bench.core.execution import (
+from bench.core.invocation import (
     EMPTY_MAPPING,
     default_success,
 )
 from bench.core.outlier import ModifiedZScore
 from bench.core.policy import FixedRuns
-
-if TYPE_CHECKING:
-    from bench.runner.source import HarnessMonitor
 
 
 type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
@@ -91,8 +88,8 @@ class SuiteBuilder(BuilderBase):
         return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
 
     def factory(self, fn: BenchmarkFactory) -> SuiteBuilder:
-        """Register a deferred `(ctx: Context) -> [Benchmark]` producer
-        that wwill be called when suite materializes."""
+        """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
+        called when the suite materializes."""
         return dataclasses.replace(self, factories=self.factories + (fn,))
 
     def filter(self, pred: Callable[[Benchmark], bool]) -> SuiteBuilder:
@@ -109,18 +106,6 @@ class SuiteBuilder(BuilderBase):
     def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
         return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
-
-    def with_harness(self, monitor: HarnessMonitor | None = None) -> SuiteBuilder:
-        """Make every contained benchmark a harness benchmark.
-
-        `monitor` frames the output stream into iterations. Use
-        `with_monitor_fn` instead if the monitor needs to read `ctx`."""
-        return dataclasses.replace(self, harness=True, monitor=const(monitor))
-
-    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> SuiteBuilder:
-        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) ->
-        HarnessMonitor`, built per-variant instead of a single reusable value."""
-        return dataclasses.replace(self, harness=True, monitor=fn)
 
     def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
@@ -142,7 +127,7 @@ class SuiteBuilder(BuilderBase):
             resolved = base.overlay(b)
             if resolved.command is UNSET:
                 raise ValueError(
-                    f"Benchmark {b.name!r} has no command — set one with "
+                    f"Benchmark {b.name!r} has no command - set one with "
                     f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
                 )
             out.extend(resolved.create(params, suite=self.name))
