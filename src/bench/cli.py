@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from bench.run import bench_app, default_reporter
-from bench.grammar.benchmark import Benchmark, bench
-from bench.grammar.context import Context, SharedBenchParams, add_dataclass_args
+from bench.builder.benchmark import Benchmark, bench
+from bench.builder.context import Context, SharedBenchParams, add_dataclass_args
 from bench.core.checks import run_checks
 from bench.core.environment import NoEnvironment, SystemEnvironment
 from bench.core.metric import Time
@@ -24,8 +24,8 @@ from bench.denoise import (
     restore,
     status,
 )
-from bench.grammar.suite import suite
-from bench.core.model import Report, report_from_json
+from bench.builder.suite import suite
+from bench.core.results import Report, report_from_json
 from bench.report.formatter import (
     DefaultSummary,
     Results,

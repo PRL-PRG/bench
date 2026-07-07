@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from bench.grammar.context import (
+from bench.builder.context import (
     Context,
     Data,
     SharedBenchParams,

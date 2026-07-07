@@ -23,8 +23,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from bench.core.process import interrupted
-from bench.core.model import Iteration, Report, Execution
-from bench.grammar.benchmark import Benchmark
+from bench.core.results import Iteration, Report, Execution
+from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
 from bench.runner.controller import Controller

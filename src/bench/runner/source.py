@@ -27,8 +27,8 @@ from bench.core.invocation import (
     format_identifier,
 )
 from bench.core.process import LiveProcess, execute, spawn_streaming
-from bench.core.model import Iteration, Execution, Sample, diagnostic_excerpt
-from bench.grammar.benchmark import Benchmark
+from bench.core.results import Iteration, Execution, Sample, diagnostic_excerpt
+from bench.builder.benchmark import Benchmark
 from bench.runner.base import format_benchmark_verbose
 
 

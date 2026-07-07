@@ -8,7 +8,7 @@ from bench.core.invocation import (
     Verdict,
     default_success,
 )
-from bench.core.model import (
+from bench.core.results import (
     Iteration,
     Report,
     Execution,
@@ -57,15 +57,15 @@ from bench.core.environment import (
 from bench.core.checks import run_checks
 
 # Benchmark / SuiteBuilder
-from bench.grammar.benchmark import (
+from bench.builder.benchmark import (
     Benchmark,
     BenchmarkBuilder,
     bench,
     default_label,
     from_files,
 )
-from bench.grammar.suite import SuiteBuilder, suite
-from bench.grammar.context import Context, SharedBenchParams, SharedSelectionParams
+from bench.builder.suite import SuiteBuilder, suite
+from bench.builder.context import Context, SharedBenchParams, SharedSelectionParams
 
 # Runners
 from bench.runner.base import (

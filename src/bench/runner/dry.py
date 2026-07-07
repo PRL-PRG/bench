@@ -15,8 +15,8 @@ from __future__ import annotations
 from typing import Any
 
 from bench.core.invocation import format_identifier
-from bench.core.model import Report
-from bench.grammar.benchmark import Benchmark
+from bench.core.results import Report
+from bench.builder.benchmark import Benchmark
 from bench.runner.base import (
     Runner,
     format_benchmark_verbose,

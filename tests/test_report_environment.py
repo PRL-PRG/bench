@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from bench.core.environment import Diagnostic, Environment
-from bench.core.model import (
+from bench.core.results import (
     Iteration,
     Report,
     Execution,

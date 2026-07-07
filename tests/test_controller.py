@@ -9,7 +9,7 @@ from pathlib import Path
 
 from bench import FixedRuns, Iteration, NoDetection, Execution, Sample, bench, suite
 from bench.runner.base import plan
-from bench.core.model import Report
+from bench.core.results import Report
 from bench.report.reporter import Reporter
 from bench.runner.controller import Controller
 from bench.runner.source import ExecutionSource
@@ -25,8 +25,8 @@ class _Collect(Reporter):
         self.iterations.append(it)
         self.labels.append(label)
 
-    def execution_done(self, run):
-        self.runs.append(run)
+    def execution_done(self, execution):
+        self.runs.append(execution)
 
 
 class _FakeSource(ExecutionSource):

@@ -27,12 +27,12 @@ from bench.core.metric import (
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
-from bench.grammar.context import Context
+from bench.builder.context import Context
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
-    from bench.grammar.benchmark import Benchmark
+    from bench.builder.benchmark import Benchmark
     from bench.runner.source import HarnessMonitor
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
@@ -185,7 +185,7 @@ class BuilderBase:
     cooldown: float = UNSET
     label_fn: LabelFn = UNSET
     harness: bool = UNSET
-    monitor: HarnessMonitorFactory | None = UNSET
+    monitor: HarnessMonitorFactory = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
 

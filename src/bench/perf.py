@@ -30,7 +30,7 @@ from dataclasses import dataclass
 
 from bench.core.invocation import InvocationResult, to_argv
 from bench.core.metric import ProcessMetric
-from bench.core.model import Sample
+from bench.core.results import Sample
 
 
 @dataclass(frozen=True)

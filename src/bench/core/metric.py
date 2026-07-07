@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Self
 
 from bench.core.invocation import InvocationResult
-from bench.core.model import Sample
+from bench.core.results import Sample
 
 # None = no direction, True = lower is better, False = higher is better
 type Direction = bool | None

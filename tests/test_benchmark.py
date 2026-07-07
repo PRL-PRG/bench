@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bench import FixedRuns, FloatPerLine, Time, bench, suite
-from bench.grammar.builder import UNSET
+from bench.builder.base import UNSET
 
 
 def _mat(b):

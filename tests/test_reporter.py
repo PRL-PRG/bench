@@ -25,7 +25,7 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
-from bench.core.model import Iteration, Execution, Sample
+from bench.core.results import Iteration, Execution, Sample
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
@@ -381,7 +381,7 @@ def test_summary_channel_keeps_progress_and_swaps_summary():
     ctx = SimpleNamespace(
         params=SimpleNamespace(progress=True, json=None, csv=None, dir=None)
     )
-    rep = default_reporter(ctx, marker)
+    rep = default_reporter(ctx, marker)  # type: ignore[arg-type]
     assert isinstance(rep, CompositeReporter)
     assert any(isinstance(r, ProgressReporter) for r in rep.reporters)
     assert marker in rep.reporters
@@ -393,8 +393,8 @@ def test_eta_column_blank_for_single_or_unknown_total():
     from bench.report.reporter import _EtaColumn
 
     col = _EtaColumn()
-    assert str(col.render(SimpleNamespace(total=1))) == ""
-    assert str(col.render(SimpleNamespace(total=None))) == ""
+    assert str(col.render(SimpleNamespace(total=1))) == ""  # type: ignore[arg-type]
+    assert str(col.render(SimpleNamespace(total=None))) == ""  # type: ignore[arg-type]
 
 
 def test_progress_prints_completed_summary_scrollback():

@@ -16,9 +16,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bench.grammar.builder import UNSET, BuilderBase, const
-from bench.grammar.benchmark import Benchmark, BenchmarkBuilder, default_label
-from bench.grammar.context import Context, Data
+from bench.builder.base import UNSET, BuilderBase, const
+from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
+from bench.builder.context import Context, Data
 from bench.core.invocation import (
     EMPTY_MAPPING,
     default_success,

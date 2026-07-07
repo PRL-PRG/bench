@@ -1,4 +1,4 @@
-"""Benchmark grammar: a builder template and the resolved instances it produces.
+"""Benchmark builder: a builder template and the resolved instances it produces.
 
 `BenchmarkBuilder` is the builder for `Benchmark`, one fully resolved variant. The
 builder leaves every inheritable field unset. The resolved benchmark carries concrete
@@ -13,7 +13,7 @@ variants. Variants within a benchmark are what the end-of-run Summary
 compares. Comparison across different benchmarks is never emitted.
 
 The shared configuration base (`BuilderBase`), the `Factory[T]`/`UNSET` primitives,
-and the matrix/skip helpers live in `bench.grammar.builder`.
+and the matrix/skip helpers live in `bench.builder.base`.
 """
 
 from __future__ import annotations
@@ -42,13 +42,13 @@ from bench.core.metric import (
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy
-from bench.grammar.builder import (
+from bench.builder.base import (
     Factory,
     BuilderBase,
     as_build,
     const,
 )
-from bench.grammar.context import Context, Data
+from bench.builder.context import Context, Data
 
 if TYPE_CHECKING:
     from bench.runner.source import HarnessMonitor

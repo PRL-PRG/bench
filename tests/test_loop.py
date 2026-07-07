@@ -3,7 +3,7 @@
 import pytest
 
 from bench import CoefficientOfVariation, FixedRuns, Iteration, Sample
-from bench.grammar.builder import UNSET
+from bench.builder.base import UNSET
 from bench.runner.controller import benchmarking_loop
 
 

@@ -10,7 +10,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from bench.grammar.benchmark import Benchmark
+from bench.builder.benchmark import Benchmark
 from bench.core.invocation import (
     Invocation,
     default_success,
@@ -18,9 +18,9 @@ from bench.core.invocation import (
 )
 from bench.core.policy import StoppingPolicy
 from bench.core.process import install_sigint_handler, interrupted
-from bench.grammar.suite import SuiteBuilder
+from bench.builder.suite import SuiteBuilder
 from bench.report.reporter import Reporter
-from bench.core.model import Report
+from bench.core.results import Report
 
 
 class _NoopReporter(Reporter):

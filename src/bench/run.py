@@ -18,9 +18,9 @@ from typing import Any
 from rich.text import Text
 from rich.tree import Tree
 
-from bench.grammar.benchmark import Benchmark
-from bench.grammar.builder import Factory, BuilderBase, as_build, const
-from bench.grammar.context import (
+from bench.builder.benchmark import Benchmark
+from bench.builder.base import Factory, BuilderBase, as_build, const
+from bench.builder.context import (
     Context,
     Data,
     SharedBenchParams,
@@ -39,7 +39,7 @@ from bench.denoise import (
     denoise_session,
     is_root,
 )
-from bench.grammar.suite import SuiteBuilder
+from bench.builder.suite import SuiteBuilder
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
     CompositeReporter,
@@ -52,7 +52,7 @@ from bench.report.reporter import (
     console,
     print_diagnostics,
 )
-from bench.core.model import Report, report_from_json
+from bench.core.results import Report, report_from_json
 from bench.runner.base import (
     Runner,
     plan,

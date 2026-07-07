@@ -8,7 +8,7 @@ from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from bench.core.model import Iteration
+from bench.core.results import Iteration
 
 
 class StoppingPolicy(abc.ABC):

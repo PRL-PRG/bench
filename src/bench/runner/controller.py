@@ -9,8 +9,8 @@ from collections.abc import Generator
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.policy import StoppingPolicy
 from bench.core.process import interrupted
-from bench.core.model import Iteration, Report, Execution, Sample
-from bench.grammar.benchmark import Benchmark
+from bench.core.results import Iteration, Report, Execution, Sample
+from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.source import make_source
 
