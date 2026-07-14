@@ -383,8 +383,9 @@ class ProgressReporter(Reporter):
 
     A top `Progress` bar tracks how many benchmarks finished and how many failed.
     Under it, each running benchmark has a bar with its progress count; command
-    benchmarks also show an elapsed estimate and ETA (a harness is one streaming
-    process, so it shows neither). Bars stretch to the screen edge. When a
+    benchmarks also show a per-iteration elapsed estimate (a harness omits that,
+    since its iterations aren't individually timed). Both show an ETA when the
+    iteration count is bounded. Bars stretch to the screen edge. When a
     benchmark finishes its bar is replaced by a persistent summary line printed
     above the live region, carrying the same elapsed stats as the final summary
     (or FAILED).
@@ -440,15 +441,15 @@ class ProgressReporter(Reporter):
         total = self._local.total
         total_str = str(total) if total is not None else "?"
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
-        # A harness is one streaming process: its per-iteration elapsed estimate
-        # and ETA are meaningless, so show only the spinner and progress count.
+        # A harness is one streaming process, so its per-iteration elapsed
+        # estimate isn't measured; it still gets an ETA when its iteration count
+        # is known (_EtaColumn self-blanks otherwise).
         columns: list[Any] = [SpinnerColumn()]
         if not b.harness:
             columns.append(TextColumn("elapsed estimate: {task.fields[est]}"))
         columns.append(BarColumn(bar_width=None))
         columns.append(TextColumn("{task.completed}/{task.fields[total_str]}"))
-        if not b.harness:
-            columns.append(_EtaColumn())
+        columns.append(_EtaColumn())
         prog = RichProgress(*columns, console=self._console)
         task_id = prog.add_task("", total=total, total_str=total_str, est="")
         with self._lock:

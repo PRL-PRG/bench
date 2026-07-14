@@ -175,6 +175,7 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             cooldown=self.cooldown,
             harness=self.harness,
             monitor=self.monitor(ctx),
+            kill_on_convergence=self.kill_on_convergence,
             data=self.data,
         )
         return dataclasses.replace(b, variant_label=self.label_fn(b))
@@ -197,6 +198,7 @@ class Benchmark(_DataAttrs):
     cooldown: float
     harness: bool
     monitor: HarnessMonitor | None
+    kill_on_convergence: bool
     data: Mapping[str, Any]
     # Filled by a follow-up `dataclasses.replace` once the benchmark exists
     # (the label fn needs the resolved Benchmark), so it keeps a default and

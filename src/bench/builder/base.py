@@ -186,6 +186,7 @@ class BuilderBase:
     label_fn: LabelFn = UNSET
     harness: bool = UNSET
     monitor: HarnessMonitorFactory = UNSET
+    kill_on_convergence: bool = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
 
@@ -313,20 +314,38 @@ class BuilderBase:
 
     # ----- harness ----------------------------------------------------
 
-    def with_harness(self, monitor: HarnessMonitor | None = UNSET) -> Self:
+    def with_harness(
+        self,
+        monitor: HarnessMonitor | None = UNSET,
+        *,
+        kill_on_convergence: bool = UNSET,
+    ) -> Self:
         """Mark as a harness: the command runs once and streams all iterations,
         each non-empty line (or framed block) an observation. On a suite or app
         it applies to every contained benchmark.
 
         `monitor` frames the output stream. Use `with_monitor_fn` if the monitor
-        needs to read `ctx`."""
-        m = monitor if monitor is UNSET else const(monitor)
-        return dataclasses.replace(self, harness=True, monitor=m)
+        needs to read `ctx`.
 
-    def with_monitor_fn(self, fn: HarnessMonitorFactory) -> Self:
+        `kill_on_convergence` (default False) leaves the process to finish on its
+        own once the stopping policy converges, so it reports its real exit code
+        (the common case: a harness that produces a fixed number of iterations and
+        exits). Set it True for a harness that streams forever and must be killed
+        when a policy such as CoefficientOfVariation converges; pair that with
+        `with_timeout` as a backstop."""
+        m = monitor if monitor is UNSET else const(monitor)
+        return dataclasses.replace(
+            self, harness=True, monitor=m, kill_on_convergence=kill_on_convergence
+        )
+
+    def with_monitor_fn(
+        self, fn: HarnessMonitorFactory, *, kill_on_convergence: bool = UNSET
+    ) -> Self:
         """Like `with_harness(monitor=...)`, but `fn` is `(ctx) -> HarnessMonitor`,
         built per-variant instead of a single reusable value."""
-        return dataclasses.replace(self, harness=True, monitor=fn)
+        return dataclasses.replace(
+            self, harness=True, monitor=fn, kill_on_convergence=kill_on_convergence
+        )
 
     # ----- inheritance ------------------------------------------------
 

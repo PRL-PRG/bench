@@ -22,13 +22,13 @@ def _planned(cmd, metric):
     return plan([s], None)[0]
 
 
-def _planned_harness(cmd, metric):
+def _planned_harness(cmd, metric, *, kill_on_convergence=False):
     s = (
         suite("H", bench("a").with_command(cmd))
         .with_cwd(Path("/tmp"))
         .with_metric(metric)
         .with_runs(1)
-        .with_harness()
+        .with_harness(kill_on_convergence=kill_on_convergence)
     )
     return plan([s], None)[0]
 
@@ -94,8 +94,14 @@ def test_harness_source_streams_one_observation_per_line():
 
 
 def test_harness_source_close_kills_long_process():
+    # kill_on_convergence=True: close() must terminate a still-running harness
+    # promptly instead of waiting for it to exit on its own.
     src = make_source(
-        _planned_harness(["sh", "-c", "echo 1.0; sleep 30; echo 2.0"], FloatPerLine("", metric="runtime"))
+        _planned_harness(
+            ["sh", "-c", "echo 1.0; sleep 30; echo 2.0"],
+            FloatPerLine("", metric="runtime"),
+            kill_on_convergence=True,
+        )
     )
     first, _ = src.next()  # blocks until the first line
     assert first.samples[0].value == 1.0

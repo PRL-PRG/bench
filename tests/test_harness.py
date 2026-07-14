@@ -82,10 +82,12 @@ def test_harness_monitor_fn_builds_from_context():
 
 
 def test_harness_killed_when_policy_converges():
-    # emits constant 1.0 ~20/sec, CoV warmup converges fast, then FixedRuns(2) measured
+    # emits constant 1.0 ~20/sec, CoV warmup converges fast, then FixedRuns(2) measured.
+    # A streaming harness never exits on its own, so kill_on_convergence=True is
+    # required: the Controller kills it once the policy converges.
     cmd = ["sh", "-c", "for i in $(seq 1000); do echo 1.0; sleep 0.05; done"]
     s = (
-        suite("H", bench("a").with_command(cmd).with_harness())
+        suite("H", bench("a").with_command(cmd).with_harness(kill_on_convergence=True))
         .with_cwd(Path("/tmp"))
         .with_metric(FloatPerLine("", metric="runtime").lower_is_better())
         .with_warmup(
@@ -213,12 +215,31 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
 
 
 def test_over_delivery_stops_at_policy():
-    # Under streaming, once the runs policy converges the Controller stops/kills
-    # the harness, so extra iterations are not kept.
+    # Once the runs policy converges the Controller stops pulling, so iterations
+    # the harness delivers beyond the policy count are not kept.
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
     report = Sequential().run(plan([s], None), None)
     assert len(report.executions) == 1
     assert len(report.executions[0].iterations) == 2
+    assert report.failures == []
+
+
+def test_no_kill_harness_exits_cleanly_not_killed():
+    # A harness that produces a fixed number of iterations and exits on its own
+    # must not be killed on convergence: with kill_on_convergence=False the
+    # framework waits for it and records its real exit code (0), not a kill. The
+    # sleep recreates the "about to exit" window where the default (kill) would
+    # SIGKILL it (reporting 124).
+    cmd = ["sh", "-c", "echo 1.0; echo 2.0; sleep 0.2; exit 0"]
+    s = (
+        suite("H", bench("a").with_command(cmd).with_harness(kill_on_convergence=False))
+        .with_cwd(Path("/tmp"))
+        .with_metric(FloatPerLine("", metric="runtime").lower_is_better())
+        .with_runs(2)
+    )
+    report = Sequential().run(plan([s], None), None)
+    assert len(report.executions) == 1
+    assert report.executions[0].returncode == 0
     assert report.failures == []
 
 

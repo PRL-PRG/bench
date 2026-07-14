@@ -57,6 +57,7 @@ DEFAULTS = BuilderBase(
     cooldown=0.0,
     harness=False,
     monitor=const(None),
+    kill_on_convergence=False,
     label_fn=default_label,
 )
 

@@ -446,9 +446,10 @@ def test_progress_harness_finished_line_labels_elapsed_and_says_harness():
     assert "samples" not in out and "runs" not in out
 
 
-def test_progress_harness_bar_drops_estimate_and_eta():
-    # Command bars carry an "elapsed estimate" column and an ETA; harness bars
-    # carry neither (nothing to estimate for one streaming process).
+def test_progress_harness_bar_drops_estimate_keeps_eta():
+    # Command bars carry an "elapsed estimate" column; harness bars drop it (a
+    # harness isn't timed per-iteration). Both carry an ETA column (_EtaColumn
+    # self-blanks when the total is unknown or a single iteration).
     from rich.progress import TextColumn
 
     from bench.report.reporter import _EtaColumn
@@ -477,6 +478,6 @@ def test_progress_harness_bar_drops_estimate_and_eta():
     command = _columns(bench("c").with_command(["true"]).with_process_metric(Time()))
 
     assert not _has_estimate(harness)
-    assert not any(isinstance(col, _EtaColumn) for col in harness)
+    assert any(isinstance(col, _EtaColumn) for col in harness)
     assert _has_estimate(command)
     assert any(isinstance(col, _EtaColumn) for col in command)

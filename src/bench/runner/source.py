@@ -220,6 +220,7 @@ class HarnessSource(ExecutionSource):
         self._iteration_metrics = b.iteration_metrics
         self._process_metrics = b.process_metrics
         self._monitor: HarnessMonitor = b.monitor or line_monitor
+        self._kill_on_convergence = b.kill_on_convergence
         self._q: queue.Queue[Any] = queue.Queue()
         self._taken: list[Iteration] = []
         self._proc_result: InvocationResult | None = None
@@ -305,16 +306,23 @@ class HarnessSource(ExecutionSource):
         return item, self._label
 
     def close(self) -> list[Execution]:
-        self._closed.set()
-        if self._live is not None and self._live.is_alive():
-            self._live.kill()
+        # kill_on_convergence=False: the harness produces a fixed number of
+        # iterations and exits on its own, so leave it to finish (the reader ends
+        # on natural EOF, .with_timeout() is the backstop) and report its real
+        # exit code instead of killing it.
+        if self._kill_on_convergence:
+            self._closed.set()
+            if self._live is not None and self._live.is_alive():
+                self._live.kill()
         if self._execution is None:
             self._execution = self._assemble()
         return [self._execution]
 
     def _assemble(self) -> Execution:
         if self._reader is not None:
-            self._reader.join(timeout=5)
+            # When not killing, block until the harness exits on its own; when
+            # killing, it dies promptly, so 5s is only a safety margin.
+            self._reader.join(timeout=None if not self._kill_on_convergence else 5)
         result = self._proc_result
         assert result is not None
 
