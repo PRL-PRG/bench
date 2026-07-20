@@ -8,7 +8,7 @@ from rich.console import Console
 from bench import (
     Compact,
     DefaultSummary,
-    GroupedSummary,
+    GeomeanSummary,
     Iteration,
     Report,
     Results,
@@ -235,12 +235,12 @@ def test_ranking_empty_across_distinct_benchmarks():
     assert Summary()(_data(Report(executions=runs))) == ""
 
 
-# ----- GroupedSummary (within-run axis ranking) ------------------------------
+# ----- GeomeanSummary (within-run axis ranking) ------------------------------
 
 
 def test_grouped_summary_about_the_same():
     r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 1.0}})
-    out = _strip(GroupedSummary(axis="interp", metric="elapsed")(_data(r)))
+    out = _strip(GeomeanSummary(axis="interp", metrics="elapsed")(_data(r)))
     assert "about the same" in out
     assert "1.00×" not in out
 
@@ -261,7 +261,7 @@ def test_default_summary_composes_results_and_ranking():
 def test_summary_reporter_renders_composed_formatter():
     buf = StringIO()
     rep = SummaryReporter(
-        Results() & GroupedSummary(axis="interp", metric="elapsed"),
+        Results() & GeomeanSummary(axis="interp", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
     for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).executions:
@@ -269,7 +269,7 @@ def test_summary_reporter_renders_composed_formatter():
     rep.finalize()
     out = buf.getvalue()
     assert "S/x" in out  # Results
-    assert "Summary (geomean) - interp" in out  # GroupedSummary
+    assert "Summary (geomean) - interp" in out  # GeomeanSummary
 
 
 # ----- Compact ---------------------------------------------------------------

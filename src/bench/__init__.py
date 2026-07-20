@@ -93,7 +93,7 @@ from bench.report.formatter import (
     Compact,
     DefaultSummary,
     Formatter,
-    GroupedSummary,
+    GeomeanSummary,
     Results,
     Summary,
 )
@@ -176,7 +176,7 @@ __all__ = [
     "Formatter",
     "Results",
     "Summary",
-    "GroupedSummary",
+    "GeomeanSummary",
     "DefaultSummary",
     "Compact",
     # BenchAppBuilder + run pipeline

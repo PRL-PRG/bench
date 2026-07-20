@@ -82,7 +82,7 @@ class Summary(_MetricFilter):
         )
 
 
-class GroupedSummary(Formatter):
+class GeomeanSummary(Formatter):
     """Rank the values of one matrix `axis` by the geometric mean over
     benchmarks. `ref` pins one axis value as the baseline reference (otherwise
     the best performer is used)."""
@@ -91,25 +91,16 @@ class GroupedSummary(Formatter):
         self,
         *,
         axis: str,
-        metric: str | None = None,
-        metrics: set[str] | None = None,
+        metrics: str | set[str] | None = None,
         ref: str | None = None,
     ) -> None:
         self.axis = axis
-        self.metric = metric
-        self.metrics = metrics
+        self.metrics = {metrics} if isinstance(metrics, str) else metrics
         self.ref = ref
 
     def __call__(self, stats: list[Stat]) -> str:
         return "\n".join(
-            by_axis(
-                stats,
-                self.axis,
-                RICH,
-                metric=self.metric,
-                metrics=self.metrics,
-                ref=self.ref,
-            )
+            by_axis(stats, self.axis, RICH, metrics=self.metrics, ref=self.ref)
         )
 
 

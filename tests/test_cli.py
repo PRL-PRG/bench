@@ -188,12 +188,12 @@ def test_compare_missing_file_errors(tmp_path: Path):
 
 def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     # `./my-bench --show r.json` renders a saved report with the script's own
-    # configured formatter (here a GroupedSummary), running nothing.
+    # configured formatter (here a GeomeanSummary), running nothing.
     from io import StringIO
 
     from rich.console import Console
 
-    from bench import GroupedSummary, Results, SummaryReporter, Time
+    from bench import GeomeanSummary, Results, SummaryReporter, Time
 
     s = (
         suite("s")
@@ -209,12 +209,12 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
 
     buf = StringIO()
     reporter = SummaryReporter(
-        Results() & GroupedSummary(axis="sleep", metric="elapsed"),
+        Results() & GeomeanSummary(axis="sleep", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
     bench_app(reporter=reporter).add_all(s).run(["--show", str(out)])
     text = buf.getvalue()
-    assert "Summary (geomean) - sleep" in text  # the configured GroupedSummary ran
+    assert "Summary (geomean) - sleep" in text  # the configured GeomeanSummary ran
 
 
 def test_bench_help_describes_subcommand():

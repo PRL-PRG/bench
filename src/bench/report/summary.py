@@ -551,7 +551,6 @@ def _axis_view(
     *,
     key: Callable[[Stat], Hashable],
     head: Callable[[Stat], str],
-    metric: str | None = None,
     metrics: set[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
@@ -564,8 +563,6 @@ def _axis_view(
     blocks: list[list[str]] = []
     for grp in group_by(axial, key).values():
         metric_ = grp[0].metric
-        if metric is not None and metric_ != metric:
-            continue
         if not _keep(metric_, metrics):
             continue
         header = (
@@ -586,7 +583,6 @@ def by_axis(
     axis: str,
     r: Renderer,
     *,
-    metric: str | None = None,
     metrics: set[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
@@ -596,7 +592,6 @@ def by_axis(
         r,
         key=lambda s: (s.suite, s.mk),
         head=lambda s: s.suite,
-        metric=metric,
         metrics=metrics,
         ref=ref,
     )

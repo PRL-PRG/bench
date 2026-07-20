@@ -342,7 +342,7 @@ def test_ranking_axis_folds_residual_within_each_benchmark():
 
 
 def test_by_axis_ranks_values_best_first():
-    out = _strip(by_axis(summarize(_matrix()), "vm", RICH, metric="elapsed"))
+    out = _strip(by_axis(summarize(_matrix()), "vm", RICH, metrics={"elapsed"}))
     assert "Summary (geomean) - vm - S" in out
     assert out.index("python3.14") < out.index("python3.9")
     assert "2.00" in out and "× better than" in out
@@ -357,7 +357,7 @@ def test_by_axis_ref_pins_reference():
     # Without ref, python3.14 (fastest) is the subject. ref pins python3.9 as the
     # baseline so it becomes the subject and reads as the worse one.
     out = _strip(
-        by_axis(summarize(_matrix()), "vm", RICH, metric="elapsed", ref="python3.9")
+        by_axis(summarize(_matrix()), "vm", RICH, metrics={"elapsed"}, ref="python3.9")
     )
     assert "python3.9 was" in out
     assert "× worse than" in out and "2.00" in out
@@ -373,7 +373,7 @@ def test_merge_reports_tags_each_run_with_compare_axis():
     assert len(merged.executions) == 2
     assert {dict(run.variant)["compare"] for run in merged.executions} == {"a", "b"}
     # Summarized over the compare axis, the two files rank against each other.
-    out = _strip(by_axis(summarize(merged), "compare", RICH, metric="elapsed"))
+    out = _strip(by_axis(summarize(merged), "compare", RICH, metrics={"elapsed"}))
     assert "Summary (geomean) - compare - S" in out
     assert "× better than" in out and "2.00" in out
 
