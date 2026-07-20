@@ -23,11 +23,11 @@ s = (
 run(s)
 
 # a better comparison across experiments
-# from bench import GroupedSummary, Results, Summary, SummaryReporter
+# from bench import GeomeanSummary, Results, Summary, SummaryReporter
 # run(
 #     s,
 #     reporter=SummaryReporter(
-#         Results() & Summary() & GroupedSummary(axis="vm", metric="elapsed"),
+#         Results() & Summary() & GeomeanSummary(axis="vm", metrics="elapsed"),
 #     ),
 # )
 

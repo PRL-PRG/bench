@@ -7,7 +7,7 @@
 # ///
 from __future__ import annotations
 
-from bench import GroupedSummary, Results, Summary, Time, bench, bench_app, suite
+from bench import GeomeanSummary, Results, Summary, Time, bench, bench_app, suite
 from bench.core.metric import max_rss
 from bench.report.reporter import SummaryReporter
 
@@ -26,7 +26,7 @@ s = (
 
 bench_app(
     summary=SummaryReporter(
-        Results() & Summary() & GroupedSummary(axis="vm", metric="elapsed"),
+        Results() & Summary() & GeomeanSummary(axis="vm", metrics="elapsed"),
     )
 ).add_all(s).run()
 

@@ -7,6 +7,7 @@
 # ///
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,9 +15,9 @@ from pathlib import Path
 from bench import (
     Context,
     FixedRuns,
-    GroupedSummary,
+    FloatPerLine,
+    GeomeanSummary,
     HarnessHandle,
-    Regex,
     Results,
     SharedBenchParams,
     Summary,
@@ -39,8 +40,9 @@ class Params(SharedBenchParams):
 def awfy_monitor(handle: HarnessHandle) -> Iterator[str]:
     """Frame each `... runtime: <us>us` line as one iteration, drop the rest."""
     for line in line_monitor(handle):
-        if "runtime: " in line:
-            yield line
+        match = re.search(r"runtime: (\d+)us", line)
+        if match:
+            yield match.group(1)
 
 
 def command(ctx: Context[Params]) -> list[str]:
@@ -52,6 +54,7 @@ def command(ctx: Context[Params]) -> list[str]:
 
 awfy = (
     suite("AreWeFastYet")
+    .add(bench("Bounce", arg=1500))
     .add(bench("CD", arg=250))
     .add(bench("DeltaBlue", arg=12000))
     .add(bench("Havlak", arg=1500))
@@ -69,7 +72,7 @@ awfy = (
     .with_command(command)
     .with_cwd(lambda ctx: ctx.params.awfy)  # so AWFY's `import <bench>` resolves
     .with_harness(monitor=awfy_monitor)
-    .with_metric(Regex("runtime", r"runtime: (\d+)us", unit="us").lower_is_better())
+    .with_metric(FloatPerLine(metric="runtime", unit="us").lower_is_better())
     .with_process_metric(max_rss())
     .with_timeout(600)
     .with_warmup(lambda ctx: FixedRuns(ctx.params.warmup))
@@ -77,7 +80,7 @@ awfy = (
 )
 
 
-grouped = GroupedSummary(axis="vm", metric="runtime")
+grouped = GeomeanSummary(axis="vm", metrics={"runtime", "max_rss"})
 summary = SummaryReporter(Results() & Summary() & grouped)
 
 bench_app("AWFY", params=Params, summary=summary).add_all(awfy).run()
