@@ -17,7 +17,16 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import BenchmarkBuilder, Regex, SharedBenchParams, Time, bench, bench_app, max_rss, suite
+from bench import (
+    BenchmarkBuilder,
+    Regex,
+    SharedBenchParams,
+    Time,
+    bench,
+    bench_app,
+    max_rss,
+    suite,
+)
 
 
 @dataclass(frozen=True)

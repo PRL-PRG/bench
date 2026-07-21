@@ -12,7 +12,15 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Context, Rebench, SharedBenchParams, bench_app, from_files, max_rss, suite
+from bench import (
+    Context,
+    Rebench,
+    SharedBenchParams,
+    bench_app,
+    from_files,
+    max_rss,
+    suite,
+)
 
 
 @dataclass(frozen=True)
