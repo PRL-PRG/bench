@@ -30,10 +30,9 @@ class Dry(Runner):
     produces no results to report.
     """
 
-    def run(self, planned: list[Benchmark]) -> Report:
+    def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
         for b in planned:
             self._print_executions(b)
-        return Report()
 
     def _print_executions(self, b: Benchmark) -> None:
         if b.harness:

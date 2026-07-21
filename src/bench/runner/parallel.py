@@ -77,21 +77,20 @@ class Parallel(Runner):
         self.controller = controller
         self.workers = workers
 
-    def run(self, planned: list[Benchmark]) -> Report:
-        with self._session(planned) as report:
-            lock = threading.Lock()
-            locked_report = _LockedReport(report, lock)
-            locked_reporter = _LockedReporter(self.reporter, lock)
+    def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
+        lock = threading.Lock()
+        locked_report = _LockedReport(report, lock)
+        locked_reporter = _LockedReporter(self.reporter, lock)
 
-            def _one(p: Benchmark) -> None:
-                # Don't start a benchmark once Ctrl+C has fired. The kill sweep
-                # has already run, so a process started now would be orphaned.
-                if interrupted():
-                    return
-                self.controller.run_benchmark(
-                    p, locked_report, locked_reporter, self.verbose
-                )
+        def _one(p: Benchmark) -> None:
+            # Don't start a benchmark once Ctrl+C has fired. The kill sweep
+            # has already run, so a process started now would be orphaned.
+            if interrupted():
+                return
+            self.controller.run_benchmark(
+                p, locked_report, locked_reporter, self.verbose
+            )
 
-            with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                list(pool.map(_one, planned))
-        return report
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            for p in planned:
+                pool.submit(_one, p)

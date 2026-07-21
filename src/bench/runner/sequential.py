@@ -23,10 +23,8 @@ class Sequential(Runner):
         super().__init__(reporter, verbose=verbose)
         self.controller = controller
 
-    def run(self, planned: list[Benchmark]) -> Report:
-        with self._session(planned) as report:
-            for p in planned:
-                if interrupted():
-                    break
-                self.controller.run_benchmark(p, report, self.reporter, self.verbose)
-        return report
+    def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
+        for p in planned:
+            if interrupted():
+                break
+            self.controller.run_benchmark(p, report, self.reporter, self.verbose)

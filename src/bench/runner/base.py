@@ -163,5 +163,19 @@ class Runner(abc.ABC):
         finally:
             self.reporter.finalize()
 
+    def run(self, planned: list[Benchmark]) -> Report:
+        self.reporter.start(planned)
+        report = Report()
+
+        try:
+            with install_sigint_handler():
+                self.run_with_report(planned, report)
+                if interrupted():
+                    raise KeyboardInterrupt
+        finally:
+            self.reporter.finalize()
+
+        return report
+
     @abc.abstractmethod
-    def run(self, planned: list[Benchmark]) -> Report: ...
+    def run_with_report(self, planned: list[Benchmark], report: Report) -> None: ...
