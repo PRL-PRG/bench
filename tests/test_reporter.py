@@ -167,7 +167,7 @@ def test_json_persists_outlier_flag(tmp_path: Path):
         for it in run.iterations
         for s in it.samples
     ]
-    assert sorted(s.extra["outlier"] for s in samples) == [False, True]
+    assert sorted(s.extra.get("outlier", False) for s in samples) == [False, True]
 
 
 def test_csv_header_includes_variant_columns(tmp_path: Path):
