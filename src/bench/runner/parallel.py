@@ -67,9 +67,9 @@ class Parallel(Runner):
     """Run up to N benchmark `Controller`s concurrently on a thread pool."""
 
     def __init__(
-        self, workers: int, reporter: Reporter | None = None, **kwargs: Any
+        self, workers: int, reporter: Reporter | None = None, *, verbose: bool = False
     ) -> None:
-        super().__init__(reporter, **kwargs)
+        super().__init__(reporter, verbose=verbose)
         self.workers = workers
 
     def run(self, planned: list[Benchmark], params: Any = None) -> Report:
