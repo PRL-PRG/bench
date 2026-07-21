@@ -118,8 +118,7 @@ class CommandSource(ExecutionSource):
             print(format_benchmark_verbose(b, self._run))
         result = execute(b.invocation)
 
-        success = b.success if b.success is not None else default_success
-        result = _apply_verdict(result, success(result))
+        result = _apply_verdict(result, b.success(result))
 
         label = format_identifier(
             b.suite, b.name, b.variant, self._run, b.variant_label
