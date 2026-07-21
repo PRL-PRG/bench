@@ -34,7 +34,7 @@ def test_e2e_sleep_runs_produce_expected_count():
         .with_process_metric(Time())
         .with_runs(3),
     )
-    pairs = _all_samples(Sequential().run(plan([s], None), None))
+    pairs = _all_samples(Sequential().run(plan([s], None)))
     elapsed = [sm.value for _, sm in pairs if sm.metric == "elapsed"]
     assert len(elapsed) == 3
     assert all(0.01 < v < 0.5 for v in elapsed)
@@ -50,7 +50,7 @@ def test_e2e_warmup_then_measure():
         .with_warmup(2)
         .with_runs(2),
     )
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     # Continuous numbering: the first two iterations are flagged warmup.
     assert [r.run for r in report.executions] == [1, 2, 3, 4]
     assert [o.warmup for r in report.executions for o in r.iterations] == [
@@ -71,7 +71,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         .with_process_metric(Time())
         .with_runs(3),
     )
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
+    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
@@ -89,7 +89,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         .with_timeout(0.05)
         .with_runs(1),
     )
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
+    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     assert _all_samples(report) == []
     r = report_from_json(out.read_text())
     assert len(r.failures) == 1

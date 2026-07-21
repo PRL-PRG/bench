@@ -12,8 +12,6 @@ prints one line with a `[harness]` marker.
 
 from __future__ import annotations
 
-from typing import Any
-
 from bench.core.invocation import format_identifier
 from bench.core.results import Report
 from bench.builder.benchmark import Benchmark
@@ -32,7 +30,7 @@ class Dry(Runner):
     produces no results to report.
     """
 
-    def run(self, planned: list[Benchmark], params: Any = None) -> Report:
+    def run(self, planned: list[Benchmark]) -> Report:
         for b in planned:
             self._print_executions(b)
         return Report()

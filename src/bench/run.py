@@ -201,9 +201,9 @@ class BenchAppBuilder(BuilderBase):
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                report = runner.run(planned, build_params)
+                report = runner.run(planned)
         else:
-            report = runner.run(planned, build_params)
+            report = runner.run(planned)
 
         report.environment = env
         report.diagnostics = env_diagnostics

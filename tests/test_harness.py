@@ -74,7 +74,7 @@ def test_harness_monitor_fn_builds_from_context():
         .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(2)
     )
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert [o.samples[0].value for o in report.executions[0].iterations] == [1.0, 2.0]
 
 
@@ -96,7 +96,7 @@ def test_harness_killed_when_policy_converges():
         .with_runs(2)
     )
     t = time.monotonic()
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     elapsed = time.monotonic() - t
     assert len(report.executions) < 50, (
         f"expected early stop, got {len(report.executions)} runs"
@@ -110,7 +110,7 @@ def test_harness_killed_when_policy_converges():
 
 def test_one_execution_is_one_run_with_observations():
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"), warmup=2, runs=3)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     run = report.executions[0]
     assert [o.samples[0].value for o in run.iterations] == [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -122,7 +122,7 @@ def test_multi_metric_iterations_pair_up():
     cmd = ["sh", "-c", "echo 't: 1.0 m: 10'; echo 't: 2.0 m: 20'"]
     s = _harness_suite(cmd, runs=2, metric=FloatPerLine("ms", metric="runtime"))
     s = s.with_metric(Regex("t", r"t: ([\d.]+)"), Regex("m", r"m: ([\d.]+)"))
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     obs = report.executions[0].iterations
     assert [(smp.metric, smp.value) for smp in obs[0].samples] == [
@@ -133,21 +133,21 @@ def test_multi_metric_iterations_pair_up():
 
 def test_failed_execution_is_one_failed_record():
     s = _harness_suite(["sh", "-c", "exit 3"], runs=5)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert report.executions[0].failure == "exit code 3"
 
 
 def test_timeout_is_one_failed_record():
     s = _harness_suite(["sleep", "5"], runs=2).with_timeout(0.1)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert report.executions[0].returncode == 124
 
 
 def test_no_parsable_output_is_a_loud_failure():
     s = _harness_suite(["sh", "-c", "echo hello"], runs=3)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert "no iterations parsed" in (report.executions[0].failure or "")
 
@@ -156,7 +156,7 @@ def test_under_delivery_records_what_was_delivered():
     # The harness produced fewer iterations than the runs policy wanted. We
     # keep what was delivered (no synthetic short-delivery failure).
     s = _harness_suite(_echo_lines("1.0", "2.0"), runs=3)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert [o.samples[0].value for o in report.executions[0].iterations] == [1.0, 2.0]
     assert report.failures == []
@@ -177,7 +177,7 @@ def test_monitor_exception_fails_the_run():
         .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(3)
     )
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert len(report.failures) == 1
     assert "boom" in (report.executions[0].failure or "")
@@ -203,7 +203,7 @@ def test_monitor_exception_after_delivery_records_one_failed_run():
         .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
         .with_runs(5)
     )
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     # One run: failed (the monitor broke), but the two delivered observations
     # are kept.
     assert len(report.executions) == 1
@@ -218,7 +218,7 @@ def test_over_delivery_stops_at_policy():
     # Once the runs policy converges the Controller stops pulling, so iterations
     # the harness delivers beyond the policy count are not kept.
     s = _harness_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"), runs=2)
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert len(report.executions[0].iterations) == 2
     assert report.failures == []
@@ -237,7 +237,7 @@ def test_no_kill_harness_exits_cleanly_not_killed():
         .with_metric(FloatPerLine("", metric="runtime").lower_is_better())
         .with_runs(2)
     )
-    report = Sequential().run(plan([s], None), None)
+    report = Sequential().run(plan([s], None))
     assert len(report.executions) == 1
     assert report.executions[0].returncode == 0
     assert report.failures == []
@@ -254,7 +254,7 @@ def test_harness_process_metric_reaches_json_file(tmp_path: Path):
         .with_runs(2)
         .with_harness()
     )
-    Sequential(reporter=JsonReporter(out)).run(plan([s], None), None)
+    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     loaded = report_from_json(out.read_text())
     assert any(
         s.metric == "elapsed" for run in loaded.executions for s in run.process_samples
@@ -277,7 +277,7 @@ def test_parallel_runs_harness_benchmarks():
         .with_runs(1)
         .with_harness()
     )
-    report = Parallel(workers=2).run(plan([s], None), None)
+    report = Parallel(workers=2).run(plan([s], None))
     by_bench = {}
     for r in report.executions:
         by_bench.setdefault(r.benchmark, []).extend(
@@ -291,7 +291,7 @@ def test_parallel_runs_harness_benchmarks():
 
 def test_dry_prints_one_harness_line(capsys):
     s = _harness_suite(_echo_lines("1.0"), warmup=2, runs=3)
-    Dry().run(plan([s], None), None)
+    Dry().run(plan([s], None))
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert len(lines) == 1
     assert lines[0].endswith("[harness, warmup 2, runs 3]")

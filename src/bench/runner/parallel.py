@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any
 
 from bench.core.process import interrupted
 from bench.core.results import Iteration, Report, Execution
@@ -78,7 +77,7 @@ class Parallel(Runner):
         self.controller = controller
         self.workers = workers
 
-    def run(self, planned: list[Benchmark], params: Any = None) -> Report:
+    def run(self, planned: list[Benchmark]) -> Report:
         with self._session(planned) as report:
             lock = threading.Lock()
             locked_report = _LockedReport(report, lock)
