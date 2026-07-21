@@ -67,9 +67,15 @@ class Parallel(Runner):
     """Run up to N benchmark `Controller`s concurrently on a thread pool."""
 
     def __init__(
-        self, workers: int, reporter: Reporter | None = None, *, verbose: bool = False
+        self,
+        workers: int,
+        controller: Controller = Controller(),
+        reporter: Reporter | None = None,
+        *,
+        verbose: bool = False,
     ) -> None:
         super().__init__(reporter, verbose=verbose)
+        self.controller = controller
         self.workers = workers
 
     def run(self, planned: list[Benchmark], params: Any = None) -> Report:
@@ -83,10 +89,9 @@ class Parallel(Runner):
                 # has already run, so a process started now would be orphaned.
                 if interrupted():
                     return
-                Controller(
-                    locked_reporter,
-                    verbose=self.verbose,
-                ).run_benchmark(p, locked_report)
+                self.controller.run_benchmark(
+                    p, locked_report, locked_reporter, self.verbose
+                )
 
             with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 list(pool.map(_one, planned))

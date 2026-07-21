@@ -123,21 +123,12 @@ class Controller:
     The source owns scheduling and spawning.
     """
 
-    def __init__(
-        self,
-        reporter: Reporter,
-        *,
-        verbose: bool = False,
-    ) -> None:
-        self.reporter = reporter
-        self.verbose = verbose
-
-    def run_benchmark(self, b: Benchmark, report: Report) -> None:
+    def run_benchmark(self, b: Benchmark, report: Report, reporter: Reporter, verbose: bool = False) -> None:
         if interrupted():
             return
 
-        self.reporter.benchmark_start(b)
-        source = make_source(b, verbose=self.verbose)
+        reporter.benchmark_start(b)
+        source = make_source(b, verbose=verbose)
 
         warmup_iters = 0
 
@@ -162,7 +153,7 @@ class Controller:
                 except StopIteration:
                     break
 
-                self.reporter.iteration(it, label)
+                reporter.iteration(it, label)
                 if in_warmup:
                     warmup_iters += 1
                 if interrupted():
@@ -177,5 +168,5 @@ class Controller:
             executions = _mark_outliers(executions, b.outlier_detection)
             for execution in executions:
                 report.add(execution)
-                self.reporter.execution_done(execution)
-            self.reporter.benchmark_done(b, executions)
+                reporter.execution_done(execution)
+            reporter.benchmark_done(b, executions)

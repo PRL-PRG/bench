@@ -86,7 +86,7 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     _patch(monkeypatch, [_obs(i) for i in range(1, 4)], closed)
     rep = _Collect()
     report = Report()
-    Controller(rep).run_benchmark(_planned(FixedRuns(3)), report)
+    Controller().run_benchmark(_planned(FixedRuns(3)), report, rep)
 
     assert [r.run for r in report.executions] == [1, 2, 3]
     assert [r.iterations[0].samples[0].value for r in report.executions] == [
@@ -105,7 +105,7 @@ def test_stops_when_policy_converges(monkeypatch):
     closed = []
     _patch(monkeypatch, [_obs(1) for _ in range(10)], closed)
     report = Report()
-    Controller(_Collect()).run_benchmark(_planned(FixedRuns(2)), report)
+    Controller().run_benchmark(_planned(FixedRuns(2)), report, _Collect())
 
     assert len(report.executions) == 2
     assert closed == [True]
@@ -117,7 +117,7 @@ def test_outliers_marked_across_runs(monkeypatch):
     values = [10.0, 11.0, 12.0, 10.0, 11.0, 12.0, 10.0, 100.0]
     _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller(_Collect()).run_benchmark(_planned(FixedRuns(8)), report)
+    Controller().run_benchmark(_planned(FixedRuns(8)), report, _Collect())
 
     flags = [r.iterations[0].samples[0].extra.get("outlier", False) for r in report.executions]
     assert flags == [False] * 7 + [True]
@@ -127,8 +127,8 @@ def test_no_detection_leaves_samples_unmarked(monkeypatch):
     values = [1.0] * 7 + [100.0]
     _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller(_Collect()).run_benchmark(
-        _planned(FixedRuns(8), outlier_detection=NoDetection()), report
+    Controller().run_benchmark(
+        _planned(FixedRuns(8), outlier_detection=NoDetection()), report, _Collect()
     )
 
     assert all(
@@ -142,7 +142,7 @@ def test_warmup_iterations_excluded_from_detection(monkeypatch):
     values = [100.0] + [1.0] * 7
     _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller(_Collect()).run_benchmark(_planned(FixedRuns(7), warmup=1), report)
+    Controller().run_benchmark(_planned(FixedRuns(7), warmup=1), report, _Collect())
 
     assert all(
         not r.iterations[0].samples[0].extra.get("outlier", False) for r in report.executions
@@ -155,7 +155,7 @@ def test_warmup_boundary_marked_on_iterations(monkeypatch):
     _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
     rep = _Collect()
     report = Report()
-    Controller(rep).run_benchmark(_planned(FixedRuns(3), warmup=2), report)
+    Controller().run_benchmark(_planned(FixedRuns(3), warmup=2), report, rep)
 
     assert len(report.executions) == 5
     assert [r.iterations[0].warmup for r in report.executions] == [
