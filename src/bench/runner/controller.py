@@ -4,55 +4,13 @@ from __future__ import annotations
 
 import dataclasses
 import time
-from collections.abc import Generator
 
 from bench.core.outlier import NoDetection, OutlierDetection
-from bench.core.policy import StoppingPolicy
 from bench.core.process import interrupted
 from bench.core.results import Iteration, Report, Execution, Sample
 from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.source import make_source
-
-
-def benchmarking_loop(
-    warmup: StoppingPolicy,
-    runs: StoppingPolicy,
-) -> Generator[bool, Iteration, None]:
-    """Yield `in_warmup` per slot until both policies converge.
-
-    Every iteration, including a failed one (empty samples), counts:
-    the active policy observes it and decides.
-    """
-    for policy, in_warmup in ((warmup, True), (runs, False)):
-        state = policy.start()
-        while not state.satisfied():
-            iteration = yield in_warmup
-            state.observe(iteration)
-
-
-def _mark_warmup(executions: list[Execution], warmup: int) -> list[Execution]:
-    """Flag the first `warmup` iterations (in pull order, across executions) as
-    warmup. The Controller knows the warmup boundary (it drove the warmup
-    policy), so it stamps it onto the assembled Executions. The flag then travels
-    with the data."""
-    if warmup <= 0:
-        return executions
-    remaining = warmup
-    out: list[Execution] = []
-    for execution in executions:
-        if remaining <= 0:
-            out.append(execution)
-            continue
-        new_iters: list[Iteration] = []
-        for it in execution.iterations:
-            if remaining > 0:
-                new_iters.append(dataclasses.replace(it, warmup=True))
-                remaining -= 1
-            else:
-                new_iters.append(it)
-        out.append(dataclasses.replace(execution, iterations=new_iters))
-    return out
 
 
 def _mark_outliers(
@@ -123,50 +81,43 @@ class Controller:
     The source owns scheduling and spawning.
     """
 
-    def run_benchmark(self, b: Benchmark, report: Report, reporter: Reporter, verbose: bool = False) -> None:
+    def run_benchmark(
+        self, b: Benchmark, report: Report, reporter: Reporter, verbose: bool = False
+    ) -> None:
         if interrupted():
             return
 
         reporter.benchmark_start(b)
         source = make_source(b, verbose=verbose)
 
-        warmup_iters = 0
-
-        loop = benchmarking_loop(b.warmup, b.runs)
-        try:
-            in_warmup: bool | None = next(loop)
-        except StopIteration:
-            in_warmup = None
-
         # Cooldown pauses between separate process executions. A harness is one
         # streaming process, so its iterations are not separate executions.
         cooldown = b.cooldown if not b.harness else 0.0
         first = True
 
-        try:
-            while in_warmup is not None:
-                if not first and cooldown > 0:
-                    time.sleep(cooldown)
-                first = False
+        for policy, in_warmup in ((b.warmup, True), (b.runs, False)):
+            policy_state = policy.start()
+            while not policy_state.satisfied():
                 try:
-                    it, label = source.next()
-                except StopIteration:
-                    break
+                    if not first and cooldown > 0:
+                        time.sleep(cooldown)
+                    first = False
+                    try:
+                        it, label = source.next()
+                    except StopIteration:
+                        break
 
-                reporter.iteration(it, label)
-                if in_warmup:
-                    warmup_iters += 1
-                if interrupted():
-                    break
+                    if in_warmup:
+                        it = dataclasses.replace(it, warmup=True)
 
-                try:
-                    in_warmup = loop.send(it)
-                except StopIteration:
-                    break
-        finally:
-            executions = _mark_warmup(source.close(), warmup_iters)
-            executions = _mark_outliers(executions, b.outlier_detection)
-            for execution in executions:
-                report.add(execution)
-                reporter.execution_done(execution)
-            reporter.benchmark_done(b, executions)
+                    reporter.iteration(it, label)
+                    if interrupted():
+                        break
+
+                    policy_state.observe(it)
+                finally:
+                    executions = source.close()
+                    executions = _mark_outliers(executions, b.outlier_detection)
+                    for execution in executions:
+                        report.add(execution)
+                        reporter.execution_done(execution)
