@@ -167,7 +167,7 @@ def _sample_row(base: dict[str, Any], s: Sample) -> dict[str, Any]:
         "value": s.value,
         "unit": s.unit,
         "lower_is_better": "" if s.lower_is_better is None else str(s.lower_is_better),
-        "outlier": str(s.outlier),
+        "outlier": str(s.extra.get("outlier", False)),
         "failure": "",
     }
 

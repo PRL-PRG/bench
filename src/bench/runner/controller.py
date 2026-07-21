@@ -94,7 +94,9 @@ def _mark_outliers(
             it_changed = False
             for s in it.samples:
                 if next(cursors[(s.metric, s.unit)]):
-                    new_samples.append(dataclasses.replace(s, outlier=True))
+                    new_samples.append(
+                        dataclasses.replace(s, extra=dict(s.extra) | {"outlier": True})
+                    )
                     it_changed = True
                 else:
                     new_samples.append(s)

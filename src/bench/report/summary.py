@@ -101,7 +101,7 @@ def summarize(report: Report) -> list[Stat]:
         if s.lower_is_better is not None:
             lib[mk] = s.lower_is_better
         a.values.setdefault(mk, []).append(s.value)
-        if s.outlier:
+        if s.extra.get("outlier", False):
             a.outliers[mk] = a.outliers.get(mk, 0) + 1
 
     for r in report.executions:

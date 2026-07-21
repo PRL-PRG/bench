@@ -118,7 +118,11 @@ def test_results_warns_on_outliers():
                 3,
                 samples=[
                     Sample(
-                        "runtime", 100.0, unit="s", lower_is_better=True, outlier=True
+                        "runtime",
+                        100.0,
+                        unit="s",
+                        lower_is_better=True,
+                        extra={"outlier": True},
                     )
                 ],
             ),

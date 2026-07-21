@@ -119,7 +119,7 @@ def test_outliers_marked_across_runs(monkeypatch):
     report = Report()
     Controller(_Collect()).run_benchmark(_planned(FixedRuns(8)), report)
 
-    flags = [r.iterations[0].samples[0].outlier for r in report.executions]
+    flags = [r.iterations[0].samples[0].extra["outlier"] for r in report.executions]
     assert flags == [False] * 7 + [True]
 
 
@@ -131,7 +131,9 @@ def test_no_detection_leaves_samples_unmarked(monkeypatch):
         _planned(FixedRuns(8), outlier_detection=NoDetection()), report
     )
 
-    assert all(not r.iterations[0].samples[0].outlier for r in report.executions)
+    assert all(
+        not r.iterations[0].samples[0].extra["outlier"] for r in report.executions
+    )
 
 
 def test_warmup_iterations_excluded_from_detection(monkeypatch):
@@ -142,7 +144,9 @@ def test_warmup_iterations_excluded_from_detection(monkeypatch):
     report = Report()
     Controller(_Collect()).run_benchmark(_planned(FixedRuns(7), warmup=1), report)
 
-    assert all(not r.iterations[0].samples[0].outlier for r in report.executions)
+    assert all(
+        not r.iterations[0].samples[0].extra["outlier"] for r in report.executions
+    )
 
 
 def test_warmup_boundary_marked_on_iterations(monkeypatch):

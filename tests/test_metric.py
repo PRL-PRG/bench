@@ -32,7 +32,9 @@ def test_float_per_line_basic():
 
 
 def test_float_per_line_skips_garbage():
-    samples = list(FloatPerLine("s", metric="runtime").process("garbage\n1.0\nmore\n2.0\n"))
+    samples = list(
+        FloatPerLine("s", metric="runtime").process("garbage\n1.0\nmore\n2.0\n")
+    )
     assert [s.value for s in samples] == [1.0, 2.0]
 
 
@@ -42,7 +44,10 @@ def test_float_per_line_empty_text_emits_nothing():
 
 def test_line_select_last_and_nth():
     text = "1\n2\n3\n"
-    assert list(FloatPerLine("s", metric="runtime").last_line().process(text))[0].value == 3
+    assert (
+        list(FloatPerLine("s", metric="runtime").last_line().process(text))[0].value
+        == 3
+    )
     assert list(FloatPerLine("s", metric="runtime").nth(2).process(text))[0].value == 2
 
 

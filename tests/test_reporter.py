@@ -132,7 +132,11 @@ def _flagged_run() -> Execution:
                 samples=[
                     Sample("runtime", 1.0, unit="s", lower_is_better=True),
                     Sample(
-                        "runtime", 100.0, unit="s", lower_is_better=True, outlier=True
+                        "runtime",
+                        100.0,
+                        unit="s",
+                        lower_is_better=True,
+                        extra={"outlier": True},
                     ),
                 ]
             )
@@ -163,7 +167,7 @@ def test_json_persists_outlier_flag(tmp_path: Path):
         for it in run.iterations
         for s in it.samples
     ]
-    assert sorted(s.outlier for s in samples) == [False, True]
+    assert sorted(s.extra["outlier"] for s in samples) == [False, True]
 
 
 def test_csv_header_includes_variant_columns(tmp_path: Path):

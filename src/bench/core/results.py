@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from typing import Any, Mapping
 
 from cattrs import structure, unstructure
 
@@ -19,7 +20,7 @@ class Sample:
     value: float
     unit: str = ""
     lower_is_better: bool | None = None
-    outlier: bool = False  # flagged by outlier detection and kept in stats
+    extra: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
 @dataclass(frozen=True, slots=True)

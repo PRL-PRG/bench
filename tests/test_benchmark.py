@@ -102,7 +102,9 @@ def test_with_metric_takes_several_in_one_call():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms", metric="runtime"), FloatPerLine("s", metric="runtime"))
+        .with_metric(
+            FloatPerLine("ms", metric="runtime"), FloatPerLine("s", metric="runtime")
+        )
     )
     assert len(b.iteration_metrics) == 2
 
