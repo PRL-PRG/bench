@@ -169,7 +169,7 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             runs=self.runs(ctx),
             outlier_detection=self.outlier_detection,
             cooldown=self.cooldown,
-            controller=self.controller,
+            controller=self.controller(ctx),
             data=self.data,
         )
         return dataclasses.replace(b, variant_label=self.label_fn(b))

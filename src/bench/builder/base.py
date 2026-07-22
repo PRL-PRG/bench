@@ -164,7 +164,7 @@ class BuilderBase:
     runs: Factory[StoppingPolicy] = UNSET
     outlier_detection: OutlierDetection = UNSET
     cooldown: float = UNSET
-    controller: Controller = UNSET
+    controller: Factory[Controller] = UNSET
     label_fn: LabelFn = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()

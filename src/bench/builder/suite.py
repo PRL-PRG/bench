@@ -55,7 +55,7 @@ DEFAULTS = BuilderBase(
     runs=const(FixedRuns(1)),
     outlier_detection=ModifiedZScore(),
     cooldown=0.0,
-    controller=Controller(),
+    controller=const(Controller()),
     label_fn=default_label,
 )
 
