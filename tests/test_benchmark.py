@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from bench import FixedRuns, FloatPerLine, Time, bench, suite
+from bench import FixedRuns, FloatPerLine, bench, suite
 from bench.builder.base import UNSET
+from bench.core.metric import StderrMetricSource, StdoutMetricSource
 
 
 def _mat(b):
@@ -19,7 +20,7 @@ def _base():
         bench("b")
         .with_command(["sh", "-c", "echo 1"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s", metric="runtime"))
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s"))
     )
 
 
@@ -43,8 +44,8 @@ def test_missing_command_raises_on_materialize():
 
 def test_bench_kwargs_attach_to_data():
     b = bench("z", path=Path("zoo.lox"), size=42)
-    assert b.path == Path("zoo.lox")
-    assert b.size == 42
+    assert b.data["path"] == Path("zoo.lox")
+    assert b.data["size"] == 42
 
 
 def test_policy_defaults_resolve_via_suite():
@@ -86,16 +87,16 @@ def test_default_cwd_is_invokers_cwd():
     assert b.invocation.cwd == Path.cwd()
 
 
-def test_with_metric_replaces_not_appends():
+def test_with_metric_accumulates():
+    # `with_metric` now ACCUMULATES across calls (it does not replace).
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms", metric="runtime"))
-        .with_metric(FloatPerLine("s", metric="runtime"))
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="ms"))
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s"))
     )
-    assert len(b.iteration_metrics) == 1
-    m = b.iteration_metrics[0][0]
-    assert isinstance(m, FloatPerLine) and m.unit == "s"  # the second call replaced
+    assert len(b.metrics) == 2
+    assert [m.unit for m in b.metrics if isinstance(m, FloatPerLine)] == ["ms", "s"]
 
 
 def test_with_metric_takes_several_in_one_call():
@@ -103,32 +104,21 @@ def test_with_metric_takes_several_in_one_call():
         bench("x")
         .with_command(["true"])
         .with_metric(
-            FloatPerLine("ms", metric="runtime"), FloatPerLine("s", metric="runtime")
+            FloatPerLine(StdoutMetricSource, "runtime", unit="ms"),
+            FloatPerLine(StdoutMetricSource, "runtime", unit="s"),
         )
     )
-    assert len(b.iteration_metrics) == 2
+    assert len(b.metrics) == 2
 
 
 def test_add_metric_appends_with_source():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine("ms", metric="runtime"))
-        .add_metric(FloatPerLine("s", metric="runtime"), "stderr")
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="ms"))
+        .with_metric(FloatPerLine(StderrMetricSource, "runtime", unit="s"))
     )
-    assert len(b.iteration_metrics) == 2
-
-
-def test_with_metric_rejects_process_metric():
-    with pytest.raises(TypeError):
-        bench("x").with_command(["true"]).with_metric(Time())  # type: ignore[arg-type]
-
-
-def test_with_process_metric_rejects_iteration_metric():
-    with pytest.raises(TypeError):
-        bench("x").with_command(["true"]).with_process_metric(
-            FloatPerLine("s", metric="runtime")  # type: ignore[arg-type]
-        )
+    assert len(b.metrics) == 2
 
 
 def test_with_matrix_replaces_dimensions():
@@ -145,7 +135,7 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
         .add_matrix_skip(vm="jsc", size=100)
     )
     bs = suite("S", b).materialize(None)
-    assert {(x.vm, x.size) for x in bs} == {("v8", 100), ("jsc", 500)}
+    assert {(x.data["vm"], x.data["size"]) for x in bs} == {("v8", 100), ("jsc", 500)}
 
 
 def test_matrix_axis_callable_expands_to_returned_values():
@@ -156,7 +146,7 @@ def test_matrix_axis_callable_expands_to_returned_values():
         .with_matrix(vm=lambda ctx: ["clox", "jlox"])
     )
     bs = suite("S", b).materialize(None)
-    assert {x.vm for x in bs} == {"clox", "jlox"}
+    assert {x.data["vm"] for x in bs} == {"clox", "jlox"}
     assert {x.variant_label for x in bs} == {"vm=clox", "vm=jlox"}
 
 
@@ -172,7 +162,7 @@ def test_matrix_axis_callable_reads_params():
         .with_matrix(size=lambda ctx: ctx.params.sizes)
     )
     bs = suite("S", b).materialize(P(sizes=[1, 2, 3]))
-    assert {x.size for x in bs} == {1, 2, 3}
+    assert {x.data["size"] for x in bs} == {1, 2, 3}
 
 
 def test_matrix_axis_callable_mixes_with_static():
@@ -183,7 +173,7 @@ def test_matrix_axis_callable_mixes_with_static():
         .with_matrix(vm=lambda ctx: ["clox", "jlox"], size=[100, 200])
     )
     bs = suite("S", b).materialize(None)
-    assert {(x.vm, x.size) for x in bs} == {
+    assert {(x.data["vm"], x.data["size"]) for x in bs} == {
         ("clox", 100),
         ("clox", 200),
         ("jlox", 100),
@@ -199,7 +189,7 @@ def test_matrix_axis_callable_sees_benchmark_name():
         .with_matrix(tag=lambda ctx: [ctx.benchmark])
     )
     bs = suite("S", b).materialize(None)
-    assert {x.tag for x in bs} == {"x"}
+    assert {x.data["tag"] for x in bs} == {"x"}
 
 
 def test_add_matrix_accepts_callable_axis():
@@ -211,7 +201,10 @@ def test_add_matrix_accepts_callable_axis():
         .add_matrix(vm=lambda ctx: ["clox", "jlox"])
     )
     bs = suite("S", b).materialize(None)
-    assert {(x.vm, x.size) for x in bs} == {("clox", 100), ("jlox", 100)}
+    assert {(x.data["vm"], x.data["size"]) for x in bs} == {
+        ("clox", 100),
+        ("jlox", 100),
+    }
 
 
 def test_suite_level_matrix_axis_callable_applies_per_benchmark():
@@ -223,7 +216,7 @@ def test_suite_level_matrix_axis_callable_applies_per_benchmark():
         .with_matrix(tag=lambda ctx: [ctx.benchmark])
     )
     bs = s.materialize(None)
-    assert {(x.name, x.tag) for x in bs} == {("a", "a"), ("b", "b")}
+    assert {(x.name, x.data["tag"]) for x in bs} == {("a", "a"), ("b", "b")}
 
 
 def test_matrix_axis_callable_empty_yields_no_variants():

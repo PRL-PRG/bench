@@ -25,6 +25,7 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
+from bench.core.metric import StdoutMetricSource
 from bench.core.results import Iteration, Execution, Sample
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
@@ -56,7 +57,9 @@ def _s():
         bench("a")
         .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s", metric="runtime").last_line().lower_is_better())
+        .with_metric(
+            FloatPerLine.last_line(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+        )
         .with_runs(2),
     )
 
@@ -180,7 +183,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
             .with_matrix(compiler=["gcc"]),
         )
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1)
     )
     Sequential(reporter=CsvReporter(out)).run(plan([s], None))
@@ -214,7 +217,7 @@ def test_summary_appends_failures_block_with_diagnostic():
         bench("bad")
         .with_command(["sh", "-c", "echo trouble >&2; exit 7"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -234,7 +237,7 @@ def test_summary_failures_block_handles_spawn_failure():
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -252,7 +255,7 @@ def test_summary_no_failures_block_when_all_succeed():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
@@ -273,7 +276,7 @@ def test_progress_plain_lines_in_non_tty():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(3),
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
@@ -290,7 +293,7 @@ def test_progress_plain_marks_failures():
         bench("bad")
         .with_command(["sh", "-c", "exit 11"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
@@ -306,7 +309,7 @@ def test_progress_plain_escapes_identifier_markup():
         "S",
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
@@ -320,7 +323,7 @@ def test_summary_failure_line_escapes_identifier_markup():
         "F",
         bench("bad")
         .with_command(["sh", "-c", "exit 11"])
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
@@ -336,12 +339,12 @@ def test_progress_plain_count_scopes_per_benchmark():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(2),
         bench("b")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(2),
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
@@ -361,12 +364,12 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
         bench("ok")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(2),
         bench("bad")
         .with_command(["sh", "-c", "exit 7"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(2),
     )
     Sequential(reporter=rep).run(plan([s], None))
@@ -413,7 +416,7 @@ def test_progress_prints_completed_summary_scrollback():
         bench("a")
         .with_command(["sh", "-c", "echo ok"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(3),
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
@@ -422,38 +425,9 @@ def test_progress_prints_completed_summary_scrollback():
     assert "(3 runs, 0 failed)" in out
 
 
-def _progress_output(s) -> str:
-    buf = io.StringIO()
-    c = Console(
-        theme=BENCHR_THEME, file=buf, force_terminal=True, no_color=True, width=120
-    )
-    Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
-    return re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
-
-
-def test_progress_harness_finished_line_labels_elapsed_and_says_harness():
-    # A harness is one streaming process: its `elapsed` is a single whole-process
-    # measurement, so the Finished line labels it and shows "(harness)" instead
-    # of the per-iteration sample/run/warmup counts.
-    s = suite(
-        "S",
-        bench("h")
-        .with_command(["sh", "-c", "echo 1.0; echo 2.0"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("ms", metric="runtime"))
-        .with_harness()
-        .with_runs(2),
-    )
-    out = _progress_output(s)
-    assert "Finished: S/h" in out
-    assert "elapsed [" in out and "(harness)" in out
-    assert "samples" not in out and "runs" not in out
-
-
-def test_progress_harness_bar_drops_estimate_keeps_eta():
-    # Command bars carry an "elapsed estimate" column; harness bars drop it (a
-    # harness isn't timed per-iteration). Both carry an ETA column (_EtaColumn
-    # self-blanks when the total is unknown or a single iteration).
+def test_eta_column_present_and_estimate_kept_for_command_bar():
+    # Command bars carry an "elapsed estimate" column and an ETA column
+    # (_EtaColumn self-blanks when the total is unknown or a single iteration).
     from rich.progress import TextColumn
 
     from bench.report.reporter import _EtaColumn
@@ -473,15 +447,7 @@ def test_progress_harness_bar_drops_estimate_keeps_eta():
             for col in cols
         )
 
-    harness = _columns(
-        bench("h")
-        .with_command(["sh", "-c", "echo 1.0"])
-        .with_metric(FloatPerLine("ms", metric="runtime"))
-        .with_harness()
-    )
-    command = _columns(bench("c").with_command(["true"]).with_process_metric(Time()))
+    command = _columns(bench("c").with_command(["true"]).with_metric(Time()))
 
-    assert not _has_estimate(harness)
-    assert any(isinstance(col, _EtaColumn) for col in harness)
     assert _has_estimate(command)
     assert any(isinstance(col, _EtaColumn) for col in command)

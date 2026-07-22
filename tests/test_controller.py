@@ -1,8 +1,10 @@
-"""Controller: per-benchmark feedback loop over a fake ExecutionSource.
+"""Controller: per-benchmark feedback loop, tested in isolation.
 
-The Controller is tested in isolation: a fake ``ExecutionSource`` (so no real
-processes spawn) and a collecting ``Reporter``. ``make_source`` is monkeypatched
-so the Controller pulls from the fake.
+The refactored Controller drives real subprocesses through
+``execute_benchmark``. To test the loop logic (policy convergence, warmup
+flagging, outlier marking) without spawning processes, we subclass Controller
+and override ``execute_benchmark`` to return canned ``Execution`` objects — one
+``Iteration`` per run, carrying a single ``Sample`` whose value we control.
 """
 
 from pathlib import Path
@@ -12,7 +14,6 @@ from bench.runner.base import plan
 from bench.core.results import Report
 from bench.report.reporter import Reporter
 from bench.runner.controller import Controller
-from bench.runner.source import ExecutionSource
 
 
 class _Collect(Reporter):
@@ -29,37 +30,25 @@ class _Collect(Reporter):
         self.runs.append(execution)
 
 
-class _FakeSource(ExecutionSource):
-    """Command-like fake: yields the given Iterations. close() returns one Execution
-    per taken iteration."""
+class _FakeController(Controller):
+    """Controller whose ``execute_benchmark`` yields canned single-iteration
+    Executions from a fixed list of sample values, one per run."""
 
-    def __init__(self, iterations, closed):
-        self._it = iter(iterations)
-        self._closed = closed
-        self._taken: list[Iteration] = []
+    def __init__(self, values):
+        self._values = [float(v) for v in values]
+        self.calls = 0
 
-    def next(self) -> tuple[Iteration, str]:
-        it = next(self._it)
-        self._taken.append(it)
-        return it, "S/b"
-
-    def close(self) -> list[Execution]:
-        self._closed.append(True)
-        return [
-            Execution(
-                suite="S",
-                benchmark="b",
-                variant=(),
-                run=i + 1,
-                command=("true",),
-                iterations=[it],
-            )
-            for i, it in enumerate(self._taken)
-        ]
-
-
-def _obs(value: float) -> Iteration:
-    return Iteration(samples=[Sample("t", float(value))])
+    def execute_benchmark(self, b, run: int, verbose: bool) -> Execution:
+        self.calls += 1
+        value = self._values[run - 1]
+        return Execution(
+            suite=b.suite,
+            benchmark=b.name,
+            variant=b.variant,
+            run=run,
+            command=("true",),
+            iterations=[Iteration(samples=[Sample("t", value)])],
+        )
 
 
 def _planned(runs, *, warmup=0, outlier_detection=None):
@@ -74,19 +63,11 @@ def _planned(runs, *, warmup=0, outlier_detection=None):
     return plan([s], None)[0]
 
 
-def _patch(monkeypatch, obs, closed):
-    monkeypatch.setattr(
-        "bench.runner.controller.make_source",
-        lambda b, verbose=False: _FakeSource(obs, closed),
-    )
-
-
-def test_records_run_per_slot_and_always_closes(monkeypatch):
-    closed = []
-    _patch(monkeypatch, [_obs(i) for i in range(1, 4)], closed)
+def test_records_run_per_slot(monkeypatch):
     rep = _Collect()
     report = Report()
-    Controller().run_benchmark(_planned(FixedRuns(3)), report, rep)
+    ctrl = _FakeController([1, 2, 3])
+    ctrl.run_benchmark(_planned(FixedRuns(3)), report, rep)
 
     assert [r.run for r in report.executions] == [1, 2, 3]
     assert [r.iterations[0].samples[0].value for r in report.executions] == [
@@ -96,28 +77,26 @@ def test_records_run_per_slot_and_always_closes(monkeypatch):
     ]
     assert len(rep.runs) == 3
     assert len(rep.iterations) == 3
-    assert rep.labels[0] == "S/b"
-    assert closed == [True]
+    assert rep.labels[0] == "S/b #1"
+    assert ctrl.calls == 3
 
 
-def test_stops_when_policy_converges(monkeypatch):
-    # 10 observations available but FixedRuns(2) must stop pulling at 2.
-    closed = []
-    _patch(monkeypatch, [_obs(1) for _ in range(10)], closed)
+def test_stops_when_policy_converges():
+    # 10 values available but FixedRuns(2) must stop after 2 runs.
     report = Report()
-    Controller().run_benchmark(_planned(FixedRuns(2)), report, _Collect())
+    ctrl = _FakeController([1.0] * 10)
+    ctrl.run_benchmark(_planned(FixedRuns(2)), report, _Collect())
 
     assert len(report.executions) == 2
-    assert closed == [True]
+    assert ctrl.calls == 2
 
 
-def test_outliers_marked_across_runs(monkeypatch):
+def test_outliers_marked_across_runs():
     # Spread cluster (MAD > 0) plus a lone 100: detection (on by default) pools
     # the values across all runs and flags only the 100.
     values = [10.0, 11.0, 12.0, 10.0, 11.0, 12.0, 10.0, 100.0]
-    _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller().run_benchmark(_planned(FixedRuns(8)), report, _Collect())
+    _FakeController(values).run_benchmark(_planned(FixedRuns(8)), report, _Collect())
 
     flags = [
         r.iterations[0].samples[0].extra.get("outlier", False)
@@ -126,11 +105,10 @@ def test_outliers_marked_across_runs(monkeypatch):
     assert flags == [False] * 7 + [True]
 
 
-def test_no_detection_leaves_samples_unmarked(monkeypatch):
+def test_no_detection_leaves_samples_unmarked():
     values = [1.0] * 7 + [100.0]
-    _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller().run_benchmark(
+    _FakeController(values).run_benchmark(
         _planned(FixedRuns(8), outlier_detection=NoDetection()), report, _Collect()
     )
 
@@ -140,13 +118,14 @@ def test_no_detection_leaves_samples_unmarked(monkeypatch):
     )
 
 
-def test_warmup_iterations_excluded_from_detection(monkeypatch):
+def test_warmup_iterations_excluded_from_detection():
     # The big value is in warmup. The measured tail is flat, so nothing is an
     # outlier and the warmup sample itself is never flagged.
     values = [100.0] + [1.0] * 7
-    _patch(monkeypatch, [_obs(v) for v in values], [])
     report = Report()
-    Controller().run_benchmark(_planned(FixedRuns(7), warmup=1), report, _Collect())
+    _FakeController(values).run_benchmark(
+        _planned(FixedRuns(7), warmup=1), report, _Collect()
+    )
 
     assert all(
         not r.iterations[0].samples[0].extra.get("outlier", False)
@@ -154,13 +133,12 @@ def test_warmup_iterations_excluded_from_detection(monkeypatch):
     )
 
 
-def test_warmup_boundary_marked_on_iterations(monkeypatch):
+def test_warmup_boundary_marked_on_iterations():
     # warmup=2, runs=3 -> 5 iterations. The first 2 are flagged warmup.
-    closed = []
-    _patch(monkeypatch, [_obs(i) for i in range(1, 6)], closed)
+    values = [1.0, 2.0, 3.0, 4.0, 5.0]
     rep = _Collect()
     report = Report()
-    Controller().run_benchmark(_planned(FixedRuns(3), warmup=2), report, rep)
+    _FakeController(values).run_benchmark(_planned(FixedRuns(3), warmup=2), report, rep)
 
     assert len(report.executions) == 5
     assert [r.iterations[0].warmup for r in report.executions] == [

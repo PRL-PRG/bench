@@ -26,6 +26,7 @@ from bench import (
     report_from_json,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 from bench.runner.base import plan
 
 
@@ -45,7 +46,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
             bench(f"b{i}")
             .with_command(["sh", "-c", f"sleep {duration}"])
             .with_cwd(Path("/tmp"))
-            .with_process_metric(Time())
+            .with_metric(Time())
             .with_runs(runs)
             for i in range(2)
         ],
@@ -63,7 +64,7 @@ def test_sequential_three_runs_yields_three_samples():
         bench("p")
         .with_command(["sh", "-c", "echo 0.5"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better())
         .with_runs(3),
     )
     report = Sequential().run(plan([s], None))
@@ -81,7 +82,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         bench("bad")
         .with_command(["false"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(10),
     )
     out = tmp_path / "r.json"
@@ -123,7 +124,7 @@ def test_parallel_runs_convergence_benchmarks():
             bench(f"conv{i}")
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
-            .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
+            .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better())
             .with_runs(
                 CoefficientOfVariation("runtime", threshold=0.5, window=2, min_runs=2)
             )
@@ -150,7 +151,7 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
             bench(f"b{i}")
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
-            .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
+            .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better())
             .with_runs(n_runs)
             for i in range(n_bench)
         ],
@@ -174,7 +175,7 @@ def test_dry_no_subprocess():
         bench("a")
         .with_command(["/nonexistent_binary_xyz"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(5),
     )
     out = _all_samples(Dry().run(plan([s], None)))
@@ -187,7 +188,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(5),
     )
     Dry().run(plan([s], None))
@@ -205,7 +206,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_warmup(2)
         .with_runs(3),
     )
@@ -224,7 +225,7 @@ def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(CoefficientOfVariation("elapsed")),
     )
     Dry().run(plan([s], None))
@@ -240,14 +241,15 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
         bench("a")
         .with_command(["/bin/echo", "hi"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(5),
     )
     Dry(verbose=True).run(plan([s], None))
     out = capsys.readouterr().out
     assert "command:    /bin/echo hi" in out
     assert "cwd:" in out
-    assert "metrics:    Time" in out
+    # The verbose block lists metric *names*; Time()'s metric name is "elapsed".
+    assert "metrics:    elapsed" in out
     assert "warmup:" in out and "runs:" in out
     assert out.count("command:    /bin/echo hi") == 5
     assert out.count("X/a #1") == 1
@@ -285,7 +287,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
         bench("slow")
         .with_command(["sleep", "10"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(3),
     )
     json_path = tmp_path / "r.json"
@@ -317,7 +319,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
             bench(f"slow{i}")
             .with_command(["sleep", "10"])
             .with_cwd(Path("/tmp"))
-            .with_process_metric(Time())
+            .with_metric(Time())
             .with_runs(1)
             for i in range(4)
         ],
@@ -346,7 +348,7 @@ def test_sigint_kills_shell_wrapped_subtree():
         bench("wrapped")
         .with_command(["sh", "-c", "sleep 10"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
 
@@ -390,7 +392,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         bench("a")
         .with_command(["tools/echo_hi"])
         .with_cwd(other_dir)  # subprocess runs from elsewhere/
-        .with_process_metric(Time())  # emits one `elapsed` sample on success
+        .with_metric(Time())  # emits one `elapsed` sample on success
         .with_runs(2),
     )
     report = Sequential().run(plan([s], None))
@@ -404,8 +406,9 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
     report = Sequential().run(plan([s], None))
-    # Time is a process metric, so the default `elapsed` lands in process_samples.
-    assert [s.metric for s in report.executions[0].process_samples] == ["elapsed"]
+    # No metric configured: the refactored default is an empty metrics tuple
+    # (DEFAULTS.metrics == ()), so nothing is emitted - not even `elapsed`.
+    assert report.executions[0].process_samples == []
 
 
 def test_plan_default_params():
@@ -443,7 +446,7 @@ def test_run_resolves_reporter_factory_with_cli_state():
         seen["dry"] = ctx.params.dry
         return _Rec()
 
-    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     bench_app(reporter=factory).add_all(s).run(["--dry", "--verbose"])
     assert seen == {"verbose": True, "dry": True}
 
@@ -461,7 +464,7 @@ def test_with_runner_override_wins_over_jobs():
         captured["runner"] = r
         return r
 
-    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     report = (
         bench_app()
         .add(s)
@@ -479,7 +482,7 @@ def test_with_filter_override_narrows_plan():
         .add(bench("keep"))
         .add(bench("drop"))
         .with_command(["true"])
-        .with_process_metric(Time())
+        .with_metric(Time())
     )
     report = (
         bench_app()
@@ -496,7 +499,7 @@ def test_with_filter_bare_predicate_narrows_plan():
         .add(bench("keep"))
         .add(bench("drop"))
         .with_command(["true"])
-        .with_process_metric(Time())
+        .with_metric(Time())
     )
     # A bare `(Benchmark) -> bool` predicate is const-wrapped into the factory.
     report = (
@@ -510,7 +513,7 @@ def test_with_filter_bare_predicate_narrows_plan():
 
 def test_with_reporter_factory_takes_full_control(tmp_path: Path):
     out = tmp_path / "r.json"
-    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     # A factory result is used as-is: only the JsonReporter, no --json flag needed.
     bench_app().add(s).with_reporter(lambda ctx: JsonReporter(out)).run(
         ["--no-progress"]
@@ -522,7 +525,7 @@ def test_with_reporter_factory_takes_full_control(tmp_path: Path):
 def test_bare_reporter_takes_full_control(tmp_path: Path):
     direct = tmp_path / "direct.json"  # the bare reporter itself
     flag = tmp_path / "flag.json"  # the --json sink (must NOT be written)
-    s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
+    s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     # A bare reporter is wrapped as `lambda _: reporter` and used as-is: it IS a
     # JsonReporter, so --json is not needed and its sink is not added.
     bench_app(reporter=JsonReporter(direct)).add_all(s).run(

@@ -11,6 +11,7 @@ from bench import (
     report_from_json,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 from bench.runner.base import plan
 
 
@@ -31,7 +32,7 @@ def test_e2e_sleep_runs_produce_expected_count():
         bench("a")
         .with_command(["sleep", "0.02"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(3),
     )
     pairs = _all_samples(Sequential().run(plan([s], None)))
@@ -46,7 +47,7 @@ def test_e2e_warmup_then_measure():
         bench("a")
         .with_command(["sh", "-c", "echo 0.01"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
+        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better())
         .with_warmup(2)
         .with_runs(2),
     )
@@ -68,7 +69,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(3),
     )
     report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
@@ -85,7 +86,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         bench("hang")
         .with_command(["sh", "-c", "sleep 5"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_timeout(0.05)
         .with_runs(1),
     )

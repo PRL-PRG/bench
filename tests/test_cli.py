@@ -200,7 +200,7 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
         .add(bench("x"))
         .with_matrix(sleep=["0.01", "0.02"])
         .with_command(lambda ctx: ["sleep", ctx.data.sleep])
-        .with_process_metric(Time(elapsed=True))
+        .with_metric(Time())
         .with_runs(1)
     )
     out = tmp_path / "r.json"
@@ -289,7 +289,7 @@ def _trivial(suite_name: str, bench_name: str = "b"):
         bench(bench_name)
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1),
     )
 
@@ -337,11 +337,11 @@ def test_run_sugar_runs_multiple_suites(monkeypatch):
 
 def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
     # s1 declares no command, so it inherits the app-level default.
-    s1 = suite("S1", bench("b").with_cwd(Path("/tmp")).with_process_metric(Time()))
+    s1 = suite("S1", bench("b").with_cwd(Path("/tmp")).with_metric(Time()))
     # s2 sets its own command (which wins over the app default - inner-wins) and
     # its own cwd (which the app never sets, so it survives untouched).
     s2 = (
-        suite("S2", bench("c").with_process_metric(Time()))
+        suite("S2", bench("c").with_metric(Time()))
         .with_command(["echo", "s2"])
         .with_cwd(Path("/tmp"))
     )
@@ -371,7 +371,7 @@ def _matrix_suite(suite_name: str = "M", bench_name: str = "b", **matrix):
         bench(bench_name)
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(1)
         .with_matrix(**matrix),
     )

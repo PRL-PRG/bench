@@ -23,7 +23,7 @@ def test_no_events_rejected():
 
 
 def test_wrap_string_command():
-    c = PerfStat(("cache-misses", "cache-references"))
+    c = PerfStat(("cache-misses", "cache-references"))  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
     assert c.wrap("./workload") == [
         "perf",
         "stat",
@@ -37,7 +37,7 @@ def test_wrap_string_command():
 
 
 def test_wrap_list_command_keeps_args():
-    c = PerfStat(("cache-misses",))
+    c = PerfStat(("cache-misses",))  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
     assert c.wrap(["./workload", "-n", "5"]) == [
         "perf",
         "stat",
@@ -53,7 +53,7 @@ def test_wrap_list_command_keeps_args():
 
 
 def test_wrap_is_idempotent():
-    c = PerfStat(("cache-misses", "cache-references"))
+    c = PerfStat(("cache-misses", "cache-references"))  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
     once = c.wrap("./workload")
     assert c.wrap(once) == once
 
@@ -64,7 +64,7 @@ def test_wrap_is_idempotent():
 def test_extract_emits_one_sample_per_event():
     stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
     samples = list(
-        PerfStat(("cache-misses", "cache-references")).process(
+        PerfStat(("cache-misses", "cache-references")).process(  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
             make_success(stderr=stderr)
         )
     )
@@ -78,7 +78,7 @@ def test_extract_skips_not_counted_and_not_supported():
     stderr = "<not counted>,,cache-misses,,,,\n<not supported>,,cache-references,,,,\n"
     assert (
         list(
-            PerfStat(("cache-misses", "cache-references")).process(
+            PerfStat(("cache-misses", "cache-references")).process(  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
                 make_success(stderr=stderr)
             )
         )
@@ -89,23 +89,23 @@ def test_extract_skips_not_counted_and_not_supported():
 def test_extract_no_perf_output_emits_nothing():
     assert (
         list(
-            PerfStat(("cache-misses",)).process(
+            PerfStat(("cache-misses",)).process(  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
                 make_success(stderr="just program noise\n")
             )
         )
         == []
     )
-    assert list(PerfStat(("cache-misses",)).process(make_success(stderr=""))) == []
+    assert list(PerfStat(("cache-misses",)).process(make_success(stderr=""))) == []  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
 
 
 def test_extract_matches_modifier_suffix():
     stderr = "999,,cache-misses:u,1000000,100.00,,\n"
-    samples = list(PerfStat(("cache-misses",)).process(make_success(stderr=stderr)))
+    samples = list(PerfStat(("cache-misses",)).process(make_success(stderr=stderr)))  # pyright: ignore[reportArgumentType]  # BUG-2 (see BUGS.md)
     assert samples == [Sample(metric="cache-misses", value=999.0, unit="")]
 
 
 def test_lower_is_better_preserves_events_and_marks_samples():
-    c = PerfStat(("cache-misses", "cache-references")).lower_is_better()
+    c = PerfStat(("cache-misses", "cache-references")).lower_is_better()  # pyright: ignore[reportArgumentType, reportAttributeAccessIssue]  # BUG-2, BUG-3 (see BUGS.md)
     assert c.events == ("cache-misses", "cache-references")
     stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
     samples = list(c.process(make_success(stderr=stderr)))
