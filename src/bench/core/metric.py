@@ -175,7 +175,7 @@ class MonotonicIterationMetric(IterationMetric):
 # ---------------------------------------------------------------------------
 
 
-class FloatPerLine(IterationMetric, BuildableMetric):
+class FloatPerLine(MonotonicIterationMetric, BuildableMetric):
     """Parse non-empty lines of the iteration text as floats, one sample each.
 
     `line` selects a single 1-based non-empty line (negative counts from the
@@ -227,7 +227,7 @@ class FloatPerLine(IterationMetric, BuildableMetric):
         )
 
 
-class Regex(IterationMetric, BuildableMetric):
+class Regex(MonotonicIterationMetric, BuildableMetric):
     """Extract metric values via a regex against the iteration text."""
 
     def __init__(
