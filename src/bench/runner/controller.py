@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import dataclasses
 import time
+from typing import TYPE_CHECKING
 
 from bench.core.invocation import InvocationResult, format_identifier
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
 from bench.core.results import Iteration, Report, Execution, Sample, diagnostic_excerpt
-from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import format_benchmark_verbose
+
+if TYPE_CHECKING:
+    from bench.builder.benchmark import Benchmark
 
 
 def _make_execution(

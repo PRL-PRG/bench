@@ -27,13 +27,13 @@ from rich.progress import (
 )
 from rich.text import Text
 
-from bench.builder.benchmark import Benchmark
 from bench.core.environment import Diagnostic, Environment
 from bench.core.invocation import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
 from bench.core.results import Iteration, Report, Execution, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
+    from bench.builder.benchmark import Benchmark
     from bench.report.formatter import Formatter
 
 

@@ -24,12 +24,12 @@ from bench.core.metric import (
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
 from bench.builder.context import Context
-from bench.runner.controller import Controller
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
     from bench.builder.benchmark import Benchmark
+    from bench.runner.controller import Controller
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
 type Factory[T] = Callable[[Context[Any]], T]

@@ -26,7 +26,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from bench.core.invocation import (
     EMPTY_MAPPING,
@@ -47,7 +47,9 @@ from bench.builder.base import (
     const,
 )
 from bench.builder.context import Context, Data
-from bench.runner.controller import Controller
+
+if TYPE_CHECKING:
+    from bench.runner.controller import Controller
 
 
 def default_label(b: Benchmark) -> str:

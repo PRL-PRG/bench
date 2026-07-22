@@ -6,9 +6,8 @@ import abc
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from bench.builder.benchmark import Benchmark
 from bench.core.invocation import (
     Invocation,
     default_success,
@@ -16,9 +15,12 @@ from bench.core.invocation import (
 )
 from bench.core.policy import StoppingPolicy
 from bench.core.process import install_sigint_handler, interrupted
-from bench.builder.suite import SuiteBuilder
 from bench.report.reporter import Reporter
 from bench.core.results import Report
+
+if TYPE_CHECKING:
+    from bench.builder.benchmark import Benchmark
+    from bench.builder.suite import SuiteBuilder
 
 
 class _NoopReporter(Reporter):
