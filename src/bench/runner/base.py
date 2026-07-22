@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import abc
-import contextlib
 import shlex
 import subprocess
-from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -144,21 +142,6 @@ class Runner(abc.ABC):
     ) -> None:
         self.reporter = reporter or _NoopReporter()
         self.verbose = verbose
-
-    @contextlib.contextmanager
-    def _session(self, planned: list[Benchmark]) -> Generator[Report]:
-        """Start the reporter, yield a fresh Report to fill under a SIGINT
-        handler, and finalize on exit. Raises KeyboardInterrupt if Ctrl+C fired
-        while the body ran."""
-        self.reporter.start(planned)
-        report = Report()
-        try:
-            with install_sigint_handler():
-                yield report
-                if interrupted():
-                    raise KeyboardInterrupt
-        finally:
-            self.reporter.finalize()
 
     def run(self, planned: list[Benchmark]) -> Report:
         self.reporter.start(planned)
