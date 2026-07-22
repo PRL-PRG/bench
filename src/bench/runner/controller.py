@@ -178,17 +178,16 @@ class Controller:
         warmup_policy_state = b.warmup.start()
         runs_policy_state = b.runs.start()
 
-        while not warmup_policy_state.satisfied() and not runs_policy_state.satisfied():
+        while not warmup_policy_state.satisfied() or not runs_policy_state.satisfied():
             if interrupted():
                 break
 
             run += 1
             execution = self.execute_benchmark(b, run, verbose)
 
-            result_iterations = execution.iterations
-            for idx, it in enumerate(execution.iterations):
+            def observe_iteration(it: Iteration) -> Iteration:
                 if not warmup_policy_state.satisfied():
-                    result_iterations[idx] = it = dataclasses.replace(it, warmup=True)
+                    it = dataclasses.replace(it, warmup=True)
                     warmup_policy_state.observe(it)
 
                 elif not runs_policy_state.satisfied():
@@ -199,9 +198,19 @@ class Controller:
                     format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
                 )
 
-            executions.append(
-                dataclasses.replace(execution, iterations=result_iterations)
-            )
+                return it
+
+            if len(execution.iterations) == 0:
+                _ = observe_iteration(Iteration(samples=execution.process_samples))
+
+            else:
+                result_iterations = execution.iterations
+                for idx, it in enumerate(execution.iterations):
+                    result_iterations[idx] = observe_iteration(it)
+
+                executions.append(
+                    dataclasses.replace(execution, iterations=result_iterations)
+                )
 
         executions = _mark_outliers(executions, b.outlier_detection)
 
