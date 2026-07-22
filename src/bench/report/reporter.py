@@ -351,14 +351,6 @@ class DirReporter(_EnvironmentAware, Reporter):
         (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
 
 
-def _fmt_est(seconds: float) -> str:
-    if seconds <= 0:
-        return ""
-    if seconds < 1.0:
-        return f"{seconds * 1000:.0f}ms"
-    return f"{seconds:.2f}s"
-
-
 def _bench_total(b: Benchmark) -> int | None:
     """Iterations a benchmark should produce (warmup + runs), or None if either
     policy is unbounded."""
@@ -383,8 +375,7 @@ class ProgressReporter(Reporter):
 
     A top `Progress` bar tracks how many benchmarks finished and how many failed.
     Under it, each running benchmark has a bar with its progress count; command
-    benchmarks also show a per-iteration elapsed estimate (a harness omits that,
-    since its iterations aren't individually timed). Both show an ETA when the
+    benchmarks also show a per-iteration elapsed estimate. Both show an ETA when the
     iteration count is bounded. Bars stretch to the screen edge. When a
     benchmark finishes its bar is replaced by a persistent summary line printed
     above the live region, carrying the same elapsed stats as the final summary
@@ -435,18 +426,12 @@ class ProgressReporter(Reporter):
         self._local.n = 0
         self._local.total = _bench_total(b)
         self._local.runtime = 0.0
-        self._local.harness = b.harness
         if self._live is None:
             return
         total = self._local.total
         total_str = str(total) if total is not None else "?"
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
-        # A harness is one streaming process, so its per-iteration elapsed
-        # estimate isn't measured; it still gets an ETA when its iteration count
-        # is known (_EtaColumn self-blanks otherwise).
         columns: list[Any] = [SpinnerColumn()]
-        if not b.harness:
-            columns.append(TextColumn("elapsed estimate: {task.fields[est]}"))
         columns.append(BarColumn(bar_width=None))
         columns.append(TextColumn("{task.completed}/{task.fields[total_str]}"))
         columns.append(_EtaColumn())
@@ -473,8 +458,6 @@ class ProgressReporter(Reporter):
         if prog is None or task_id is None:
             return
         self._local.runtime += it.runtime
-        if not self._local.harness:
-            prog.update(task_id, est=_fmt_est(self._local.runtime / self._local.n))
         prog.advance(task_id)
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
@@ -513,20 +496,13 @@ class ProgressReporter(Reporter):
 
     @staticmethod
     def _summary_line(b: Benchmark, name: str, executions: list[Execution]) -> str:
-        from bench.report.summary import scale_unit, stat_line, summarize
+        from bench.report.summary import stat_line, summarize
 
         stats = summarize(Report(executions=list(executions)))
         elapsed = next((s for s in stats if s.metric == "elapsed"), None)
         head = f"[bench.label]Finished:[/] {markup_escape(name)}"
         if elapsed is None:
             return f"{head}: [bench.failure]FAILED[/]"
-        if b.harness:
-            # One streaming process: `elapsed` is its whole wall-clock, a single
-            # measurement, so the per-iteration run/warmup counts do not apply.
-            scale, unit = scale_unit(elapsed.mean, elapsed.unit)
-            value = f"[bench.value]{elapsed.mean * scale:.2f}[/]"
-            label = markup_escape(f"{elapsed.metric} [{unit}] (harness)")
-            return f"{head}: {value} {label}"
         return f"{head}: {stat_line(elapsed)}"
 
     def _print_plain(

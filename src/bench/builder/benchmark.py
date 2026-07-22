@@ -57,20 +57,8 @@ def default_label(b: Benchmark) -> str:
     return format_variant(b.variant).strip(" ()")
 
 
-class _DataAttrs:
-    """Expose a `data` mapping's keys as read-only attributes (`b.<key>`)."""
-
-    __slots__ = ()
-
-    def __getattr__(self, name: str) -> Any:
-        data = object.__getattribute__(self, "data")
-        if name in data:
-            return data[name]
-        raise AttributeError(name)
-
-
 @dataclass(frozen=True, slots=True)
-class BenchmarkBuilder(BuilderBase, _DataAttrs):
+class BenchmarkBuilder(BuilderBase):
     """A benchmark *spec*: a builder-style API configuring a workload that
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
@@ -176,7 +164,7 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
 
 
 @dataclass(frozen=True, slots=True)
-class Benchmark(_DataAttrs):
+class Benchmark:
     """One fully-resolved benchmark variant."""
 
     suite: str
@@ -195,12 +183,6 @@ class Benchmark(_DataAttrs):
     # (the label fn needs the resolved Benchmark), so it keeps a default and
     # sits last.
     variant_label: str = ""
-
-    def __getattr__(self, name: str) -> Any:
-        data = object.__getattribute__(self, "data")
-        if name in data:
-            return data[name]
-        raise AttributeError(name)
 
 
 def _stringify(v: Any) -> str:

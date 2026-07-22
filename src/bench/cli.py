@@ -221,7 +221,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .with_command(cmd)
         .with_label(label)
         .with_cwd(Path.cwd())
-        .with_process_metric(Time())
+        .with_metric(Time())
         .with_runs(runs_policy)
     )
 

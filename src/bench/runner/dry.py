@@ -19,7 +19,6 @@ from bench.runner.base import (
     Runner,
     format_benchmark_verbose,
     format_command,
-    format_policy,
 )
 
 
@@ -35,13 +34,6 @@ class Dry(Runner):
             self._print_executions(b)
 
     def _print_executions(self, b: Benchmark) -> None:
-        if b.harness:
-            marker = (
-                f"[harness, warmup {format_policy(b.warmup)}, "
-                f"runs {format_policy(b.runs)}]"
-            )
-            self._print_one(b, 1, marker=marker)
-            return
         warmup, runs = b.warmup.max_runs(), b.runs.max_runs()
         if warmup is None or runs is None:
             self._print_one(b, 1, marker="[unbounded]")

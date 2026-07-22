@@ -184,7 +184,7 @@ class BuilderBase:
         return dataclasses.replace(self, timeout=as_build(timeout))
 
     def with_controller(self, controller: Controller | Factory[Controller]) -> Self:
-        return dataclasses.replace(self, controller = as_build(controller))
+        return dataclasses.replace(self, controller=as_build(controller))
 
     def with_success(self, fn: SuccessFn) -> Self:
         return dataclasses.replace(self, success=const(fn))
