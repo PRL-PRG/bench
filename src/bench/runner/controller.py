@@ -208,9 +208,9 @@ class Controller:
                 for idx, it in enumerate(execution.iterations):
                     result_iterations[idx] = observe_iteration(it)
 
-                executions.append(
-                    dataclasses.replace(execution, iterations=result_iterations)
-                )
+                execution = dataclasses.replace(execution, iterations=result_iterations)
+
+            executions.append(execution)
 
         executions = _mark_outliers(executions, b.outlier_detection)
 
