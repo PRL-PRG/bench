@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
     from bench.builder.benchmark import Benchmark
-    from bench.runner.source import HarnessMonitor
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
 type Factory[T] = Callable[[Context[Any]], T]
@@ -55,10 +54,6 @@ type LabelFn = Callable[[Benchmark], str]
 
 # A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
 type SkipFn = Callable[[Benchmark], bool]
-
-# A harness monitor, built once per variant (parallels Factory[T] for every
-# other field) rather than reused as-is - see with_harness/with_monitor_fn.
-type HarnessMonitorFactory = Factory[HarnessMonitor | None]
 
 type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFactory
 
@@ -184,9 +179,6 @@ class BuilderBase:
     outlier_detection: OutlierDetection = UNSET
     cooldown: float = UNSET
     label_fn: LabelFn = UNSET
-    harness: bool = UNSET
-    monitor: HarnessMonitorFactory = UNSET
-    kill_on_convergence: bool = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
 
@@ -311,41 +303,6 @@ class BuilderBase:
                     "use with_metric for iteration metrics like Regex or FloatPerLine",
                 )
         return dataclasses.replace(self, process_metrics=const(tuple(metrics)))
-
-    # ----- harness ----------------------------------------------------
-
-    def with_harness(
-        self,
-        monitor: HarnessMonitor | None = UNSET,
-        *,
-        kill_on_convergence: bool = UNSET,
-    ) -> Self:
-        """Mark as a harness: the command runs once and streams all iterations,
-        each non-empty line (or framed block) an observation. On a suite or app
-        it applies to every contained benchmark.
-
-        `monitor` frames the output stream. Use `with_monitor_fn` if the monitor
-        needs to read `ctx`.
-
-        `kill_on_convergence` (default False) leaves the process to finish on its
-        own once the stopping policy converges, so it reports its real exit code
-        (the common case: a harness that produces a fixed number of iterations and
-        exits). Set it True for a harness that streams forever and must be killed
-        when a policy such as CoefficientOfVariation converges; pair that with
-        `with_timeout` as a backstop."""
-        m = monitor if monitor is UNSET else const(monitor)
-        return dataclasses.replace(
-            self, harness=True, monitor=m, kill_on_convergence=kill_on_convergence
-        )
-
-    def with_monitor_fn(
-        self, fn: HarnessMonitorFactory, *, kill_on_convergence: bool = UNSET
-    ) -> Self:
-        """Like `with_harness(monitor=...)`, but `fn` is `(ctx) -> HarnessMonitor`,
-        built per-variant instead of a single reusable value."""
-        return dataclasses.replace(
-            self, harness=True, monitor=fn, kill_on_convergence=kill_on_convergence
-        )
 
     # ----- inheritance ------------------------------------------------
 

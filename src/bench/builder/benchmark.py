@@ -26,7 +26,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from bench.core.invocation import (
     EMPTY_MAPPING,
@@ -49,9 +49,6 @@ from bench.builder.base import (
     const,
 )
 from bench.builder.context import Context, Data
-
-if TYPE_CHECKING:
-    from bench.runner.source import HarnessMonitor
 
 
 def default_label(b: Benchmark) -> str:
@@ -173,9 +170,6 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             runs=self.runs(ctx),
             outlier_detection=self.outlier_detection,
             cooldown=self.cooldown,
-            harness=self.harness,
-            monitor=self.monitor(ctx),
-            kill_on_convergence=self.kill_on_convergence,
             data=self.data,
         )
         return dataclasses.replace(b, variant_label=self.label_fn(b))
@@ -196,9 +190,6 @@ class Benchmark(_DataAttrs):
     runs: StoppingPolicy
     outlier_detection: OutlierDetection
     cooldown: float
-    harness: bool
-    monitor: HarnessMonitor | None
-    kill_on_convergence: bool
     data: Mapping[str, Any]
     # Filled by a follow-up `dataclasses.replace` once the benchmark exists
     # (the label fn needs the resolved Benchmark), so it keeps a default and

@@ -75,7 +75,6 @@ from bench.runner.base import (
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
-from bench.runner.source import HarnessHandle, HarnessMonitor, line_monitor
 
 # Reporters
 from bench.report.reporter import (
@@ -161,9 +160,6 @@ __all__ = [
     "Parallel",
     "Dry",
     "SuiteMaterializationError",
-    "HarnessMonitor",
-    "HarnessHandle",
-    "line_monitor",
     # Reporters
     "Reporter",
     "CompositeReporter",
