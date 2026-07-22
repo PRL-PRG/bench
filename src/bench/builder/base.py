@@ -241,7 +241,7 @@ class BuilderBase:
         """Set the per-iteration metrics, each reading stdout."""
 
         def build(ctx: Context[Any]) -> tuple[Metric, ...]:
-            build_metrics = self.metrics(ctx)
+            build_metrics = self.metrics(ctx) if self.metrics is not UNSET else tuple()
 
             for metric in metrics:
                 if callable(metric):
