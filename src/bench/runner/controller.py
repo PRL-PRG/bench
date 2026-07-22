@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import time
 
-from bench.core.invocation import InvocationResult
+from bench.core.invocation import InvocationResult, format_identifier
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
 from bench.core.results import Iteration, Report, Execution, Sample, diagnostic_excerpt
@@ -186,11 +186,16 @@ class Controller:
             result_iterations = execution.iterations
             for idx, it in enumerate(execution.iterations):
                 if not warmup_policy_state.satisfied():
-                    result_iterations[idx] = dataclasses.replace(it, warmup=True)
+                    result_iterations[idx] = it = dataclasses.replace(it, warmup=True)
                     warmup_policy_state.observe(it)
 
                 elif not runs_policy_state.satisfied():
                     runs_policy_state.observe(it)
+
+                reporter.iteration(
+                    it,
+                    format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
+                )
 
             executions.append(
                 dataclasses.replace(execution, iterations=result_iterations)
@@ -203,4 +208,3 @@ class Controller:
             report.add(execution)
 
         reporter.benchmark_done(b, executions)
-
