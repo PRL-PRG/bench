@@ -5,7 +5,7 @@ A single `PerfStat` object owns the event list and does two things, on request:
   - `wrap(command)` runs the command under `perf stat -e <events>` - the only
     place perf enters the argv. It is idempotent, so applying it at both suite
     and benchmark level never double-prefixes.
-  - As a `ProcessMetric`, it parses perf's machine-readable (`-x,`) output from
+  - As a `Metric`, it parses perf's machine-readable (`-x,`) output from
     the process stderr (captured per process, so parallel runs need no shared
     file), one Sample per event.
 
@@ -26,23 +26,24 @@ event.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
 
 from bench.core.invocation import InvocationResult, to_argv
-from bench.core.metric import ProcessMetric
+from bench.core.metric import Direction, Metric
 from bench.core.results import Sample
 
 
-@dataclass(frozen=True)
-class PerfStat(ProcessMetric):
+class PerfStat(Metric):
     """Run a command under `perf stat` and read its counters from stderr.
 
     `events` is a tuple of symbolic perf event names. `direction` and the
     `lower_is_better`/`higher_is_better` combinators come from the
-    `ProcessMetric` base unchanged.
+    `Metric` base unchanged.
     """
 
     events: tuple[str, ...] = ()
+
+    def __init__(self, direction: Direction = None) -> None:
+        super().__init__("", "", direction)
 
     def __post_init__(self) -> None:
         if not self.events:
@@ -62,9 +63,9 @@ class PerfStat(ProcessMetric):
             return [str(a) for a in argv]
         return [*prefix, *(str(a) for a in argv)]
 
-    def extract(self, result: InvocationResult) -> Iterable[Sample]:
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
         counts: dict[str, str] = {}
-        for line in (result.stderr or "").splitlines():
+        for line in (data.stderr or "").splitlines():
             parts = line.split(",")
             if len(parts) < 3:
                 continue
@@ -84,4 +85,4 @@ class PerfStat(ProcessMetric):
                 value = float(raw)
             except ValueError:  # `<not counted>` / `<not supported>`
                 continue
-            yield Sample(metric=event, value=value, unit="")
+            yield self.get_sample(metric=event, value=value)

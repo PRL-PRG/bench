@@ -15,15 +15,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, Self, cast
+from typing import TYPE_CHECKING, Any, NoReturn, Self, cast
 
 from bench.core.invocation import EMPTY_MAPPING, SuccessFn, to_argv
 from bench.core.metric import (
     IterationMetric,
     MetricSource,
-    ProcessMetric,
+    Metric,
     StdoutMetricSource,
-    as_metric_source,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
@@ -171,8 +170,8 @@ class BuilderBase:
     cwd: PathFactory = UNSET
     env: EnvFactory = UNSET
     timeout: Factory[float | None] = UNSET
-    iteration_metrics: Factory[tuple[tuple[IterationMetric, MetricSource], ...]] = UNSET
-    process_metrics: Factory[tuple[ProcessMetric, ...]] = UNSET
+    iteration_metrics: Factory[tuple[IterationMetric, ...]] = UNSET
+    process_metrics: Factory[tuple[Metric, ...]] = UNSET
     success: Factory[SuccessFn] = UNSET
     warmup: Factory[StoppingPolicy] = UNSET
     runs: Factory[StoppingPolicy] = UNSET
@@ -268,7 +267,6 @@ class BuilderBase:
     def add_metric(
         self,
         metric: IterationMetric,
-        source: Literal["stdout", "stderr"] | MetricSource = "stdout",
     ) -> Self:
         """Append one per-iteration metric reading from `source` ("stdout",
         "stderr", or a `(InvocationResult) -> str` extractor)."""
@@ -281,24 +279,23 @@ class BuilderBase:
                 metric,
                 "use with_process_metric for process metrics like Time or max_rss",
             )
-        src = as_metric_source(source)
         current = self.iteration_metrics
         base = current if current is not UNSET else const(())
 
         def build(
             ctx: Context[Any],
-        ) -> tuple[tuple[IterationMetric, MetricSource], ...]:
-            return base(ctx) + ((metric, src),)
+        ) -> tuple[IterationMetric, ...]:
+            return base(ctx) + (metric,)
 
         return dataclasses.replace(self, iteration_metrics=build)
 
-    def with_process_metric(self, *metrics: ProcessMetric) -> Self:
+    def with_process_metric(self, *metrics: Metric) -> Self:
         """Set (replace) the whole-process metrics (peak RSS, total time, ...)."""
         for m in metrics:
-            if not isinstance(m, ProcessMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
+            if not isinstance(m, Metric):  # pyright: ignore[reportUnnecessaryIsInstance]
                 _raise_builder_type_error(
                     "with_process_metric",
-                    "a ProcessMetric",
+                    "a Metric",
                     m,
                     "use with_metric for iteration metrics like Regex or FloatPerLine",
                 )

@@ -37,8 +37,7 @@ from bench.core.invocation import (
 )
 from bench.core.metric import (
     IterationMetric,
-    MetricSource,
-    ProcessMetric,
+    Metric,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy
@@ -183,8 +182,8 @@ class Benchmark(_DataAttrs):
     name: str
     invocation: Invocation
     variant: Variant
-    iteration_metrics: tuple[tuple[IterationMetric, MetricSource], ...]
-    process_metrics: tuple[ProcessMetric, ...]
+    iteration_metrics: tuple[IterationMetric, ...]
+    process_metrics: tuple[Metric, ...]
     success: SuccessFn
     warmup: StoppingPolicy
     runs: StoppingPolicy

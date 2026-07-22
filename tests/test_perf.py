@@ -1,4 +1,4 @@
-"""Opt-in perf counters: a self-contained ProcessMetric.
+"""Opt-in perf counters: a self-contained Metric.
 
 `PerfStat` both builds the `perf stat` command prefix (via `wrap`) and parses
 perf's `-x,` CSV from the process stderr. It never touches argv on its own.

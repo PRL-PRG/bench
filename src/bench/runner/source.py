@@ -125,8 +125,8 @@ class CommandSource(ExecutionSource):
             # source text, while its process metrics read the whole result.
             it_samples = [
                 s
-                for m, source in b.iteration_metrics
-                for s in m.process(source(result))
+                for m in b.iteration_metrics
+                for s in m.process(result)
             ]
             process_samples = _with_elapsed(
                 [s for m in b.process_metrics for s in m.process(result)], result

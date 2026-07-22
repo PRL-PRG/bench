@@ -89,7 +89,7 @@ The pieces you plug in:
 
 * **Metric** - turns a run into samples. Two kinds: an `IterationMetric`
   parses each iteration's text (`Regex`, `FloatPerLine`, `Rebench`), a
-  `ProcessMetric` reads the finished process (`Time`, `RUsage`, `max_rss()`,
+  `Metric` reads the finished process (`Time`, `RUsage`, `max_rss()`,
   and `PerfStat` for `perf stat` hardware counters).
 * **StoppingPolicy** - decides when enough runs have been collected:
   `FixedRuns(n)`, `MaxDuration(seconds)`, `CoefficientOfVariation(...)`,

@@ -21,7 +21,7 @@ from bench.core.results import (
 from bench.core.metric import (
     FloatPerLine,
     IterationMetric,
-    ProcessMetric,
+    Metric,
     Rebench,
     Regex,
     RUsage,
@@ -118,7 +118,7 @@ __all__ = [
     "report_to_json",
     # Metrics
     "IterationMetric",
-    "ProcessMetric",
+    "Metric",
     "Time",
     "Regex",
     "FloatPerLine",

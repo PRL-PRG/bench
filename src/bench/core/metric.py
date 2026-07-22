@@ -3,7 +3,7 @@
 Two kinds, distinguished by what they read:
 
   - `IterationMetric` parses one iteration's text into Samples.
-  - `ProcessMetric` reads the whole `InvocationResult`.
+  - `Metric` reads the whole `InvocationResult`.
 
 Both carry an optional `direction`.
 """
@@ -11,12 +11,11 @@ Both carry an optional `direction`.
 from __future__ import annotations
 
 import abc
-import dataclasses
 import re
 import sys
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, field
-from typing import Literal, Self
+import copy
+from collections.abc import Callable, Iterable
+from typing import Any, Literal, Mapping, Self
 
 from bench.core.invocation import InvocationResult
 from bench.core.results import Sample
@@ -41,13 +40,16 @@ def as_metric_source(
     source: Literal["stdout", "stderr"] | MetricSource,
 ) -> MetricSource:
     """Coerce a builder-level source argument into a MetricSource callable."""
-    if source == "stdout":
-        return StdoutMetricSource
-    if source == "stderr":
-        return StderrMetricSource
     if callable(source):
         return source
-    raise ValueError(f"unknown metric source: {source!r}")
+
+    match source:
+        case "stdout":
+            return StdoutMetricSource
+        case "stderr":
+            return StderrMetricSource
+        case _:
+            raise ValueError(f"unknown metric source: {source!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -55,45 +57,117 @@ def as_metric_source(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _MetricBase[T](abc.ABC):
+class Metric(abc.ABC):
     """A metric reads input of type `T` and emits Samples.
 
     `extract` parses the input. `process` applies the optional `direction`
-    override. `IterationMetric` and `ProcessMetric` fix `T` to the iteration
+    override. `IterationMetric` and `Metric` fix `T` to the iteration
     text and the `InvocationResult` respectively.
     """
 
-    direction: Direction = field(default=None, kw_only=True)
+    metric: str
+    unit: str
+    direction: Direction
+
+    def __init__(
+        self, metric: str, unit: str = "", direction: Direction = None
+    ) -> None:
+        self.unit = unit
+        self.metric = metric
+        self.direction = direction
 
     @abc.abstractmethod
-    def extract(self, data: T, /) -> Iterable[Sample]: ...
+    def process(self, data: InvocationResult) -> Iterable[Sample]: ...
 
-    def process(self, data: T) -> Iterator[Sample]:
-        yield from self._emit(self.extract(data))
+    def get_sample(
+        self,
+        value: float,
+        metric: str | None = None,
+        unit: str | None = None,
+        iteration: int | None = None,
+        extra: Mapping[str, Any] = {},
+    ) -> Sample:
+        return Sample(
+            metric=metric if metric is not None else self.metric,
+            value=value,
+            unit=unit if unit is not None else self.unit,
+            lower_is_better=self.direction,
+            iteration=iteration,
+            extra=extra,
+        )
 
-    def _emit(self, samples: Iterable[Sample]) -> Iterator[Sample]:
-        for s in samples:
-            if self.direction is None:
-                yield s
-            else:
-                yield dataclasses.replace(s, lower_is_better=self.direction)
+
+class BuildableMetric(Metric):
+    """Mixin for Metric enabling a builder syntax"""
 
     def lower_is_better(self) -> Self:
-        return dataclasses.replace(self, direction=True)
+        o = copy.copy(self)
+        o.direction = True
+        return o
 
     def higher_is_better(self) -> Self:
-        return dataclasses.replace(self, direction=False)
+        o = copy.copy(self)
+        o.direction = False
+        return o
 
 
-@dataclass(frozen=True)
-class IterationMetric(_MetricBase[str]):
+class IterationMetric(Metric):
     """Parse one iteration's text into Samples."""
 
+    source: MetricSource
 
-@dataclass(frozen=True)
-class ProcessMetric(_MetricBase[InvocationResult]):
-    """Read whole-process Samples from an InvocationResult."""
+    def __init__(
+        self,
+        source: MetricSource,
+        metric: str,
+        unit: str = "",
+        direction: Direction = None,
+    ) -> None:
+        super().__init__(metric, unit, direction)
+        self.source = source
+
+    @abc.abstractmethod
+    def process_text(self, text: str) -> Iterable[Sample]: ...
+
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
+        text = self.source(data)
+        yield from self.process_text(text)
+
+
+class MonotonicIterationMetric(IterationMetric):
+    iteration: int
+
+    def __init__(
+        self,
+        source: MetricSource,
+        metric: str,
+        unit: str = "",
+        direction: Direction = None,
+    ) -> None:
+        super().__init__(source, metric, unit, direction)
+        self.iteration = 0
+
+    def get_sample(
+        self,
+        value: float,
+        metric: str | None = None,
+        unit: str | None = None,
+        iteration: int | None = None,
+        extra: Mapping[str, Any] = {},
+    ) -> Sample:
+        assert iteration is None, (
+            "Iteration should not be provided in MonotonicIterationMetric to get_sample"
+        )
+
+        i = self.iteration
+        self.iteration += 1
+        return super().get_sample(
+            value=value,
+            metric=metric,
+            unit=unit,
+            iteration=i,
+            extra=extra,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +175,7 @@ class ProcessMetric(_MetricBase[InvocationResult]):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class FloatPerLine(IterationMetric):
+class FloatPerLine(IterationMetric, BuildableMetric):
     """Parse non-empty lines of the iteration text as floats, one sample each.
 
     `line` selects a single 1-based non-empty line (negative counts from the
@@ -111,14 +184,21 @@ class FloatPerLine(IterationMetric):
     """
 
     unit: str
-    metric: str
-    line: int | None = None
+    line: int | None
 
-    def __post_init__(self) -> None:
-        if self.line == 0:
-            raise ValueError("line must be non-zero")
+    def __init__(
+        self,
+        source: MetricSource,
+        metric: str,
+        line: int | None = None,
+        unit: str = "",
+        direction: Direction = None,
+    ) -> None:
+        super().__init__(source, metric, unit, direction)
+        self.unit = unit
+        self.line = line
 
-    def extract(self, text: str) -> Iterable[Sample]:
+    def process_text(self, text: str) -> Iterable[Sample]:
         if not text:
             return
         lines = [s for s in (ln.strip() for ln in text.split("\n")) if s]
@@ -130,46 +210,62 @@ class FloatPerLine(IterationMetric):
                 return
         for line in lines:
             try:
-                yield Sample(metric=self.metric, value=float(line), unit=self.unit)
+                yield self.get_sample(value=float(line))
             except ValueError:
                 continue
 
-    def last_line(self) -> Self:
+    @staticmethod
+    def last_line(
+        source: MetricSource,
+        metric: str,
+        unit: str = "",
+        direction: Direction = None,
+    ) -> FloatPerLine:
         """Parse only the last non-empty line."""
-        return dataclasses.replace(self, line=-1)
-
-    def nth(self, i: int) -> Self:
-        """Parse only the i-th non-empty line (1-based, negatives from the end)."""
-        return dataclasses.replace(self, line=i)
+        return FloatPerLine(
+            source=source, metric=metric, line=-1, unit=unit, direction=direction
+        )
 
 
-@dataclass(frozen=True)
-class Regex(IterationMetric):
+class Regex(IterationMetric, BuildableMetric):
     """Extract metric values via a regex against the iteration text."""
 
-    metric: str
-    regex: re.Pattern[str] | str
-    match_group: str | int = field(default=1, kw_only=True)
-    transform: Callable[[str], float] = field(default=float, kw_only=True)
-    unit: str = field(default="", kw_only=True)
-    unit_group: str | int | None = field(default=None, kw_only=True)
+    def __init__(
+        self,
+        metric: str,
+        regex: re.Pattern[str] | str,
+        source: MetricSource,
+        *,
+        unit: str = "",
+        direction: Direction = None,
+        match_group: str | int = 1,
+        transform: Callable[[str], float] = float,
+        unit_group: str | int | None = None,
+    ):
+        super().__init__(source, metric, unit, direction)
 
-    def __post_init__(self) -> None:
-        if isinstance(self.regex, str):
-            object.__setattr__(self, "regex", re.compile(self.regex))
+        if isinstance(regex, str):
+            self.regex = re.compile(regex)
+        else:
+            self.regex = regex
 
-    def extract(self, text: str) -> Iterable[Sample]:
+        self.match_group = match_group
+        self.transform = transform
+        self.unit_group = unit_group
+
+    def process_text(self, text: str) -> Iterable[Sample]:
         pattern = self.regex
-        assert isinstance(pattern, re.Pattern)  # compiled in __post_init__
+
         for m in pattern.finditer(text):
             value = self.transform(m.group(self.match_group))
             unit = (
                 m.group(self.unit_group) if self.unit_group is not None else self.unit
             )
-            yield Sample(metric=self.metric, value=value, unit=unit)
+            yield self.get_sample(value=value, unit=unit)
 
 
-@dataclass(frozen=True)
+# TODO: criterions
+# TODO: Make sure it is correct
 class Rebench(IterationMetric):
     """ReBench log format adapter.
 
@@ -189,7 +285,16 @@ class Rebench(IterationMetric):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    def extract(self, text: str) -> Iterable[Sample]:
+    iteration: int
+
+    def __init__(
+        self,
+        source: MetricSource,
+    ) -> None:
+        super().__init__(source, "runtime", "ms", True)
+        self.iteration = 0
+
+    def process_text(self, text: str) -> Iterable[Sample]:
         if not text:
             return
         for line in text.split("\n"):
@@ -201,15 +306,15 @@ class Rebench(IterationMetric):
                 value = float(m.group("runtime"))
                 if m.group("unit") == "u":
                     value /= 1000.0
-                yield Sample(metric="runtime", value=value, unit="ms")
-                continue
-            m = self._re_criterion.match(line)
-            if m is not None:
-                yield Sample(
-                    metric=m.group("criterion"),
-                    value=float(m.group("value")),
-                    unit=m.group("unit"),
-                )
+                yield self.get_sample(value=value)
+
+            # m = self._re_criterion.match(line)
+            # if m is not None:
+            #     yield Sample(
+            #         metric=m.group("criterion"),
+            #         value=float(m.group("value")),
+            #         unit=m.group("unit"),
+            #     )
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +322,7 @@ class Rebench(IterationMetric):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class RUsage(ProcessMetric):
+class RUsage(BuildableMetric):
     """Emit one sample from a single `resource.struct_rusage` field."""
 
     Field = Literal[
@@ -240,46 +344,54 @@ class RUsage(ProcessMetric):
         "ru_nivcsw",
     ]
 
-    field: Field
-    metric: str
-    unit: str = ""
+    def __init__(
+        self, field: Field, metric: str, unit: str = "", direction: Direction = None
+    ) -> None:
+        super().__init__(metric, unit, direction)
+        self.field = field
 
-    def extract(self, result: InvocationResult) -> Iterable[Sample]:
-        if result.rusage is None:
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
+        if data.rusage is None:
             return
-        value = float(getattr(result.rusage, self.field))
+        value = float(getattr(data.rusage, self.field))
         # macOS reports ru_maxrss in bytes, not kB.
         if sys.platform == "darwin" and self.field == "ru_maxrss":
             value /= 1024.0
-        yield Sample(metric=self.metric, value=value, unit=self.unit)
+        yield self.get_sample(value=value, unit=self.unit)
 
 
-@dataclass(frozen=True)
-class Time(ProcessMetric):
+class Time(Metric):
     """Up to three time samples: `elapsed` (wall), `user`, `system` (s).
 
     All are lower-is-better by default, override with `.higher_is_better()`.
     """
 
-    elapsed: bool = True
-    user: bool = False
-    system: bool = False
-    direction: Direction = field(default=True, kw_only=True)
+    def __init__(self) -> None:
+        super().__init__("elapsed", "s", True)
 
-    def __post_init__(self) -> None:
-        if not (self.elapsed or self.user or self.system):
-            raise ValueError("Time() needs at least one of elapsed/user/system")
-
-    def extract(self, result: InvocationResult) -> Iterable[Sample]:
-        if self.elapsed and result.runtime is not None:
-            yield Sample(metric="elapsed", value=result.runtime, unit="s")
-        if result.rusage is not None:
-            if self.user:
-                yield Sample(metric="user", value=result.rusage.ru_utime, unit="s")
-            if self.system:
-                yield Sample(metric="system", value=result.rusage.ru_stime, unit="s")
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
+        if data.runtime is not None:
+            yield self.get_sample(value=data.runtime)
 
 
-def max_rss() -> ProcessMetric:
+class UserTime(Metric):
+    def __init__(self) -> None:
+        super().__init__("user", "s", True)
+
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
+        if data.rusage is not None:
+            yield self.get_sample(value=data.rusage.ru_utime)
+
+
+class SystemTime(Metric):
+    def __init__(self) -> None:
+        super().__init__("system", "s", True)
+
+    def process(self, data: InvocationResult) -> Iterable[Sample]:
+        if data.rusage is not None:
+            yield self.get_sample(value=data.rusage.ru_stime)
+
+
+def max_rss() -> Metric:
     """RSS in kB, lower-is-better. macOS byte-vs-kB normalization handled."""
     return RUsage("ru_maxrss", "max_rss", "kB").lower_is_better()
