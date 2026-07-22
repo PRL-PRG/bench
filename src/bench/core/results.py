@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -33,6 +34,9 @@ class Iteration:
     failure: str | None = None
     runtime: float = 0.0  # command runtime that produced this iteration (s)
     warmup: bool = False  # a discarded warmup iteration, flagged by the Controller
+
+    def add_sample(self, sample: Sample) -> Iteration:
+        return dataclasses.replace(self, samples=self.samples + [sample])
 
     def is_failure(self) -> bool:
         return self.failure is not None

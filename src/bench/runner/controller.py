@@ -5,12 +5,43 @@ from __future__ import annotations
 import dataclasses
 import time
 
+from bench.core.invocation import InvocationResult
 from bench.core.outlier import NoDetection, OutlierDetection
-from bench.core.process import interrupted
-from bench.core.results import Iteration, Report, Execution, Sample
+from bench.core.process import execute, interrupted
+from bench.core.results import Iteration, Report, Execution, Sample, diagnostic_excerpt
 from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
-from bench.runner.source import make_source
+from bench.runner.base import format_benchmark_verbose
+
+
+def _make_execution(
+    b: Benchmark,
+    result: InvocationResult,
+    *,
+    run: int,
+    iterations: list[Iteration],
+    process_samples: list[Sample],
+) -> Execution:
+    """Assemble an Execution from a resolved benchmark and its process result."""
+    ex = b.invocation
+    return Execution(
+        suite=b.suite,
+        benchmark=b.name,
+        variant=b.variant,
+        variant_label=b.variant_label,
+        run=run,
+        command=ex.command,
+        cwd=str(ex.cwd),
+        env=dict(ex.env),
+        returncode=result.returncode,
+        runtime=result.runtime,
+        failure=result.failure,
+        message=diagnostic_excerpt(result.stdout, result.stderr),
+        stdout=result.stdout,
+        stderr=result.stderr,
+        iterations=iterations,
+        process_samples=process_samples,
+    )
 
 
 def _mark_outliers(
@@ -81,6 +112,56 @@ class Controller:
     The source owns scheduling and spawning.
     """
 
+    def evaluate_invocation(
+        self, b: Benchmark, result: InvocationResult
+    ) -> InvocationResult:
+        verdict = b.success(result)
+        if verdict is not None and result.failure is None:
+            return dataclasses.replace(result, failure=verdict)
+
+        return result
+
+    def extract_execution(
+        self, b: Benchmark, result: InvocationResult, run: int
+    ) -> Execution:
+        iterations = list[Iteration]()
+        process_samples = list[Sample]()
+
+        for metrics in (b.iteration_metrics, b.process_metrics):
+            for metric in metrics:
+                for sample in metric.process(result):
+                    if sample.iteration is not None:
+                        # Iteration sample
+                        if sample.iteration >= len(iterations):
+                            iterations.extend(
+                                [Iteration()] * (sample.iteration + 1 - len(iterations))
+                            )
+                        iterations[sample.iteration] = iterations[
+                            sample.iteration
+                        ].add_sample(sample)
+                    else:
+                        # Process sample
+                        process_samples.append(sample)
+
+        return _make_execution(
+            b,
+            result,
+            run=run,
+            iterations=iterations,
+            process_samples=process_samples,
+        )
+
+    def execute_benchmark(self, b: Benchmark, run: int, verbose: bool) -> Execution:
+        if run != 1 and b.cooldown > 0:
+            time.sleep(b.cooldown)
+
+        if verbose:
+            print(format_benchmark_verbose(b, run))
+
+        # The execution
+        result = self.evaluate_invocation(b, execute(b.invocation))
+        return self.extract_execution(b, result, run)
+
     def run_benchmark(
         self, b: Benchmark, report: Report, reporter: Reporter, verbose: bool = False
     ) -> None:
@@ -88,36 +169,38 @@ class Controller:
             return
 
         reporter.benchmark_start(b)
-        source = make_source(b, verbose=verbose)
 
-        # Cooldown pauses between separate process executions. A harness is one
-        # streaming process, so its iterations are not separate executions.
-        cooldown = b.cooldown if not b.harness else 0.0
-        first = True
+        run = 0
+        executions = list[Execution]()
 
-        for policy, in_warmup in ((b.warmup, True), (b.runs, False)):
-            policy_state = policy.start()
-            while not policy_state.satisfied():
-                try:
-                    if not first and cooldown > 0:
-                        time.sleep(cooldown)
-                    first = False
-                    try:
-                        it, label = source.next()
-                    except StopIteration:
-                        break
+        warmup_policy_state = b.warmup.start()
+        runs_policy_state = b.runs.start()
 
-                    if in_warmup:
-                        it = dataclasses.replace(it, warmup=True)
+        while not warmup_policy_state.satisfied() and not runs_policy_state.satisfied():
+            if interrupted():
+                break
 
-                    reporter.iteration(it, label)
-                    if interrupted():
-                        break
+            run += 1
+            execution = self.execute_benchmark(b, run, verbose)
 
-                    policy_state.observe(it)
-                finally:
-                    executions = source.close()
-                    executions = _mark_outliers(executions, b.outlier_detection)
-                    for execution in executions:
-                        report.add(execution)
-                        reporter.execution_done(execution)
+            result_iterations = execution.iterations
+            for idx, it in enumerate(execution.iterations):
+                if not warmup_policy_state.satisfied():
+                    result_iterations[idx] = dataclasses.replace(it, warmup=True)
+                    warmup_policy_state.observe(it)
+
+                elif not runs_policy_state.satisfied():
+                    runs_policy_state.observe(it)
+
+            executions.append(
+                dataclasses.replace(execution, iterations=result_iterations)
+            )
+
+        executions = _mark_outliers(executions, b.outlier_detection)
+
+        for execution in executions:
+            reporter.execution_done(execution)
+            report.add(execution)
+
+        reporter.benchmark_done(b, executions)
+
