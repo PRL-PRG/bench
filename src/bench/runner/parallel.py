@@ -26,7 +26,6 @@ from bench.core.results import Iteration, Report, Execution
 from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
-from bench.runner.controller import Controller
 
 
 class _LockedReport(Report):
@@ -68,13 +67,11 @@ class Parallel(Runner):
     def __init__(
         self,
         workers: int,
-        controller: Controller = Controller(),
         reporter: Reporter | None = None,
         *,
         verbose: bool = False,
     ) -> None:
         super().__init__(reporter, verbose=verbose)
-        self.controller = controller
         self.workers = workers
 
     def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
@@ -87,7 +84,7 @@ class Parallel(Runner):
             # has already run, so a process started now would be orphaned.
             if interrupted():
                 return
-            self.controller.run_benchmark(
+            p.controller.run_benchmark(
                 p, locked_report, locked_reporter, self.verbose
             )
 

@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, NoReturn, Self, cast
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from bench.core.invocation import EMPTY_MAPPING, SuccessFn, to_argv
 from bench.core.metric import (
@@ -24,6 +24,7 @@ from bench.core.metric import (
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
 from bench.builder.context import Context
+from bench.runner.controller import Controller
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
@@ -163,6 +164,7 @@ class BuilderBase:
     runs: Factory[StoppingPolicy] = UNSET
     outlier_detection: OutlierDetection = UNSET
     cooldown: float = UNSET
+    controller: Controller = UNSET
     label_fn: LabelFn = UNSET
     matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
     skips: tuple[SkipFn, ...] = ()
@@ -180,6 +182,9 @@ class BuilderBase:
 
     def with_timeout(self, timeout: float | None | Factory[float | None]) -> Self:
         return dataclasses.replace(self, timeout=as_build(timeout))
+
+    def with_controller(self, controller: Controller | Factory[Controller]) -> Self:
+        return dataclasses.replace(self, controller = as_build(controller))
 
     def with_success(self, fn: SuccessFn) -> Self:
         return dataclasses.replace(self, success=const(fn))

@@ -25,6 +25,7 @@ from bench.core.invocation import (
 )
 from bench.core.outlier import ModifiedZScore
 from bench.core.policy import FixedRuns
+from bench.runner.controller import Controller
 
 
 type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
@@ -54,6 +55,7 @@ DEFAULTS = BuilderBase(
     runs=const(FixedRuns(1)),
     outlier_detection=ModifiedZScore(),
     cooldown=0.0,
+    controller=Controller(),
     label_fn=default_label,
 )
 

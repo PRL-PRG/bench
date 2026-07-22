@@ -47,6 +47,7 @@ from bench.builder.base import (
     const,
 )
 from bench.builder.context import Context, Data
+from bench.runner.controller import Controller
 
 
 def default_label(b: Benchmark) -> str:
@@ -166,6 +167,7 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             runs=self.runs(ctx),
             outlier_detection=self.outlier_detection,
             cooldown=self.cooldown,
+            controller=self.controller,
             data=self.data,
         )
         return dataclasses.replace(b, variant_label=self.label_fn(b))
@@ -185,6 +187,7 @@ class Benchmark(_DataAttrs):
     runs: StoppingPolicy
     outlier_detection: OutlierDetection
     cooldown: float
+    controller: Controller
     data: Mapping[str, Any]
     # Filled by a follow-up `dataclasses.replace` once the benchmark exists
     # (the label fn needs the resolved Benchmark), so it keeps a default and

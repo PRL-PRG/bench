@@ -7,7 +7,6 @@ from bench.core.results import Report
 from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
-from bench.runner.controller import Controller
 
 
 class Sequential(Runner):
@@ -15,16 +14,14 @@ class Sequential(Runner):
 
     def __init__(
         self,
-        controller: Controller = Controller(),
         reporter: Reporter | None = None,
         *,
         verbose: bool = False,
     ) -> None:
         super().__init__(reporter, verbose=verbose)
-        self.controller = controller
 
     def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
         for p in planned:
             if interrupted():
                 break
-            self.controller.run_benchmark(p, report, self.reporter, self.verbose)
+            p.controller.run_benchmark(p, report, self.reporter, self.verbose)
