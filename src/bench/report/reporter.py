@@ -502,7 +502,7 @@ class ProgressReporter(Reporter):
         elapsed = next((s for s in stats if s.metric == "elapsed"), None)
         head = f"[bench.label]Finished:[/] {markup_escape(name)}"
         if elapsed is None:
-            return f"{head}: [bench.failure]FAILED[/]"
+            return f"{head}"
         return f"{head}: {stat_line(elapsed)}"
 
     def _print_plain(
