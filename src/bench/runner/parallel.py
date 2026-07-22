@@ -84,10 +84,8 @@ class Parallel(Runner):
             # has already run, so a process started now would be orphaned.
             if interrupted():
                 return
-            p.controller.run_benchmark(
-                p, locked_report, locked_reporter, self.verbose
-            )
+
+            p.controller.run_benchmark(p, locked_report, locked_reporter, self.verbose)
 
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            for p in planned:
-                pool.submit(_one, p)
+            list(pool.map(_one, planned))
