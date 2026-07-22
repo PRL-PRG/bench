@@ -36,7 +36,6 @@ from bench.core.invocation import (
     format_variant,
 )
 from bench.core.metric import (
-    IterationMetric,
     Metric,
 )
 from bench.core.outlier import OutlierDetection
@@ -155,15 +154,13 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             timeout=self.timeout(ctx),
             stdin=self.stdin(ctx),
         )
-        iteration_metrics = self.iteration_metrics(ctx)
-        process_metrics = self.process_metrics(ctx)
+        metrics = self.metrics(ctx)
         b = Benchmark(
             suite=suite,
             name=self.name,
             invocation=invocation,
             variant=variant,
-            iteration_metrics=iteration_metrics,
-            process_metrics=process_metrics,
+            metrics=metrics,
             success=self.success(ctx),
             warmup=self.warmup(ctx),
             runs=self.runs(ctx),
@@ -182,8 +179,7 @@ class Benchmark(_DataAttrs):
     name: str
     invocation: Invocation
     variant: Variant
-    iteration_metrics: tuple[IterationMetric, ...]
-    process_metrics: tuple[Metric, ...]
+    metrics: tuple[Metric, ...]
     success: SuccessFn
     warmup: StoppingPolicy
     runs: StoppingPolicy

@@ -19,10 +19,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Self, cast
 
 from bench.core.invocation import EMPTY_MAPPING, SuccessFn, to_argv
 from bench.core.metric import (
-    IterationMetric,
-    MetricSource,
     Metric,
-    StdoutMetricSource,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import StoppingPolicy, coerce_policy
@@ -147,16 +144,6 @@ def _merge_matrix(
     return MappingProxyType({**inner, **outer})
 
 
-def _raise_builder_type_error(
-    field: str, expected_type: str, value: object, hint: str = ""
-) -> NoReturn:
-    """Uniform TypeError for a builder setter given a wrong-typed argument."""
-    msg = f"{field} expects {expected_type}, got {type(value).__name__}"
-    if hint:
-        msg += f"; {hint}"
-    raise TypeError(msg)
-
-
 @dataclass(frozen=True, slots=True)
 class BuilderBase:
     """Shared configuration fields and `with_*` setters for the three builders
@@ -170,8 +157,7 @@ class BuilderBase:
     cwd: PathFactory = UNSET
     env: EnvFactory = UNSET
     timeout: Factory[float | None] = UNSET
-    iteration_metrics: Factory[tuple[IterationMetric, ...]] = UNSET
-    process_metrics: Factory[tuple[Metric, ...]] = UNSET
+    metrics: Factory[tuple[Metric, ...]] = UNSET
     success: Factory[SuccessFn] = UNSET
     warmup: Factory[StoppingPolicy] = UNSET
     runs: Factory[StoppingPolicy] = UNSET
@@ -246,60 +232,23 @@ class BuilderBase:
 
     # ----- metrics ----------------------------------------------------
 
-    def with_metric(
-        self, *metrics: IterationMetric | Factory[tuple[IterationMetric, ...]]
-    ) -> Self:
+    def with_metric(self, *metrics: Metric | Factory[tuple[Metric, ...]]) -> Self:
         """Set the per-iteration metrics, each reading stdout."""
-        if len(metrics) == 1 and callable(metrics[0]):
-            fn = metrics[0]
 
-            def build(
-                ctx: Context[Any],
-            ) -> tuple[tuple[IterationMetric, MetricSource], ...]:
-                return tuple((m, StdoutMetricSource) for m in fn(ctx))
+        def build(ctx: Context[Any]) -> tuple[Metric, ...]:
+            build_metrics = self.metrics(ctx)
 
-            return dataclasses.replace(self, iteration_metrics=build)
-        out = dataclasses.replace(self, iteration_metrics=const(()))
-        for m in cast("tuple[IterationMetric, ...]", metrics):
-            out = out.add_metric(m)
+            for metric in metrics:
+                if callable(metric):
+                    build_metrics += metric(ctx)
+                else:
+                    build_metrics += (metric,)
+
+            return build_metrics
+
+        out = dataclasses.replace(self, metrics=build)
+
         return out
-
-    def add_metric(
-        self,
-        metric: IterationMetric,
-    ) -> Self:
-        """Append one per-iteration metric reading from `source` ("stdout",
-        "stderr", or a `(InvocationResult) -> str` extractor)."""
-        # Runtime guard for callers not running a type checker. A
-        # process metric would otherwise crash deep in extraction.
-        if not isinstance(metric, IterationMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
-            _raise_builder_type_error(
-                "with_metric/add_metric",
-                "an IterationMetric",
-                metric,
-                "use with_process_metric for process metrics like Time or max_rss",
-            )
-        current = self.iteration_metrics
-        base = current if current is not UNSET else const(())
-
-        def build(
-            ctx: Context[Any],
-        ) -> tuple[IterationMetric, ...]:
-            return base(ctx) + (metric,)
-
-        return dataclasses.replace(self, iteration_metrics=build)
-
-    def with_process_metric(self, *metrics: Metric) -> Self:
-        """Set (replace) the whole-process metrics (peak RSS, total time, ...)."""
-        for m in metrics:
-            if not isinstance(m, Metric):  # pyright: ignore[reportUnnecessaryIsInstance]
-                _raise_builder_type_error(
-                    "with_process_metric",
-                    "a Metric",
-                    m,
-                    "use with_metric for iteration metrics like Regex or FloatPerLine",
-                )
-        return dataclasses.replace(self, process_metrics=const(tuple(metrics)))
 
     # ----- inheritance ------------------------------------------------
 

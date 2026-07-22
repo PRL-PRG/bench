@@ -98,10 +98,7 @@ def format_benchmark_verbose(b: Benchmark, run: int) -> str:
     env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
     stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
     timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(
-        [_metric_name(m) for m in b.iteration_metrics]
-        + [_metric_name(m) for m in b.process_metrics]
-    )
+    metric_str = ", ".join(_metric_name(m) for m in b.metrics)
     success_str = (
         "<default>"
         if b.success is default_success

@@ -127,21 +127,20 @@ class Controller:
         iterations = list[Iteration]()
         process_samples = list[Sample]()
 
-        for metrics in (b.iteration_metrics, b.process_metrics):
-            for metric in metrics:
-                for sample in metric.process(result):
-                    if sample.iteration is not None:
-                        # Iteration sample
-                        if sample.iteration >= len(iterations):
-                            iterations.extend(
-                                [Iteration()] * (sample.iteration + 1 - len(iterations))
-                            )
-                        iterations[sample.iteration] = iterations[
-                            sample.iteration
-                        ].add_sample(sample)
-                    else:
-                        # Process sample
-                        process_samples.append(sample)
+        for metric in b.metrics:
+            for sample in metric.process(result):
+                if sample.iteration is not None:
+                    # Iteration sample
+                    if sample.iteration >= len(iterations):
+                        iterations.extend(
+                            [Iteration()] * (sample.iteration + 1 - len(iterations))
+                        )
+                    iterations[sample.iteration] = iterations[
+                        sample.iteration
+                    ].add_sample(sample)
+                else:
+                    # Process sample
+                    process_samples.append(sample)
 
         return _make_execution(
             b,
