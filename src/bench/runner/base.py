@@ -155,7 +155,7 @@ class Runner(abc.ABC):
                 if interrupted():
                     raise KeyboardInterrupt
         finally:
-            self.reporter.finalize()
+            self.reporter.finalize(report)
 
         return report
 

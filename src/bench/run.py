@@ -214,7 +214,7 @@ class BenchAppBuilder(BuilderBase):
         reporter.set_environment(report.environment, report.diagnostics)
         for r in report.executions:
             reporter.execution_done(r)
-        reporter.finalize()
+        reporter.finalize(report)
         return report
 
     def _do_list(self, planned: list[Benchmark]) -> Report:

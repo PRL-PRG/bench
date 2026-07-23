@@ -87,7 +87,7 @@ class Reporter(abc.ABC):
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
         pass
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         pass
 
 
@@ -103,19 +103,6 @@ class _EnvironmentAware:
     ) -> None:
         self._environment = environment
         self._diagnostics = diagnostics
-
-
-class _BufferingReporter(Reporter):
-    """Base for reporters that accumulate a Report and render it at
-    `finalize()`. Gives subclasses a thread-safe `execution_done`."""
-
-    def __init__(self) -> None:
-        self._report = Report()
-        self._lock = threading.Lock()
-
-    def execution_done(self, execution: Execution) -> None:
-        with self._lock:
-            self._report.add(execution)
 
 
 class CompositeReporter(Reporter):
@@ -150,9 +137,9 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.benchmark_done(b, executions)
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         for r in self.reporters:
-            r.finalize()
+            r.finalize(report)
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +171,7 @@ def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
     }
 
 
-class CsvReporter(_EnvironmentAware, _BufferingReporter):
+class CsvReporter(_EnvironmentAware, Reporter):
     """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
@@ -207,9 +194,9 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
         self._environment = environment
         self._diagnostics = []
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        variant_cols = self._report.variant_keys()
+        variant_cols = report.variant_keys()
         cols = (
             ["suite", "benchmark", "run"]
             + variant_cols
@@ -220,7 +207,7 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
-            for r in self._report.executions:
+            for r in report.executions:
                 variant_map = dict(r.variant)
                 base: dict[str, Any] = {
                     "suite": r.suite,
@@ -253,7 +240,7 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
 # ---------------------------------------------------------------------------
 
 
-class JsonReporter(_EnvironmentAware, _BufferingReporter):
+class JsonReporter(_EnvironmentAware, Reporter):
     """Buffer runs in memory, write a single JSON file on finalize().
 
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
@@ -273,12 +260,12 @@ class JsonReporter(_EnvironmentAware, _BufferingReporter):
         self._environment = environment
         self._diagnostics = diagnostics or []
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._report.environment = self._environment
-        self._report.diagnostics = self._diagnostics
+        report.environment = self._environment
+        report.diagnostics = self._diagnostics
         self.path.write_text(
-            report_to_json(self._report, include_output=self.include_output)
+            report_to_json(report, include_output=self.include_output)
         )
 
 
@@ -306,12 +293,6 @@ class DirReporter(_EnvironmentAware, Reporter):
         self._diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
-
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        self._environment = environment
-        self._diagnostics = diagnostics
 
     def start(self, plan: list[Benchmark]) -> None:
         self._counters = {}
@@ -480,7 +461,7 @@ class ProgressReporter(Reporter):
         self._local.prog = None
         self._local.task_id = None
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         if self._live is not None:
             self._live.stop()
             if self._passed or self._failed:
@@ -521,7 +502,7 @@ class ProgressReporter(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class SummaryReporter(_BufferingReporter):
+class SummaryReporter(Reporter):
     """Buffer runs, format on finalize().
 
     Takes a single `Formatter` (compose several with `&`). Summarizes the
@@ -541,16 +522,16 @@ class SummaryReporter(_BufferingReporter):
         self._formatter: Formatter = formatter or DefaultSummary()
         self._console = target_console or console
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         from bench.report.summary import summarize
 
-        out = self._formatter(summarize(self._report))
+        out = self._formatter(summarize(report))
         if out:
             self._console.print(out)
-        if self._report.failures:
+        if report.failures:
             self._console.print()
             self._console.print("[bench.label]Failures:[/]")
-            for execution in self._report.failures:
+            for execution in report.failures:
                 self._console.print("  " + self._failure_line(execution))
 
     @staticmethod
