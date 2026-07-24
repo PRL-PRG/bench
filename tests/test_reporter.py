@@ -481,3 +481,51 @@ def test_progress_harness_bar_drops_estimate_keeps_eta():
     assert any(isinstance(col, _EtaColumn) for col in harness)
     assert _has_estimate(command)
     assert any(isinstance(col, _EtaColumn) for col in command)
+
+
+def test_truncate_middle():
+    from bench.report.reporter import _truncate_middle
+
+    # Short (and exact-length) strings pass through unchanged.
+    assert _truncate_middle("short", 36) == "short"
+    assert _truncate_middle("abcd", 4) == "abcd"
+    assert _truncate_middle("", 36) == ""
+
+    # A long string is capped to width, elided in the middle, keeping head+tail.
+    long = "shootout/knucleotide/knucleotide_brute_3"
+    out = _truncate_middle(long, 20)
+    assert len(out) == 20
+    assert "…" in out
+    assert out.startswith(long[:3])
+    assert out.endswith(long[-3:])
+
+    # Tiny widths don't crash.
+    assert _truncate_middle("abc", 1) == "…"
+    assert _truncate_middle("abc", 0) == ""
+
+
+def test_progress_name_column_truncates():
+    # The per-worker bar leads with a _NameColumn that middle-truncates the
+    # benchmark name to the configured width.
+    from bench.report.reporter import _NameColumn
+
+    c = Console(theme=BENCHR_THEME, file=io.StringIO(), force_terminal=True, width=200)
+    s = suite(
+        "LongSuite",
+        bench("a_benchmark_with_a_really_quite_long_identifier")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_process_metric(Time())
+        .with_runs(1),
+    )
+    b = plan([s], None)[0]
+    rep = ProgressReporter(target_console=c, name_width=20)
+    rep.benchmark_start(b)
+    name_cols = [
+        col for col in rep._local.prog.columns if isinstance(col, _NameColumn)
+    ]
+    assert len(name_cols) == 1
+    task = rep._local.prog.tasks[0]
+    rendered = str(name_cols[0].render(task))
+    assert "…" in rendered
+    assert len(rendered) == 20

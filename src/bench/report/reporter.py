@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from cattrs import unstructure
 
+from rich.cells import cell_len
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markup import escape as markup_escape
@@ -18,6 +19,7 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress as RichProgress,
+    ProgressColumn,
     SpinnerColumn,
     Task,
     TaskID,
@@ -25,6 +27,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.table import Column
 from rich.text import Text
 
 from bench.builder.benchmark import Benchmark
@@ -351,12 +354,30 @@ class DirReporter(_EnvironmentAware, Reporter):
         (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
 
 
+DEFAULT_NAME_WIDTH = 36
+
+
 def _fmt_est(seconds: float) -> str:
     if seconds <= 0:
         return ""
     if seconds < 1.0:
         return f"{seconds * 1000:.0f}ms"
     return f"{seconds:.2f}s"
+
+
+def _truncate_middle(s: str, width: int) -> str:
+    """Cap `s` to `width` columns, eliding the middle with `…` (keeps head+tail),
+    macOS-Finder style."""
+    if width <= 0:
+        return ""
+    if len(s) <= width:
+        return s
+    keep = width - 1  # room for the ellipsis
+    if keep <= 0:
+        return "…"
+    left = (keep + 1) // 2
+    right = keep // 2
+    return s[:left] + "…" + s[len(s) - right :]  # len(s)-right handles right==0
 
 
 def _bench_total(b: Benchmark) -> int | None:
@@ -378,31 +399,51 @@ class _EtaColumn(TimeRemainingColumn):
         return Text("ETA ") + super().render(task)
 
 
+class _NameColumn(ProgressColumn):
+    """The benchmark name (already middle-truncated), rendered as a literal (no
+    markup parsing) so names containing brackets stay intact. Sits in a
+    fixed-width column so it isn't squeezed when the row overflows — the flexible
+    bar shrinks instead."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(table_column=Column(no_wrap=True, width=cell_len(name)))
+        self._name = name
+
+    def render(self, task: Task) -> Text:
+        return Text(self._name)
+
+
 class ProgressReporter(Reporter):
     """Live progress on a terminal.
 
     A top `Progress` bar tracks how many benchmarks finished and how many failed.
-    Under it, each running benchmark has a bar with its progress count; command
-    benchmarks also show a per-iteration elapsed estimate (a harness omits that,
-    since its iterations aren't individually timed). Both show an ETA when the
-    iteration count is bounded. Bars stretch to the screen edge. When a
-    benchmark finishes its bar is replaced by a persistent summary line printed
-    above the live region, carrying the same elapsed stats as the final summary
-    (or FAILED).
+    Under it, each running benchmark occupies a single line led by its name
+    (middle-truncated to `name_width`), followed by a spinner and its progress
+    count; command benchmarks also show a per-iteration elapsed estimate (a
+    harness omits that, since its iterations aren't individually timed). Both
+    show an ETA when the iteration count is bounded. Bars stretch to the screen
+    edge. When a benchmark finishes its bar is replaced by a persistent summary
+    line printed above the live region, carrying the same elapsed stats as the
+    final summary (or FAILED).
 
     Each benchmark runs start to finish on one thread, so the bar it owns is held
     on a thread-local.
     """
 
-    def __init__(self, target_console: Console | None = None) -> None:
+    def __init__(
+        self,
+        target_console: Console | None = None,
+        name_width: int = DEFAULT_NAME_WIDTH,
+    ) -> None:
         self._console = target_console or console
         self._is_tty = self._console.is_terminal
+        self._name_width = name_width
         self._lock = threading.Lock()
         self._local = threading.local()
         self._passed = 0
         self._failed = 0
         self._overall_task: TaskID | None = None
-        self._active: dict[int, tuple[RichProgress, str]] = {}
+        self._active: dict[int, RichProgress] = {}
         self._next_slot = 0
         if self._is_tty:
             self._overall: RichProgress | None = RichProgress(
@@ -444,7 +485,8 @@ class ProgressReporter(Reporter):
         # A harness is one streaming process, so its per-iteration elapsed
         # estimate isn't measured; it still gets an ETA when its iteration count
         # is known (_EtaColumn self-blanks otherwise).
-        columns: list[Any] = [SpinnerColumn()]
+        name_col = _NameColumn(_truncate_middle(name, self._name_width))
+        columns: list[Any] = [name_col, SpinnerColumn()]
         if not b.harness:
             columns.append(TextColumn("elapsed estimate: {task.fields[est]}"))
         columns.append(BarColumn(bar_width=None))
@@ -455,7 +497,7 @@ class ProgressReporter(Reporter):
         with self._lock:
             slot = self._next_slot
             self._next_slot += 1
-            self._active[slot] = (prog, f"Running: {name}")
+            self._active[slot] = prog
             self._live.update(self._group())
         self._local.slot = slot
         self._local.prog = prog
@@ -507,8 +549,7 @@ class ProgressReporter(Reporter):
         parts: list[Any] = []
         if self._overall_task is not None and self._overall is not None:
             parts.append(self._overall)
-        for prog, header in self._active.values():
-            parts.append(Group(Text(header), prog))
+        parts.extend(self._active.values())
         return Group(*parts)
 
     @staticmethod
