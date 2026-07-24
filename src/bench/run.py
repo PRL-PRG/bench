@@ -60,6 +60,8 @@ from bench.runner.base import (
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
+from bench.utils import BenchError, print_exception
+from bench.report.theme import error_console
 
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
@@ -69,7 +71,7 @@ type Filter = Callable[[Benchmark], bool]
 type FilterFactory = Factory[Filter]
 
 
-class NoBenchmarksMatchedError(Exception):
+class NoBenchmarksMatchedError(BenchError):
     """No benchmark matched the --include/--exclude selection."""
 
 
@@ -193,8 +195,9 @@ class BenchAppBuilder(BuilderBase):
 
         if self.denoise:
             if not is_root():
-                raise PermissionError(
-                    "--denoise requires root (try: sudo bench run --denoise ...)"
+                raise BenchError(
+                    "--denoise requires root (try: sudo bench run --denoise ...)",
+                    exit_code=2,
                 )
             with denoise_session() as applied:
                 console.print(
@@ -208,6 +211,17 @@ class BenchAppBuilder(BuilderBase):
         report.environment = env
         report.diagnostics = env_diagnostics
         return report
+
+    def main(self, args: list[str] | argparse.Namespace | None = None) -> int:
+        try:
+            self.run(args)
+            return 0
+        except BenchError as e:
+            print_exception(e, with_traceback=False)
+            return e.exit_code
+        except KeyboardInterrupt:
+            error_console.print("[bench.failure]Interrupted[/]")
+            return 130
 
     def _do_show(self, reporter: Reporter, path: str) -> Report:
         report = report_from_json(Path(path).read_text())

@@ -463,3 +463,32 @@ def test_empty_selection_raises():
         bench_app().add_all(_trivial("A")).run(
             ["--include", "no-such-bench", "--no-progress"]
         )
+
+
+# ----- main(): the clean error boundary for scripts -----------------------
+
+
+def test_main_returns_zero_on_success():
+    code = bench_app().add_all(_trivial("A")).main(["--no-progress"])
+    assert code == 0
+
+
+def test_main_translates_no_match_to_exit_code(capsys):
+    # The same empty selection that raises through .run() is a clean exit via
+    # .main(): a one-line stderr message, exit 1, and crucially no traceback.
+    code = bench_app().add_all(_trivial("A")).main(
+        ["--include", "no-such-bench", "--no-progress"]
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "No benchmarks matched" in err
+    assert "Traceback" not in err
+
+
+def test_main_translates_materialization_error_to_exit_code(capsys):
+    s = suite("My Suite").factory(_boom_factory)
+    code = bench_app().add_all(s).main([])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "Failed to materialize suite 'My Suite'" in err
+    assert "Traceback" not in err
