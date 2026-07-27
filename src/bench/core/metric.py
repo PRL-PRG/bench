@@ -157,7 +157,7 @@ class FloatPerLine(IterationMetric, BuildableMetric):
         line: int | None = None,
         unit: str = "",
         direction: Direction = None,
-        iterate: bool = False,
+        iterate: bool = True,
     ) -> None:
         super().__init__(source, metric, unit, direction)
         self.unit = unit
