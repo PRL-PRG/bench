@@ -217,7 +217,7 @@ class Regex(IterationMetric, BuildableMetric):
         super().__init__(source, metric, unit, direction)
 
         if isinstance(regex, str):
-            self.regex = re.compile(regex)
+            self.regex = re.compile(regex, re.MULTILINE)
         else:
             self.regex = regex
 
