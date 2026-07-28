@@ -25,6 +25,8 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from bench.core.invocation import Variant
+
 
 class Data:
     """A benchmark variant's payload: static data merged with its matrix-axis values."""
@@ -127,16 +129,16 @@ class SharedBenchParams(SharedSelectionParams):
 class Context[T]:
     """Context for the benchmark builder callable `with_*(lambda ctx: )` methods.
 
-    `params` is the single object carrying every setting: the user's own fields
-    plus, when their dataclass inherits `SharedBenchParams`/`SharedSelectionParams`,
-    the builtin flags. When the user declares no params, `params` is a
-    `SharedBenchParams` instance so the default pipeline still sees its flags.
+    `variant` is the resolved matrix variant of the benchmark being built (empty
+    for a non-matrix benchmark, and for the app/suite/axis contexts where no
+    variant is chosen yet). It is the `(dim, value)` tuple.
     """
 
     params: T
     suite: str
     benchmark: str | None
     data: Data
+    variant: Variant = ()
 
 
 # Sentinel for "no value" used during dataclass instantiation when a field

@@ -356,13 +356,7 @@ class DirReporter(_EnvironmentAware, Reporter):
         self._diagnostics = diagnostics
 
     def output_dir(self, suite: str, benchmark: str, variant: Variant = ()) -> Path:
-        """Where this reporter writes a given execution's files.
-
-        The API a wrapped command uses to place extra artifacts (e.g. `perf
-        record -o <dir>/perf.data`) in the same per-execution directory. Pass the
-        matrix `variant` (empty for a non-matrix benchmark); the nested/flat
-        layout follows this reporter's `nested` setting.
-        """
+        """Where this reporter writes a given execution's files."""
         return execution_dir(
             self.root, suite, benchmark, variant_path(variant, nested=self.nested)
         )

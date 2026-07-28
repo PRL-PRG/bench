@@ -150,17 +150,23 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
             suite=suite,
             benchmark=self.name,
             data=Data(dict(self.data)),
+            variant=variant,
         )
         env = self.env(ctx)
+        # Resolve process metrics before the command: a ProcessMetric may wrap the
+        # command whose process it measures.
+        process_metrics = self.process_metrics(ctx)
+        command: Any = self.command(ctx)
+        for m in process_metrics:
+            command = m.wrap_command(command)
         invocation = Invocation(
-            command=tuple(os.fsdecode(a) for a in self.command(ctx)),
+            command=tuple(os.fsdecode(a) for a in command),
             cwd=Path(self.cwd(ctx)),
             env=env if env else EMPTY_MAPPING,
             timeout=self.timeout(ctx),
             stdin=self.stdin(ctx),
         )
         iteration_metrics = self.iteration_metrics(ctx)
-        process_metrics = self.process_metrics(ctx)
         b = Benchmark(
             suite=suite,
             name=self.name,

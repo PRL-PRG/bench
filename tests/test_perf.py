@@ -22,11 +22,12 @@ from bench import (
     Sequential,
     bench,
     execution_dir,
+    max_rss,
     suite,
     variant_path,
     write_perf_frames,
 )
-from bench.builder.context import Context, Data
+from bench.builder.context import Context
 from bench.runner.base import plan
 
 from conftest import make_success
@@ -45,7 +46,7 @@ def test_no_events_rejected():
 
 def test_wrap_string_command():
     c = PerfStat(("cache-misses", "cache-references"))
-    assert c.wrap("./workload") == [
+    assert c.wrap_command("./workload") == [
         "perf",
         "stat",
         "-x",
@@ -59,7 +60,7 @@ def test_wrap_string_command():
 
 def test_wrap_list_command_keeps_args():
     c = PerfStat(("cache-misses",))
-    assert c.wrap(["./workload", "-n", "5"]) == [
+    assert c.wrap_command(["./workload", "-n", "5"]) == [
         "perf",
         "stat",
         "-x",
@@ -75,8 +76,8 @@ def test_wrap_list_command_keeps_args():
 
 def test_wrap_is_idempotent():
     c = PerfStat(("cache-misses", "cache-references"))
-    once = c.wrap("./workload")
-    assert c.wrap(once) == once
+    once = c.wrap_command("./workload")
+    assert c.wrap_command(once) == once
 
 
 # ----- extract (parse perf -x, CSV from stderr) -----------------------------
@@ -170,7 +171,7 @@ def _install_stub_perf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_record_wrap_shape():
-    argv = PerfRecord(freq=99, stack_size=16384, out_dir=Path("/o/rep=0")).wrap(
+    argv = PerfRecord(freq=99, stack_size=16384, out_dir=Path("/o/rep=0")).wrap_command(
         ["R", "x.R"]
     )
     assert argv == [
@@ -194,23 +195,36 @@ def test_record_wrap_shape():
 
 def test_record_wrap_is_idempotent():
     p = PerfRecord(out_dir=Path("/o"))
-    once = p.wrap(["R"])
-    assert p.wrap(once) == once
+    once = p.wrap_command(["R"])
+    assert p.wrap_command(once) == once
 
 
-def test_wrap_requires_resolved_out_dir():
+def test_wrap_requires_out_dir():
     with pytest.raises(ValueError):
-        PerfRecord().wrap(["R"])  # out_dir unset
-    with pytest.raises(ValueError):
-        PerfRecord(out_dir=lambda ctx: Path("/o")).wrap(["R"])  # factory not resolved
+        PerfRecord().wrap_command(["R"])  # out_dir unset
 
 
-def test_resolve_bakes_out_dir_factory(tmp_path: Path):
-    ctx = Context(params=None, suite="S", benchmark="b", data=Data({"rep": 0}))
-    perf = PerfRecord(out_dir=lambda c: tmp_path / c.suite / f"rep={c.data.rep}")
-    assert perf.resolve(ctx).out_dir == tmp_path / "S" / "rep=0"
-    # a plain Path passes through unchanged
-    assert PerfRecord(out_dir=tmp_path).resolve(ctx).out_dir == tmp_path
+# ----- auto-wrap: a wrapping ProcessMetric wraps the command on attach --------
+
+
+def test_wrapping_process_metric_applied_to_command():
+    # Attaching a wrapping ProcessMetric wraps the command at resolution time -
+    # nothing is hand-wired into with_command.
+    s = (
+        suite("S", bench("b"))
+        .with_command(["R", "x.R"])
+        .with_process_metric(PerfRecord(out_dir=Path("/o/rep=0")))
+    )
+    (b,) = plan([s], None)
+    assert tuple(b.invocation.command[:2]) == ("perf", "record")
+    assert tuple(b.invocation.command[-2:]) == ("R", "x.R")
+
+
+def test_non_wrapping_process_metric_leaves_command():
+    # An ordinary metric's wrap is identity: the command is untouched.
+    s = suite("S", bench("b")).with_command(["R"]).with_process_metric(max_rss())
+    (b,) = plan([s], None)
+    assert b.invocation.command == ("R",)
 
 
 # ----- write_perf_frames (perf script -> CSV) -------------------------------
@@ -259,6 +273,19 @@ def test_output_dir_nested_and_flat(tmp_path: Path):
     assert execution_dir(tmp_path, "S", "b", "x") == tmp_path / "S" / "b" / "x"
 
 
+def test_context_carries_resolved_variant():
+    # The resolver populates ctx.variant, so a factory need not rebuild the tuple.
+    seen: dict[str, Any] = {}
+
+    def capture(ctx: Context[Any]) -> list[str]:
+        seen["variant"] = ctx.variant
+        return ["true"]
+
+    s = suite("S", bench("b")).with_matrix(rep=[0]).with_command(capture)
+    plan([s], None)
+    assert seen["variant"] == (("rep", "0"),)
+
+
 def test_dirreporter_start_precreates_variant_dirs(tmp_path: Path):
     s = suite("S", bench("b", arg=1)).with_command(["true"]).with_matrix(rep=[0, 1])
     rep = DirReporter(tmp_path)
@@ -270,36 +297,33 @@ def test_dirreporter_start_precreates_variant_dirs(tmp_path: Path):
 # ----- end-to-end: record -> extract (script + CSV) via a stub perf ---------
 
 
-def _perf_suite(perf: PerfRecord, tmp_path: Path):
-    # `perf` carries a (ctx) -> Path out_dir; resolve it per variant for both the
-    # -o path (command) and the extract (metric).
+def _perf_suite(dirs: DirReporter, tmp_path: Path, *, frames: bool = True):
+    # A PerfRecord built per variant with a concrete out_dir in the DirReporter's
+    # tree. Attaching it with with_process_metric both wraps the command in
+    # `perf record` (done by the builder) and reads the recording back on extract.
+    def perf(ctx: Context[Any]) -> PerfRecord:
+        assert ctx.benchmark is not None
+        out_dir = dirs.output_dir(ctx.suite, ctx.benchmark, ctx.variant)
+        return PerfRecord(out_dir=out_dir, frames=frames)
+
     return (
         suite("S", bench("b", arg=1))
         .with_cwd(tmp_path)
         .with_matrix(rep=[0])
-        .with_command(lambda ctx: perf.resolve(ctx).wrap(["true"]))
-        .with_process_metric(lambda ctx: (perf.resolve(ctx),))
+        .with_command(["true"])
+        .with_process_metric(lambda ctx: (perf(ctx),))
         .with_warmup(0)
         .with_runs(FixedRuns(1))
     )
-
-
-def _perf_with_dir(dirs: DirReporter, *, frames: bool = True) -> PerfRecord:
-    def out_dir(ctx: Context[Any]) -> Path:
-        assert ctx.benchmark is not None  # set for every resolved variant
-        return dirs.output_dir(ctx.suite, ctx.benchmark, (("rep", str(ctx.data.rep)),))
-
-    return PerfRecord(out_dir=out_dir, frames=frames)
 
 
 def test_perf_record_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _install_stub_perf(tmp_path, monkeypatch)
     root = tmp_path / "out"
     dirs = DirReporter(root)  # drives output_dir (via perf.out_dir) + the tree
-    perf = _perf_with_dir(dirs)
 
     report = Sequential(reporter=dirs).run(
-        plan([_perf_suite(perf, tmp_path)], None), None
+        plan([_perf_suite(dirs, tmp_path)], None), None
     )
 
     (ex,) = report.executions
@@ -324,10 +348,9 @@ def test_perf_record_no_frames_emits_size_only(
     _install_stub_perf(tmp_path, monkeypatch)
     root = tmp_path / "out"
     dirs = DirReporter(root)
-    perf = _perf_with_dir(dirs, frames=False)
 
     report = Sequential(reporter=dirs).run(
-        plan([_perf_suite(perf, tmp_path)], None), None
+        plan([_perf_suite(dirs, tmp_path, frames=False)], None), None
     )
 
     (ex,) = report.executions

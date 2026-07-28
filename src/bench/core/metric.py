@@ -95,6 +95,10 @@ class IterationMetric(_MetricBase[str]):
 class ProcessMetric(_MetricBase[InvocationResult]):
     """Read whole-process Samples from an InvocationResult."""
 
+    def wrap_command(self, command: object) -> object:
+        """Transform the command this metric measures."""
+        return command
+
 
 # ---------------------------------------------------------------------------
 # Iteration metrics

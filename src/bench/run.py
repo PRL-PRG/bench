@@ -277,9 +277,9 @@ def default_reporter(
     ctx: Context[Any],
     *,
     summary: Reporter | None = None,
-    json: str | Path | None = None,
-    csv: str | Path | None = None,
-    dir: str | Path | None = None,
+    json: str | Path | JsonReporter | None = None,
+    csv: str | Path | CsvReporter | None = None,
+    dir: str | Path | DirReporter | None = None,
 ) -> Reporter:
     """Assemble the builtin reporter bundle: a progress bar, a summary, and the
     json, csv and dir output sinks.
@@ -300,11 +300,21 @@ def default_reporter(
 
     sinks.append(summary or SummaryReporter(DefaultSummary()))
 
-    if j := (p.json or json):
+    # A reporter instance is authoritative: the app took control of that sink
+    # (e.g. a DirReporter shared with `perf` via `output_dir`, or a JsonReporter
+    # built with `include_output=True`), so it already folded in the flag.
+    # Otherwise the flag wins over a path default.
+    if isinstance(json, JsonReporter):
+        sinks.append(json)
+    elif j := (p.json or json):
         sinks.append(JsonReporter(Path(j)))
-    if c := (p.csv or csv):
+    if isinstance(csv, CsvReporter):
+        sinks.append(csv)
+    elif c := (p.csv or csv):
         sinks.append(CsvReporter(Path(c)))
-    if d := (p.dir or dir):
+    if isinstance(dir, DirReporter):
+        sinks.append(dir)
+    elif d := (p.dir or dir):
         sinks.append(DirReporter(Path(d)))
 
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)

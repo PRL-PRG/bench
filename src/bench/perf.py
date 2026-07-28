@@ -7,8 +7,9 @@ it produced; a benchmark that doesn't opt in is untouched:
 - `PerfRecord` - a `perf record` sampling profile plus a per-frame table.
 
 Both share the same shape: a `wrap(...)` that is the only place perf enters the
-argv (idempotent, so applying it at both suite and benchmark level never
-double-prefixes), and a `ProcessMetric.extract` that turns what perf wrote into
+argv - applied for you when the metric is attached with `with_process_metric`
+(idempotent, so applying it at both suite and benchmark level never
+double-prefixes) - and a `ProcessMetric.extract` that turns what perf wrote into
 Samples. See each class for its events/output and usage.
 
 perf is Linux-only and needs a permissive enough `perf_event_paranoid`; a missing
@@ -20,17 +21,26 @@ from __future__ import annotations
 import csv
 import re
 import subprocess
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass, replace
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 from bench.core.invocation import InvocationResult, to_argv
 from bench.core.metric import ProcessMetric
 from bench.core.results import Sample
 
-if TYPE_CHECKING:
-    from bench.builder.context import Context
+
+def _wrap_with(command: object, prefix: list[str]) -> list[str]:
+    """Prepend a `perf <sub> ...` `prefix` to `command`'s argv, idempotently.
+
+    Normalizes `command` with `to_argv` (as `with_command` does). A command that
+    already starts with the prefix's `perf <sub>` is returned unchanged, so
+    applying the wrap at both suite and benchmark level never double-prefixes.
+    """
+    argv = [str(a) for a in to_argv(command)]
+    if argv[:2] == prefix[:2]:  # already `perf <sub> ...`
+        return argv
+    return [*prefix, *argv]
 
 
 @dataclass(frozen=True)
@@ -41,7 +51,7 @@ class PerfStat(ProcessMetric):
     event names) and does two things on request:
 
       - `wrap(command)` runs the command under `perf stat -e <events>` (the only
-        place perf enters the argv).
+        place perf enters the argv), applied for you when the metric is attached.
       - as a `ProcessMetric`, `extract` parses perf's machine-readable (`-x,`)
         output from the process stderr (captured per process, so parallel runs
         need no shared file), one Sample per event.
@@ -56,8 +66,8 @@ class PerfStat(ProcessMetric):
         counters = PerfStat(("cache-misses", "cache-references")).lower_is_better()
 
         bench("matmul")
-            .with_command(counters.wrap("./workload"))
-            .with_process_metric(counters)
+            .with_command("./workload")
+            .with_process_metric(counters)  # also wraps the command in perf stat
     """
 
     events: tuple[str, ...] = ()
@@ -69,16 +79,9 @@ class PerfStat(ProcessMetric):
     def _prefix(self) -> list[str]:
         return ["perf", "stat", "-x", ",", "-e", ",".join(self.events), "--"]
 
-    def wrap(self, command: object) -> list[str]:
-        """Prepend the `perf stat` invocation to `command` (idempotent).
-
-        Uses the same argv normalization as `with_command` (`to_argv`).
-        """
-        argv = list(to_argv(command))
-        prefix = self._prefix()
-        if argv[: len(prefix)] == prefix:
-            return [str(a) for a in argv]
-        return [*prefix, *(str(a) for a in argv)]
+    def wrap_command(self, command: object) -> list[str]:
+        """Prepend the `perf stat` invocation to `command` (idempotent)."""
+        return _wrap_with(command, self._prefix())
 
     def extract(self, result: InvocationResult) -> Iterable[Sample]:
         counts: dict[str, str] = {}
@@ -127,20 +130,12 @@ class PerfRecord(ProcessMetric):
     stack_size: int = 16384
     event: str = "cpu-cycles:u"
     frames: bool = True
-    out_dir: Path | Callable[[Context[Any]], Path] | None = None
-
-    def resolve(self, ctx: Context[Any]) -> PerfRecord:
-        out = self.out_dir
-        if out is not None and not isinstance(out, Path):
-            return replace(self, out_dir=out(ctx))
-        return self
+    out_dir: Path | None = None
 
     def _dir(self) -> Path:
-        if not isinstance(self.out_dir, Path):
+        if self.out_dir is None:
             raise ValueError(
-                "PerfRecord.out_dir is unset: pass a Path, or resolve the "
-                "(ctx) -> Path factory per variant via PerfRecord.resolve(ctx) "
-                "(e.g. with_process_metric(lambda ctx: (perf.resolve(ctx),)))"
+                "PerfRecord.out_dir is unset."
             )
         return self.out_dir
 
@@ -167,16 +162,10 @@ class PerfRecord(ProcessMetric):
             "--",
         ]
 
-    def wrap(self, command: object) -> list[str]:
-        """Prepend the `perf record` invocation to `command` (idempotent).
-
-        Uses the same argv normalization as `with_command` (`to_argv`); requires
-        `out_dir` resolved to a `Path` (see `resolve`).
-        """
-        argv = list(to_argv(command))
-        if argv[:2] == ["perf", "record"]:
-            return [str(a) for a in argv]
-        return [*self.record_prefix(), *(str(a) for a in argv)]
+    def wrap_command(self, command: object) -> list[str]:
+        """Prepend the `perf record` invocation to `command` (idempotent); requires
+        `out_dir` set to a `Path`."""
+        return _wrap_with(command, self.record_prefix())
 
     def extract(self, result: InvocationResult) -> Iterable[Sample]:
         data = self.data_file()
