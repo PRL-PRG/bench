@@ -243,8 +243,6 @@ class Regex(IterationMetric, BuildableMetric):
             idx += 1
 
 
-# TODO: criterions
-# TODO: Make sure it is correct
 class Rebench(IterationMetric):
     """ReBench log format adapter.
 
@@ -274,26 +272,38 @@ class Rebench(IterationMetric):
         self.iteration = 0
 
     def process_text(self, text: str) -> Iterable[Sample]:
-        if not text:
-            return
+        iteration = 0
+
         for line in text.split("\n"):
             m = self._re_runtime.match(line)
             if m is not None:
                 criterion = m.group(2)
                 if criterion is not None and criterion.strip() != "total":
                     continue
+
                 value = float(m.group("runtime"))
                 if m.group("unit") == "u":
                     value /= 1000.0
-                yield self.get_sample(value=value)
 
-            # m = self._re_criterion.match(line)
-            # if m is not None:
-            #     yield Sample(
-            #         metric=m.group("criterion"),
-            #         value=float(m.group("value")),
-            #         unit=m.group("unit"),
-            #     )
+                yield self.get_sample(value=value, iteration=iteration)
+                iteration += 1
+                continue
+
+            m = self._re_criterion.match(line)
+            if m is not None:
+                value = float(m.group("value"))
+                unit = m.group("unit")
+                criterion = m.group("criterion")
+
+                yield self.get_sample(
+                    metric=criterion,
+                    value=value,
+                    iteration=iteration,
+                    unit=unit,
+                )
+
+                if criterion == "total":
+                    iteration += 1
 
 
 # ---------------------------------------------------------------------------
