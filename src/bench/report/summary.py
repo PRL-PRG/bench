@@ -423,9 +423,13 @@ def results(
                 + tag(r, "metric", metric_part)
             )
             has_labels = any(_vlabel(s) for s in rows_stats)
+            # A single sample has no spread: `_mean_cell` drops the `± σ` and
+            # `_range_runs_cell` drops the `(min … max)` range, so the headers
+            # must follow suit ("value", and no range column header).
+            has_range = any(s.n >= 2 for s in rows_stats)
             col_header = ([cell("matrix")] if has_labels else []) + [
-                cell("mean ± σ"),
-                cell("min … max"),
+                cell("mean ± σ" if has_range else "value"),
+                cell("min … max" if has_range else ""),
             ]
             body: list[list[Cell]] = [col_header]
             for s in rows_stats:

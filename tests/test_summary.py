@@ -297,6 +297,22 @@ def test_results_groups_by_benchmark_and_metric():
     assert "vm=python3.9" in out
 
 
+def test_results_single_sample_header_is_value_not_mean_sigma():
+    # One run per variant -> no spread: the mean cell is a bare value and the
+    # range cell is just the count, so the headers must be "value" (not
+    # "mean ± σ") and the "min … max" header must be gone entirely.
+    report = Report(
+        executions=[
+            _run(0, bench="b", variant=(("vm", "x"),), samples=[_smp("elapsed", 520.0)])
+        ]
+    )
+    out = _strip(results(summarize(report), RICH))
+    assert "value" in out
+    assert "mean ± σ" not in out
+    assert "min … max" not in out
+    assert "(1 runs, 0 failed)" in out
+
+
 def test_ranking_uses_better_worse_not_lower_higher():
     out = _strip(ranking(summarize(_matrix()), RICH))
     assert "Summary - S/fib" in out
