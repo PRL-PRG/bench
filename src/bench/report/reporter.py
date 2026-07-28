@@ -6,6 +6,7 @@ import abc
 import csv
 import json
 import threading
+from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +33,13 @@ from rich.text import Text
 
 from bench.builder.benchmark import Benchmark
 from bench.core.environment import Diagnostic, Environment
-from bench.core.invocation import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
+from bench.core.invocation import (
+    SPAWN_FAIL_RC,
+    TIMEOUT_RC,
+    Variant,
+    format_benchmark,
+    format_variant,
+)
 from bench.core.results import Iteration, Report, Execution, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
@@ -290,21 +297,53 @@ class JsonReporter(_EnvironmentAware, _BufferingReporter):
 # ---------------------------------------------------------------------------
 
 
-class DirReporter(_EnvironmentAware, Reporter):
-    """Per-execution tree at `<out>/<suite>/<bench>/<n>/`.
+def execution_dir(
+    root: Path, suite: str, benchmark: str, leaf: str | int | Path
+) -> Path:
+    """The per-execution directory `<root>/<suite>/<benchmark>/<leaf>`.
 
-    Files: stdout, stderr, exitcode, seq (cwd + cmd + info). Directories count
-    up per (suite, benchmark) in completion order.
+    The single source of truth for the `--dir` layout, so anything that wants to
+    drop extra artifacts next to a run's `stdout`/`stderr` (e.g. a `perf.data`)
+    joins the same path. `leaf` is the matrix variant sub-path (see
+    `variant_path`) when the benchmark has variants, else the 1-based completion
+    ordinal `DirReporter` assigns per `(suite, benchmark)`.
+    """
+    return root / suite / benchmark / (leaf if isinstance(leaf, Path) else str(leaf))
+
+
+def variant_path(variant: Variant, *, nested: bool = True) -> Path:
+    """The sub-directory a matrix `variant` maps to under its benchmark.
+
+    Nested (the default): one directory level per dimension,
+    `dim1/val1/dim2/val2`. Flat: a single `dim1=val1, dim2=val2` component (the
+    variant label). An empty variant maps to an empty path.
+    """
+    if not variant:
+        return Path()
+    if nested:
+        return Path(*chain.from_iterable(variant))
+    return Path(format_variant(variant).strip(" ()"))
+
+
+class DirReporter(_EnvironmentAware, Reporter):
+    """Per-execution tree at `<out>/<suite>/<bench>/<leaf>/` (see `execution_dir`).
+
+    Files: stdout, stderr, exitcode, seq (cwd + cmd + info). For a matrix variant
+    `leaf` is the variant sub-path - nested `dim/val/...` by default, or a flat
+    `dim=val, ...` component when constructed with `nested=False`; a plain
+    benchmark's runs use a per (suite, benchmark) counter in completion order.
     """
 
     def __init__(
         self,
         root: Path,
         *,
+        nested: bool = True,
         environment: Environment | None = None,
         diagnostics: list[Diagnostic] | None = None,
     ) -> None:
         self.root = root
+        self.nested = nested
         self._environment = environment
         self._diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
@@ -316,9 +355,30 @@ class DirReporter(_EnvironmentAware, Reporter):
         self._environment = environment
         self._diagnostics = diagnostics
 
+    def output_dir(self, suite: str, benchmark: str, variant: Variant = ()) -> Path:
+        """Where this reporter writes a given execution's files.
+
+        The API a wrapped command uses to place extra artifacts (e.g. `perf
+        record -o <dir>/perf.data`) in the same per-execution directory. Pass the
+        matrix `variant` (empty for a non-matrix benchmark); the nested/flat
+        layout follows this reporter's `nested` setting.
+        """
+        return execution_dir(
+            self.root, suite, benchmark, variant_path(variant, nested=self.nested)
+        )
+
     def start(self, plan: list[Benchmark]) -> None:
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
+        # Pre-create the per-variant directories so a wrapped command (e.g. `perf
+        # record -o <dir>/perf.data`) has somewhere to write before it runs. Only
+        # variant benchmarks get a deterministic path up front; plain runs are
+        # numbered lazily, in completion order, by execution_done.
+        for b in plan:
+            if b.variant:
+                self.output_dir(b.suite, b.name, b.variant).mkdir(
+                    parents=True, exist_ok=True
+                )
         if self._environment is not None:
             (self.root / "environment.json").write_text(
                 json.dumps(
@@ -331,12 +391,19 @@ class DirReporter(_EnvironmentAware, Reporter):
             )
 
     def execution_done(self, execution: Execution) -> None:
-        key = (execution.suite, execution.benchmark)
-        with self._lock:
-            self._counters[key] = self._counters.get(key, 0) + 1
-            n = self._counters[key]
-
-        exec_dir = self.root / execution.suite / execution.benchmark / str(n)
+        # A matrix variant gets a stable directory from its variant (so a wrapped
+        # command's -o path can target the same place); a plain benchmark's runs
+        # are numbered per (suite, benchmark) in completion order.
+        if execution.variant:
+            exec_dir = self.output_dir(
+                execution.suite, execution.benchmark, execution.variant
+            )
+        else:
+            key = (execution.suite, execution.benchmark)
+            with self._lock:
+                self._counters[key] = self._counters.get(key, 0) + 1
+                n = self._counters[key]
+            exec_dir = execution_dir(self.root, execution.suite, execution.benchmark, n)
         exec_dir.mkdir(parents=True, exist_ok=True)
 
         lines = [
@@ -642,6 +709,8 @@ __all__ = [
     "CsvReporter",
     "JsonReporter",
     "DirReporter",
+    "execution_dir",
+    "variant_path",
     "ProgressReporter",
     "SummaryReporter",
 ]

@@ -5,6 +5,7 @@ import signal
 import subprocess
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from bench import (
     Parallel,
     Reporter,
     Sequential,
+    SharedBenchParams,
     SuiteMaterializationError,
     Time,
     bench,
@@ -444,11 +446,11 @@ def test_run_resolves_reporter_factory_with_cli_state():
         return _Rec()
 
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
-    bench_app(reporter=factory).add_all(s).run(["--dry", "--verbose"])
+    bench_app().with_reporter(factory).add_all(s).run(["--dry", "--verbose"])
     assert seen == {"verbose": True, "dry": True}
 
     seen.clear()
-    bench_app(reporter=factory).add_all(s).run(["--dry"])
+    bench_app().with_reporter(factory).add_all(s).run(["--dry"])
     assert seen["verbose"] is False
 
 
@@ -508,6 +510,31 @@ def test_with_filter_bare_predicate_narrows_plan():
     assert {r.benchmark for r in report.executions} == {"keep"}
 
 
+def test_with_params_swaps_cli_params():
+    @dataclass(frozen=True)
+    class P(SharedBenchParams):
+        scale: int = 2
+
+    captured: dict[str, object] = {}
+
+    def cmd(ctx):
+        captured["scale"] = ctx.params.scale
+        return ["true"]
+
+    # Build with the default params, then swap in P: `--scale` exists only after
+    # the swap, and the suite + app-level command survive it.
+    s = suite("S", bench("a")).with_process_metric(Time())
+    report = (
+        bench_app()
+        .add(s)
+        .with_command(cmd)
+        .with_params(P)
+        .run(["--scale", "5", "--no-progress"])
+    )
+    assert captured["scale"] == 5
+    assert len(report.executions) == 1
+
+
 def test_with_reporter_factory_takes_full_control(tmp_path: Path):
     out = tmp_path / "r.json"
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
@@ -525,7 +552,7 @@ def test_bare_reporter_takes_full_control(tmp_path: Path):
     s = suite("S", bench("a")).with_command(["true"]).with_process_metric(Time())
     # A bare reporter is wrapped as `lambda _: reporter` and used as-is: it IS a
     # JsonReporter, so --json is not needed and its sink is not added.
-    bench_app(reporter=JsonReporter(direct)).add_all(s).run(
+    bench_app().with_reporter(JsonReporter(direct)).add_all(s).run(
         ["--no-progress", "--json", str(flag)]
     )
     assert direct.exists()  # bare reporter ran, used as-is

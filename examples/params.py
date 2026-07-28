@@ -36,4 +36,4 @@ s = suite(
 
 
 if __name__ == "__main__":
-    bench_app(params=Params).add_all(s).run()
+    bench_app().with_params(Params).add_all(s).run()

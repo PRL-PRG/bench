@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "ruff>=0.15.17"]
 
 [project.scripts]
 bench = "bench.__main__:cli"
@@ -40,6 +40,5 @@ strict = ["src"]
 docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=1.0.4",
-    "ruff>=0.15.17",
 ]
 schema = ["pydantic>=2.9"]

@@ -241,6 +241,6 @@ if __name__ == "__main__":
             f.write(_HARNESS_R)
         env = {"R_PROFILE_USER": harness_path}
         suites = [s.with_env(env) for s in SUITES]
-        bench_app(params=RshParams).add_all(*suites).run()
+        bench_app().with_params(RshParams).add_all(*suites).run()
     finally:
         os.unlink(harness_path)

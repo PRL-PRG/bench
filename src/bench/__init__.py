@@ -28,7 +28,7 @@ from bench.core.metric import (
     Time,
     max_rss,
 )
-from bench.perf import PerfStat
+from bench.perf import PerfRecord, PerfStat, write_perf_frames
 
 # Stopping policies
 from bench.core.policy import (
@@ -86,6 +86,8 @@ from bench.report.reporter import (
     ProgressReporter,
     Reporter,
     SummaryReporter,
+    execution_dir,
+    variant_path,
 )
 
 # Formatters
@@ -99,7 +101,13 @@ from bench.report.formatter import (
 )
 
 # BenchAppBuilder abstraction + run pipeline
-from bench.run import BenchAppBuilder, NoBenchmarksMatchedError, bench_app, run
+from bench.run import (
+    BenchAppBuilder,
+    NoBenchmarksMatchedError,
+    bench_app,
+    default_reporter,
+    run,
+)
 
 # Errors
 from bench.utils import BenchError
@@ -130,6 +138,8 @@ __all__ = [
     "RUsage",
     "max_rss",
     "PerfStat",
+    "PerfRecord",
+    "write_perf_frames",
     # Policies
     "StoppingPolicy",
     "PolicyState",
@@ -173,6 +183,8 @@ __all__ = [
     "CsvReporter",
     "JsonReporter",
     "DirReporter",
+    "execution_dir",
+    "variant_path",
     "SummaryReporter",
     "ProgressReporter",
     # Formatters
@@ -187,6 +199,7 @@ __all__ = [
     "BenchError",
     "NoBenchmarksMatchedError",
     "bench_app",
+    "default_reporter",
     "run",
     # CLI
     "main",

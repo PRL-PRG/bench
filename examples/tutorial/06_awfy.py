@@ -24,6 +24,7 @@ from bench import (
     SummaryReporter,
     bench,
     bench_app,
+    default_reporter,
     line_monitor,
     max_rss,
     suite,
@@ -83,6 +84,8 @@ awfy = (
 grouped = GeomeanSummary(axis="vm", metrics={"runtime", "max_rss"})
 summary = SummaryReporter(Results() & Summary() & grouped)
 
-bench_app("AWFY", params=Params, summary=summary).add_all(awfy).run()
+bench_app("AWFY").with_params(Params).with_reporter(
+    lambda ctx: default_reporter(ctx, summary=summary)
+).add_all(awfy).run()
 
 # vim: ft=python

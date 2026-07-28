@@ -82,10 +82,9 @@ zoo_suite = (
 
 
 if __name__ == "__main__":
-    bench_app(
-        params=LoxParams,
-        reporter=CompositeReporter(
+    bench_app().with_params(LoxParams).with_reporter(
+        CompositeReporter(
             SummaryReporter(Compact("runtime", suite="LoxSuite")),
             SummaryReporter(Compact("throughput", suite="ZooBatch")),
-        ),
+        )
     ).add_all(lox_suite, zoo_suite).run()

@@ -41,8 +41,8 @@ slow = (
 
 
 if __name__ == "__main__":
-    bench_app(
-        reporter=CompositeReporter(
+    bench_app().with_reporter(
+        CompositeReporter(
             SummaryReporter(Compact("elapsed", suite="fast")),
             SummaryReporter(Compact("elapsed", suite="slow")),
         )

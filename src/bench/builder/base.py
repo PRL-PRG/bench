@@ -300,8 +300,21 @@ class BuilderBase:
 
         return dataclasses.replace(self, iteration_metrics=build)
 
-    def with_process_metric(self, *metrics: ProcessMetric) -> Self:
-        """Set (replace) the whole-process metrics (peak RSS, total time, ...)."""
+    def with_process_metric(
+        self, *metrics: ProcessMetric | Factory[tuple[ProcessMetric, ...]]
+    ) -> Self:
+        """Set (replace) the whole-process metrics (peak RSS, total time, ...).
+
+        A single callable that is not a `ProcessMetric` is taken as a
+        `(ctx) -> tuple[ProcessMetric, ...]` factory, resolved once per variant
+        (for a metric whose configuration depends on the variant, e.g. a
+        per-variant output directory). Mirrors `with_metric`."""
+        if (
+            len(metrics) == 1
+            and callable(metrics[0])
+            and not isinstance(metrics[0], ProcessMetric)
+        ):
+            return dataclasses.replace(self, process_metrics=metrics[0])
         for m in metrics:
             if not isinstance(m, ProcessMetric):  # pyright: ignore[reportUnnecessaryIsInstance]
                 _raise_builder_type_error(
@@ -310,7 +323,10 @@ class BuilderBase:
                     m,
                     "use with_metric for iteration metrics like Regex or FloatPerLine",
                 )
-        return dataclasses.replace(self, process_metrics=const(tuple(metrics)))
+        return dataclasses.replace(
+            self,
+            process_metrics=const(cast("tuple[ProcessMetric, ...]", tuple(metrics))),
+        )
 
     # ----- harness ----------------------------------------------------
 

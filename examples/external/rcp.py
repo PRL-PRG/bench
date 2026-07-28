@@ -59,4 +59,4 @@ rcp_suite = (
 
 
 if __name__ == "__main__":
-    bench_app(params=RcpParams).add_all(rcp_suite).run()
+    bench_app().with_params(RcpParams).add_all(rcp_suite).run()

@@ -245,8 +245,10 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
 
     app = (
-        bench_app("bench", environment=environment, denoise=ns.denoise)
+        bench_app("bench")
         .add(s)
+        .with_environment(environment)
+        .with_denoise(ns.denoise)
         .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
     )
     app.run(ns)

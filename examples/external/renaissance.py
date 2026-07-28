@@ -68,9 +68,9 @@ def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
         desc = lines[1]
         reps = 0
 
-        for l in lines[2:]:
-            if l.startswith("Default repetitions:"):
-                reps = int(l.split(":")[1].strip())
+        for line in lines[2:]:
+            if line.startswith("Default repetitions:"):
+                reps = int(line.split(":")[1].strip())
 
         benchmarks.append(RenaissanceBenchmark(name, desc, reps))
 
@@ -137,4 +137,4 @@ renaissance = (
 )
 
 if __name__ == "__main__":
-    bench_app(params=Params).add_all(renaissance).run()
+    bench_app().with_params(Params).add_all(renaissance).run()

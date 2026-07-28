@@ -104,14 +104,13 @@ def test_mixed_fans_out(tmp_path: Path):
 
 
 def test_user_composite_reporter_receives_environment(tmp_path: Path):
-    # A DirReporter the user supplies via `bench_app(reporter=...)` must get the
+    # A DirReporter the user supplies via `with_reporter(...)` must get the
     # collected environment injected (not only CLI-built --dir reporters).
     root = tmp_path / "tree"
     (
-        bench_app(
-            reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
-            environment=SystemEnvironment(),
-        )
+        bench_app()
+        .with_reporter(CompositeReporter(SummaryReporter(), DirReporter(root)))
+        .with_environment(SystemEnvironment())
         .add_all(_s())
         .run(["--no-progress"])
     )
@@ -369,9 +368,9 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
     assert rep._passed == 1 and rep._failed == 1
 
 
-def test_summary_channel_keeps_progress_and_swaps_summary():
-    # bench_app(summary=...) must keep the progress bar (and CLI sinks) while
-    # replacing only the default summary.
+def test_default_reporter_keeps_progress_and_swaps_summary():
+    # default_reporter(ctx, summary=...) must keep the progress bar (and CLI
+    # sinks) while replacing only the default summary.
     from types import SimpleNamespace
 
     from bench.run import default_reporter
@@ -381,7 +380,7 @@ def test_summary_channel_keeps_progress_and_swaps_summary():
     ctx = SimpleNamespace(
         params=SimpleNamespace(progress=True, json=None, csv=None, dir=None)
     )
-    rep = default_reporter(ctx, marker)  # type: ignore[arg-type]
+    rep = default_reporter(ctx, summary=marker)  # type: ignore[arg-type]
     assert isinstance(rep, CompositeReporter)
     assert any(isinstance(r, ProgressReporter) for r in rep.reporters)
     assert marker in rep.reporters

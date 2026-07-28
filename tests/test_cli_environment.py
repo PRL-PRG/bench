@@ -86,7 +86,8 @@ def test_run_api_omits_environment_by_default():
 
 def test_run_api_collects_with_system_environment():
     rep = (
-        bench_app(environment=SystemEnvironment())
+        bench_app()
+        .with_environment(SystemEnvironment())
         .add_all(_suite())
         .run(["--no-progress"])
     )

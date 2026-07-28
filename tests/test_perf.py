@@ -1,12 +1,33 @@
-"""Opt-in perf counters: a self-contained ProcessMetric.
+"""Opt-in perf counters/profiles: self-contained ProcessMetrics.
 
 `PerfStat` both builds the `perf stat` command prefix (via `wrap`) and parses
-perf's `-x,` CSV from the process stderr. It never touches argv on its own.
+perf's `-x,` CSV from the process stderr. `PerfRecord` (further down) wraps a
+command in `perf record` and, on extract, runs `perf script` over the recording
+to write a per-frame CSV and report the data size + sample/frame counts. Neither
+touches argv on its own.
 """
+
+import os
+from pathlib import Path
+from typing import Any
 
 import pytest
 
-from bench import PerfStat, Sample
+from bench import (
+    DirReporter,
+    FixedRuns,
+    PerfRecord,
+    PerfStat,
+    Sample,
+    Sequential,
+    bench,
+    execution_dir,
+    suite,
+    variant_path,
+    write_perf_frames,
+)
+from bench.builder.context import Context, Data
+from bench.runner.base import plan
 
 from conftest import make_success
 
@@ -110,3 +131,207 @@ def test_lower_is_better_preserves_events_and_marks_samples():
     stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
     samples = list(c.process(make_success(stderr=stderr)))
     assert all(s.lower_is_better is True for s in samples)
+
+
+# ===========================================================================
+# PerfRecord
+# ===========================================================================
+
+
+# A stand-in `perf`: `record` writes a fake perf.data at the `-o` path; `script`
+# prints two samples (three frames total). Lets the whole path run without perf.
+_STUB_PERF = (
+    "#!/bin/sh\n"
+    'if [ "$1" = "record" ]; then\n'
+    '    shift; out=""\n'
+    '    while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\n'
+    "    printf 'FAKEPERFDATA' > \"$out\"; exit 0\n"
+    'elif [ "$1" = "script" ]; then\n'
+    "    printf 'R 1 [000] 1000.500: 1 cpu-cycles:u:\\n"
+    "\\t 55e0 do_gc+0x40 (/usr/lib/R)\\n"
+    "\\t 55f0 Rf_eval+0x1 (/usr/lib/R)\\n\\n"
+    "R 1 [000] 1000.600: 1 cpu-cycles:u:\\n"
+    "\\t aa00 sum+0x2 (/usr/lib/R)\\n'\n"
+    "    exit 0\n"
+    "fi\nexit 1\n"
+)
+
+
+def _install_stub_perf(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir(parents=True, exist_ok=True)
+    perf = bindir / "perf"
+    perf.write_text(_STUB_PERF)
+    perf.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+
+# ----- wrap (the one place perf record enters argv) -------------------------
+
+
+def test_record_wrap_shape():
+    argv = PerfRecord(freq=99, stack_size=16384, out_dir=Path("/o/rep=0")).wrap(
+        ["R", "x.R"]
+    )
+    assert argv == [
+        "perf",
+        "record",
+        "-F",
+        "99",
+        "-g",
+        "--call-graph",
+        "dwarf,16384",
+        "-k1",
+        "-e",
+        "cpu-cycles:u",
+        "-o",
+        "/o/rep=0/perf.data",
+        "--",
+        "R",
+        "x.R",
+    ]
+
+
+def test_record_wrap_is_idempotent():
+    p = PerfRecord(out_dir=Path("/o"))
+    once = p.wrap(["R"])
+    assert p.wrap(once) == once
+
+
+def test_wrap_requires_resolved_out_dir():
+    with pytest.raises(ValueError):
+        PerfRecord().wrap(["R"])  # out_dir unset
+    with pytest.raises(ValueError):
+        PerfRecord(out_dir=lambda ctx: Path("/o")).wrap(["R"])  # factory not resolved
+
+
+def test_resolve_bakes_out_dir_factory(tmp_path: Path):
+    ctx = Context(params=None, suite="S", benchmark="b", data=Data({"rep": 0}))
+    perf = PerfRecord(out_dir=lambda c: tmp_path / c.suite / f"rep={c.data.rep}")
+    assert perf.resolve(ctx).out_dir == tmp_path / "S" / "rep=0"
+    # a plain Path passes through unchanged
+    assert PerfRecord(out_dir=tmp_path).resolve(ctx).out_dir == tmp_path
+
+
+# ----- write_perf_frames (perf script -> CSV) -------------------------------
+
+
+def test_write_perf_frames_parses_samples_and_frames(tmp_path: Path):
+    script = (
+        "R 1 [000] 1000.500: 1 cpu-cycles:u:\n"
+        "\t 55e0 do_gc+0x40 (/usr/lib/R)\n"
+        "\t 55f0 Rf_eval+0x1 (/usr/lib/R)\n"
+        "\n"
+        "R 1 [000] 1000.600: 1 cpu-cycles:u:\n"
+        "\t aa00 sum+0x2 (/usr/lib/R)\n"
+    )
+    out = tmp_path / "perf-frames.csv"
+    n_samples, n_frames = write_perf_frames(script, out)
+    assert (n_samples, n_frames) == (2, 3)
+    rows = out.read_text().splitlines()
+    assert rows[0] == "sample_id,timestamp,frame_pos,sym,dso"
+    # offset stripped from sym, parens stripped from dso, timestamp kept as text
+    assert rows[1] == "1,1000.500,1,do_gc,/usr/lib/R"
+    assert rows[3] == "2,1000.600,1,sum,/usr/lib/R"
+
+
+# ----- execution_dir / DirReporter.output_dir -------------------------------
+
+
+def test_variant_path_nested_and_flat():
+    v = (("a", "1"), ("b", "2"))
+    assert variant_path(v) == Path("a", "1", "b", "2")  # nested is the default
+    assert variant_path(v, nested=False) == Path("a=1, b=2")
+    assert variant_path(()) == Path()
+
+
+def test_output_dir_nested_and_flat(tmp_path: Path):
+    v = (("rep", "0"),)
+    # nested (default): a directory level per dimension
+    assert DirReporter(tmp_path).output_dir("S", "b", v) == (
+        tmp_path / "S" / "b" / "rep" / "0"
+    )
+    # flat: a single dim=val component
+    assert DirReporter(tmp_path, nested=False).output_dir("S", "b", v) == (
+        tmp_path / "S" / "b" / "rep=0"
+    )
+    # low-level joiner still takes a plain leaf
+    assert execution_dir(tmp_path, "S", "b", "x") == tmp_path / "S" / "b" / "x"
+
+
+def test_dirreporter_start_precreates_variant_dirs(tmp_path: Path):
+    s = suite("S", bench("b", arg=1)).with_command(["true"]).with_matrix(rep=[0, 1])
+    rep = DirReporter(tmp_path)
+    rep.start(plan([s], None))
+    assert (tmp_path / "S" / "b" / "rep" / "0").is_dir()  # nested
+    assert (tmp_path / "S" / "b" / "rep" / "1").is_dir()
+
+
+# ----- end-to-end: record -> extract (script + CSV) via a stub perf ---------
+
+
+def _perf_suite(perf: PerfRecord, tmp_path: Path):
+    # `perf` carries a (ctx) -> Path out_dir; resolve it per variant for both the
+    # -o path (command) and the extract (metric).
+    return (
+        suite("S", bench("b", arg=1))
+        .with_cwd(tmp_path)
+        .with_matrix(rep=[0])
+        .with_command(lambda ctx: perf.resolve(ctx).wrap(["true"]))
+        .with_process_metric(lambda ctx: (perf.resolve(ctx),))
+        .with_warmup(0)
+        .with_runs(FixedRuns(1))
+    )
+
+
+def _perf_with_dir(dirs: DirReporter, *, frames: bool = True) -> PerfRecord:
+    def out_dir(ctx: Context[Any]) -> Path:
+        assert ctx.benchmark is not None  # set for every resolved variant
+        return dirs.output_dir(ctx.suite, ctx.benchmark, (("rep", str(ctx.data.rep)),))
+
+    return PerfRecord(out_dir=out_dir, frames=frames)
+
+
+def test_perf_record_end_to_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _install_stub_perf(tmp_path, monkeypatch)
+    root = tmp_path / "out"
+    dirs = DirReporter(root)  # drives output_dir (via perf.out_dir) + the tree
+    perf = _perf_with_dir(dirs)
+
+    report = Sequential(reporter=dirs).run(
+        plan([_perf_suite(perf, tmp_path)], None), None
+    )
+
+    (ex,) = report.executions
+    assert not ex.is_failure()
+    metrics = {s.metric: s.value for s in ex.process_samples}
+    assert metrics["elapsed"] >= 0.0
+    assert metrics["perf_data_size"] == float(len(b"FAKEPERFDATA"))
+    assert metrics["perf_samples"] == 2.0
+    assert metrics["perf_frames"] == 3.0
+
+    d = root / "S" / "b" / "rep" / "0"  # nested variant dir
+    assert (d / "perf.data").read_bytes() == b"FAKEPERFDATA"
+    assert (d / "perf-frames.csv").read_text().splitlines()[1] == (
+        "1,1000.500,1,do_gc,/usr/lib/R"
+    )
+    assert (d / "stdout").exists()  # DirReporter colocated with the perf output
+
+
+def test_perf_record_no_frames_emits_size_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _install_stub_perf(tmp_path, monkeypatch)
+    root = tmp_path / "out"
+    dirs = DirReporter(root)
+    perf = _perf_with_dir(dirs, frames=False)
+
+    report = Sequential(reporter=dirs).run(
+        plan([_perf_suite(perf, tmp_path)], None), None
+    )
+
+    (ex,) = report.executions
+    metrics = {s.metric for s in ex.process_samples}
+    assert "perf_data_size" in metrics
+    assert "perf_samples" not in metrics and "perf_frames" not in metrics
+    assert not (root / "S" / "b" / "rep" / "0" / "perf-frames.csv").exists()

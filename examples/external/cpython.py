@@ -193,4 +193,4 @@ cpython = (
 
 
 if __name__ == "__main__":
-    bench_app(params=CpythonParams, reporter=reporter).add(cpython).run()
+    bench_app().with_params(CpythonParams).with_reporter(reporter).add(cpython).run()

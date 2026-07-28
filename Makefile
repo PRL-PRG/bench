@@ -1,9 +1,12 @@
-.PHONY: check check-types test docs docs-serve format schema
+.PHONY: check lint check-types test docs docs-serve format schema
 
-check: check-types test
+check: lint check-types test
+
+lint:
+	uv run --extra dev ruff check .
 
 format:
-	uv run ruff format .
+	uv run --extra dev ruff format .
 
 check-types:
 	uv run --extra dev pyright

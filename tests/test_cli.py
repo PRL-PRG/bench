@@ -212,7 +212,7 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
         Results() & GeomeanSummary(axis="sleep", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    bench_app(reporter=reporter).add_all(s).run(["--show", str(out)])
+    bench_app().with_reporter(reporter).add_all(s).run(["--show", str(out)])
     text = buf.getvalue()
     assert "Summary (geomean) - sleep" in text  # the configured GeomeanSummary ran
 
@@ -309,7 +309,8 @@ def test_run_callable_factory_receives_parsed_params():
         return [_trivial("S")]
 
     report = (
-        bench_app(params=_Params)
+        bench_app()
+        .with_params(_Params)
         .factory(discover)
         .run(["--label", "hello", "--no-progress"])
     )

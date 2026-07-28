@@ -28,7 +28,7 @@ def test_cooldown_sleeps_between_runs(monkeypatch: pytest.MonkeyPatch):
     calls: list[float] = []
     monkeypatch.setattr("bench.runner.controller.time.sleep", lambda s: calls.append(s))
     s = suite("s", bench("b").with_command(["true"]).with_runs(3).with_cooldown(0.05))
-    bench_app(environment=NoEnvironment()).add_all(s).run(["--no-progress"])
+    bench_app().with_environment(NoEnvironment()).add_all(s).run(["--no-progress"])
     assert calls == [0.05, 0.05]  # 3 runs -> 2 gaps, none before the first
 
 

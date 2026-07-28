@@ -229,6 +229,13 @@ def scale_unit(value: float, unit: str) -> tuple[float, str]:
             return 1 / (1024 * 1024), "GB"
         if a >= 1024:
             return 1 / 1024, "MB"
+    elif unit == "B":
+        if a >= 1024**3:
+            return 1 / 1024**3, "GB"
+        if a >= 1024**2:
+            return 1 / 1024**2, "MB"
+        if a >= 1024:
+            return 1 / 1024, "kB"
     return 1.0, unit
 
 
