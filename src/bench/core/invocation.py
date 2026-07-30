@@ -34,6 +34,7 @@ class Invocation:
     inherit_env: bool = False
     timeout: float | None = None
     stdin: bytes | None = None
+    capture_output: bool = True
 
 
 @dataclass(frozen=True, slots=True)

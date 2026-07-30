@@ -144,8 +144,8 @@ def execute(exe: Invocation) -> InvocationResult:
     if exe.inherit_env:
         env |= os.environ
 
-    stdout_f = tempfile.TemporaryFile()
-    stderr_f = tempfile.TemporaryFile()
+    stdout_f = tempfile.TemporaryFile() if exe.capture_output else None
+    stderr_f = tempfile.TemporaryFile() if exe.capture_output else None
     proc: subprocess.Popen[bytes] | None = None
     try:
         proc = subprocess.Popen(
@@ -188,10 +188,14 @@ def execute(exe: Invocation) -> InvocationResult:
             timer.cancel()
         runtime = endtime - starttime
 
-        stdout_f.seek(0)
-        stderr_f.seek(0)
-        stdout = stdout_f.read().decode(errors="replace")
-        stderr = stderr_f.read().decode(errors="replace")
+        if stdout_f is not None and stderr_f is not None:
+            stdout_f.seek(0)
+            stderr_f.seek(0)
+            stdout = stdout_f.read().decode(errors="replace")
+            stderr = stderr_f.read().decode(errors="replace")
+        else:
+            stdout = ""
+            stderr = ""
 
         if interrupted():
             return InvocationResult(
@@ -225,8 +229,10 @@ def execute(exe: Invocation) -> InvocationResult:
     finally:
         if proc is not None:
             _unregister_proc(proc)
-        stdout_f.close()
-        stderr_f.close()
+        if stdout_f is not None:
+            stdout_f.close()
+        if stderr_f is not None:
+            stderr_f.close()
 
 
 @dataclasses.dataclass
