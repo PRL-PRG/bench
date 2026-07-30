@@ -147,7 +147,7 @@ def execute(exe: Invocation) -> InvocationResult:
         proc = subprocess.Popen(
             cmd,
             cwd=str(exe.cwd),
-            env=dict(exe.env) if exe.env else None,
+            env=dict(exe.env),
             stdin=subprocess.PIPE if exe.stdin else None,
             stdout=stdout_f,
             stderr=stderr_f,
