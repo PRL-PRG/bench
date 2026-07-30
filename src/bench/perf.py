@@ -121,12 +121,21 @@ class PerfRecord(ProcessMetric):
     `extract` runs `perf script` over that recording into
     `<out_dir>/perf-frames.csv` and emits its size and sample / frame counts.
 
-    `freq`/`stack_size`/`event` shape the recording (defaults: 99 Hz, a 16 kB
-    dwarf stack dump, user-space cpu-cycles). `frames=False` records only - it
-    skips the `perf script` pass and emits just `perf_data_size`.
+    `freq`/`call_graph`/`stack_size`/`event` shape the recording (defaults:
+    99 Hz, a 16 kB dwarf stack dump, user-space cpu-cycles). `frames=False`
+    records only - it skips the `perf script` pass and emits just
+    `perf_data_size`.
+
+    `call_graph` picks the unwind method: `"dwarf"` copies `stack_size` bytes of
+    user stack into every sample and unwinds offline (works on any binary, but
+    the copy dominates the recording cost and truncates stacks deeper than the
+    dump); `"fp"` walks %rbp in the kernel and copies nothing, which is far
+    cheaper but needs a binary built with frame pointers; `"lbr"` uses the CPU's
+    branch stack. `stack_size` is only used by `"dwarf"`.
     """
 
     freq: int = 99
+    call_graph: str = "dwarf"
     stack_size: int = 16384
     event: str = "cpu-cycles:u"
     frames: bool = True
@@ -145,6 +154,12 @@ class PerfRecord(ProcessMetric):
     def frames_file(self) -> Path:
         return self._dir() / "perf-frames.csv"
 
+    def call_graph_arg(self) -> str:
+        """The `--call-graph` value; only dwarf takes a stack-dump size."""
+        if self.call_graph == "dwarf":
+            return f"dwarf,{self.stack_size}"
+        return self.call_graph
+
     def record_prefix(self) -> list[str]:
         return [
             "perf",
@@ -153,7 +168,7 @@ class PerfRecord(ProcessMetric):
             str(self.freq),
             "-g",
             "--call-graph",
-            f"dwarf,{self.stack_size}",
+            self.call_graph_arg(),
             "-k1",
             "-e",
             self.event,
