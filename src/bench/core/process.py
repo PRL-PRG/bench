@@ -140,6 +140,10 @@ def execute(exe: Invocation) -> InvocationResult:
             invocation=exe, returncode=SPAWN_FAIL_RC, failure=str(e)
         )
 
+    env = dict(exe.env)
+    if exe.inherit_env:
+        env |= os.environ
+
     stdout_f = tempfile.TemporaryFile()
     stderr_f = tempfile.TemporaryFile()
     proc: subprocess.Popen[bytes] | None = None
@@ -147,7 +151,7 @@ def execute(exe: Invocation) -> InvocationResult:
         proc = subprocess.Popen(
             cmd,
             cwd=str(exe.cwd),
-            env=dict(exe.env),
+            env=env,
             stdin=subprocess.PIPE if exe.stdin else None,
             stdout=stdout_f,
             stderr=stderr_f,

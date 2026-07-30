@@ -31,6 +31,7 @@ class Invocation:
     command: tuple[str, ...]
     cwd: Path
     env: Mapping[str, str] = EMPTY_MAPPING
+    inherit_env: bool = False
     timeout: float | None = None
     stdin: bytes | None = None
 
