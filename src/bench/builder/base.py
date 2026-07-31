@@ -84,11 +84,11 @@ def const(value: Any) -> Factory[Any]:
     return lambda _ctx: value
 
 
-def as_build(value: Any, normalize: Callable[[Any], Any] = lambda v: v) -> Factory[Any]:
+def as_build[T, U](value: T | Factory[U], normalize: Callable[[T], U] = lambda v: v) -> Factory[T]:
     """Coerce a setter argument into a `Factory[T]`: a callable is the builder as
     is, anything else is the static value, normalized once and wrapped."""
     if callable(value):
-        return cast("Factory[Any]", value)
+        return cast("Factory[T]", value)
     return const(normalize(value))
 
 
@@ -178,7 +178,10 @@ class BuilderBase:
         return dataclasses.replace(self, cwd=as_build(cwd, Path))
 
     def with_env(self, env: Mapping[str, str] | EnvFactory) -> Self:
-        return dataclasses.replace(self, env=as_build(env, dict))
+        def env_builder(ctx: Context[Any]):
+            return dict(self.env(ctx)) | dict(as_build(env, dict)(ctx))
+
+        return dataclasses.replace(self, env=env_builder)
 
     def with_timeout(self, timeout: float | None | Factory[float | None]) -> Self:
         return dataclasses.replace(self, timeout=as_build(timeout))
