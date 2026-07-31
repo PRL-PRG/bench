@@ -84,7 +84,9 @@ def const(value: Any) -> Factory[Any]:
     return lambda _ctx: value
 
 
-def as_build[T, U](value: T | Factory[U], normalize: Callable[[T], U] = lambda v: v) -> Factory[T]:
+def as_build[T, U](
+    value: T | Factory[U], normalize: Callable[[T], U] = lambda v: v
+) -> Factory[T]:
     """Coerce a setter argument into a `Factory[T]`: a callable is the builder as
     is, anything else is the static value, normalized once and wrapped."""
     if callable(value):
@@ -181,7 +183,9 @@ class BuilderBase:
         def env_builder(ctx: Context[Any]):
             return dict(self.env(ctx)) | dict(as_build(env, dict)(ctx))
 
-        return dataclasses.replace(self, env=env_builder)
+        return dataclasses.replace(
+            self, env=env_builder if self.env != UNSET else as_build(env, dict)
+        )
 
     def with_timeout(self, timeout: float | None | Factory[float | None]) -> Self:
         return dataclasses.replace(self, timeout=as_build(timeout))
