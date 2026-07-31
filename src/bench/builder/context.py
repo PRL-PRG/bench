@@ -8,7 +8,8 @@ to every command/cwd/env callable and suite factory, alongside the resolved
 suite/benchmark properties (see `Context` below).
 
 Supported param field types: `str`, `int`, `float`, `bool`, `Path`,
-`Optional[T]` / `T | None`.
+`Optional[T]` / `T | None`. A relative `Path` value is made absolute against the
+cwd it was typed in; a bare name is left as is, for PATH lookup.
 
 Required vs default:
   - field with no default              -> required argument
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import types
 import typing
 from dataclasses import dataclass, field, fields, is_dataclass
@@ -238,11 +240,23 @@ def _unwrap_optional(t: Any) -> tuple[Any, bool]:
     return t, False
 
 
+def _anchor_path(value: str) -> Path:
+    """A `Path` argument, made absolute against the cwd it was typed in.
+
+    A bare name (`R`) is returned verbatim: that is a PATH lookup, not a path.
+    """
+    if not os.path.dirname(value):
+        return Path(value)
+    # abspath, not resolve: normalize without following symlinks, so the path
+    # stays the one the user typed.
+    return Path(os.path.abspath(value))
+
+
 def _coerce_type(t: Any) -> Any:
     # Path is the only one not directly a callable that yields the right value
-    # from a string, but Path(str) does, so it's fine.
+    # from a string, but `_anchor_path(str)` does, so it's fine.
     if t is Path:
-        return Path
+        return _anchor_path
     if t in (int, float, str):
         return t
     # Fallback: treat as a callable already

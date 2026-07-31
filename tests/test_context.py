@@ -131,6 +131,42 @@ def test_list_field_is_repeatable_append():
     assert build_dataclass(DC, p.parse_args([])).tags is None
 
 
+def test_relative_path_is_anchored_to_the_invocation_cwd(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    cwd = Path.cwd()
+    ns = _parser().parse_args(["--name", "R-4.5.1/bin/R", "--cwd", "./out"])
+    cli = build_dataclass(_Params, ns)
+    assert cli.name == cwd / "R-4.5.1/bin/R"
+    assert cli.cwd == cwd / "out"
+
+
+def test_bare_name_path_is_left_for_path_lookup(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    assert build_dataclass(_Params, _parser().parse_args(["--name", "R"])).name == Path(
+        "R"
+    )
+
+
+def test_absolute_path_is_normalized_but_not_resolved(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "real").mkdir()
+    (tmp_path / "link").symlink_to(tmp_path / "real")
+    ns = _parser().parse_args(["--name", str(tmp_path / "link" / "d" / ".." / "R")])
+    assert build_dataclass(_Params, ns).name == tmp_path / "link" / "R"
+
+
+def test_list_of_paths_is_anchored_per_element(monkeypatch, tmp_path):
+    @dataclass
+    class DC:
+        paths: list[Path] | None = None
+
+    monkeypatch.chdir(tmp_path)
+    p = argparse.ArgumentParser()
+    add_dataclass_args(p, DC)
+    ns = p.parse_args(["--paths", "a/x", "--paths", "R"])
+    assert build_dataclass(DC, ns).paths == [Path.cwd() / "a/x", Path("R")]
+
+
 def test_metadata_short_flag_alias():
     ns = _shared_parser().parse_args(["-j", "4"])
     assert build_dataclass(SharedBenchParams, ns).jobs == 4
