@@ -11,6 +11,7 @@ a blank line, so `SummaryReporter` takes a single `Formatter`.
 from __future__ import annotations
 
 import abc
+from collections.abc import Sequence
 
 from bench.report.render import PLAIN, RICH
 from bench.report.summary import (
@@ -63,13 +64,15 @@ class Results(_MetricFilter):
 class Summary(_MetricFilter):
     """Rank the variants within each benchmark, best first. With `axis`, fold the
     other (residual) variants within each benchmark and compare the values of that
-    axis instead (e.g. `Summary(axis="vm")`). `ref` pins one value as baseline."""
+    axis instead (e.g. `Summary(axis="vm")`). Several axis names are one composite
+    axis, whose values are their combinations (e.g., `axis=["version", "mode"]`. 
+    `ref` pins one value as baseline."""
 
     def __init__(
         self,
         metrics: set[str] | None = None,
         *,
-        axis: str | None = None,
+        axis: str | Sequence[str] | None = None,
         ref: str | None = None,
     ) -> None:
         super().__init__(metrics)
@@ -83,14 +86,16 @@ class Summary(_MetricFilter):
 
 
 class GeomeanSummary(Formatter):
-    """Rank the values of one matrix `axis` by the geometric mean over
-    benchmarks. `ref` pins one axis value as the baseline reference (otherwise
-    the best performer is used)."""
+    """Rank the values of a matrix `axis` by the geometric mean over benchmarks.
+    Several axis names are one composite axis, whose values are their combinations
+    (e.g., `axis=["version", "mode"]`. `ref` pins one axis value as the baseline - 
+    a bare value for a single axis, a `name=value` list for a composite one - 
+    and otherwise the best performer is used."""
 
     def __init__(
         self,
         *,
-        axis: str,
+        axis: str | Sequence[str],
         metrics: str | set[str] | None = None,
         ref: str | None = None,
     ) -> None:

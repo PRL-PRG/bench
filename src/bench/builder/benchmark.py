@@ -33,7 +33,7 @@ from bench.core.invocation import (
     Invocation,
     SuccessFn,
     Variant,
-    format_variant,
+    format_variant_pairs,
 )
 from bench.core.metric import (
     IterationMetric,
@@ -55,8 +55,8 @@ if TYPE_CHECKING:
 
 
 def default_label(b: Benchmark) -> str:
-    """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
-    return format_variant(b.variant).strip(" ()")
+    """Default variant label: the formatted `k=v, ...` tuple."""
+    return format_variant_pairs(b.variant)
 
 
 class _DataAttrs:

@@ -86,11 +86,14 @@ def default_success(result: InvocationResult) -> Verdict:
 type Variant = tuple[tuple[str, str], ...]
 
 
+def format_variant_pairs(variant: Variant) -> str:
+    """`k=v, ...` naming a matrix variant. `""` if empty."""
+    return ", ".join(f"{k}={v}" for k, v in variant)
+
+
 def format_variant(variant: Variant) -> str:
     """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
-    if not variant:
-        return ""
-    return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
+    return f" ({format_variant_pairs(variant)})" if variant else ""
 
 
 def format_benchmark(

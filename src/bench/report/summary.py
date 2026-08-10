@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import math
 import statistics
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass, field, replace
 
-from bench.core.invocation import Variant, format_benchmark
+from bench.core.invocation import Variant, format_benchmark, format_variant_pairs
 from bench.core.results import Report, Execution, Sample
 from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
+from bench.utils import BenchError
 
 type MetricKey = tuple[str, str]  # (metric, unit)
 type BenchKey = tuple[str, str]  # (suite, benchmark)
@@ -284,15 +285,56 @@ def bench_label(suite: str, benchmark: str) -> str:
 def _vlabel(s: Stat) -> str:
     if s.variant_label:
         return s.variant_label
-    return ", ".join(f"{k}={v}" for k, v in s.variant)
+    return format_variant_pairs(s.variant)
 
 
-def _axis_value(s: Stat, axis: str) -> str | None:
-    return next((v for k, v in s.variant if k == axis), None)
+def _axes(axis: str | Sequence[str]) -> tuple[str, ...]:
+    """One axis name or several, normalised. Several are treated as one composite
+    axis whose values are their combinations (`version` + `mode`)."""
+    axes = (axis,) if isinstance(axis, str) else tuple(axis)
+    if not axes:
+        raise BenchError("axis must name at least one matrix dimension")
+    return axes
 
 
-def _residual(s: Stat, axis: str) -> Variant:
-    return tuple((k, v) for k, v in s.variant if k != axis)
+def _axis_name(axes: tuple[str, ...]) -> str:
+    return ", ".join(axes)
+
+
+def _axis_key(s: Stat, axes: tuple[str, ...]) -> Variant | None:
+    """This variant's coordinate on `axes`, in their order, or None unless it has a
+    value for every one of them."""
+    key: list[tuple[str, str]] = []
+    for a in axes:
+        v = next((v for k, v in s.variant if k == a), None)
+        if v is None:
+            return None
+        key.append((a, v))
+    return tuple(key)
+
+
+def _axis_label(key: Variant) -> str:
+    """One axis value on its own (the header already names the axis), a composite
+    coordinate as the usual `name=value` list."""
+    return key[0][1] if len(key) == 1 else format_variant_pairs(key)
+
+
+def _ref_key(ref: str, axes: tuple[str, ...]) -> Variant | None:
+    """`ref` as a coordinate on `axes`: for a single axis a bare value (so a value
+    that itself contains `=` still works), for a composite one a `name=value` list
+    naming every axis, in any order. None when it names no cell of `axes`."""
+    if len(axes) == 1:
+        prefix = f"{axes[0]}="
+        return ((axes[0], ref.removeprefix(prefix)),)
+    parts = [p.split("=", 1) for p in ref.split(",") if "=" in p]
+    given = {k.strip(): v.strip() for k, v in parts}
+    if set(given) != set(axes):
+        return None
+    return tuple((a, given[a]) for a in axes)
+
+
+def _residual(s: Stat, axes: tuple[str, ...]) -> Variant:
+    return tuple((k, v) for k, v in s.variant if k not in axes)
 
 
 def _num(x: float, p: int = 2) -> str:
@@ -454,26 +496,46 @@ def results(
 # ----- Axis fold: geomean the residual variants, rank the axis values --------
 
 
-def _axis_missing(r: Renderer, axis: str) -> list[str]:
+def _axis_warning(r: Renderer, axes: tuple[str, ...], why: str) -> list[str]:
     return [
-        tag(r, "label", f"Summary (geomean) - {axis}")
+        tag(r, "label", f"Summary (geomean) - {_axis_name(axes)}")
         + " "
-        + tag(r, "warning", f"(axis {axis!r} not present in any benchmark)")
+        + tag(r, "warning", f"({why})")
     ]
 
 
+def _axis_missing(r: Renderer, axes: tuple[str, ...], stats: list[Stat]) -> list[str]:
+    """The warning for an axis no variant covers: which of its names are absent
+    everywhere, or - when all of them occur - that they never occur together."""
+    name = _axis_name(axes)
+    present = {k for s in stats for k, _ in s.variant}
+    absent = [a for a in axes if a not in present]
+    if not absent:
+        why = f"axis {name!r} never combined in one benchmark"
+    elif len(absent) == len(axes):
+        why = f"axis {name!r} not present in any benchmark"
+    else:
+        why = f"axis {name!r} incomplete: {', '.join(map(repr, absent))} not present"
+    return _axis_warning(r, axes, why)
+
+
 def _axis_block(
-    grp: list[Stat], axis: str, r: Renderer, header: str, *, ref: str | None
+    grp: list[Stat],
+    axes: tuple[str, ...],
+    r: Renderer,
+    header: str,
+    *,
+    ref: Variant | None,
 ) -> list[str]:
-    """One `_was_block`: fold `grp` by `axis` (geomean over the residual variants,
+    """One `_was_block`: fold `grp` by `axes` (geomean over the residual variants,
     matched pairwise) and compare the axis values best-first, or against `ref` if
     that value is present. Empty when fewer than two axis values line up."""
-    # axis value -> {(benchmark, residual variant): Stat}
-    byval: dict[str, dict[tuple[str, Variant], Stat]] = {}
+    # axis coordinate -> {(benchmark, residual variant): Stat}
+    byval: dict[Variant, dict[tuple[str, Variant], Stat]] = {}
     for s in grp:
-        v = _axis_value(s, axis)
+        v = _axis_key(s, axes)
         assert v is not None
-        byval.setdefault(v, {})[(s.benchmark, _residual(s, axis))] = s
+        byval.setdefault(v, {})[(s.benchmark, _residual(s, axes))] = s
     if len(byval) < 2:
         return []
     lib = grp[0].lower_is_better if grp[0].lower_is_better is not None else True
@@ -494,11 +556,11 @@ def _axis_block(
         if not pairs:
             continue
         geo, sig = geomean_ratio(pairs)
-        entries.append((geo, sig, v, 0, 0))
+        entries.append((geo, sig, _axis_label(v), 0, 0))
     entries.sort(key=lambda e: e[0])  # closest to the reference first
     if not entries:
         return []
-    return _was_block(r, header, ref_val, entries, show_runs=False)
+    return _was_block(r, header, _axis_label(ref_val), entries, show_runs=False)
 
 
 # ----- Ranking: variants within a benchmark, best first ---------------------
@@ -509,16 +571,18 @@ def ranking(
     r: Renderer,
     *,
     metrics: set[str] | None = None,
-    axis: str | None = None,
+    axis: str | Sequence[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
     """Per benchmark: rank the variants best-first. With `axis`, instead fold the
     other (residual) variants within each benchmark by geomean and compare the
-    values of that axis (e.g. python3.14 vs python3.9)."""
+    values of that axis (e.g. python3.14 vs python3.9). Several axis names are one
+    composite axis, whose values are their combinations, labelled `name=value`;
+    `ref` then names one of those in the same form."""
     if axis is not None:
         return _axis_view(
             stats,
-            axis,
+            _axes(axis),
             r,
             key=lambda s: (s.suite, s.benchmark, s.mk),
             head=lambda s: bench_label(s.suite, s.benchmark),
@@ -557,7 +621,7 @@ def ranking(
 
 def _axis_view(
     stats: list[Stat],
-    axis: str,
+    axes: tuple[str, ...],
     r: Renderer,
     *,
     key: Callable[[Stat], Hashable],
@@ -568,21 +632,33 @@ def _axis_view(
     """Shared engine for the axis views: group axial stats by `key`, then emit one
     `_axis_block` per group headed by `head`. Drives both the per-benchmark
     ranking-by-axis and the per-suite `by_axis`."""
-    axial = [s for s in stats if _axis_value(s, axis) is not None]
+    axial = [s for s in stats if _axis_key(s, axes) is not None]
     if not axial:
-        return _axis_missing(r, axis)
+        return _axis_missing(r, axes, stats)
     blocks: list[list[str]] = []
+    ref_key = _ref_key(ref, axes) if ref is not None else None
+    # A `ref` no group can match is a typo; a group merely lacking it falls back to
+    # its own best performer, as always.
+    if ref is not None and all(_axis_key(s, axes) != ref_key for s in axial):
+        blocks.append(
+            _axis_warning(
+                r,
+                axes,
+                f"ref {ref!r} is not a value of axis {_axis_name(axes)!r}"
+                " - using the best performer",
+            )
+        )
     for grp in group_by(axial, key).values():
         metric_ = grp[0].metric
         if not _keep(metric_, metrics):
             continue
         header = (
-            tag(r, "label", f"Summary (geomean) - {axis} - {head(grp[0])}")
+            tag(r, "label", f"Summary (geomean) - {_axis_name(axes)} - {head(grp[0])}")
             + " ("
             + tag(r, "metric", metric_)
             + ")"
         )
-        blocks.append(_axis_block(grp, axis, r, header, ref=ref))
+        blocks.append(_axis_block(grp, axes, r, header, ref=ref_key))
     return _join_blocks(blocks)
 
 
@@ -591,15 +667,20 @@ def _axis_view(
 
 def by_axis(
     stats: list[Stat],
-    axis: str,
+    axis: str | Sequence[str],
     r: Renderer,
     *,
     metrics: set[str] | None = None,
     ref: str | None = None,
 ) -> list[str]:
+    """Per suite: rank the values of `axis` by the geomean over its benchmarks.
+    Several axis names are one composite axis, whose values are their combinations -
+    `["version", "mode"]` ranks `version=4.5.0, mode=bc` against `version=4.5.0,
+    mode=ast` and the rest, instead of averaging the modes into each version's
+    number; `ref` then names one of those combinations in the same form."""
     return _axis_view(
         stats,
-        axis,
+        _axes(axis),
         r,
         key=lambda s: (s.suite, s.mk),
         head=lambda s: s.suite,

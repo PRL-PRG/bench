@@ -38,7 +38,7 @@ from bench.core.invocation import (
     TIMEOUT_RC,
     Variant,
     format_benchmark,
-    format_variant,
+    format_variant_pairs,
 )
 from bench.core.results import Iteration, Report, Execution, Sample, report_to_json
 from bench.report.theme import BENCHR_THEME, console
@@ -322,7 +322,7 @@ def variant_path(variant: Variant, *, nested: bool = True) -> Path:
         return Path()
     if nested:
         return Path(*chain.from_iterable(variant))
-    return Path(format_variant(variant).strip(" ()"))
+    return Path(format_variant_pairs(variant))
 
 
 class DirReporter(_EnvironmentAware, Reporter):
