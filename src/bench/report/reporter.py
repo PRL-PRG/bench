@@ -418,14 +418,6 @@ class DirReporter(_EnvironmentAware, Reporter):
 DEFAULT_NAME_WIDTH = 36
 
 
-def _fmt_est(seconds: float) -> str:
-    if seconds <= 0:
-        return ""
-    if seconds < 1.0:
-        return f"{seconds * 1000:.0f}ms"
-    return f"{seconds:.2f}s"
-
-
 def _truncate_middle(s: str, width: int) -> str:
     """Cap `s` to `width` columns, eliding the middle with `…` (keeps head+tail),
     macOS-Finder style."""
@@ -479,10 +471,8 @@ class ProgressReporter(Reporter):
 
     A top `Progress` bar tracks how many benchmarks finished and how many failed.
     Under it, each running benchmark occupies a single line led by its name
-    (middle-truncated to `name_width`), followed by a spinner and its progress
-    count; command benchmarks also show a per-iteration elapsed estimate (a
-    harness omits that, since its iterations aren't individually timed). Both
-    show an ETA when the iteration count is bounded. Bars stretch to the screen
+    (middle-truncated to `name_width`), followed by a spinner, its progress count
+    and an ETA when the iteration count is bounded. Bars stretch to the screen
     edge. When a benchmark finishes its bar is replaced by a persistent summary
     line printed above the live region, carrying the same elapsed stats as the
     final summary (or FAILED).
@@ -536,25 +526,20 @@ class ProgressReporter(Reporter):
     def benchmark_start(self, b: Benchmark) -> None:
         self._local.n = 0
         self._local.total = _bench_total(b)
-        self._local.runtime = 0.0
-        self._local.harness = b.harness
         if self._live is None:
             return
         total = self._local.total
         total_str = str(total) if total is not None else "?"
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
-        # A harness is one streaming process, so its per-iteration elapsed
-        # estimate isn't measured; it still gets an ETA when its iteration count
-        # is known (_EtaColumn self-blanks otherwise).
-        name_col = _NameColumn(_truncate_middle(name, self._name_width))
-        columns: list[Any] = [name_col, SpinnerColumn()]
-        if not b.harness:
-            columns.append(TextColumn("elapsed estimate: {task.fields[est]}"))
-        columns.append(BarColumn(bar_width=None))
-        columns.append(TextColumn("{task.completed}/{task.fields[total_str]}"))
-        columns.append(_EtaColumn())
+        columns: list[Any] = [
+            _NameColumn(_truncate_middle(name, self._name_width)),
+            SpinnerColumn(),
+            BarColumn(bar_width=None),
+            TextColumn("{task.completed}/{task.fields[total_str]}"),
+            _EtaColumn(),
+        ]
         prog = RichProgress(*columns, console=self._console)
-        task_id = prog.add_task("", total=total, total_str=total_str, est="")
+        task_id = prog.add_task("", total=total, total_str=total_str)
         with self._lock:
             slot = self._next_slot
             self._next_slot += 1
@@ -575,9 +560,6 @@ class ProgressReporter(Reporter):
         task_id = getattr(self._local, "task_id", None)
         if prog is None or task_id is None:
             return
-        self._local.runtime += it.runtime
-        if not self._local.harness:
-            prog.update(task_id, est=_fmt_est(self._local.runtime / self._local.n))
         prog.advance(task_id)
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
