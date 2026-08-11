@@ -197,11 +197,15 @@ def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
 class CsvReporter(_EnvironmentAware, _BufferingReporter):
     """Buffer runs, write CSV on `finalize()`.
 
-    Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, outlier, failure`. One row per Sample, for each iteration's samples
-    and then the run's whole-process samples. A failed iteration (or run) emits
-    one row with blank metric and the failure verdict. All runs appear, warmup
-    included.
+    Schema: `suite, benchmark, run, <variant_cols...>, iteration, warmup, metric,
+    value, unit, lower_is_better, outlier, failure`. One row per Sample, for each
+    iteration's samples and then the run's whole-process samples, which belong to
+    no iteration and leave `iteration`/`warmup` blank. A failed iteration (or run)
+    emits one row with blank metric and the failure verdict.
+
+    All runs appear, warmup included: `warmup` says which, so a consumer can
+    reproduce the stats (which exclude them) rather than having to guess from
+    row order.
     """
 
     def __init__(
@@ -223,6 +227,7 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
         cols = (
             ["suite", "benchmark", "run"]
             + variant_cols
+            + ["iteration", "warmup"]
             + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
         )
         with open(self.path, "wt", newline="") as f:
@@ -241,21 +246,24 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
                     base[k] = variant_map.get(k, "")
                 iters = r.iterations or [Iteration(failure=r.failure)]
                 emitted = False
-                for it in iters:
+                for i, it in enumerate(iters):
+                    it_base = {**base, "iteration": i, "warmup": str(it.warmup)}
                     failure = it.failure or (r.failure if not it.samples else None)
                     if failure:
-                        w.writerow(_blank_row(base, failure))
+                        w.writerow(_blank_row(it_base, failure))
                         emitted = True
                         continue
                     for s in it.samples:
-                        w.writerow(_sample_row(base, s))
+                        w.writerow(_sample_row(it_base, s))
                         emitted = True
+                # Whole-process samples belong to the run, not to any iteration.
+                proc_base = {**base, "iteration": "", "warmup": ""}
                 for s in r.process_samples:
-                    w.writerow(_sample_row(base, s))
+                    w.writerow(_sample_row(proc_base, s))
                     emitted = True
                 # A run that produced nothing (no samples, no failure) still appears.
                 if not emitted:
-                    w.writerow(_blank_row(base, ""))
+                    w.writerow(_blank_row(proc_base, ""))
 
 
 # ---------------------------------------------------------------------------
