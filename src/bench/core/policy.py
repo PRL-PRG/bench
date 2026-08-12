@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import abc
+import itertools
 import math
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from bench.core.results import Iteration
+from bench.core.results import Execution
 
 
 class StoppingPolicy(abc.ABC):
@@ -18,10 +19,10 @@ class StoppingPolicy(abc.ABC):
     def start(self) -> PolicyState: ...
 
     def __and__(self, other: StoppingPolicy) -> StoppingPolicy:
-        return _And(self, other)
+        return And(self, other)
 
     def __or__(self, other: StoppingPolicy) -> StoppingPolicy:
-        return _Or(self, other)
+        return Or(self, other)
 
     def at_least(self, n: int) -> StoppingPolicy:
         return self & FixedRuns(n)
@@ -41,74 +42,95 @@ class PolicyState(abc.ABC):
     __slots__ = ()
 
     @abc.abstractmethod
-    def observe(self, iteration: Iteration) -> None: ...
+    def observe(self, execution: Execution) -> None: ...
 
     @abc.abstractmethod
     def satisfied(self) -> bool: ...
 
 
-@dataclass(frozen=True, slots=True)
-class FixedRuns(StoppingPolicy):
-    n: int
+# ---------------------------------------------------------------------------
+# Fixed runs
+# ---------------------------------------------------------------------------
 
-    def start(self) -> _FixedState:
-        return _FixedState(self.n)
+
+class FixedRuns(StoppingPolicy):
+    __slots__ = ("n",)
+
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+    def start(self) -> _FixedRunsState:
+        return _FixedRunsState(self.n)
 
     def max_runs(self) -> int:
         return self.n
 
 
-class _FixedState(PolicyState):
+class _FixedRunsState(PolicyState):
     __slots__ = ("target", "cur")
 
     def __init__(self, target: int):
         self.target = target
         self.cur = 0
 
-    def observe(self, iteration: Iteration) -> None:
+    def observe(self, execution: Execution) -> None:
         self.cur += 1
 
     def satisfied(self) -> bool:
         return self.cur >= self.target
 
 
-@dataclass(frozen=True, slots=True)
+# ---------------------------------------------------------------------------
+# Maximal duration
+# ---------------------------------------------------------------------------
+
+
 class MaxDuration(StoppingPolicy):
     """Stop once `seconds` of cumulative command runtime have been observed.
 
     Counts only time spent running the benchmark command."""
 
-    seconds: float
+    __slots__ = ("seconds",)
 
-    def start(self) -> _DurationState:
-        return _DurationState(self.seconds)
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    def start(self) -> _MaxDurationState:
+        return _MaxDurationState(self.seconds)
 
 
-class _DurationState(PolicyState):
+class _MaxDurationState(PolicyState):
     __slots__ = ("seconds", "elapsed")
 
     def __init__(self, seconds: float):
         self.seconds = seconds
         self.elapsed = 0.0
 
-    def observe(self, iteration: Iteration) -> None:
-        self.elapsed += iteration.runtime
+    def observe(self, execution: Execution) -> None:
+        self.elapsed += execution.runtime
 
     def satisfied(self) -> bool:
         return self.elapsed >= self.seconds
 
 
-def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
-    """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
-    return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
+# ---------------------------------------------------------------------------
+# Coefficient of variation
+# ---------------------------------------------------------------------------
 
-
-@dataclass(frozen=True, slots=True)
 class CoefficientOfVariation(StoppingPolicy):
-    metric: str
-    threshold: float = 0.02
-    window: int = 5
-    min_runs: int = 10
+    __slots__ = ("metric", "threshold", "window", "min_runs")
+
+    def __init__(
+        self,
+        metric: str,
+        threshold: float = 0.02,
+        window: int = 5,
+        min_runs: int = 10,
+    ) -> None:
+        self.metric = metric
+        self.threshold = threshold
+        self.window = window
+        self.min_runs = min_runs
 
     def start(self) -> _CoVState:
         return _CoVState(self)
@@ -126,11 +148,15 @@ class _CoVState(PolicyState):
         self.sumsq = 0.0
         self.n_runs = 0
 
-    def observe(self, iteration: Iteration) -> None:
+    def observe(self, execution: Execution) -> None:
         # CoV tracks one scalar per run. More than one matching sample is
         # ambiguous and would inflate the
         # window / min_runs counters, so reject it loudly.
-        matching = [s.value for s in iteration.samples if s.metric == self.cfg.metric]
+
+        iteration_samples = (s for i in execution.iterations for s in i.samples)
+        samples = itertools.chain(execution.process_samples, iteration_samples)
+
+        matching = [s.value for s in samples if s.metric == self.cfg.metric]
         if len(matching) > 1:
             raise ValueError(
                 f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
@@ -161,13 +187,18 @@ class _CoVState(PolicyState):
         return math.sqrt(var) / abs(mean) <= cfg.threshold
 
 
+# ---------------------------------------------------------------------------
+# Combinators
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True, slots=True)
-class _And(StoppingPolicy):
+class And(StoppingPolicy):
     a: StoppingPolicy
     b: StoppingPolicy
 
-    def start(self) -> _PairState:
-        return _PairState(self.a.start(), self.b.start(), all)
+    def start(self) -> PairState:
+        return PairState(self.a.start(), self.b.start(), all)
 
     def max_runs(self) -> int | None:
         # Stops only when both converge, so worst case is the later of the two.
@@ -179,12 +210,12 @@ class _And(StoppingPolicy):
 
 
 @dataclass(frozen=True, slots=True)
-class _Or(StoppingPolicy):
+class Or(StoppingPolicy):
     a: StoppingPolicy
     b: StoppingPolicy
 
-    def start(self) -> _PairState:
-        return _PairState(self.a.start(), self.b.start(), any)
+    def start(self) -> PairState:
+        return PairState(self.a.start(), self.b.start(), any)
 
     def max_runs(self) -> int | None:
         # Stops as soon as either converges, so at most the earlier of the two.
@@ -197,7 +228,7 @@ class _Or(StoppingPolicy):
         return min(a, b)
 
 
-class _PairState(PolicyState):
+class PairState(PolicyState):
     __slots__ = ("a", "b", "op")
 
     def __init__(
@@ -207,9 +238,10 @@ class _PairState(PolicyState):
         self.b = b
         self.op = op
 
-    def observe(self, iteration: Iteration) -> None:
-        self.a.observe(iteration)
-        self.b.observe(iteration)
+    def observe(self, execution: Execution) -> None:
+        self.a.observe(execution)
+        self.b.observe(execution)
 
     def satisfied(self) -> bool:
         return self.op((self.a.satisfied(), self.b.satisfied()))
+

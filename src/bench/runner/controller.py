@@ -185,30 +185,27 @@ class Controller:
             run += 1
             execution = self.execute_benchmark(b, run, verbose)
 
-            def observe_iteration(it: Iteration) -> Iteration:
+            # Observe iterations
+            result_iterations = execution.iterations
+            for idx, it in enumerate(execution.iterations):
+                # TODO: Move to execution (?)
                 if not warmup_policy_state.satisfied():
                     it = dataclasses.replace(it, warmup=True)
-                    warmup_policy_state.observe(it)
-
-                elif not runs_policy_state.satisfied():
-                    runs_policy_state.observe(it)
 
                 reporter.iteration(
                     it,
                     format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
                 )
+                result_iterations[idx] = it
 
-                return it
+            execution = dataclasses.replace(execution, iterations=result_iterations)
 
-            if len(execution.iterations) == 0:
-                _ = observe_iteration(Iteration(samples=execution.process_samples))
+            # Observe execution
+            if not warmup_policy_state.satisfied():
+                warmup_policy_state.observe(execution)
 
-            else:
-                result_iterations = execution.iterations
-                for idx, it in enumerate(execution.iterations):
-                    result_iterations[idx] = observe_iteration(it)
-
-                execution = dataclasses.replace(execution, iterations=result_iterations)
+            elif not runs_policy_state.satisfied():
+                runs_policy_state.observe(execution)
 
             executions.append(execution)
 
