@@ -359,8 +359,7 @@ class Time(Metric):
         super().__init__("elapsed", "s", True)
 
     def process(self, data: InvocationResult) -> Iterable[Sample]:
-        if data.runtime is not None:
-            yield self.get_sample(value=data.runtime)
+        yield self.get_sample(value=data.runtime)
 
 
 class UserTime(Metric):

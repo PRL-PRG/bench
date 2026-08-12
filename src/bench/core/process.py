@@ -137,7 +137,7 @@ def execute(exe: Invocation) -> InvocationResult:
         cmd = _resolve_command(exe.command)
     except FileNotFoundError as e:
         return InvocationResult(
-            invocation=exe, returncode=SPAWN_FAIL_RC, failure=str(e)
+            invocation=exe, returncode=SPAWN_FAIL_RC, failure=str(e), runtime=0
         )
 
     env = dict(exe.env)
@@ -224,7 +224,7 @@ def execute(exe: Invocation) -> InvocationResult:
         )
     except OSError as e:
         return InvocationResult(
-            invocation=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}"
+            invocation=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}", runtime=0
         )
     finally:
         if proc is not None:
@@ -318,9 +318,9 @@ class LiveProcess:
             return InvocationResult(
                 self.invocation,
                 os.waitstatus_to_exitcode(waitstatus),
+                runtime,
                 stdout,
                 stderr,
-                runtime,
                 rusage,
                 failure="interrupted",
             )
@@ -329,7 +329,7 @@ class LiveProcess:
             if self._killed.is_set()
             else os.waitstatus_to_exitcode(waitstatus)
         )
-        return InvocationResult(self.invocation, rc, stdout, stderr, runtime, rusage)
+        return InvocationResult(self.invocation, rc, runtime, stdout, stderr, rusage)
 
 
 def spawn_streaming(exe: Invocation) -> LiveProcess:

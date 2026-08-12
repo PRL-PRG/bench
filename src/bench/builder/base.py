@@ -22,7 +22,7 @@ from bench.core.metric import (
     Metric,
 )
 from bench.core.outlier import OutlierDetection
-from bench.core.policy import StoppingPolicy, coerce_policy
+from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.builder.context import Context
 
 if TYPE_CHECKING:
@@ -124,6 +124,11 @@ def make_skip_rule(
         all(hasattr(b, k) and getattr(b, k) == v for k, v in kwargs.items())
         and (predicate is None or predicate(b))
     )
+
+
+def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
+    """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
+    return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
 
 
 def _merge_env(base: EnvFactory, over: EnvFactory) -> EnvFactory:

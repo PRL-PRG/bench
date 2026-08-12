@@ -54,9 +54,9 @@ class InvocationResult:
 
     invocation: Invocation
     returncode: int
+    runtime: float
     stdout: str = ""
     stderr: str = ""
-    runtime: float | None = None  # wall-clock seconds
     rusage: resource.struct_rusage | None = None
     failure: str | None = None
 

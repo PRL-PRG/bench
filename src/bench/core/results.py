@@ -52,6 +52,7 @@ class Execution:
 
     suite: str
     benchmark: str
+    runtime: float
     variant: Variant = ()
     variant_label: str = ""
     run: int = 1
@@ -59,7 +60,6 @@ class Execution:
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict[str, str])
     returncode: int = 0
-    runtime: float | None = None
     failure: str | None = None
     message: str = ""
     stdout: str = ""
