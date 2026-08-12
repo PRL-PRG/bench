@@ -21,7 +21,10 @@ class Sample:
     value: float
     unit: str = ""
     lower_is_better: bool | None = None
+
     iteration: int | None = None
+    "Process sample if `None`, otherwise it belongs to an iteration"
+
     extra: Mapping[str, Any] = field(default_factory=dict[str, Any])
 
 
