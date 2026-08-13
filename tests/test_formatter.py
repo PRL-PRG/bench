@@ -281,10 +281,10 @@ def test_grouped_summary_ranks_the_cells_of_a_composite_axis():
         GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_matrix_data())
     )
     assert "Summary (geomean) - interp, mode - S" in out
-    assert "interp=a, mode=on was" in out
-    assert "2.00× better than interp=b, mode=on" in out
-    assert "4.00× better than interp=a, mode=off" in out
-    assert "6.00× better than interp=b, mode=off" in out
+    assert "interp=a/mode=on was" in out
+    assert "2.00× better than interp=b/mode=on" in out
+    assert "4.00× better than interp=a/mode=off" in out
+    assert "6.00× better than interp=b/mode=off" in out
 
 
 def test_grouped_summary_composite_axis_folds_nothing_into_the_geomean():
@@ -301,8 +301,8 @@ def test_grouped_summary_composite_axis_ref_pins_one_cell():
             axis=["interp", "mode"], metrics="elapsed", ref="interp=b, mode=off"
         )(_matrix_data())
     )
-    assert "interp=b, mode=off was" in out
-    assert "6.00× worse than interp=a, mode=on" in out
+    assert "interp=b/mode=off was" in out
+    assert "6.00× worse than interp=a/mode=on" in out
 
 
 def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
@@ -312,7 +312,7 @@ def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
         )(_matrix_data())
     )
     assert "is not a value of axis" not in out
-    assert "interp=b, mode=off was" in out
+    assert "interp=b/mode=off was" in out
 
 
 def test_grouped_summary_single_axis_ref_takes_either_form():
@@ -328,8 +328,8 @@ def test_grouped_summary_composite_axis_keeps_empty_values_distinct():
     """`interp=x, mode=` and `interp=, mode=x` are two cells, not one."""
     r = _matrix_report({("x", ""): {"b1": 1.0}, ("", "x"): {"b1": 100.0}})
     out = _strip(GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r)))
-    assert "interp=x, mode= was" in out
-    assert "100.00× better than interp=, mode=x" in out
+    assert "interp=x/mode= was" in out
+    assert "100.00× better than interp=/mode=x" in out
 
 
 def test_grouped_summary_missing_part_of_a_composite_axis_warns():
@@ -362,7 +362,7 @@ def test_grouped_summary_unknown_ref_warns_and_falls_back():
         )
     )
     assert "ref 'interp=nope' is not a value of axis 'interp, mode'" in out
-    assert "interp=a, mode=on was" in out
+    assert "interp=a/mode=on was" in out
 
 
 def test_grouped_summary_bare_ref_on_a_composite_axis_warns():

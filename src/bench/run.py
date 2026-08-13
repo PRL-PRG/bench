@@ -33,7 +33,7 @@ from bench.core.environment import (
     EnvironmentCollector,
     NoEnvironment,
 )
-from bench.core.invocation import format_benchmark
+from bench.core.invocation import format_benchmark, format_variant
 from bench.denoise import (
     STATE_PATH,
     denoise_session,
@@ -338,10 +338,16 @@ def default_filter(ctx: Context[Any]) -> Callable[[Benchmark], bool]:
     exc = [re.compile(pat) for pat in (p.exclude or [])]
 
     def keep(b: Benchmark) -> bool:
-        key = format_benchmark(b.suite, b.name, b.variant)
-        if inc and not any(r.search(key) for r in inc):
+        # Both spellings of the same variant: the canonical `k=v/...` key and,
+        # when the app sets one, the label the reports show. A pattern written
+        # against what the terminal prints then selects what the user expects,
+        # without the `k=v` form ceasing to work.
+        keys = [format_benchmark(b.suite, b.name, b.variant)]
+        if b.variant_label:
+            keys.append(format_benchmark(b.suite, b.name, b.variant, b.variant_label))
+        if inc and not any(r.search(k) for k in keys for r in inc):
             return False
-        return not any(r.search(key) for r in exc)
+        return not any(r.search(k) for k in keys for r in exc)
 
     return keep
 
@@ -409,7 +415,7 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
 
     A benchmark with several variants becomes a node whose leaves are the
     per-variant labels. A benchmark with a single variant stays a leaf labeled
-    `name (k=v, ...)`. The root carries a one-line count summary. This is what
+    `name/k=v/...`. The root carries a one-line count summary. This is what
     `--list` prints.
     """
     n_suites = len({b.suite for b in planned})
@@ -441,8 +447,10 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
             if len(variants) > 1:
                 bench_node = node.add(Text(name, style="bench.label"))
                 for b in variants:
-                    bench_node.add(Text(b.variant_label))
+                    bench_node.add(Text(b.variant_label or format_variant(b.variant)))
             else:
                 b = variants[0]
-                node.add(Text(format_benchmark(b.name, b.name, b.variant)))
+                node.add(
+                    Text(format_benchmark(b.name, b.name, b.variant, b.variant_label))
+                )
     return root

@@ -10,7 +10,7 @@ from bench.core.process import spawn_streaming
 
 def test_format_identifier():
     s = format_identifier("S", "B", (("opt", "O2"), ("cc", "gcc")), 3)
-    assert s == "S/B (opt=O2, cc=gcc) #3"
+    assert s == "S/B/opt=O2/cc=gcc #3"
 
 
 def test_spawn_streaming_writes_incrementally_then_finishes():

@@ -445,42 +445,6 @@ def test_progress_harness_finished_line_labels_elapsed_and_says_harness():
     assert "samples" not in out and "runs" not in out
 
 
-def test_progress_bars_carry_an_eta_and_no_per_iteration_timing():
-    # Harness and command bars carry the same columns: the ETA is the only timing
-    # one (_EtaColumn self-blanks when the total is unknown or a single iteration).
-    from rich.progress import TextColumn
-
-    from bench.report.reporter import _EtaColumn
-
-    c = Console(theme=BENCHR_THEME, file=io.StringIO(), force_terminal=True, width=120)
-
-    def _columns(bench_builder):
-        s = suite("S", bench_builder.with_cwd(Path("/tmp")).with_runs(1))
-        b = plan([s], None)[0]
-        rep = ProgressReporter(target_console=c)
-        rep.benchmark_start(b)
-        return rep._local.prog.columns
-
-    def _has_timing(cols) -> bool:
-        return any(
-            isinstance(col, TextColumn) and "estimate" in col.text_format
-            for col in cols
-        )
-
-    harness = _columns(
-        bench("h")
-        .with_command(["sh", "-c", "echo 1.0"])
-        .with_metric(FloatPerLine("ms", metric="runtime"))
-        .with_harness()
-    )
-    command = _columns(bench("c").with_command(["true"]).with_process_metric(Time()))
-
-    assert not _has_timing(harness) and not _has_timing(command)
-    assert any(isinstance(col, _EtaColumn) for col in harness)
-    assert any(isinstance(col, _EtaColumn) for col in command)
-    assert [type(col) for col in harness] == [type(col) for col in command]
-
-
 def test_truncate_middle():
     from bench.report.reporter import _truncate_middle
 

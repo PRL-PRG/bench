@@ -13,7 +13,7 @@ import statistics
 from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass, field, replace
 
-from bench.core.invocation import Variant, format_benchmark, format_variant_pairs
+from bench.core.invocation import Variant, format_benchmark, format_variant
 from bench.core.results import Report, Execution, Sample
 from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
 from bench.utils import BenchError
@@ -263,7 +263,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
         for execution in report.executions:
             variant = ((axis, name),) + execution.variant
             label = (
-                f"{axis}={name}, {execution.variant_label}"
+                f"{format_variant(((axis, name),))}/{execution.variant_label}"
                 if execution.variant_label
                 else ""
             )
@@ -285,7 +285,7 @@ def bench_label(suite: str, benchmark: str) -> str:
 def _vlabel(s: Stat) -> str:
     if s.variant_label:
         return s.variant_label
-    return format_variant_pairs(s.variant)
+    return format_variant(s.variant)
 
 
 def _axes(axis: str | Sequence[str]) -> tuple[str, ...]:
@@ -315,8 +315,8 @@ def _axis_key(s: Stat, axes: tuple[str, ...]) -> Variant | None:
 
 def _axis_label(key: Variant) -> str:
     """One axis value on its own (the header already names the axis), a composite
-    coordinate as the usual `name=value` list."""
-    return key[0][1] if len(key) == 1 else format_variant_pairs(key)
+    coordinate as the usual `name=value/...`."""
+    return key[0][1] if len(key) == 1 else format_variant(key)
 
 
 def _ref_key(ref: str, axes: tuple[str, ...]) -> Variant | None:

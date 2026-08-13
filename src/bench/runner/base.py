@@ -15,6 +15,7 @@ from bench.core.invocation import (
     Invocation,
     default_success,
     format_identifier,
+    format_variant,
 )
 from bench.core.policy import StoppingPolicy
 from bench.core.process import install_sigint_handler, interrupted
@@ -108,7 +109,7 @@ def format_benchmark_verbose(b: Benchmark, run: int) -> str:
         if b.success is default_success
         else getattr(b.success, "__name__", repr(b.success))
     )
-    variant_str = dict(b.variant) if b.variant else {}
+    variant_str = format_variant(b.variant) or "<none>"
     label_str = b.variant_label or "<none>"
 
     return "\n".join(

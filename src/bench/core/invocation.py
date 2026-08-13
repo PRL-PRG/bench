@@ -86,14 +86,20 @@ def default_success(result: InvocationResult) -> Verdict:
 type Variant = tuple[tuple[str, str], ...]
 
 
+def _variant_pairs(variant: Variant) -> list[str]:
+    return [f"{k}={v}" for k, v in variant]
+
+
 def format_variant_pairs(variant: Variant) -> str:
-    """`k=v, ...` naming a matrix variant. `""` if empty."""
-    return ", ".join(f"{k}={v}" for k, v in variant)
+    """`k=v, ...` naming a matrix variant in one component - for filesystem paths,
+    where the printed `/` form would branch. `""` if empty."""
+    return ", ".join(_variant_pairs(variant))
 
 
 def format_variant(variant: Variant) -> str:
-    """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
-    return f" ({format_variant_pairs(variant)})" if variant else ""
+    """`k=v/...` naming a matrix variant. `""` if empty. The one spelling every
+    printed variant uses, so a variant reads the same everywhere it appears."""
+    return "/".join(_variant_pairs(variant))
 
 
 def format_benchmark(
@@ -103,12 +109,12 @@ def format_benchmark(
     variant_label: str = "",
 ) -> str:
     """Resolved benchmark-variant name: `suite/benchmark` (collapsing the stutter
-    when the two names match) with the variant label or `(k=v, ...)` suffix
-    appended."""
+    when the two names match) followed by the variant label, or by `k=v/...` when
+    there is none. One `/`-joined path, so a pattern matching it needs no
+    escaping."""
     head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
-    if variant_label:
-        return f"{head}/{variant_label}"
-    return f"{head}{format_variant(variant)}"
+    tail = variant_label or format_variant(variant)
+    return f"{head}/{tail}" if tail else head
 
 
 def format_identifier(

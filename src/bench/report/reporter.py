@@ -323,8 +323,9 @@ def variant_path(variant: Variant, *, nested: bool = True) -> Path:
     """The sub-directory a matrix `variant` maps to under its benchmark.
 
     Nested (the default): one directory level per dimension,
-    `dim1/val1/dim2/val2`. Flat: a single `dim1=val1, dim2=val2` component (the
-    variant label). An empty variant maps to an empty path.
+    `dim1/val1/dim2/val2`. Flat: a single `dim1=val1, dim2=val2` component - the
+    printed `k=v/...` joined with `, ` instead, so it stays one directory level.
+    An empty variant maps to an empty path.
     """
     if not variant:
         return Path()
