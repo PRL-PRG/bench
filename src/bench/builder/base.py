@@ -11,18 +11,20 @@ sentinel, and the matrix/skip/env merge helpers.
 from __future__ import annotations
 
 import dataclasses
+import sys
+import traceback
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
+from bench.builder.context import Context
 from bench.core.invocation import SuccessFn
 from bench.core.metric import (
     Metric,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
-from bench.builder.context import Context
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
@@ -80,10 +82,29 @@ class _Unset:
 # unresolved factory fails loudly at runtime in one place (above).
 UNSET: Any = _Unset()
 
+# ----- Builder helpers -------------------------
 
-def const(value: Any) -> Factory[Any]:
+
+def const[T](value: T) -> Factory[T]:
     """Wrap a static value as a constant builder."""
     return lambda _ctx: value
+
+
+def merge_mapping[K, V](outer: Mapping[K, V], inner: Mapping[K, V]) -> Mapping[K, V]:
+    return dict(outer) | dict(inner)
+
+
+def merge_sequence[T](outer: Sequence[T], inner: Sequence[T]) -> Sequence[T]:
+    return [*outer, *inner]
+
+
+def merge_factory[T](
+    value_merge: Callable[[T, T], T],
+) -> Callable[[Factory[T], Factory[T]], Factory[T]]:
+    def merge(outer: Factory[T], inner: Factory[T]) -> Factory[T]:
+        return lambda ctx: value_merge(outer(ctx), inner(ctx))
+
+    return merge
 
 
 def as_build[T, U](
@@ -94,6 +115,14 @@ def as_build[T, U](
     if callable(value):
         return cast("Factory[U]", value)
     return const(normalize(value))
+
+
+def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
+    """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
+    return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
+
+
+# ----- Matrix helpers -------------------------
 
 
 def normalize_matrix(
@@ -110,46 +139,14 @@ def normalize_matrix(
     }
 
 
-def make_skip_rule(
-    predicate: SkipFn | None, kwargs: Mapping[str, Any]
-) -> SkipFn | None:
-    """Build a skip predicate from a predicate and/or AND-matched kwargs. `None`
-    when neither is given (the caller then leaves its skip list untouched).
-
-    A variant is dropped when the returned predicate is truthy. Within one rule
-    all kwargs must match AND the predicate (if any) must return truthy.
-    """
-    if predicate is None and not kwargs:
-        return None
-    return lambda b: (
-        all(hasattr(b, k) and getattr(b, k) == v for k, v in kwargs.items())
-        and (predicate is None or predicate(b))
-    )
-
-
-def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
-    """Accept the `int` shorthand for a stopping policy: `n` = FixedRuns(n)."""
-    return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
-
-
-def _merge_env(base: Factory[Env], over: Factory[Env]) -> Factory[Env]:
-    """Lazy per-key env merge for `overlay`: `base` first, `over` wins. `UNSET`
-    on either side contributes nothing. Both unset stays `UNSET`."""
-    if base is UNSET:
-        return over
-    if over is UNSET:
-        return base
-    return lambda ctx: dict(base(ctx)) | dict(over(ctx))
-
-
-def _merge_matrix(
+def merge_matrix(
     outer: Mapping[str, MatrixAxisValues], inner: Mapping[str, MatrixAxisValues]
 ) -> Mapping[str, MatrixAxisValues]:
     """Accumulate matrix dims for `overlay`: `inner` (more specific) dims first,
     then `outer`. A dimension declared on both sides is an error."""
     dup = inner.keys() & outer.keys()
     if dup:
-        raise ValueError(f"matrix dimension {next(iter(dup))!r} already declared")
+        raise ValueError(f"Duplicate matrix axis '{next(iter(dup))!r}'")
     return dict(inner) | dict(outer)
 
 
@@ -179,94 +176,201 @@ class BuilderBase:
     )
     skips: Sequence[SkipFn] = ()
 
+    # ----- helper function -------------------------
+
+    def replace[T](
+        self,
+        field: str,
+        value: T,
+        *,
+        override: bool,
+        merge: Callable[[T, T], T] | None = None,
+    ) -> Self:
+        """
+        Replace a field in the current builder. If override is `True`,
+        always replace the previous value. Otherwise if `merge` is not `None`,
+        merge the previous value with the new one. Otherwise print a warning and
+        replace the value.
+        """
+        prev = getattr(self, field)
+        if prev != UNSET:
+            if not override:
+                if merge is not None:
+                    return dataclasses.replace(self, **{field: merge(prev, value)})
+                else:
+                    traceback.print_stack(file=sys.stdout)
+                    print(
+                        f"Warning: Overriding field {field}.\nTo avoid this warning, pass in `override=True`",
+                        file=sys.stdout,
+                    )
+
+        return dataclasses.replace(self, **{field: value})
+
     # ----- command / environment / execution -------------------------
 
     def with_command(
-        self, command: UnresolvedCommand | Factory[UnresolvedCommand]
+        self,
+        command: UnresolvedCommand | Factory[UnresolvedCommand],
+        override: bool = False,
     ) -> Self:
-        return dataclasses.replace(self, command=as_build(command))
-
-    def with_cwd(self, cwd: str | Path | Factory[Path]) -> Self:
-        return dataclasses.replace(self, cwd=as_build(cwd, Path))
-
-    def with_env(self, env: Env | Factory[Env]) -> Self:
-        def env_builder(ctx: Context[Any]):
-            return dict(self.env(ctx)) | dict(as_build(env, dict)(ctx))
-
-        return dataclasses.replace(
-            self, env=env_builder if self.env != UNSET else as_build(env, dict)
+        return self.replace(
+            "command",
+            as_build(command),
+            override=override,
         )
 
-    def with_timeout(self, timeout: Timeout | Factory[Timeout]) -> Self:
-        return dataclasses.replace(self, timeout=as_build(timeout))
+    def with_cwd(
+        self,
+        cwd: str | Path | Factory[Path],
+        override: bool = False,
+    ) -> Self:
+        return self.replace(
+            "cwd",
+            as_build(cwd, Path),
+            override=override,
+        )
 
-    def with_controller(self, controller: Controller | Factory[Controller]) -> Self:
-        return dataclasses.replace(self, controller=as_build(controller))
+    def with_env(self, env: Env | Factory[Env], override: bool = False) -> Self:
+        return self.replace(
+            "env",
+            as_build(env, dict),
+            override=override,
+            merge=merge_factory(merge_mapping),
+        )
 
-    def with_success(self, fn: SuccessFn) -> Self:
-        return dataclasses.replace(self, success=const(fn))
+    def with_timeout(
+        self, timeout: Timeout | Factory[Timeout], override: bool = False
+    ) -> Self:
+        return self.replace(
+            "timeout",
+            as_build(timeout),
+            override=override,
+        )
 
-    def with_success_factory(self, fn: Factory[SuccessFn]) -> Self:
-        return dataclasses.replace(self, success=fn)
+    def with_controller(
+        self, controller: Controller | Factory[Controller], override: bool = False
+    ) -> Self:
+        return self.replace(
+            "controller",
+            as_build(controller),
+            override=override,
+        )
+
+    def with_success(self, fn: SuccessFn, override: bool = False) -> Self:
+        return self.replace(
+            "success",
+            const(fn),
+            override=override,
+        )
+
+    def with_success_factory(
+        self, fn: Factory[SuccessFn], override: bool = False
+    ) -> Self:
+        return self.replace(
+            "success",
+            fn,
+            override=override,
+        )
 
     # ----- policies ---------------------------------------------------
 
-    def with_warmup(self, p: int | StoppingPolicy | Factory[StoppingPolicy]) -> Self:
+    def with_warmup(
+        self, p: int | StoppingPolicy | Factory[StoppingPolicy], override: bool = False
+    ) -> Self:
         """Set the warmup policy."""
-        return dataclasses.replace(self, warmup=as_build(p, coerce_policy))
+        return self.replace(
+            "warmup",
+            as_build(p, coerce_policy),
+            override=override,
+        )
 
-    def with_runs(self, p: int | StoppingPolicy | Factory[StoppingPolicy]) -> Self:
+    def with_runs(
+        self, p: int | StoppingPolicy | Factory[StoppingPolicy], override: bool = False
+    ) -> Self:
         """Set the policy for the measured runs."""
-        return dataclasses.replace(self, runs=as_build(p, coerce_policy))
+        return self.replace(
+            "runs",
+            as_build(p, coerce_policy),
+            override=override,
+        )
 
-    def with_outlier_detection(self, d: OutlierDetection) -> Self:
+    def with_outlier_detection(
+        self, d: OutlierDetection, override: bool = False
+    ) -> Self:
         """Set the outlier-detection strategy (`NoDetection()` = off)."""
-        return dataclasses.replace(self, outlier_detection=d)
+        return self.replace(
+            "outlier_detection",
+            d,
+            override=override,
+        )
 
-    def with_cooldown(self, seconds: float) -> Self:
+    def with_cooldown(self, seconds: float, override: bool = False) -> Self:
         """Pause this long between successive process executions."""
-        return dataclasses.replace(self, cooldown=seconds)
+        return self.replace(
+            "cooldown",
+            seconds,
+            override=override,
+        )
 
     # ----- matrix / skip / label --------------------------------------
 
     def with_matrix(self, **dims: MatrixAxis) -> Self:
         """Add matrix dimensions, merging with any already declared ones."""
-        merged = dict(self.matrix) | dict(normalize_matrix(dims))
-        return dataclasses.replace(self, matrix=merged)
+        return self.replace(
+            "matrix",
+            normalize_matrix(dims),
+            override=False,
+            merge=merge_mapping,
+        )
 
-    def add_matrix_skip(
-        self, predicate: SkipFn | None = None, /, **kwargs: Any
-    ) -> Self:
-        """Drop variants: kwargs AND-matched against dims, plus optional
-        predicate. Multiple calls compose as OR."""
-        rule = make_skip_rule(predicate, kwargs)
-        if rule is None:
-            return self
-        return dataclasses.replace(self, skips=[*self.skips, rule])
+    def filter_benchmark(self, predicate: SkipFn) -> Self:
+        return self.replace(
+            "skips",
+            [predicate],
+            override=False,
+            merge=merge_sequence,
+        )
 
-    def with_label(self, fn: LabelFn) -> Self:
+    def add_matrix_skip(self, /, **kwargs: Any) -> Self:
+        """Drop variants: kwargs AND-matched against dims. Multiple calls compose as OR."""
+        if len(kwargs) == 0:
+            raise ValueError("At least one predicate should be defined")
+
+        def rule(b: Benchmark) -> bool:
+            for k, v in kwargs.items():
+                if k not in b.data or b.data[k] != v:
+                    return False
+
+            return True
+
+        return self.replace(
+            "skips",
+            [rule],
+            override=False,
+            merge=merge_sequence,
+        )
+
+    def with_label(self, fn: LabelFn, override: bool = False) -> Self:
         """Override how each variant's label renders in reports."""
-        return dataclasses.replace(self, label_fn=fn)
+        return self.replace(
+            "label_fn",
+            fn,
+            override=override,
+        )
 
     # ----- metrics ----------------------------------------------------
 
-    def with_metric(self, *metrics: Metric | Factory[Sequence[Metric]]) -> Self:
+    def with_metric(
+        self, *metrics: Metric | Factory[Metric], override: bool = False
+    ) -> Self:
         """Set the per-iteration metrics, each reading stdout."""
 
-        def build(ctx: Context[Any]) -> Sequence[Metric]:
-            build_metrics = (
-                list(self.metrics(ctx)) if self.metrics is not UNSET else list[Metric]()
-            )
-
-            for metric in metrics:
-                if callable(metric):
-                    build_metrics.extend(metric(ctx))
-                else:
-                    build_metrics.append(metric)
-
-            return build_metrics
-
-        return dataclasses.replace(self, metrics=build)
+        return self.replace(
+            "metrics",
+            [as_build(m) for m in metrics],
+            override=override,
+            merge=merge_sequence,
+        )
 
     # ----- inheritance ------------------------------------------------
 
@@ -285,8 +389,19 @@ class BuilderBase:
                 continue
             v = getattr(over, name)
             merged[name] = v if v is not UNSET else getattr(self, name)
-        merged["env"] = _merge_env(self.env, over.env)
-        merged["matrix"] = _merge_matrix(self.matrix, over.matrix)
+
+        if self.env == UNSET:
+            merged["env"] = over.env
+        elif over.env == UNSET:
+            merged["env"] = self.env
+        else:
+
+            def merge_env(ctx: Context[Any]) -> Env:
+                return merge_mapping(self.env(ctx), over.env(ctx))
+
+            merged["env"] = merge_env
+
+        merged["matrix"] = merge_matrix(self.matrix, over.matrix)
         merged["skips"] = (*self.skips, *over.skips)
         return dataclasses.replace(over, **merged)
 

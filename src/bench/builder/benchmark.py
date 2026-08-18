@@ -43,6 +43,7 @@ from bench.builder.base import (
     BuilderBase,
     as_build,
     const,
+    merge_mapping,
 )
 from bench.builder.context import Context, Data
 
@@ -77,12 +78,20 @@ class BenchmarkBuilder(BuilderBase):
         Merges with any data already set (later keys win). Values are stored
         verbatim - a list value stays a list. Use `.with_matrix(...)` to expand a
         dimension into variants."""
-        return dataclasses.replace(self, data={**self.data, **data})
+        return self.replace(
+            "data",
+            data,
+            override=False,
+            merge=merge_mapping,
+        )
 
-    def with_stdin(self, data: bytes | str | Factory[bytes]) -> BenchmarkBuilder:
-        return dataclasses.replace(
-            self,
-            stdin=as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
+    def with_stdin(
+        self, data: bytes | str | Factory[bytes], override: bool = False
+    ) -> BenchmarkBuilder:
+        return self.replace(
+            "stdin",
+            as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
+            override=override,
         )
 
     # ----- creation ----------------------------------------------------

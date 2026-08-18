@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from bench.builder.base import UNSET, BuilderBase, const
+from bench.builder.base import UNSET, BuilderBase, const, merge_sequence
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
 from bench.builder.context import Context, Data
 from bench.core.invocation import (
@@ -36,7 +36,7 @@ def _default_cwd(ctx: Context[Any]) -> Path:
 
 
 def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
-    """Default env: empty, the child inherits the OS environment."""
+    """Default env: empty."""
     return {}
 
 
@@ -76,19 +76,34 @@ class SuiteBuilder(BuilderBase):
 
     # ----- producers -------------------------------------------------
 
-    def with_name(self, name: str) -> SuiteBuilder:
-        return dataclasses.replace(self, name=name)
+    def with_name(self, name: str, override: bool = False) -> SuiteBuilder:
+        # Special case - allow override for empty name
+        if name == "":
+            override = True
 
-    def add(self, b: BenchmarkBuilder) -> SuiteBuilder:
-        return dataclasses.replace(self, benchmarks=(*self.benchmarks, b))
+        return self.replace(
+            "name",
+            name,
+            override=override,
+        )
 
-    def add_all(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
-        return dataclasses.replace(self, benchmarks=(*self.benchmarks, *bs))
+    def add(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
+        return self.replace(
+            "benchmarks",
+            tuple(bs),
+            override=False,
+            merge=merge_sequence,
+        )
 
     def factory(self, fn: BenchmarkFactory) -> SuiteBuilder:
         """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
         called when the suite materializes."""
-        return dataclasses.replace(self, factories=(*self.factories, fn))
+        return self.replace(
+            "factories",
+            (fn,),
+            override=False,
+            merge=merge_sequence,
+        )
 
     def filter(self, pred: Callable[[Benchmark], bool]) -> SuiteBuilder:
         """Keep only the resolved benchmarks for which `pred(b)` is truthy.
@@ -97,12 +112,18 @@ class SuiteBuilder(BuilderBase):
         variant, so it is order-independent (it sees benchmarks added before
         or after this call) and can filter individual matrix variants.
         """
-        return dataclasses.replace(self, filters=(*self.filters, pred))
+        return self.replace(
+            "filters",
+            (pred,),
+            override=False,
+            merge=merge_sequence,
+        )
 
     # ----- defaults (shared setters live on BuilderBase) -----------
 
     def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
+        # TODO: !!!
         return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
 
     def materialize(self, params: Any) -> list[Benchmark]:

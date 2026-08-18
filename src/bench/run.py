@@ -19,7 +19,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from bench.builder.benchmark import Benchmark
-from bench.builder.base import Factory, BuilderBase, as_build, const
+from bench.builder.base import Factory, BuilderBase, as_build, const, merge_sequence
 from bench.builder.context import (
     Context,
     Data,
@@ -63,8 +63,9 @@ from bench.runner.sequential import Sequential
 
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
+
+# TODO: Move to base
 type Filter = Callable[[Benchmark], bool]
-type FilterFactory = Factory[Filter]
 
 
 class NoBenchmarksMatchedError(Exception):
@@ -90,39 +91,81 @@ class BenchAppBuilder(BuilderBase):
     reporter: Factory[Reporter] | None = None
     summary: Factory[Reporter] | None = None
     runner: Factory[Runner] | None = None
-    filter: FilterFactory | None = None
+    filter: Factory[Filter] | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
+
+    # ----- with_* setters (shared ones live on BuilderBase) -----------
 
     def add(self, *ss: SuiteBuilder) -> BenchAppBuilder:
         """Register suite(s)."""
         """Register several suites."""
-        return dataclasses.replace(self, suites=(*self.suites, *ss))
+        return self.replace(
+            "suites",
+            ss,
+            override=False,
+            merge=merge_sequence,
+        )
 
     def factory(self, fn: SuiteFactory) -> BenchAppBuilder:
         """Register a deferred suite producer."""
-        return dataclasses.replace(self, factories=(self.factories, fn))
+        return self.replace(
+            "factories",
+            (fn,),
+            override=False,
+            merge=merge_sequence,
+        )
 
-    def with_reporter(self, reporter: Reporter | Factory[Reporter]) -> BenchAppBuilder:
+    def with_reporter(
+        self, reporter: Reporter | Factory[Reporter], override: bool = False
+    ) -> BenchAppBuilder:
         """Set the reporter."""
-        return dataclasses.replace(self, reporter=as_build(reporter))
+        return self.replace(
+            "reporter",
+            as_build(reporter),
+            override=override,
+        )
 
-    def with_summary(self, summary: Reporter | Factory[Reporter]) -> BenchAppBuilder:
+    def with_summary(
+        self, summary: Reporter | Factory[Reporter], override: bool = False
+    ) -> BenchAppBuilder:
         """Swap the summary while keeping the default progress bar and the
         --json/--csv/--dir sinks. Ignored when a full reporter is set."""
-        return dataclasses.replace(self, summary=as_build(summary))
+        return self.replace(
+            "summary",
+            as_build(summary),
+            override=override,
+        )
 
-    def with_runner(self, runner: Runner | Factory[Runner]) -> BenchAppBuilder:
+    def with_runner(
+        self, runner: Runner | Factory[Runner], override: bool = False
+    ) -> BenchAppBuilder:
         """Set the runner."""
-        return dataclasses.replace(self, runner=as_build(runner))
+        return self.replace(
+            "runner",
+            as_build(runner),
+            override=override,
+        )
 
-    def with_filter(self, keep: Filter) -> BenchAppBuilder:
+    def with_filter(self, keep: Filter, override: bool = False) -> BenchAppBuilder:
         """Set the selection filter predicate."""
-        return dataclasses.replace(self, filter=const(keep))
+        return self.replace(
+            "filter",
+            const(keep),
+            override=override,
+        )
 
-    def with_filter_factory(self, fn: FilterFactory) -> BenchAppBuilder:
+    def with_filter_factory(
+        self, fn: Factory[Filter], override: bool = False
+    ) -> BenchAppBuilder:
         """Set the selection filter factory `(ctx) -> (Benchmark -> bool)`."""
-        return dataclasses.replace(self, filter=fn)
+        return self.replace(
+            "filter",
+            fn,
+            override=override,
+        )
+
+    # ----- run -----------
 
     def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve factories, apply app defaults, and run every suite."""

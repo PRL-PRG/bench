@@ -84,7 +84,7 @@ def make_benchmarks() -> list[BenchmarkBuilder]:
     return specs
 
 
-leveldb = suite("LevelDB db_bench").add_all(*make_benchmarks()).with_runs(5)
+leveldb = suite("LevelDB db_bench").add(*make_benchmarks()).with_runs(5)
 
 
 if __name__ == "__main__":
