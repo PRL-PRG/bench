@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import json
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -34,15 +35,10 @@ class Iteration:
     a harness produces many. Holds the parsed Samples and an optional failure."""
 
     samples: list[Sample] = field(default_factory=list[Sample])
-    failure: str | None = None
-    runtime: float = 0.0  # command runtime that produced this iteration (s)
     warmup: bool = False  # a discarded warmup iteration, flagged by the Controller
 
     def add_sample(self, sample: Sample) -> Iteration:
         return dataclasses.replace(self, samples=self.samples + [sample])
-
-    def is_failure(self) -> bool:
-        return self.failure is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,16 +109,31 @@ class Report:
             dict.fromkeys(
                 s.metric
                 for ex in self.executions
-                for s in (
-                    *(s for it in ex.iterations for s in it.samples),
-                    *ex.process_samples,
+                for s in itertools.chain(
+                    (s for it in ex.iterations for s in it.samples),
+                    ex.process_samples,
                 )
             )
         )
 
     def variant_keys(self) -> list[str]:
         """Stable list of matrix-dimension names across all executions, first-seen order."""
-        return list(dict.fromkeys(k for ex in self.executions for k, _ in ex.variant))
+        res = list[str]()
+        for ex in self.executions:
+            for k, _ in ex.variant:
+                if k not in res:
+                    res.append(k)
+
+        return res
+
+    def samples_extra_keys(self) -> list[str]:
+        iter_samples = (
+            s for e in self.executions for i in e.iterations for s in i.samples
+        )
+        process_samples = (s for e in self.executions for s in e.process_samples)
+        samples = itertools.chain(iter_samples, process_samples)
+
+        return list(set(k for s in samples for k in s.extra.keys()))
 
     def add(self, execution: Execution) -> None:
         self.executions.append(execution)

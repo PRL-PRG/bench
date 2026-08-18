@@ -6,7 +6,7 @@ import dataclasses
 import time
 from typing import TYPE_CHECKING
 
-from bench.core.invocation import InvocationResult, format_identifier
+from bench.core.invocation import InvocationResult
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
 from bench.core.results import Iteration, Report, Execution, Sample, diagnostic_excerpt
@@ -173,7 +173,6 @@ class Controller:
         reporter.benchmark_start(b)
 
         run = 0
-        executions = list[Execution]()
 
         warmup_policy_state = b.warmup.start()
         runs_policy_state = b.runs.start()
@@ -188,16 +187,9 @@ class Controller:
             # Observe iterations
             result_iterations = execution.iterations
             for idx, it in enumerate(execution.iterations):
-                # TODO: Move to execution (?)
+                # TODO: Move warmup to execution (?)
                 if not warmup_policy_state.satisfied():
-                    it = dataclasses.replace(it, warmup=True)
-
-                reporter.iteration(
-                    it,
-                    format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
-                )
-                result_iterations[idx] = it
-
+                    result_iterations[idx] = dataclasses.replace(it, warmup=True)
             execution = dataclasses.replace(execution, iterations=result_iterations)
 
             # Observe execution
@@ -207,12 +199,9 @@ class Controller:
             elif not runs_policy_state.satisfied():
                 runs_policy_state.observe(execution)
 
-            executions.append(execution)
-
-        executions = _mark_outliers(executions, b.outlier_detection)
-
-        for execution in executions:
             reporter.execution_done(execution)
             report.add(execution)
 
-        reporter.benchmark_done(b, executions)
+        report.executions = _mark_outliers(report.executions, b.outlier_detection)
+
+        reporter.benchmark_done(b, report.executions)

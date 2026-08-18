@@ -22,7 +22,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from bench.core.process import interrupted
-from bench.core.results import Iteration, Report, Execution
+from bench.core.results import Report, Execution
 from bench.builder.benchmark import Benchmark
 from bench.report.reporter import Reporter
 from bench.runner.base import Runner
@@ -47,10 +47,6 @@ class _LockedReporter(Reporter):
     def benchmark_start(self, b: Benchmark) -> None:
         with self._lock:
             self._reporter.benchmark_start(b)
-
-    def iteration(self, it: Iteration, label: str) -> None:
-        with self._lock:
-            self._reporter.iteration(it, label)
 
     def execution_done(self, execution: Execution) -> None:
         with self._lock:

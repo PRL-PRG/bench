@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import abc
 import csv
+import dataclasses
+import itertools
 import json
 import threading
 from pathlib import Path
@@ -28,8 +30,13 @@ from rich.progress import (
 from rich.text import Text
 
 from bench.core.environment import Diagnostic, Environment
-from bench.core.invocation import SPAWN_FAIL_RC, TIMEOUT_RC, format_benchmark
-from bench.core.results import Iteration, Report, Execution, Sample, report_to_json
+from bench.core.invocation import (
+    SPAWN_FAIL_RC,
+    TIMEOUT_RC,
+    format_benchmark,
+    format_identifier,
+)
+from bench.core.results import Report, Execution, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:
@@ -78,9 +85,6 @@ class Reporter(abc.ABC):
     def benchmark_start(self, b: Benchmark) -> None:
         pass
 
-    def iteration(self, it: Iteration, label: str) -> None:
-        pass
-
     def execution_done(self, execution: Execution) -> None:
         pass
 
@@ -125,10 +129,6 @@ class CompositeReporter(Reporter):
         for r in self.reporters:
             r.benchmark_start(b)
 
-    def iteration(self, it: Iteration, label: str) -> None:
-        for r in self.reporters:
-            r.iteration(it, label)
-
     def execution_done(self, execution: Execution) -> None:
         for r in self.reporters:
             r.execution_done(execution)
@@ -145,30 +145,6 @@ class CompositeReporter(Reporter):
 # ---------------------------------------------------------------------------
 # CsvReporter
 # ---------------------------------------------------------------------------
-
-
-def _sample_row(base: dict[str, Any], s: Sample) -> dict[str, Any]:
-    return {
-        **base,
-        "metric": s.metric,
-        "value": s.value,
-        "unit": s.unit,
-        "lower_is_better": "" if s.lower_is_better is None else str(s.lower_is_better),
-        "outlier": str(s.extra.get("outlier", False)),
-        "failure": "",
-    }
-
-
-def _blank_row(base: dict[str, Any], failure: str) -> dict[str, Any]:
-    return {
-        **base,
-        "metric": "",
-        "value": "",
-        "unit": "",
-        "lower_is_better": "",
-        "outlier": "",
-        "failure": failure,
-    }
 
 
 class CsvReporter(_EnvironmentAware, Reporter):
@@ -192,47 +168,61 @@ class CsvReporter(_EnvironmentAware, Reporter):
         self.path = path
         self.delimiter = delimiter
         self._environment = environment
-        self._diagnostics = []
 
     def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         variant_cols = report.variant_keys()
+        samples_extra = report.samples_extra_keys()
         cols = (
             ["suite", "benchmark", "run"]
             + variant_cols
-            + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
+            + ["failure", "iteration", "metric", "value", "unit", "lower_is_better"]
+            + samples_extra
         )
+
         with open(self.path, "wt", newline="") as f:
             for line in _environment_comments(self._environment):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
-            for r in report.executions:
-                variant_map = dict(r.variant)
+
+            for e in report.executions:
+                variant_map = dict(e.variant)
                 base: dict[str, Any] = {
-                    "suite": r.suite,
-                    "benchmark": r.benchmark,
-                    "run": r.run,
+                    "suite": e.suite,
+                    "benchmark": e.benchmark,
+                    "run": e.run,
+                    "failure": e.failure or "",
                 }
                 for k in variant_cols:
                     base[k] = variant_map.get(k, "")
-                iters = r.iterations or [Iteration(failure=r.failure)]
-                emitted = False
-                for it in iters:
-                    failure = it.failure or (r.failure if not it.samples else None)
-                    if failure:
-                        w.writerow(_blank_row(base, failure))
-                        emitted = True
-                        continue
-                    for s in it.samples:
-                        w.writerow(_sample_row(base, s))
-                        emitted = True
-                for s in r.process_samples:
-                    w.writerow(_sample_row(base, s))
-                    emitted = True
-                # A run that produced nothing (no samples, no failure) still appears.
-                if not emitted:
-                    w.writerow(_blank_row(base, ""))
+
+                w.writerow(
+                    base
+                    | {
+                        "metric": "runtime",
+                        "value": str(e.runtime),
+                        "unit": "s",
+                    }
+                )
+
+                for sample in itertools.chain(
+                    e.process_samples, (s for i in e.iterations for s in i.samples)
+                ):
+                    w.writerow(
+                        base
+                        | {
+                            "iteration": sample.iteration
+                            if sample.iteration is not None
+                            else "",
+                            "metric": sample.metric,
+                            "value": sample.unit,
+                            "unit": sample.unit,
+                            "lower_is_better": str(sample.lower_is_better)
+                            if sample.lower_is_better is None
+                            else "",
+                        }
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +253,8 @@ class JsonReporter(_EnvironmentAware, Reporter):
     def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         report.environment = self._environment
-        report.diagnostics = self._diagnostics
-        self.path.write_text(
-            report_to_json(report, include_output=self.include_output)
-        )
+        report.diagnostics.extend(self._diagnostics)
+        self.path.write_text(report_to_json(report, include_output=self.include_output))
 
 
 # ---------------------------------------------------------------------------
@@ -332,23 +320,55 @@ class DirReporter(_EnvironmentAware, Reporter):
         (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
 
 
-def _bench_total(b: Benchmark) -> int | None:
-    """Iterations a benchmark should produce (warmup + runs), or None if either
-    policy is unbounded."""
-    w, m = b.warmup.max_runs(), b.runs.max_runs()
-    if w is None or m is None:
-        return None
-    return w + m
+@dataclasses.dataclass
+class _TUI:
+    class _EtaColumn(TimeRemainingColumn):
+        """ETA prefixed with 'ETA', blank when the total is unknown or a single
+        iteration, where there is nothing to estimate."""
 
+        def render(self, task: Task) -> Text:
+            if task.total is None or task.total <= 1:
+                return Text("")
+            return Text("ETA ") + super().render(task)
 
-class _EtaColumn(TimeRemainingColumn):
-    """ETA prefixed with 'ETA', blank when the total is unknown or a single
-    iteration, where there is nothing to estimate."""
+    class _Current:
+        current: str
 
-    def render(self, task: Task) -> Text:
-        if task.total is None or task.total <= 1:
-            return Text("")
-        return Text("ETA ") + super().render(task)
+        def __init__(self) -> None:
+            self.current = ""
+
+        def __rich__(self):
+            return Text(f"[bold]Running:[/bold] {markup_escape(self.current)}")
+
+    overall_progress: RichProgress
+    overall_task: TaskID | None
+    task_progress: RichProgress
+    live: Live
+
+    def __init__(self, console: Console) -> None:
+        self.overall_progress = RichProgress(
+            TextColumn("[bench.label]Progress[/]"),
+            BarColumn(bar_width=None),
+            MofNCompleteColumn(),
+            TextColumn("({task.fields[failed]} failed)"),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        self.task_progress = RichProgress(
+            # TODO: Split on a new line
+            TextColumn("[bold]Running:[/bold] {task.fields[benchmark_name]}"),
+            SpinnerColumn(),
+            BarColumn(bar_width=None),
+            TextColumn("{task.completed}/{task.fields[total_str]}"),
+            self._EtaColumn(),
+            console=console,
+        )
+        self.live = Live(
+            Group(self.overall_progress, self.task_progress),
+            console=console,
+            transient=True,
+            refresh_per_second=12,
+        )
 
 
 class ProgressReporter(Reporter):
@@ -366,114 +386,114 @@ class ProgressReporter(Reporter):
     on a thread-local.
     """
 
-    def __init__(self, target_console: Console | None = None) -> None:
-        self._console = target_console or console
-        self._is_tty = self._console.is_terminal
+    class Local(threading.local):
+        n: int
+        total: int | None
+        runtime: float
+        task_id: TaskID
+
+        def reset(self, total: int | None, task_id: TaskID) -> None:
+            self.n = 0
+            self.total = total
+            self.runtime = 0.0
+            self.task_id = task_id
+
+    _console: Console
+
+    _lock: threading.Lock
+    _local: Local
+
+    _passed: int
+    _failed: int
+
+    _tui: _TUI | None
+
+    def __init__(self, target_console: Console = console) -> None:
+        self._console = target_console
+
         self._lock = threading.Lock()
-        self._local = threading.local()
+        self._local = self.Local()
+
         self._passed = 0
         self._failed = 0
-        self._overall_task: TaskID | None = None
-        self._active: dict[int, tuple[RichProgress, str]] = {}
-        self._next_slot = 0
-        if self._is_tty:
-            self._overall: RichProgress | None = RichProgress(
-                TextColumn("[bench.label]Progress[/]"),
-                BarColumn(bar_width=None),
-                MofNCompleteColumn(),
-                TextColumn("({task.fields[failed]} failed)"),
-                TimeElapsedColumn(),
-                console=self._console,
-            )
-            self._live: Live | None = Live(
-                Group(),
-                console=self._console,
-                transient=True,
-                refresh_per_second=12,
-            )
+
+        if self._console.is_terminal:
+            self._tui = _TUI(self._console)
         else:
-            self._overall = None
-            self._live = None
+            self._tui = None
 
     def start(self, plan: list[Benchmark]) -> None:
-        if self._live is None:
+        if self._tui is None:
             return
-        if len(plan) > 1 and self._overall is not None:
-            self._overall_task = self._overall.add_task("", total=len(plan), failed=0)
-        self._live.update(self._group())
-        self._live.start()
+
+        if len(plan) > 1:
+            self._tui.overall_task = self._tui.overall_progress.add_task(
+                "", total=len(plan), failed=0
+            )
+
+        self._tui.live.start()
 
     def benchmark_start(self, b: Benchmark) -> None:
-        self._local.n = 0
-        self._local.total = _bench_total(b)
-        self._local.runtime = 0.0
-        if self._live is None:
+        w_max_runs = b.warmup.max_runs()
+        max_runs = b.runs.max_runs()
+
+        total = (
+            w_max_runs + max_runs
+            if w_max_runs is not None and max_runs is not None
+            else None
+        )
+
+        if self._tui is None:
+            self._local.reset(total, TaskID(-1))
             return
-        total = self._local.total
+
         total_str = str(total) if total is not None else "?"
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
-        columns: list[Any] = [SpinnerColumn()]
-        columns.append(BarColumn(bar_width=None))
-        columns.append(TextColumn("{task.completed}/{task.fields[total_str]}"))
-        columns.append(_EtaColumn())
-        prog = RichProgress(*columns, console=self._console)
-        task_id = prog.add_task("", total=total, total_str=total_str, est="")
-        with self._lock:
-            slot = self._next_slot
-            self._next_slot += 1
-            self._active[slot] = (prog, f"Running: {name}")
-            self._live.update(self._group())
-        self._local.slot = slot
-        self._local.prog = prog
-        self._local.task_id = task_id
 
-    def iteration(self, it: Iteration, label: str) -> None:
-        self._local.n = getattr(self._local, "n", 0) + 1
-        if self._live is None:
-            self._print_plain(
-                it, label, self._local.n, getattr(self._local, "total", None)
+        with self._lock:
+            task_id = self._tui.task_progress.add_task(
+                "",
+                benchmark_name=name,
+                total=total,
+                total_str=total_str,
             )
+
+        self._local.reset(total, task_id)
+
+    def execution_done(self, execution: Execution) -> None:
+        if self._tui is None:
+            self._print_plain(execution)
             return
-        prog = getattr(self._local, "prog", None)
-        task_id = getattr(self._local, "task_id", None)
-        if prog is None or task_id is None:
-            return
-        self._local.runtime += it.runtime
-        prog.advance(task_id)
+
+        self._local.runtime += execution.runtime
+        self._tui.task_progress.advance(self._local.task_id)
 
     def benchmark_done(self, b: Benchmark, executions: list[Execution]) -> None:
-        if self._live is None:
+        if self._tui is None:
             return
+
         failed = any(e.is_failure() for e in executions)
         name = format_benchmark(b.suite, b.name, b.variant, b.variant_label)
+
         with self._lock:
             if failed:
                 self._failed += 1
             else:
                 self._passed += 1
-            if self._overall is not None and self._overall_task is not None:
-                self._overall.update(self._overall_task, failed=self._failed)
-                self._overall.advance(self._overall_task)
+
+            self._tui.task_progress.remove_task(self._local.task_id)
+
+            if self._tui.overall_task is not None:
+                self._tui.overall_progress.update(
+                    self._tui.overall_task, failed=self._failed
+                )
+                self._tui.overall_progress.advance(self._tui.overall_task)
+
             self._console.print(self._summary_line(b, name, executions))
-            self._active.pop(getattr(self._local, "slot", -1), None)
-            self._live.update(self._group())
-        self._local.slot = None
-        self._local.prog = None
-        self._local.task_id = None
 
     def finalize(self, report: Report) -> None:
-        if self._live is not None:
-            self._live.stop()
-            if self._passed or self._failed:
-                self._console.print()
-
-    def _group(self) -> Group:
-        parts: list[Any] = []
-        if self._overall_task is not None and self._overall is not None:
-            parts.append(self._overall)
-        for prog, header in self._active.values():
-            parts.append(Group(Text(header), prog))
-        return Group(*parts)
+        if self._tui is not None:
+            self._tui.live.stop()
 
     @staticmethod
     def _summary_line(b: Benchmark, name: str, executions: list[Execution]) -> str:
@@ -486,15 +506,21 @@ class ProgressReporter(Reporter):
             return f"{head}"
         return f"{head}: {stat_line(elapsed)}"
 
-    def _print_plain(
-        self, it: Iteration, label: str, n: int, total: int | None
-    ) -> None:
-        total_str = str(total) if total is not None else "?"
-        if not it.is_failure():
-            tag = "[bench.success]ok[/]"
+    def _print_plain(self, ex: Execution) -> None:
+        total_str = str(self._local.total) if self._local.total is not None else "?"
+        if not ex.is_failure():
+            tag = "ok"
         else:
-            tag = f"[bench.failure]FAIL[/] ({it.failure})"
-        self._console.print(f"[{n}|{total_str}] {markup_escape(label)} {tag}")
+            tag = f"FAIL ({ex.failure})"
+
+        id = format_identifier(
+            ex.suite, ex.benchmark, ex.variant, ex.run, ex.variant_label
+        )
+
+        self._console.print(
+            f"[{self._local.n}/{total_str}] {id} {tag}",
+            markup=False,
+        )
 
 
 # ---------------------------------------------------------------------------

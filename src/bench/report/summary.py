@@ -115,10 +115,7 @@ def summarize(report: Report) -> list[Stat]:
                 a.warmups += 1
                 continue
             measured += 1
-            if it.is_failure():
-                a.failures += 1
-            else:
-                a.runs += 1
+            a.runs += 1
             for s in it.samples:
                 add(a, s)
         # Whole-process samples: collected once, never a run - unless the run had
