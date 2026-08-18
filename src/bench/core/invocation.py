@@ -6,15 +6,13 @@ working directory, environment, optional timeout, optional stdin payload.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import resource
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, cast
-
-EMPTY_MAPPING: Mapping[Any, Any] = MappingProxyType({})
 
 
 def to_argv(command: Any) -> tuple[Any, ...]:
@@ -30,7 +28,7 @@ class Invocation:
 
     command: tuple[str, ...]
     cwd: Path
-    env: Mapping[str, str] = EMPTY_MAPPING
+    env: Mapping[str, str] = dataclasses.field(default_factory=dict[str, str])
     inherit_env: bool = False
     timeout: float | None = None
     stdin: bytes | None = None

@@ -20,7 +20,6 @@ from bench.builder.base import UNSET, BuilderBase, const
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
 from bench.builder.context import Context, Data
 from bench.core.invocation import (
-    EMPTY_MAPPING,
     default_success,
 )
 from bench.core.outlier import ModifiedZScore
@@ -38,7 +37,7 @@ def _default_cwd(ctx: Context[Any]) -> Path:
 
 def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
     """Default env: empty, the child inherits the OS environment."""
-    return EMPTY_MAPPING
+    return {}
 
 
 # The inheritance root: the concrete defaults a benchmark falls back to when no

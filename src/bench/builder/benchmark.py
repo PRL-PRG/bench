@@ -25,11 +25,9 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from bench.core.invocation import (
-    EMPTY_MAPPING,
     Invocation,
     SuccessFn,
     Variant,
@@ -69,7 +67,7 @@ class BenchmarkBuilder(BuilderBase):
 
     name: str = ""
     stdin: Factory[bytes | None] = const(None)  # None = no stdin (never inherited)
-    data: Mapping[str, Any] = EMPTY_MAPPING
+    data: Mapping[str, Any] = dataclasses.field(default_factory=dict[str, Any])
 
     # ----- with_* setters (shared ones live on BuilderBase) -----------
 
@@ -114,8 +112,8 @@ class BenchmarkBuilder(BuilderBase):
             variant = tuple(sorted((k, _stringify(v)) for k, v in chosen.items()))
             cell = dataclasses.replace(
                 self,
-                data=MappingProxyType({**self.data, **chosen}),
-                matrix=EMPTY_MAPPING,
+                data=dict(self.data) | dict(chosen),
+                matrix={},
             )
             benchmark = cell._resolve_cell(params, suite, variant)
             if any(skip(benchmark) for skip in self.skips):
@@ -141,7 +139,7 @@ class BenchmarkBuilder(BuilderBase):
         invocation = Invocation(
             command=tuple(os.fsdecode(a) for a in self.command(ctx)),
             cwd=Path(self.cwd(ctx)),
-            env=env if env else EMPTY_MAPPING,
+            env=env if env else {},
             timeout=self.timeout(ctx),
             stdin=self.stdin(ctx),
         )

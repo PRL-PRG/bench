@@ -14,10 +14,9 @@ import dataclasses
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Self, cast
 
-from bench.core.invocation import EMPTY_MAPPING, SuccessFn, to_argv
+from bench.core.invocation import SuccessFn, to_argv
 from bench.core.metric import (
     Metric,
 )
@@ -101,12 +100,10 @@ def normalize_matrix(
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
-    return MappingProxyType(
-        {
-            name: values if callable(values) else tuple(values)
-            for name, values in dims.items()
-        }
-    )
+    return {
+        name: values if callable(values) else tuple(values)
+        for name, values in dims.items()
+    }
 
 
 def make_skip_rule(
@@ -149,7 +146,7 @@ def _merge_matrix(
     dup = inner.keys() & outer.keys()
     if dup:
         raise ValueError(f"matrix dimension {next(iter(dup))!r} already declared")
-    return MappingProxyType({**inner, **outer})
+    return dict(inner) | dict(outer)
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +170,9 @@ class BuilderBase:
     cooldown: float = UNSET
     controller: Factory[Controller] = UNSET
     label_fn: LabelFn = UNSET
-    matrix: Mapping[str, MatrixAxisValues] = EMPTY_MAPPING
+    matrix: Mapping[str, MatrixAxisValues] = dataclasses.field(
+        default_factory=dict[str, MatrixAxisValues]
+    )
     skips: tuple[SkipFn, ...] = ()
 
     # ----- command / environment / execution -------------------------
@@ -231,7 +230,7 @@ class BuilderBase:
     def add_matrix(self, **dims: MatrixAxis) -> Self:
         """Add matrix dimensions, merging with any already declared ones."""
         merged = {**self.matrix, **normalize_matrix(dims)}
-        return dataclasses.replace(self, matrix=MappingProxyType(merged))
+        return dataclasses.replace(self, matrix=merged)
 
     def add_matrix_skip(
         self, predicate: SkipFn | None = None, /, **kwargs: Any
