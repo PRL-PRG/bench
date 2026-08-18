@@ -224,7 +224,10 @@ def execute(exe: Invocation) -> InvocationResult:
         )
     except OSError as e:
         return InvocationResult(
-            invocation=exe, returncode=SPAWN_FAIL_RC, failure=f"spawn failed: {e}", runtime=0
+            invocation=exe,
+            returncode=SPAWN_FAIL_RC,
+            failure=f"spawn failed: {e}",
+            runtime=0,
         )
     finally:
         if proc is not None:

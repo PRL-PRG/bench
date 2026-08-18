@@ -48,7 +48,8 @@ def test_float_per_line_skips_garbage():
 
 def test_float_per_line_empty_text_emits_nothing():
     assert (
-        list(FloatPerLine(StdoutMetricSource, "runtime", unit="s").process_text("")) == []
+        list(FloatPerLine(StdoutMetricSource, "runtime", unit="s").process_text(""))
+        == []
     )
 
 
@@ -56,17 +57,17 @@ def test_line_select_last_and_nth():
     text = "1\n2\n3\n"
     assert (
         list(
-            FloatPerLine.last_line(StdoutMetricSource, "runtime", unit="s").process_text(
-                text
-            )
+            FloatPerLine.last_line(
+                StdoutMetricSource, "runtime", unit="s"
+            ).process_text(text)
         )[0].value
         == 3
     )
     assert (
         list(
-            FloatPerLine(
-                StdoutMetricSource, "runtime", line=2, unit="s"
-            ).process_text(text)
+            FloatPerLine(StdoutMetricSource, "runtime", line=2, unit="s").process_text(
+                text
+            )
         )[0].value
         == 2
     )

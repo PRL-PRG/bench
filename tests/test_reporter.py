@@ -58,7 +58,9 @@ def _s():
         .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
         .with_cwd(Path("/tmp"))
         .with_metric(
-            FloatPerLine.last_line(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+            FloatPerLine.last_line(
+                StdoutMetricSource, "runtime", unit="s"
+            ).lower_is_better()
         )
         .with_runs(2),
     )

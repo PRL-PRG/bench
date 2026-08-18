@@ -117,6 +117,7 @@ class _MaxDurationState(PolicyState):
 # Coefficient of variation
 # ---------------------------------------------------------------------------
 
+
 class CoefficientOfVariation(StoppingPolicy):
     __slots__ = ("metric", "threshold", "window", "min_runs")
 
@@ -244,4 +245,3 @@ class PairState(PolicyState):
 
     def satisfied(self) -> bool:
         return self.op((self.a.satisfied(), self.b.satisfied()))
-
