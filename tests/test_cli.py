@@ -205,14 +205,14 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     )
     out = tmp_path / "r.json"
     # Default reporter honors --json (a bare reporter would take full control).
-    bench_app().add_all(s).run(["--no-progress", "--json", str(out)])
+    bench_app().add(s).run(["--no-progress", "--json", str(out)])
 
     buf = StringIO()
     reporter = SummaryReporter(
         Results() & GeomeanSummary(axis="sleep", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    bench_app(reporter=reporter).add_all(s).run(["--show", str(out)])
+    bench_app(reporter=reporter).add(s).run(["--show", str(out)])
     text = buf.getvalue()
     assert "Summary (geomean) - sleep" in text  # the configured GeomeanSummary ran
 
@@ -274,7 +274,7 @@ def _boom_factory(ctx):
 def test_run_reports_friendly_materialization_error():
     s = suite("My Suite").factory(_boom_factory)
     with pytest.raises(SuiteMaterializationError) as ei:
-        bench_app().add_all(s).run([])
+        bench_app().add(s).run([])
     msg = str(ei.value)
     assert "Failed to materialize suite 'My Suite'" in msg
     assert "jvm exploded" in msg  # the failing command's output is surfaced
@@ -380,7 +380,7 @@ def _matrix_suite(suite_name: str = "M", bench_name: str = "b", **matrix):
 def test_list_prints_tree_and_runs_nothing(capsys):
     report = (
         bench_app()
-        .add_all(_trivial("Alpha"), _trivial("Beta"))
+        .add(_trivial("Alpha"), _trivial("Beta"))
         .run(["--list", "--no-progress"])
     )
     out = capsys.readouterr().out
@@ -390,7 +390,7 @@ def test_list_prints_tree_and_runs_nothing(capsys):
 
 
 def test_list_shows_variants(capsys):
-    bench_app().add_all(_matrix_suite("M", "b", jdk=(11, 17))).run(
+    bench_app().add(_matrix_suite("M", "b", jdk=(11, 17))).run(
         ["--list", "--no-progress"]
     )
     out = capsys.readouterr().out
@@ -399,7 +399,7 @@ def test_list_shows_variants(capsys):
 
 
 def test_list_ignores_include_exclude(capsys):
-    bench_app().add_all(_trivial("Alpha"), _trivial("Beta")).run(
+    bench_app().add(_trivial("Alpha"), _trivial("Beta")).run(
         ["--list", "--include", "no-such-bench", "--no-progress"]
     )
     out = capsys.readouterr().out
@@ -410,7 +410,7 @@ def test_list_ignores_include_exclude(capsys):
 def test_include_keeps_only_matching():
     report = (
         bench_app()
-        .add_all(_trivial("Keep"), _trivial("Drop"))
+        .add(_trivial("Keep"), _trivial("Drop"))
         .run(["--include", "Keep", "--no-progress"])
     )
     assert {r.suite for r in report.executions} == {"Keep"}
@@ -419,7 +419,7 @@ def test_include_keeps_only_matching():
 def test_exclude_drops_matching():
     report = (
         bench_app()
-        .add_all(_trivial("Keep"), _trivial("Drop"))
+        .add(_trivial("Keep"), _trivial("Drop"))
         .run(["--exclude", "Drop", "--no-progress"])
     )
     assert {r.suite for r in report.executions} == {"Keep"}
@@ -428,7 +428,7 @@ def test_exclude_drops_matching():
 def test_exclude_wins_over_include():
     report = (
         bench_app()
-        .add_all(_trivial("A"), _trivial("B"))
+        .add(_trivial("A"), _trivial("B"))
         .run(["--include", ".", "--exclude", "B", "--no-progress"])
     )
     assert {r.suite for r in report.executions} == {"A"}
@@ -438,7 +438,7 @@ def test_include_anchored_regex_targets_whole_suite():
     # `^alpha/` matches "alpha/b" but not "alphabet/b".
     report = (
         bench_app()
-        .add_all(_trivial("alpha"), _trivial("alphabet"))
+        .add(_trivial("alpha"), _trivial("alphabet"))
         .run(["--include", "^alpha/", "--no-progress"])
     )
     assert {r.suite for r in report.executions} == {"alpha"}
@@ -447,7 +447,7 @@ def test_include_anchored_regex_targets_whole_suite():
 def test_include_selects_single_variant():
     report = (
         bench_app()
-        .add_all(_matrix_suite("M", "b", jdk=(11, 17)))
+        .add(_matrix_suite("M", "b", jdk=(11, 17)))
         .run(["--include", "jdk=17", "--no-progress"])
     )
     assert [dict(r.variant).get("jdk") for r in report.executions] == ["17"]
@@ -455,11 +455,11 @@ def test_include_selects_single_variant():
 
 def test_bad_regex_raises():
     with pytest.raises(re.error):
-        bench_app().add_all(_trivial("A")).run(["--include", "(", "--no-progress"])
+        bench_app().add(_trivial("A")).run(["--include", "(", "--no-progress"])
 
 
 def test_empty_selection_raises():
     with pytest.raises(NoBenchmarksMatchedError):
-        bench_app().add_all(_trivial("A")).run(
+        bench_app().add(_trivial("A")).run(
             ["--include", "no-such-bench", "--no-progress"]
         )

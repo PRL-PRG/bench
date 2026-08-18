@@ -273,5 +273,5 @@ def test_with_success_fn_resolves_factory_against_ctx():
         assert ctx.benchmark == "x"
         return marker
 
-    b = _mat(bench("x").with_command(["true"]).with_success_fn(factory))
+    b = _mat(bench("x").with_command(["true"]).with_success_factory(factory))
     assert b.success is marker  # factory(ctx) result is used as the policy

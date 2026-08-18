@@ -169,7 +169,7 @@ class Benchmark:
     name: str
     invocation: Invocation
     variant: Variant
-    metrics: tuple[Metric, ...]
+    metrics: Sequence[Metric]
     success: SuccessFn
     warmup: StoppingPolicy
     runs: StoppingPolicy

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
-from bench.core.invocation import SuccessFn, to_argv
+from bench.core.invocation import SuccessFn
 from bench.core.metric import (
     Metric,
 )
@@ -30,18 +30,10 @@ if TYPE_CHECKING:
     from bench.builder.benchmark import Benchmark
     from bench.runner.controller import Controller
 
-# A field builder: a `(ctx) -> value` resolved once per variant at create time
-type Factory[T] = Callable[[Context[Any]], T]
-
-type CommandFactory = Factory[Sequence[StrOrBytesPath]]
-type PathFactory = Factory[Path]
-type EnvFactory = Factory[Mapping[str, str]]
-
-# A matrix axis: either an explicit sequence of values or a factory.
-# The factory sees limited context (params, suite and benchmark name)
-type MatrixAxis = Sequence[Any] | Factory[Sequence[Any]]
-# The normalized store form as either KV-pairs or unchanged factory
-type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
+# ----- Base types -------------------------
+# TODO: Move to model
+type UnresolvedCommand = Sequence[StrOrBytesPath]
+type Env = Mapping[str, str]
 
 # A label function turns a resolved benchmark into the human-readable variant
 # identifier shown in reports Benchmark (not a Context) because labels reflect
@@ -51,7 +43,18 @@ type LabelFn = Callable[[Benchmark], str]
 # A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
 type SkipFn = Callable[[Benchmark], bool]
 
-type Command = StrOrBytesPath | Sequence[StrOrBytesPath] | CommandFactory
+# ----- Builder types -------------------------
+
+# A field builder: a `(ctx) -> value` resolved once per variant at create time
+type Factory[T] = Callable[[Context[Any]], T]
+
+type Timeout = float | None
+
+# A matrix axis: either an explicit sequence of values or a factory.
+# The factory sees limited context (params, suite and benchmark name)
+type MatrixAxis = Sequence[Any] | Factory[Sequence[Any]]
+# The normalized store form as either KV-pairs or unchanged factory
+type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
 
 
 _UNSET_MSG = "benchmark field is unset"
@@ -97,6 +100,7 @@ def normalize_matrix(
     dims: Mapping[str, MatrixAxis],
 ) -> Mapping[str, MatrixAxisValues]:
     """Validate dimension names and freeze `{name: values}` into the canonical mapping."""
+    # FIXME: Why?
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
@@ -128,14 +132,14 @@ def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
     return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
 
 
-def _merge_env(base: EnvFactory, over: EnvFactory) -> EnvFactory:
+def _merge_env(base: Factory[Env], over: Factory[Env]) -> Factory[Env]:
     """Lazy per-key env merge for `overlay`: `base` first, `over` wins. `UNSET`
     on either side contributes nothing. Both unset stays `UNSET`."""
     if base is UNSET:
         return over
     if over is UNSET:
         return base
-    return lambda ctx: {**base(ctx), **over(ctx)}
+    return lambda ctx: dict(base(ctx)) | dict(over(ctx))
 
 
 def _merge_matrix(
@@ -158,11 +162,11 @@ class BuilderBase:
     `with_*` setters each return a replaced copy typed as the concrete `Self`, and
     the `overlay` merge works uniformly across all three builders."""
 
-    command: CommandFactory = UNSET
-    cwd: PathFactory = UNSET
-    env: EnvFactory = UNSET
-    timeout: Factory[float | None] = UNSET
-    metrics: Factory[tuple[Metric, ...]] = UNSET
+    command: Factory[UnresolvedCommand] = UNSET
+    cwd: Factory[Path] = UNSET
+    env: Factory[Env] = UNSET
+    timeout: Factory[Timeout] = UNSET
+    metrics: Factory[Sequence[Metric]] = UNSET
     success: Factory[SuccessFn] = UNSET
     warmup: Factory[StoppingPolicy] = UNSET
     runs: Factory[StoppingPolicy] = UNSET
@@ -173,17 +177,19 @@ class BuilderBase:
     matrix: Mapping[str, MatrixAxisValues] = dataclasses.field(
         default_factory=dict[str, MatrixAxisValues]
     )
-    skips: tuple[SkipFn, ...] = ()
+    skips: Sequence[SkipFn] = ()
 
     # ----- command / environment / execution -------------------------
 
-    def with_command(self, command: Command) -> Self:
-        return dataclasses.replace(self, command=as_build(command, to_argv))
+    def with_command(
+        self, command: UnresolvedCommand | Factory[UnresolvedCommand]
+    ) -> Self:
+        return dataclasses.replace(self, command=as_build(command))
 
-    def with_cwd(self, cwd: str | Path | PathFactory) -> Self:
+    def with_cwd(self, cwd: str | Path | Factory[Path]) -> Self:
         return dataclasses.replace(self, cwd=as_build(cwd, Path))
 
-    def with_env(self, env: Mapping[str, str] | EnvFactory) -> Self:
+    def with_env(self, env: Env | Factory[Env]) -> Self:
         def env_builder(ctx: Context[Any]):
             return dict(self.env(ctx)) | dict(as_build(env, dict)(ctx))
 
@@ -191,7 +197,7 @@ class BuilderBase:
             self, env=env_builder if self.env != UNSET else as_build(env, dict)
         )
 
-    def with_timeout(self, timeout: float | None | Factory[float | None]) -> Self:
+    def with_timeout(self, timeout: Timeout | Factory[Timeout]) -> Self:
         return dataclasses.replace(self, timeout=as_build(timeout))
 
     def with_controller(self, controller: Controller | Factory[Controller]) -> Self:
@@ -200,7 +206,7 @@ class BuilderBase:
     def with_success(self, fn: SuccessFn) -> Self:
         return dataclasses.replace(self, success=const(fn))
 
-    def with_success_fn(self, fn: Factory[SuccessFn]) -> Self:
+    def with_success_factory(self, fn: Factory[SuccessFn]) -> Self:
         return dataclasses.replace(self, success=fn)
 
     # ----- policies ---------------------------------------------------
@@ -224,12 +230,8 @@ class BuilderBase:
     # ----- matrix / skip / label --------------------------------------
 
     def with_matrix(self, **dims: MatrixAxis) -> Self:
-        """Declare matrix dimensions."""
-        return dataclasses.replace(self, matrix=normalize_matrix(dims))
-
-    def add_matrix(self, **dims: MatrixAxis) -> Self:
         """Add matrix dimensions, merging with any already declared ones."""
-        merged = {**self.matrix, **normalize_matrix(dims)}
+        merged = dict(self.matrix) | dict(normalize_matrix(dims))
         return dataclasses.replace(self, matrix=merged)
 
     def add_matrix_skip(
@@ -240,7 +242,7 @@ class BuilderBase:
         rule = make_skip_rule(predicate, kwargs)
         if rule is None:
             return self
-        return dataclasses.replace(self, skips=self.skips + (rule,))
+        return dataclasses.replace(self, skips=[*self.skips, rule])
 
     def with_label(self, fn: LabelFn) -> Self:
         """Override how each variant's label renders in reports."""
@@ -248,23 +250,23 @@ class BuilderBase:
 
     # ----- metrics ----------------------------------------------------
 
-    def with_metric(self, *metrics: Metric | Factory[tuple[Metric, ...]]) -> Self:
+    def with_metric(self, *metrics: Metric | Factory[Sequence[Metric]]) -> Self:
         """Set the per-iteration metrics, each reading stdout."""
 
-        def build(ctx: Context[Any]) -> tuple[Metric, ...]:
-            build_metrics = self.metrics(ctx) if self.metrics is not UNSET else tuple()
+        def build(ctx: Context[Any]) -> Sequence[Metric]:
+            build_metrics = (
+                list(self.metrics(ctx)) if self.metrics is not UNSET else list[Metric]()
+            )
 
             for metric in metrics:
                 if callable(metric):
-                    build_metrics += metric(ctx)
+                    build_metrics.extend(metric(ctx))
                 else:
-                    build_metrics += (metric,)
+                    build_metrics.append(metric)
 
             return build_metrics
 
-        out = dataclasses.replace(self, metrics=build)
-
-        return out
+        return dataclasses.replace(self, metrics=build)
 
     # ----- inheritance ------------------------------------------------
 
@@ -285,7 +287,7 @@ class BuilderBase:
             merged[name] = v if v is not UNSET else getattr(self, name)
         merged["env"] = _merge_env(self.env, over.env)
         merged["matrix"] = _merge_matrix(self.matrix, over.matrix)
-        merged["skips"] = self.skips + over.skips
+        merged["skips"] = (*self.skips, *over.skips)
         return dataclasses.replace(over, **merged)
 
 

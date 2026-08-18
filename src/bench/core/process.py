@@ -24,6 +24,7 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 from types import FrameType
+from typing import Sequence
 
 from bench.core.invocation import (
     SPAWN_FAIL_RC,
@@ -110,8 +111,9 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
                 continue
             raise
 
+type Command = Sequence[str]
 
-def _resolve_command(command: tuple[str, ...]) -> list[str]:
+def _resolve_command(command: Command) -> Command:
     """Resolve `argv[0]` against PATH to an absolute path.
 
     Raises `FileNotFoundError` if the command is not found. The absolute

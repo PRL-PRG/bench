@@ -13,7 +13,7 @@ import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from rich.text import Text
 from rich.tree import Tree
@@ -63,8 +63,6 @@ from bench.runner.sequential import Sequential
 
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
-type ReporterFactory = Factory[Reporter]
-type RunnerFactory = Factory[Runner]
 type Filter = Callable[[Benchmark], bool]
 type FilterFactory = Factory[Filter]
 
@@ -86,38 +84,35 @@ class BenchAppBuilder(BuilderBase):
     """
 
     name: str = ""
-    suites: tuple[SuiteBuilder, ...] = ()
-    factories: tuple[SuiteFactory, ...] = ()
+    suites: Sequence[SuiteBuilder] = ()
+    factories: Sequence[SuiteFactory] = ()
     params: type | None = None
-    reporter: ReporterFactory | None = None
-    summary: ReporterFactory | None = None
-    runner: RunnerFactory | None = None
+    reporter: Factory[Reporter] | None = None
+    summary: Factory[Reporter] | None = None
+    runner: Factory[Runner] | None = None
     filter: FilterFactory | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
-    def add(self, s: SuiteBuilder) -> BenchAppBuilder:
-        """Register a suite."""
-        return dataclasses.replace(self, suites=self.suites + (s,))
-
-    def add_all(self, *ss: SuiteBuilder) -> BenchAppBuilder:
+    def add(self, *ss: SuiteBuilder) -> BenchAppBuilder:
+        """Register suite(s)."""
         """Register several suites."""
-        return dataclasses.replace(self, suites=self.suites + ss)
+        return dataclasses.replace(self, suites=(*self.suites, *ss))
 
     def factory(self, fn: SuiteFactory) -> BenchAppBuilder:
         """Register a deferred suite producer."""
-        return dataclasses.replace(self, factories=self.factories + (fn,))
+        return dataclasses.replace(self, factories=(self.factories, fn))
 
-    def with_reporter(self, reporter: Reporter | ReporterFactory) -> BenchAppBuilder:
+    def with_reporter(self, reporter: Reporter | Factory[Reporter]) -> BenchAppBuilder:
         """Set the reporter."""
         return dataclasses.replace(self, reporter=as_build(reporter))
 
-    def with_summary(self, summary: Reporter | ReporterFactory) -> BenchAppBuilder:
+    def with_summary(self, summary: Reporter | Factory[Reporter]) -> BenchAppBuilder:
         """Swap the summary while keeping the default progress bar and the
         --json/--csv/--dir sinks. Ignored when a full reporter is set."""
         return dataclasses.replace(self, summary=as_build(summary))
 
-    def with_runner(self, runner: Runner | RunnerFactory) -> BenchAppBuilder:
+    def with_runner(self, runner: Runner | Factory[Runner]) -> BenchAppBuilder:
         """Set the runner."""
         return dataclasses.replace(self, runner=as_build(runner))
 
@@ -125,7 +120,7 @@ class BenchAppBuilder(BuilderBase):
         """Set the selection filter predicate."""
         return dataclasses.replace(self, filter=const(keep))
 
-    def with_filter_fn(self, fn: FilterFactory) -> BenchAppBuilder:
+    def with_filter_factory(self, fn: FilterFactory) -> BenchAppBuilder:
         """Set the selection filter factory `(ctx) -> (Benchmark -> bool)`."""
         return dataclasses.replace(self, filter=fn)
 
@@ -237,15 +232,15 @@ def run(*suites: SuiteBuilder) -> Report:
     Returns:
         The report of running all the benchmarks.
     """
-    return bench_app(Path(sys.argv[0]).stem).add_all(*suites).run()
+    return bench_app(Path(sys.argv[0]).stem).add(*suites).run()
 
 
 def bench_app(
     name: str = "",
     *,
     params: type | None = None,
-    reporter: Reporter | ReporterFactory | None = None,
-    summary: Reporter | ReporterFactory | None = None,
+    reporter: Reporter | Factory[Reporter] | None = None,
+    summary: Reporter | Factory[Reporter] | None = None,
     environment: EnvironmentCollector | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:

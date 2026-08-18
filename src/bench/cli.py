@@ -230,7 +230,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     if ns.warmup > 0:
         b = b.with_warmup(ns.warmup)
     if matrix_dims:
-        b = b.add_matrix(**matrix_dims)
+        b = b.with_matrix(**matrix_dims)
 
     s = suite("run", b)
 

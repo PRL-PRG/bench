@@ -117,7 +117,7 @@ def test_user_composite_reporter_receives_environment(tmp_path: Path):
             reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
             environment=SystemEnvironment(),
         )
-        .add_all(_s())
+        .add(_s())
         .run(["--no-progress"])
     )
     env_file = root / "environment.json"

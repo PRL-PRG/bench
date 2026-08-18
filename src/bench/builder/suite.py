@@ -14,7 +14,7 @@ import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from bench.builder.base import UNSET, BuilderBase, const
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
@@ -64,15 +64,15 @@ class SuiteBuilder(BuilderBase):
     """A named, frozen collection of benchmarks, factories, and defaults."""
 
     name: str = ""
-    benchmarks: tuple[BenchmarkBuilder, ...] = ()
-    factories: tuple[BenchmarkFactory, ...] = ()
+    benchmarks: Sequence[BenchmarkBuilder] = ()
+    factories: Sequence[BenchmarkFactory] = ()
 
     # ----- suite-only fields (inheritable config lives on BuilderBase) -----
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
     # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
     shuffle: bool = False
     shuffle_seed: int | None = None
-    filters: tuple[Callable[[Benchmark], bool], ...] = ()
+    filters: Sequence[Callable[[Benchmark], bool]] = ()
 
     # ----- producers -------------------------------------------------
 
@@ -80,15 +80,15 @@ class SuiteBuilder(BuilderBase):
         return dataclasses.replace(self, name=name)
 
     def add(self, b: BenchmarkBuilder) -> SuiteBuilder:
-        return dataclasses.replace(self, benchmarks=self.benchmarks + (b,))
+        return dataclasses.replace(self, benchmarks=(*self.benchmarks, b))
 
     def add_all(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
-        return dataclasses.replace(self, benchmarks=self.benchmarks + tuple(bs))
+        return dataclasses.replace(self, benchmarks=(*self.benchmarks, *bs))
 
     def factory(self, fn: BenchmarkFactory) -> SuiteBuilder:
         """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
         called when the suite materializes."""
-        return dataclasses.replace(self, factories=self.factories + (fn,))
+        return dataclasses.replace(self, factories=(*self.factories, fn))
 
     def filter(self, pred: Callable[[Benchmark], bool]) -> SuiteBuilder:
         """Keep only the resolved benchmarks for which `pred(b)` is truthy.
@@ -97,7 +97,7 @@ class SuiteBuilder(BuilderBase):
         variant, so it is order-independent (it sees benchmarks added before
         or after this call) and can filter individual matrix variants.
         """
-        return dataclasses.replace(self, filters=self.filters + (pred,))
+        return dataclasses.replace(self, filters=(*self.filters, pred))
 
     # ----- defaults (shared setters live on BuilderBase) -----------
 

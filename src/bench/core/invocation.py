@@ -12,7 +12,10 @@ import resource
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from bench.core.process import Command
 
 
 def to_argv(command: Any) -> tuple[Any, ...]:
@@ -26,7 +29,7 @@ def to_argv(command: Any) -> tuple[Any, ...]:
 class Invocation:
     """Pure description of one subprocess invocation."""
 
-    command: tuple[str, ...]
+    command: Command
     cwd: Path
     env: Mapping[str, str] = dataclasses.field(default_factory=dict[str, str])
     inherit_env: bool = False

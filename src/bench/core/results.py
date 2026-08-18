@@ -12,6 +12,7 @@ from cattrs import structure, unstructure
 
 from bench.core.environment import Diagnostic, Environment
 from bench.core.invocation import Variant, format_identifier
+from bench.core.process import Command
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +53,7 @@ class Execution:
     variant: Variant = ()
     variant_label: str = ""
     run: int = 1
-    command: tuple[str, ...] = ()
+    command: Command = ()
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict[str, str])
     returncode: int = 0
