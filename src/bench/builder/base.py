@@ -85,11 +85,11 @@ def const(value: Any) -> Factory[Any]:
 
 def as_build[T, U](
     value: T | Factory[U], normalize: Callable[[T], U] = lambda v: v
-) -> Factory[T]:
-    """Coerce a setter argument into a `Factory[T]`: a callable is the builder as
+) -> Factory[U]:
+    """Coerce a setter argument into a `Factory[U]`: a callable is the builder as
     is, anything else is the static value, normalized once and wrapped."""
     if callable(value):
-        return cast("Factory[T]", value)
+        return cast("Factory[U]", value)
     return const(normalize(value))
 
 
