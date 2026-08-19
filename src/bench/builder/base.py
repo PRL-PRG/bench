@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     from bench.builder.benchmark import Benchmark
     from bench.runner.controller import Controller
 
-# ----- Base types -------------------------
+# ---------------------------------------------------------------------------
+# Base types
+# ---------------------------------------------------------------------------
 # TODO: Move to model
 type UnresolvedCommand = Sequence[StrOrBytesPath]
 type Env = Mapping[str, str]
@@ -45,7 +47,9 @@ type LabelFn = Callable[[Benchmark], str]
 # A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
 type BenchmarkPred = Callable[[Benchmark], bool]
 
-# ----- Builder types -------------------------
+# ---------------------------------------------------------------------------
+# Builder types
+# ---------------------------------------------------------------------------
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
 type Factory[T] = Callable[[Context[Any]], T]
@@ -53,7 +57,9 @@ type Factory[T] = Callable[[Context[Any]], T]
 # A matrix axis: a sequence of values for some dimension.
 type MatrixAxis = Sequence[Any]
 
-# ----- Builder helpers -------------------------
+# ---------------------------------------------------------------------------
+# Builder helpers
+# ---------------------------------------------------------------------------
 
 
 def const[T](value: T) -> Factory[T]:
@@ -93,7 +99,9 @@ def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
     return p if isinstance(p, StoppingPolicy) else FixedRuns(p)
 
 
-# ----- Matrix helpers -------------------------
+# ---------------------------------------------------------------------------
+# Matrix helpers
+# ---------------------------------------------------------------------------
 
 
 def normalize_matrix(
@@ -122,6 +130,11 @@ def merge_matrix(
     return merge_mapping(inner, outer)
 
 
+# ---------------------------------------------------------------------------
+# The builder
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True, slots=True)
 class BuilderBase:
     """Shared configuration fields and `with_*` setters for the three builders
@@ -134,7 +147,7 @@ class BuilderBase:
     command: Factory[UnresolvedCommand] | None = None
     cwd: Factory[Path] | None = None
     env: Factory[Env] | None = None
-    stdin: Factory[bytes | None] | None = None   # None = no stdin (never inherited)
+    stdin: Factory[bytes | None] | None = None  # None = no stdin (never inherited)
     timeout: Factory[Timeout] | None = None
     metrics: Sequence[Factory[Metric]] = ()
     success: Factory[SuccessFn] | None = None
@@ -388,7 +401,9 @@ class BuilderBase:
         return result
 
 
-# ----- Overlay helpers -------------------------
+# ---------------------------------------------------------------------------
+# Overlay helpers
+# ---------------------------------------------------------------------------
 
 _BUILDER_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
 _BUILDER_MERGABLE_FIELDS = {

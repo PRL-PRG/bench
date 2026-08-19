@@ -37,13 +37,12 @@ class SuiteBuilder(BuilderBase):
     benchmarks: Sequence[BenchmarkBuilder] = ()
     generators: Sequence[BenchmarkGenerator] = ()
 
-    # ----- suite-only fields (inheritable config lives on BuilderBase) -----
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
     # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
     shuffle: bool = False
     shuffle_seed: int | None = None
 
-    # ----- producers -------------------------------------------------
+    # ----- with_* setters -----------
 
     def with_name(self, name: str, override: bool = False) -> SuiteBuilder:
         # Special case - allow override for empty name
@@ -74,12 +73,12 @@ class SuiteBuilder(BuilderBase):
             merge=merge_sequence,
         )
 
-    # ----- defaults (shared setters live on BuilderBase) -----------
-
     def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
         # TODO: !!!
         return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
+
+    # ----- creation ----------------------------------------------------
 
     def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
@@ -102,6 +101,10 @@ class SuiteBuilder(BuilderBase):
 
         return out
 
+
+# ---------------------------------------------------------------------------
+# Shorthand constructors
+# ---------------------------------------------------------------------------
 
 def suite(name: str, *benchmarks: BenchmarkBuilder) -> SuiteBuilder:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""

@@ -224,6 +224,7 @@ class BenchmarkBuilder(BuilderBase):
         )
 
 
+# TODO: Move to model
 @dataclass(frozen=True, slots=True)
 class Benchmark:
     """One fully-resolved benchmark variant."""
@@ -254,7 +255,7 @@ def _stringify(v: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# bench(): shorthand constructor
+# Shorthand constructors
 # ---------------------------------------------------------------------------
 
 

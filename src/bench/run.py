@@ -85,14 +85,16 @@ class BenchAppBuilder(BuilderBase):
     name: str = ""
     suites: Sequence[SuiteBuilder] = ()
     generators: Sequence[SuiteGenerator] = ()
+
     params: type | None = None
+
     reporter: ParamFactory[Reporter] | None = None
     summary: ParamFactory[Reporter] | None = None
     runner: ParamFactory[Runner] | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
-    # ----- with_* setters (shared ones live on BuilderBase) -----------
+    # ----- producers -------------------------------------------------
 
     def add(self, *ss: SuiteBuilder) -> BenchAppBuilder:
         """Register suite(s)."""
@@ -112,6 +114,8 @@ class BenchAppBuilder(BuilderBase):
             override=False,
             merge=merge_sequence,
         )
+
+    # ----- Run setters -------------------------------------------------
 
     def with_reporter(
         self, reporter: Reporter | ParamFactory[Reporter], override: bool = False
@@ -238,6 +242,11 @@ class BenchAppBuilder(BuilderBase):
         return [b for b in planned if pred(b)]
 
 
+# ---------------------------------------------------------------------------
+# Shorthand constructors
+# ---------------------------------------------------------------------------
+
+
 def run(*suites: SuiteBuilder) -> Report:
     """Run one or more suites with default settings.
 
@@ -274,6 +283,11 @@ def bench_app(
         environment=environment or NoEnvironment(),
         denoise=denoise,
     )
+
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
 
 
 def default_reporter(params: Any, summary: Reporter | None = None) -> Reporter:
@@ -319,7 +333,7 @@ def default_filter(params: Any) -> Callable[[Benchmark], bool]:
 
 
 # ---------------------------------------------------------------------------
-# argparse builders
+# Argparse builders
 # ---------------------------------------------------------------------------
 
 
