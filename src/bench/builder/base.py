@@ -346,38 +346,44 @@ class BuilderBase:
 
     # ----- inheritance ------------------------------------------------
 
-    def overlay[B: BuilderBase](self, over: B) -> B:
+    def inherit_from(self, over: BuilderBase) -> Self:
         """Merge `over` on top of `self` (over wins): the inheritance step used
-        at every builder boundary (defaults < app < suite < benchmark).
+        at every builder boundary (app < suite < benchmark).
 
-        Each scalar/builder field takes `over`'s value if set, else `self`'s.
+        Each scalar/builder field takes `over`'s value if set, else `self`'s, except
+        the mergable ones: `env`, `matrix`, `metrics`, ``
         `env` merges per key (over wins). `matrix` accumulates with `over`'s dims
         first (a name on both sides is an error). `skips` concatenate. Returns
         `over`'s type, so its own (non-shared) fields survive.
         """
-        merged: dict[str, Any] = {}
-        for name in _SHARED_FIELDS:
-            if name in ("env", "matrix", "filters"):
+        result = self
+        for name in _BUILDER_FIELDS:
+            if name in _BUILDER_MERGABLE_FIELDS:
                 continue
-            v = getattr(over, name)
-            merged[name] = v if v is not None else getattr(self, name)
 
-        if self.env is None:
-            merged["env"] = over.env
-        elif over.env is None:
-            merged["env"] = self.env
-        else:
-            senv = self.env
-            oenv = over.env
+            result = result.replace(
+                name,
+                getattr(over, name),
+                override=True,
+            )
 
-            def merge_env(ctx: Context[Any]) -> Env:
-                return merge_mapping(senv(ctx), oenv(ctx))
+        for name, merge in _BUILDER_MERGABLE_FIELDS.items():
+            result = result.replace(
+                name,
+                getattr(over, name),
+                override=False,
+                merge=merge,
+            )
 
-            merged["env"] = merge_env
-
-        merged["matrix"] = merge_matrix(self.matrix, over.matrix)
-        merged["filters"] = (*self.filters, *over.filters)
-        return dataclasses.replace(over, **merged)
+        return result
 
 
-_SHARED_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
+# ----- Overlay helpers -------------------------
+
+_BUILDER_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
+_BUILDER_MERGABLE_FIELDS = {
+    "env": merge_factory(merge_mapping),
+    "metrics": merge_sequence,
+    "matrix": merge_matrix,
+    "filters": merge_sequence,
+}

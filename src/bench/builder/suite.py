@@ -89,12 +89,13 @@ class SuiteBuilder(BuilderBase):
             suite=self.name,
         )
 
-        out: list[Benchmark] = []
-        for b in itertools.chain(
-            self.benchmarks, *(gen(ctx) for gen in self.generators)
-        ):
-            resolved = self.overlay(b)
-            out.extend(resolved.create(params, suite=self.name))
+        out: list[Benchmark] = [
+            bench
+            for builder in itertools.chain(
+                self.benchmarks, *(gen(ctx) for gen in self.generators)
+            )
+            for bench in builder.inherit_from(self).create(params, suite=self.name)
+        ]
 
         if self.shuffle:
             random.Random(self.shuffle_seed).shuffle(out)

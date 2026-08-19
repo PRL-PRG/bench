@@ -78,7 +78,7 @@ class BenchAppBuilder(BuilderBase):
     The third builder level after `bench()`/`suite()`, sharing the same
     `BuilderBase`. The inheritable `.with_*` settings declared here are the
     weakest layer: they fill fields a suite or benchmark left unset, and a more
-    specific level overrides them (`overlay`). `name` is shown as the description
+    specific level overrides them (`inherit_from`). `name` is shown as the description
     in `--help`.
     """
 
@@ -163,7 +163,7 @@ class BenchAppBuilder(BuilderBase):
         collected = list(self.suites)
         for f in self.generators:
             collected.extend(f(build_params))
-        suites = [self.overlay(s) for s in collected]
+        suites = [s.inherit_from(self) for s in collected]
 
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
