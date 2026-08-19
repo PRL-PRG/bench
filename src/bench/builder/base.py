@@ -384,16 +384,24 @@ class BuilderBase:
             if name in _BUILDER_MERGABLE_FIELDS:
                 continue
 
+            val = getattr(over, name)
+            if val is None:
+                continue
+
             result = result.replace(
                 name,
-                getattr(over, name),
+                val,
                 override=True,
             )
 
         for name, merge in _BUILDER_MERGABLE_FIELDS.items():
+            val = getattr(over, name)
+            if val is None:
+                continue
+
             result = result.replace(
                 name,
-                getattr(over, name),
+                val,
                 override=False,
                 merge=merge,
             )

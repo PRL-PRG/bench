@@ -25,8 +25,14 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
+from bench.builder.base import (
+    BuilderBase,
+    LabelFn,
+    merge_mapping,
+)
+from bench.builder.context import Context, Data
 from bench.core.invocation import (
     Invocation,
     SuccessFn,
@@ -39,15 +45,7 @@ from bench.core.metric import (
 )
 from bench.core.outlier import ModifiedZScore, OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
-from bench.builder.base import (
-    BuilderBase,
-    LabelFn,
-    merge_mapping,
-)
-from bench.builder.context import Context, Data
-
-if TYPE_CHECKING:
-    from bench.runner.controller import Controller
+from bench.runner.controller import Controller
 
 
 def default_label(b: Benchmark) -> str:
