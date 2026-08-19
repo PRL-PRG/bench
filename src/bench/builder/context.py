@@ -181,7 +181,7 @@ class Context[T]:
 
     params: T
     suite: str
-    benchmark: str | None
+    benchmark: str
     data: Data
 
 

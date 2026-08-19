@@ -18,28 +18,28 @@ from typing import Any, Sequence
 from rich.text import Text
 from rich.tree import Tree
 
+from bench.builder.base import BuilderBase, as_build, merge_sequence
 from bench.builder.benchmark import Benchmark
-from bench.builder.base import Factory, BuilderBase, as_build, merge_sequence
 from bench.builder.context import (
     Context,
-    Data,
     SharedBenchParams,
     SharedSelectionParams,
     add_dataclass_args,
     build_dataclass,
 )
+from bench.builder.suite import SuiteBuilder
 from bench.core.checks import run_checks
 from bench.core.environment import (
     EnvironmentCollector,
     NoEnvironment,
 )
 from bench.core.invocation import format_benchmark
+from bench.core.results import Report, report_from_json
 from bench.denoise import (
     STATE_PATH,
     denoise_session,
     is_root,
 )
-from bench.builder.suite import SuiteBuilder
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
     CompositeReporter,
@@ -52,7 +52,6 @@ from bench.report.reporter import (
     console,
     print_diagnostics,
 )
-from bench.core.results import Report, report_from_json
 from bench.runner.base import (
     Runner,
     plan,
@@ -61,8 +60,10 @@ from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
 
+type ParamFactory[T] = Callable[[Any], T]
+"""A factory that produces based on the parameters"""
 
-type SuiteGenerator = Callable[[Any], list[SuiteBuilder]]
+type SuiteGenerator = ParamFactory[Sequence[SuiteBuilder]]
 
 
 class NoBenchmarksMatchedError(Exception):
@@ -85,9 +86,9 @@ class BenchAppBuilder(BuilderBase):
     suites: Sequence[SuiteBuilder] = ()
     generators: Sequence[SuiteGenerator] = ()
     params: type | None = None
-    reporter: Factory[Reporter] | None = None
-    summary: Factory[Reporter] | None = None
-    runner: Factory[Runner] | None = None
+    reporter: ParamFactory[Reporter] | None = None
+    summary: ParamFactory[Reporter] | None = None
+    runner: ParamFactory[Runner] | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
@@ -113,7 +114,7 @@ class BenchAppBuilder(BuilderBase):
         )
 
     def with_reporter(
-        self, reporter: Reporter | Factory[Reporter], override: bool = False
+        self, reporter: Reporter | ParamFactory[Reporter], override: bool = False
     ) -> BenchAppBuilder:
         """Set the reporter."""
         return self.replace(
@@ -123,7 +124,7 @@ class BenchAppBuilder(BuilderBase):
         )
 
     def with_summary(
-        self, summary: Reporter | Factory[Reporter], override: bool = False
+        self, summary: Reporter | ParamFactory[Reporter], override: bool = False
     ) -> BenchAppBuilder:
         """Swap the summary while keeping the default progress bar and the
         --json/--csv/--dir sinks. Ignored when a full reporter is set."""
@@ -134,7 +135,7 @@ class BenchAppBuilder(BuilderBase):
         )
 
     def with_runner(
-        self, runner: Runner | Factory[Runner], override: bool = False
+        self, runner: Runner | ParamFactory[Runner], override: bool = False
     ) -> BenchAppBuilder:
         """Set the runner."""
         return self.replace(
@@ -164,21 +165,14 @@ class BenchAppBuilder(BuilderBase):
             collected.extend(f(build_params))
         suites = [self.overlay(s) for s in collected]
 
-        ctx: Context[Any] = Context(
-            params=build_params,
-            suite="",
-            benchmark=None,
-            data=Data(),
-        )
-
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
 
         if self.reporter is not None:
-            reporter = self.reporter(ctx)
+            reporter = self.reporter(build_params)
         else:
-            summary = self.summary(ctx) if self.summary is not None else None
-            reporter = default_reporter(ctx, summary)
+            summary = self.summary(build_params) if self.summary is not None else None
+            reporter = default_reporter(build_params, summary)
         reporter.set_environment(env, env_diagnostics)
 
         # --show
@@ -192,7 +186,7 @@ class BenchAppBuilder(BuilderBase):
         if getattr(cli_args, "list_plan", False):
             return self._do_list(planned)
 
-        planned = self._filter_benchmarks(ctx, planned)
+        planned = self._filter_benchmarks(build_params, planned)
         selecting = isinstance(build_params, SharedSelectionParams) and (
             build_params.include or build_params.exclude
         )
@@ -204,7 +198,7 @@ class BenchAppBuilder(BuilderBase):
 
         print_diagnostics(env_diagnostics, "Environment checks")
 
-        runner = (self.runner or default_runner)(ctx)
+        runner = (self.runner or default_runner)(build_params)
         runner.reporter = reporter
 
         if self.denoise:
@@ -260,8 +254,8 @@ def bench_app(
     name: str = "",
     *,
     params: type | None = None,
-    reporter: Reporter | Factory[Reporter] | None = None,
-    summary: Reporter | Factory[Reporter] | None = None,
+    reporter: Reporter | ParamFactory[Reporter] | None = None,
+    summary: Reporter | ParamFactory[Reporter] | None = None,
     environment: EnvironmentCollector | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
@@ -282,40 +276,38 @@ def bench_app(
     )
 
 
-def default_reporter(ctx: Context[Any], summary: Reporter | None = None) -> Reporter:
+def default_reporter(params: Any, summary: Reporter | None = None) -> Reporter:
     sinks: list[Reporter] = []
-    p = ctx.params
-    if p.progress:
+    if params.progress:
         sinks.append(ProgressReporter())
 
     sinks.append(summary or SummaryReporter(DefaultSummary()))
 
-    if p.json:
-        sinks.append(JsonReporter(Path(p.json)))
-    if p.csv:
-        sinks.append(CsvReporter(Path(p.csv)))
-    if p.dir:
-        sinks.append(DirReporter(Path(p.dir)))
+    if params.json:
+        sinks.append(JsonReporter(Path(params.json)))
+    if params.csv:
+        sinks.append(CsvReporter(Path(params.csv)))
+    if params.dir:
+        sinks.append(DirReporter(Path(params.dir)))
 
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
-def default_runner(ctx: Context[Any]) -> Runner:
-    p = ctx.params
-    if p.dry:
-        return Dry(verbose=p.verbose)
-    if p.jobs > 1:
-        return Parallel(workers=p.jobs, verbose=p.verbose)
-    return Sequential(verbose=p.verbose)
+def default_runner(params: Any) -> Runner:
+    if params.dry:
+        return Dry(verbose=params.verbose)
+    if params.jobs > 1:
+        return Parallel(workers=params.jobs, verbose=params.verbose)
+    return Sequential(verbose=params.verbose)
 
 
-def default_filter(ctx: Context[Any]) -> Callable[[Benchmark], bool]:
-    p = ctx.params
+def default_filter(params: Any) -> Callable[[Benchmark], bool]:
     # selection is opt-in
-    if not isinstance(p, SharedSelectionParams):
+    if not isinstance(params, SharedSelectionParams):
         return lambda _b: True
-    inc = [re.compile(pat) for pat in (p.include or [])]
-    exc = [re.compile(pat) for pat in (p.exclude or [])]
+
+    inc = [re.compile(pat) for pat in (params.include or [])]
+    exc = [re.compile(pat) for pat in (params.exclude or [])]
 
     def keep(b: Benchmark) -> bool:
         key = format_benchmark(b.suite, b.name, b.variant)

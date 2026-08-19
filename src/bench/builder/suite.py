@@ -18,7 +18,6 @@ from typing import Any, Sequence
 
 from bench.builder.base import BuilderBase, const, merge_sequence
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
-from bench.builder.context import Context, Data
 from bench.core.invocation import (
     default_success,
 )
@@ -26,7 +25,13 @@ from bench.core.outlier import ModifiedZScore
 from bench.core.policy import FixedRuns
 from bench.runner.controller import Controller
 
-type BenchmarkGenerator = Callable[[Context[Any]], list[BenchmarkBuilder]]
+
+@dataclass(frozen=True, slots=True)
+class SuiteContext[T]:
+    params: T
+    suite: str
+
+type BenchmarkGenerator = Callable[[SuiteContext[Any]], list[BenchmarkBuilder]]
 
 
 # The inheritance root: the concrete defaults a benchmark falls back to when no
@@ -103,15 +108,14 @@ class SuiteBuilder(BuilderBase):
     def materialize(self, params: Any) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
-        ctx: Context[Any] = Context(
+        ctx: SuiteContext[Any] = SuiteContext(
             params=params,
             suite=self.name,
-            benchmark=None,
-            data=Data(),
         )
         collected = list(self.benchmarks)
         for f in self.generators:
             collected.extend(f(ctx))
+
         # Fold the inheritance chain: DEFAULTS < this suite < each benchmark.
         # (An enclosing app has already folded itself into this suite via overlay.)
         base = DEFAULTS.overlay(self)
