@@ -138,21 +138,63 @@ class BenchmarkBuilder(BuilderBase):
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
         variant's matrix values). No field reads another's resolved value."""
+        # TODO: Right now only raises generic ValueError
         ctx: Context[Any] = Context(
             params=params,
             suite=suite,
             benchmark=self.name,
             data=Data(dict(self.data)),
         )
-        env = self.env(ctx)
+        if self.env is None:
+            env = dict[str, str]()
+        else:
+            env = self.env(ctx)
+
+        if self.command is None:
+            raise ValueError()
+
+        if self.cwd is None:
+            raise ValueError()
+
+        if self.timeout is None:
+            timeout = 0
+        else:
+            timeout = self.timeout(ctx)
+
         invocation = Invocation(
             command=tuple(os.fsdecode(a) for a in self.command(ctx)),
             cwd=Path(self.cwd(ctx)),
-            env=env if env else {},
-            timeout=self.timeout(ctx),
+            env=env,
+            timeout=timeout,
             stdin=self.stdin(ctx),
         )
+
+        if self.metrics is None:
+            raise ValueError()
+
         metrics = self.metrics(ctx)
+
+        if self.success is None:
+            raise ValueError()
+
+        if self.warmup is None:
+            raise ValueError()
+
+        if self.runs is None:
+            raise ValueError()
+
+        if self.outlier_detection is None:
+            raise ValueError()
+
+        if self.cooldown is None:
+            raise ValueError()
+
+        if self.controller is None:
+            raise ValueError()
+
+        if self.label_fn is None:
+            raise ValueError()
+
         b = Benchmark(
             suite=suite,
             name=self.name,

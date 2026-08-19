@@ -58,30 +58,6 @@ type MatrixAxis = Sequence[Any] | Factory[Sequence[Any]]
 # The normalized store form as either KV-pairs or unchanged factory
 type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
 
-
-_UNSET_MSG = "benchmark field is unset"
-
-
-class _Unset:
-    __slots__ = ()
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError(_UNSET_MSG)
-
-    def __getattr__(self, name: str) -> Any:
-        raise RuntimeError(_UNSET_MSG)
-
-    def __bool__(self) -> bool:
-        raise RuntimeError(_UNSET_MSG)
-
-    def __repr__(self) -> str:
-        return "UNSET"
-
-
-# Typed `Any` so fields keep their concrete declared types. Misuse of an
-# unresolved factory fails loudly at runtime in one place (above).
-UNSET: Any = _Unset()
-
 # ----- Builder helpers -------------------------
 
 
@@ -159,18 +135,18 @@ class BuilderBase:
     `with_*` setters each return a replaced copy typed as the concrete `Self`, and
     the `overlay` merge works uniformly across all three builders."""
 
-    command: Factory[UnresolvedCommand] = UNSET
-    cwd: Factory[Path] = UNSET
-    env: Factory[Env] = UNSET
-    timeout: Factory[Timeout] = UNSET
-    metrics: Factory[Sequence[Metric]] = UNSET
-    success: Factory[SuccessFn] = UNSET
-    warmup: Factory[StoppingPolicy] = UNSET
-    runs: Factory[StoppingPolicy] = UNSET
-    outlier_detection: OutlierDetection = UNSET
-    cooldown: float = UNSET
-    controller: Factory[Controller] = UNSET
-    label_fn: LabelFn = UNSET
+    command: Factory[UnresolvedCommand] | None = None
+    cwd: Factory[Path] | None = None
+    env: Factory[Env] | None = None
+    timeout: Factory[Timeout] | None = None
+    metrics: Factory[Sequence[Metric]] | None = None
+    success: Factory[SuccessFn] | None = None
+    warmup: Factory[StoppingPolicy] | None = None
+    runs: Factory[StoppingPolicy] | None = None
+    outlier_detection: OutlierDetection | None = None
+    cooldown: float | None = None
+    controller: Factory[Controller] | None = None
+    label_fn: LabelFn | None = None
     matrix: Mapping[str, MatrixAxisValues] = dataclasses.field(
         default_factory=dict[str, MatrixAxisValues]
     )
@@ -193,7 +169,7 @@ class BuilderBase:
         replace the value.
         """
         prev = getattr(self, field)
-        if prev != UNSET:
+        if prev is not None:
             if not override:
                 if merge is not None:
                     return dataclasses.replace(self, **{field: merge(prev, value)})
@@ -388,16 +364,18 @@ class BuilderBase:
             if name in ("env", "matrix", "skips"):
                 continue
             v = getattr(over, name)
-            merged[name] = v if v is not UNSET else getattr(self, name)
+            merged[name] = v if v is not None else getattr(self, name)
 
-        if self.env == UNSET:
+        if self.env is None:
             merged["env"] = over.env
-        elif over.env == UNSET:
+        elif over.env is None:
             merged["env"] = self.env
         else:
+            senv = self.env
+            oenv = over.env
 
             def merge_env(ctx: Context[Any]) -> Env:
-                return merge_mapping(self.env(ctx), over.env(ctx))
+                return merge_mapping(senv(ctx), oenv(ctx))
 
             merged["env"] = merge_env
 

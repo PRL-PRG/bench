@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from bench.builder.base import UNSET, BuilderBase, const, merge_sequence
+from bench.builder.base import BuilderBase, const, merge_sequence
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
 from bench.builder.context import Context, Data
 from bench.core.invocation import (
@@ -44,7 +44,7 @@ def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
 # level (app/suite/benchmark) set a field. `command` has no sensible default and
 # is checked at materialize. Folded in via `overlay` as the weakest layer.
 DEFAULTS = BuilderBase(
-    command=UNSET,
+    command=None,
     cwd=_default_cwd,
     env=_default_env,
     timeout=const(None),
@@ -144,7 +144,7 @@ class SuiteBuilder(BuilderBase):
         out: list[Benchmark] = []
         for b in collected:
             resolved = base.overlay(b)
-            if resolved.command is UNSET:
+            if resolved.command is None:
                 raise ValueError(
                     f"Benchmark {b.name!r} has no command - set one with "
                     f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
