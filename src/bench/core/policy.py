@@ -128,6 +128,9 @@ class CoefficientOfVariation(StoppingPolicy):
         window: int = 5,
         min_runs: int = 10,
     ) -> None:
+        if window < 2:
+            raise ValueError("CoV window must be >= 2 for stdev")
+
         self.metric = metric
         self.threshold = threshold
         self.window = window
@@ -141,8 +144,6 @@ class _CoVState(PolicyState):
     __slots__ = ("cfg", "window", "sum", "sumsq", "n_runs")
 
     def __init__(self, cfg: CoefficientOfVariation):
-        if cfg.window < 2:
-            raise ValueError("CoV window must be >= 2 for stdev")
         self.cfg = cfg
         self.window: deque[float] = deque(maxlen=cfg.window)
         self.sum = 0.0
