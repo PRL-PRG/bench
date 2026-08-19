@@ -62,7 +62,6 @@ class SuiteBuilder(BuilderBase):
     # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
     shuffle: bool = False
     shuffle_seed: int | None = None
-    filters: Sequence[Callable[[Benchmark], bool]] = ()
 
     # ----- producers -------------------------------------------------
 
@@ -91,20 +90,6 @@ class SuiteBuilder(BuilderBase):
         return self.replace(
             "factories",
             (fn,),
-            override=False,
-            merge=merge_sequence,
-        )
-
-    def filter(self, pred: Callable[[Benchmark], bool]) -> SuiteBuilder:
-        """Keep only the resolved benchmarks for which `pred(b)` is truthy.
-
-        Applied once, at the end of `materialize`, to every fully-resolved
-        variant, so it is order-independent (it sees benchmarks added before
-        or after this call) and can filter individual matrix variants.
-        """
-        return self.replace(
-            "filters",
-            (pred,),
             override=False,
             merge=merge_sequence,
         )
@@ -140,8 +125,7 @@ class SuiteBuilder(BuilderBase):
                     f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
                 )
             out.extend(resolved.create(params, suite=self.name))
-        for pred in self.filters:
-            out = [b for b in out if pred(b)]
+
         if self.shuffle:
             random.Random(self.shuffle_seed).shuffle(out)
         return out

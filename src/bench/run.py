@@ -19,7 +19,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from bench.builder.benchmark import Benchmark
-from bench.builder.base import Factory, BuilderBase, as_build, const, merge_sequence
+from bench.builder.base import Factory, BuilderBase, as_build, merge_sequence
 from bench.builder.context import (
     Context,
     Data,
@@ -64,9 +64,6 @@ from bench.runner.sequential import Sequential
 
 type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
 
-# TODO: Move to base
-type Filter = Callable[[Benchmark], bool]
-
 
 class NoBenchmarksMatchedError(Exception):
     """No benchmark matched the --include/--exclude selection."""
@@ -91,7 +88,6 @@ class BenchAppBuilder(BuilderBase):
     reporter: Factory[Reporter] | None = None
     summary: Factory[Reporter] | None = None
     runner: Factory[Runner] | None = None
-    filter: Factory[Filter] | None = None
     environment: EnvironmentCollector = NoEnvironment()
     denoise: bool = False
 
@@ -144,24 +140,6 @@ class BenchAppBuilder(BuilderBase):
         return self.replace(
             "runner",
             as_build(runner),
-            override=override,
-        )
-
-    def with_filter(self, keep: Filter, override: bool = False) -> BenchAppBuilder:
-        """Set the selection filter predicate."""
-        return self.replace(
-            "filter",
-            const(keep),
-            override=override,
-        )
-
-    def with_filter_factory(
-        self, fn: Factory[Filter], override: bool = False
-    ) -> BenchAppBuilder:
-        """Set the selection filter factory `(ctx) -> (Benchmark -> bool)`."""
-        return self.replace(
-            "filter",
-            fn,
             override=override,
         )
 
@@ -262,8 +240,8 @@ class BenchAppBuilder(BuilderBase):
     def _filter_benchmarks(
         self, ctx: Context[Any], planned: list[Benchmark]
     ) -> list[Benchmark]:
-        keep = (self.filter or default_filter)(ctx)
-        return [b for b in planned if keep(b)]
+        pred = default_filter(ctx)
+        return [b for b in planned if pred(b)]
 
 
 def run(*suites: SuiteBuilder) -> Report:

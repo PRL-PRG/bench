@@ -125,7 +125,7 @@ class BenchmarkBuilder(BuilderBase):
                 matrix={},
             )
             benchmark = cell._resolve_cell(params, suite, variant)
-            if any(skip(benchmark) for skip in self.skips):
+            if any(p(benchmark) for p in self.filters):
                 continue
             yield benchmark
 

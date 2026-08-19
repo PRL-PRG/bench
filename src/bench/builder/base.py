@@ -43,7 +43,7 @@ type Env = Mapping[str, str]
 type LabelFn = Callable[[Benchmark], str]
 
 # A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
-type SkipFn = Callable[[Benchmark], bool]
+type BenchmarkPred = Callable[[Benchmark], bool]
 
 # ----- Builder types -------------------------
 
@@ -150,7 +150,7 @@ class BuilderBase:
     matrix: Mapping[str, MatrixAxisValues] = dataclasses.field(
         default_factory=dict[str, MatrixAxisValues]
     )
-    skips: Sequence[SkipFn] = ()
+    filters: Sequence[BenchmarkPred] = ()
 
     # ----- helper function -------------------------
 
@@ -299,9 +299,9 @@ class BuilderBase:
             merge=merge_mapping,
         )
 
-    def filter_benchmark(self, predicate: SkipFn) -> Self:
+    def with_filter(self, predicate: BenchmarkPred) -> Self:
         return self.replace(
-            "skips",
+            "filters",
             [predicate],
             override=False,
             merge=merge_sequence,
@@ -320,7 +320,7 @@ class BuilderBase:
             return True
 
         return self.replace(
-            "skips",
+            "filters",
             [rule],
             override=False,
             merge=merge_sequence,
@@ -361,7 +361,7 @@ class BuilderBase:
         """
         merged: dict[str, Any] = {}
         for name in _SHARED_FIELDS:
-            if name in ("env", "matrix", "skips"):
+            if name in ("env", "matrix", "filters"):
                 continue
             v = getattr(over, name)
             merged[name] = v if v is not None else getattr(self, name)
@@ -380,7 +380,7 @@ class BuilderBase:
             merged["env"] = merge_env
 
         merged["matrix"] = merge_matrix(self.matrix, over.matrix)
-        merged["skips"] = (*self.skips, *over.skips)
+        merged["filters"] = (*self.filters, *over.filters)
         return dataclasses.replace(over, **merged)
 
 
