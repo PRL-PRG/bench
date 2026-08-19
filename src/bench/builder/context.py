@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping, dataclass_transform
 
+_MISSING_DEFAULT = object()
 
 
 class Data:
@@ -32,14 +33,20 @@ class Data:
 
     __slots__ = ("_data",)
 
-    def __init__(self, data: dict[str, Any] | None = None) -> None:
-        self._data = dict(data or {})
+    def __init__(self, data: Mapping[str, Any] = {}) -> None:
+        if "get" in data:
+            raise ValueError('Cannot use the attribute key "get" in Data')
+
+        self._data = data
 
     def __getattr__(self, name: str) -> Any:
-        try:
-            return object.__getattribute__(self, "_data")[name]
-        except KeyError:
-            raise AttributeError(name) from None
+        return self.get(name)
+
+    def get(self, name: str, default: Any = _MISSING_DEFAULT) -> Any:
+        res = object.__getattribute__(self, "_data").get(name, default)
+        if res is _MISSING_DEFAULT:
+            raise AttributeError(name)
+        return res
 
     def __repr__(self) -> str:
         return f"Data({self._data!r})"
@@ -174,11 +181,6 @@ class Context[T]:
     data: Data
 
 
-# Sentinel for "no value" used during dataclass instantiation when a field
-# has a default. argparse's None default is fine for Optional fields.
-_MISSING = object()
-
-
 def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
@@ -246,9 +248,9 @@ def build_dataclass(dc: type, namespace: argparse.Namespace) -> Any:
         raise TypeError(f"{dc!r} must be a @dataclass")
     kwargs: dict[str, Any] = {}
     for f in fields(dc):
-        val = getattr(namespace, f.name, _MISSING)
-        if val is _MISSING:
+        if f.name not in namespace:
             continue
+        val = getattr(namespace, f.name)
         kwargs[f.name] = val
     return dc(**kwargs)
 
