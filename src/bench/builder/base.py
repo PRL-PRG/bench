@@ -52,11 +52,8 @@ type Factory[T] = Callable[[Context[Any]], T]
 
 type Timeout = float | None
 
-# A matrix axis: either an explicit sequence of values or a factory.
-# The factory sees limited context (params, suite and benchmark name)
-type MatrixAxis = Sequence[Any] | Factory[Sequence[Any]]
-# The normalized store form as either KV-pairs or unchanged factory
-type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
+# A matrix axis: a sequence of values for some dimension.
+type MatrixAxis = Sequence[Any]
 
 # ----- Builder helpers -------------------------
 
@@ -102,28 +99,29 @@ def coerce_policy(p: StoppingPolicy | int) -> StoppingPolicy:
 
 
 def normalize_matrix(
-    dims: Mapping[str, MatrixAxis],
-) -> Mapping[str, MatrixAxisValues]:
+    dims: Mapping[str, MatrixAxis | Factory[MatrixAxis]],
+) -> Mapping[str, Factory[MatrixAxis]]:
     """Validate dimension names and freeze `{name: values}` into the canonical mapping."""
     # FIXME: Why?
     for name in dims:
         if name.startswith("_"):
             raise ValueError(f"Matrix dimension {name!r} cannot start with '_'")
+
     return {
-        name: values if callable(values) else tuple(values)
+        name: values if callable(values) else const(values)
         for name, values in dims.items()
     }
 
 
 def merge_matrix(
-    outer: Mapping[str, MatrixAxisValues], inner: Mapping[str, MatrixAxisValues]
-) -> Mapping[str, MatrixAxisValues]:
+    outer: Mapping[str, Factory[MatrixAxis]], inner: Mapping[str, Factory[MatrixAxis]]
+) -> Mapping[str, Factory[MatrixAxis]]:
     """Accumulate matrix dims for `overlay`: `inner` (more specific) dims first,
     then `outer`. A dimension declared on both sides is an error."""
     dup = inner.keys() & outer.keys()
     if dup:
         raise ValueError(f"Duplicate matrix axis '{next(iter(dup))!r}'")
-    return dict(inner) | dict(outer)
+    return merge_mapping(inner, outer)
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,8 +145,8 @@ class BuilderBase:
     cooldown: float | None = None
     controller: Factory[Controller] | None = None
     label_fn: LabelFn | None = None
-    matrix: Mapping[str, MatrixAxisValues] = dataclasses.field(
-        default_factory=dict[str, MatrixAxisValues]
+    matrix: Mapping[str, Factory[MatrixAxis]] = dataclasses.field(
+        default_factory=dict[str, Factory[MatrixAxis]]
     )
     filters: Sequence[BenchmarkPred] = ()
 
@@ -290,7 +288,7 @@ class BuilderBase:
 
     # ----- matrix / skip / label --------------------------------------
 
-    def with_matrix(self, **dims: MatrixAxis) -> Self:
+    def with_matrix(self, **dims: MatrixAxis | Factory[MatrixAxis]) -> Self:
         """Add matrix dimensions, merging with any already declared ones."""
         return self.replace(
             "matrix",

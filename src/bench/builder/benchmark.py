@@ -103,49 +103,52 @@ class BenchmarkBuilder(BuilderBase):
         Expands the matrix (cartesian product), resolves every field against the
         variant `Context`, then drops any variant matched by a skip rule.
         """
-        names = list(self.matrix)
-        if not names:
-            yield self._resolve_cell(params, suite, ())
-            return
-        # Resolve callable axes once, before expanding the product. The axis
-        # Context has no per-variant matrix yet (we are defining it), so axes
-        # can read params/suite/benchmark but not sibling axes.
-        axis_ctx: Context[Any] = Context(
+        bench_ctx: Context[Any] = Context(
             params=params,
             suite=suite,
             benchmark=self.name,
-            data=Data(),
+            data=Data(self.data),
         )
-        axes = [tuple(v(axis_ctx)) if callable(v) else v for v in self.matrix.values()]
+
+        names = list(self.matrix)
+        if not names:
+            yield self._resolve_cell(suite, (), bench_ctx)
+            return
+
+        # Resolve callable axes once, before expanding the product. The axis
+        # Context has no per-variant matrix yet (we are defining it), so axes
+        # can read params/suite/benchmark but not sibling axes.
+        axes = [tuple(v(bench_ctx)) for v in self.matrix.values()]
         for combo in itertools.product(*axes):
             chosen = dict(zip(names, combo))
             variant = tuple(sorted((k, _stringify(v)) for k, v in chosen.items()))
+
             cell = dataclasses.replace(
                 self,
-                data=dict(self.data) | dict(chosen),
+                data=merge_mapping(self.data, chosen),
                 matrix={},
             )
-            benchmark = cell._resolve_cell(params, suite, variant)
-            if any(p(benchmark) for p in self.filters):
+            cell_ctx = dataclasses.replace(
+                bench_ctx,
+                data=Data(merge_mapping(Data.as_mapping(bench_ctx.data), chosen)),
+            )
+
+            benchmark = cell._resolve_cell(suite, variant, cell_ctx)
+            if not all(p(benchmark) for p in self.filters):
                 continue
+
             yield benchmark
 
     def _resolve_cell(
         self,
-        params: Any,
         suite: str,
         variant: Variant,
+        ctx: Context[Any],
     ) -> Benchmark:
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
         variant's matrix values). No field reads another's resolved value."""
         # TODO: Right now only raises generic ValueError
-        ctx: Context[Any] = Context(
-            params=params,
-            suite=suite,
-            benchmark=self.name,
-            data=Data(dict(self.data)),
-        )
         if self.env is None:
             env = dict[str, str]()
         else:

@@ -51,6 +51,10 @@ class Data:
     def __repr__(self) -> str:
         return f"Data({self._data!r})"
 
+    @staticmethod
+    def as_mapping(data: Data) -> Mapping[str, Any]:
+        return data._data
+
 
 @dataclass_transform(
     frozen_default=True,
