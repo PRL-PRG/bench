@@ -6,13 +6,16 @@ import dataclasses
 import itertools
 import json
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from cattrs import structure, unstructure
 
 from bench.core.environment import Diagnostic, Environment
 from bench.core.invocation import Variant, format_identifier
 from bench.core.process import Command
+
+# TODO: Move to model
+type Direction = Literal["lower better", "higher better", "uncomparable"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +25,7 @@ class Sample:
     metric: str
     value: float
     unit: str = ""
-    lower_is_better: bool | None = None
+    direction: Direction = "uncomparable"
 
     iteration: int | None = None
     "Process sample if `None`, otherwise it belongs to an iteration"

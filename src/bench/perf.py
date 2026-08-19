@@ -42,7 +42,7 @@ class PerfStat(Metric):
 
     events: tuple[str, ...] = ()
 
-    def __init__(self, direction: Direction = None) -> None:
+    def __init__(self, direction: Direction = "uncomparable") -> None:
         super().__init__("", "", direction)
 
     def __post_init__(self) -> None:

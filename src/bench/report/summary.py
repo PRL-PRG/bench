@@ -14,6 +14,7 @@ from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, replace
 
 from bench.core.invocation import Variant, format_benchmark
+from bench.core.metric import Direction
 from bench.core.results import Report, Execution, Sample
 from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
 
@@ -40,7 +41,7 @@ class Stat:
     variant_label: str
     metric: str
     unit: str
-    lower_is_better: bool | None
+    direction: Direction
     n: int
     mean: float
     median: float
@@ -85,7 +86,7 @@ def summarize(report: Report) -> list[Stat]:
     surfaces in the reporter's Failures block.
     """
     accs: dict[tuple[str, str, Variant], _Acc] = {}  # insertion-ordered
-    lib: dict[MetricKey, bool] = {}
+    dir: dict[MetricKey, Direction] = {}
 
     def ensure(r: Execution) -> _Acc:
         key = (r.suite, r.benchmark, r.variant)
@@ -98,8 +99,7 @@ def summarize(report: Report) -> list[Stat]:
 
     def add(a: _Acc, s: Sample) -> None:
         mk = (s.metric, s.unit)
-        if s.lower_is_better is not None:
-            lib[mk] = s.lower_is_better
+        dir[mk] = s.direction
         a.values.setdefault(mk, []).append(s.value)
         if s.extra.get("outlier", False):
             a.outliers[mk] = a.outliers.get(mk, 0) + 1
@@ -131,7 +131,7 @@ def summarize(report: Report) -> list[Stat]:
     out: list[Stat] = []
     for (suite, benchmark, variant), a in accs.items():
         for mk, values in a.values.items():
-            out.append(_stat(suite, benchmark, variant, a, mk, values, lib.get(mk)))
+            out.append(_stat(suite, benchmark, variant, a, mk, values, dir.get(mk, "uncomparable")))
     return out
 
 
@@ -142,7 +142,7 @@ def _stat(
     a: _Acc,
     mk: MetricKey,
     values: list[float],
-    lower_is_better: bool | None,
+    direction: Direction,
 ) -> Stat:
     n = len(values)
     return Stat(
@@ -152,7 +152,7 @@ def _stat(
         variant_label=a.variant_label,
         metric=mk[0],
         unit=mk[1],
-        lower_is_better=lower_is_better,
+        direction=direction,
         n=n,
         mean=statistics.mean(values),
         median=statistics.median(values),
@@ -175,13 +175,13 @@ def ratio(ref: Stat, other: Stat) -> tuple[float, float] | None:
     """`(display, sigma)` comparing `other` against `ref` by their medians, where
     `display > 1` means `other` performs better. `None` when either side lacks a
     direction or has a zero/NaN median."""
-    if ref.lower_is_better is None or other.lower_is_better is None:
+    if ref.direction == "uncomparable" or other.direction == "uncomparable":
         return None
     rc, oc = ref.median, other.median
     if rc == 0 or oc == 0 or math.isnan(rc) or math.isnan(oc):
         return None
     raw = oc / rc
-    display = (rc / oc) if other.lower_is_better else raw
+    display = (rc / oc) if other.direction == "lower better" else raw
     rel_sq = 0.0
     if ref.stdev > 0:
         rel_sq += (ref.stdev / rc) ** 2
@@ -462,7 +462,7 @@ def _axis_block(
         byval.setdefault(v, {})[(s.benchmark, _residual(s, axis))] = s
     if len(byval) < 2:
         return []
-    lib = grp[0].lower_is_better if grp[0].lower_is_better is not None else True
+    lib = grp[0].direction == "lower better"
     scores = {v: geomean([st.median for st in m.values()]) for v, m in byval.items()}
     if ref is not None and ref in byval:
         ref_val = ref
@@ -516,10 +516,10 @@ def ranking(
         for (metric, _unit), rows_stats in group_by(grp, lambda s: s.mk).items():
             if not _keep(metric, metrics):
                 continue
-            ranked = [s for s in rows_stats if s.lower_is_better is not None]
+            ranked = [s for s in rows_stats if s.direction != "uncomparable"]
             if len(ranked) < 2:
                 continue
-            lib = ranked[0].lower_is_better
+            lib = ranked[0].direction == "lower better"
             ranked.sort(key=lambda s: s.median, reverse=not lib)
             best = ranked[0]
             header = (

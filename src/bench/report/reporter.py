@@ -218,8 +218,10 @@ class CsvReporter(_EnvironmentAware, Reporter):
                             "metric": sample.metric,
                             "value": sample.unit,
                             "unit": sample.unit,
-                            "lower_is_better": str(sample.lower_is_better)
-                            if sample.lower_is_better is None
+                            "lower_is_better": True
+                            if sample.direction == "lower better"
+                            else False
+                            if sample.direction == "higher better"
                             else "",
                         }
                     )

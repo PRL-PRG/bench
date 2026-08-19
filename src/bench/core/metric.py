@@ -18,10 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Literal, Mapping, Self
 
 from bench.core.invocation import InvocationResult
-from bench.core.results import Sample
-
-# None = no direction, True = lower is better, False = higher is better
-type Direction = bool | None
+from bench.core.results import Direction, Sample
 
 # A MetricSource pulls the text an IterationMetric parses out of the
 # InvocationResult.
@@ -70,7 +67,7 @@ class Metric(abc.ABC):
     direction: Direction
 
     def __init__(
-        self, metric: str, unit: str = "", direction: Direction = None
+        self, metric: str, unit: str = "", direction: Direction = "uncomparable"
     ) -> None:
         self.unit = unit
         self.metric = metric
@@ -91,7 +88,7 @@ class Metric(abc.ABC):
             metric=metric if metric is not None else self.metric,
             value=value,
             unit=unit if unit is not None else self.unit,
-            lower_is_better=self.direction,
+            direction=self.direction,
             iteration=iteration,
             extra=extra,
         )
@@ -102,12 +99,12 @@ class BuildableMetric(Metric):
 
     def lower_is_better(self) -> Self:
         o = copy.copy(self)
-        o.direction = True
+        o.direction = "lower better"
         return o
 
     def higher_is_better(self) -> Self:
         o = copy.copy(self)
-        o.direction = False
+        o.direction = "higher better"
         return o
 
 
@@ -121,7 +118,7 @@ class IterationMetric(Metric):
         source: MetricSource,
         metric: str,
         unit: str = "",
-        direction: Direction = None,
+        direction: Direction = "uncomparable",
     ) -> None:
         super().__init__(metric, unit, direction)
         self.source = source
@@ -156,7 +153,7 @@ class FloatPerLine(IterationMetric, BuildableMetric):
         metric: str,
         line: int | None = None,
         unit: str = "",
-        direction: Direction = None,
+        direction: Direction = "uncomparable",
         iterate: bool = True,
     ) -> None:
         super().__init__(source, metric, unit, direction)
@@ -190,7 +187,7 @@ class FloatPerLine(IterationMetric, BuildableMetric):
         source: MetricSource,
         metric: str,
         unit: str = "",
-        direction: Direction = None,
+        direction: Direction = "uncomparable",
     ) -> FloatPerLine:
         """Parse only the last non-empty line."""
         return FloatPerLine(
@@ -209,7 +206,7 @@ class Regex(IterationMetric, BuildableMetric):
         *,
         unit: str = "",
         iterate: bool = False,
-        direction: Direction = None,
+        direction: Direction = "uncomparable",
         match_group: str | int = 1,
         transform: Callable[[str], float] = float,
         unit_group: str | int | None = None,
@@ -268,7 +265,7 @@ class Rebench(IterationMetric):
         self,
         source: MetricSource,
     ) -> None:
-        super().__init__(source, "runtime", "ms", True)
+        super().__init__(source, "runtime", "ms", "lower better")
         self.iteration = 0
 
     def process_text(self, text: str) -> Iterable[Sample]:
@@ -334,7 +331,7 @@ class RUsage(BuildableMetric):
     ]
 
     def __init__(
-        self, field: Field, metric: str, unit: str = "", direction: Direction = None
+        self, field: Field, metric: str, unit: str = "", direction: Direction = "uncomparable"
     ) -> None:
         super().__init__(metric, unit, direction)
         self.field = field
@@ -356,7 +353,7 @@ class Time(Metric):
     """
 
     def __init__(self) -> None:
-        super().__init__("elapsed", "s", True)
+        super().__init__("elapsed", "s", "lower better")
 
     def process(self, data: InvocationResult) -> Iterable[Sample]:
         yield self.get_sample(value=data.runtime)
@@ -364,7 +361,7 @@ class Time(Metric):
 
 class UserTime(Metric):
     def __init__(self) -> None:
-        super().__init__("user", "s", True)
+        super().__init__("user", "s", "lower better")
 
     def process(self, data: InvocationResult) -> Iterable[Sample]:
         if data.rusage is not None:
@@ -373,7 +370,7 @@ class UserTime(Metric):
 
 class SystemTime(Metric):
     def __init__(self) -> None:
-        super().__init__("system", "s", True)
+        super().__init__("system", "s", "lower better")
 
     def process(self, data: InvocationResult) -> Iterable[Sample]:
         if data.rusage is not None:
