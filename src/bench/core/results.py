@@ -53,7 +53,7 @@ class Execution:
     suite: str
     benchmark: str
     runtime: float
-    variant: Variant = ()
+    variant: Variant = Variant()
     variant_label: str = ""
     run: int = 1
     command: Command = ()
@@ -124,7 +124,7 @@ class Report:
         """Stable list of matrix-dimension names across all executions, first-seen order."""
         res = list[str]()
         for ex in self.executions:
-            for k, _ in ex.variant:
+            for k in ex.variant.keys():
                 if k not in res:
                     res.append(k)
 

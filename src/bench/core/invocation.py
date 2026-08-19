@@ -12,7 +12,7 @@ import resource
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 if TYPE_CHECKING:
     from bench.core.process import Command
@@ -88,14 +88,64 @@ def default_success(result: InvocationResult) -> Verdict:
     return None
 
 
-# Canonical matrix-variant identifier: sorted ((dimension_name, dimension_value), ...).
-type Variant = tuple[tuple[str, str], ...]
+# TODO: Move to model
+@dataclass(frozen=True, slots=True)
+class Variant:
+    """Representation of a variant"""
+
+    pairs: tuple[tuple[str, str], ...] = ()
+    "Canonical representation: `((dimension, value), ...)`, sorted by dimension"
+
+    def __post_init__(self) -> None:
+        # Canonicalize once, at construction: equality and hashing are the pair
+        # tuple's, so two variants with the same dimensions must order alike.
+        object.__setattr__(self, "pairs", tuple(sorted(self.pairs)))
+
+    @staticmethod
+    def _stringify_value(v: Any) -> str:
+        if isinstance(v, (list, tuple)):
+            return " ".join(str(x) for x in cast(Sequence[object], v))
+        return str(v)
+
+    @staticmethod
+    def of(mapping: Mapping[str, Any]) -> Variant:
+        return Variant(
+            tuple((k, Variant._stringify_value(v)) for k, v in mapping.items())
+        )
+
+    def get(self, dim: str, default: str | None = None) -> str | None:
+        # A plain scan, not a generator: a variant carries a handful of
+        # dimensions, so the generator frame costs more than the comparisons.
+        for k, v in self.pairs:
+            if k == dim:
+                return v
+        return default
+
+    def keys(self) -> tuple[str, ...]:
+        return tuple(k for k, _ in self.pairs)
+
+    def as_dict(self) -> dict[str, str]:
+        return dict(self.pairs)
+
+    def __iter__(self):
+        return self.pairs.__iter__()
+
+    def __len__(self) -> int:
+        return self.pairs.__len__()
+
+    def __contains__(self, dim: str) -> bool:
+        for k, _ in self.pairs:
+            if k == dim:
+                return True
+
+        return False
 
 
 def format_variant(variant: Variant) -> str:
     """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
     if not variant:
         return ""
+
     return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
 
 

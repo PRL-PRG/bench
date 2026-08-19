@@ -260,7 +260,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
     merged = Report()
     for name, report in named:
         for execution in report.executions:
-            variant = ((axis, name),) + execution.variant
+            variant = Variant(((axis, name),) + execution.variant.pairs)
             label = (
                 f"{axis}={name}, {execution.variant_label}"
                 if execution.variant_label
@@ -278,7 +278,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
 
 def bench_label(suite: str, benchmark: str) -> str:
     """`suite/benchmark`, collapsing the stutter when the two names match."""
-    return format_benchmark(suite, benchmark, ())
+    return format_benchmark(suite, benchmark, Variant())
 
 
 def _vlabel(s: Stat) -> str:
@@ -287,12 +287,8 @@ def _vlabel(s: Stat) -> str:
     return ", ".join(f"{k}={v}" for k, v in s.variant)
 
 
-def _axis_value(s: Stat, axis: str) -> str | None:
-    return next((v for k, v in s.variant if k == axis), None)
-
-
 def _residual(s: Stat, axis: str) -> Variant:
-    return tuple((k, v) for k, v in s.variant if k != axis)
+    return Variant(tuple((k, v) for k, v in s.variant if k != axis))
 
 
 def _num(x: float, p: int = 2) -> str:
@@ -467,7 +463,7 @@ def _axis_block(
     # axis value -> {(benchmark, residual variant): Stat}
     byval: dict[str, dict[tuple[str, Variant], Stat]] = {}
     for s in grp:
-        v = _axis_value(s, axis)
+        v = s.variant.get(axis)
         assert v is not None
         byval.setdefault(v, {})[(s.benchmark, _residual(s, axis))] = s
     if len(byval) < 2:
@@ -564,7 +560,7 @@ def _axis_view(
     """Shared engine for the axis views: group axial stats by `key`, then emit one
     `_axis_block` per group headed by `head`. Drives both the per-benchmark
     ranking-by-axis and the per-suite `by_axis`."""
-    axial = [s for s in stats if _axis_value(s, axis) is not None]
+    axial = [s for s in stats if s.variant.get(axis) is not None]
     if not axial:
         return _axis_missing(r, axis)
     blocks: list[list[str]] = []

@@ -104,7 +104,7 @@ def format_benchmark_verbose(b: Benchmark, run: int) -> str:
         if b.success is default_success
         else getattr(b.success, "__name__", repr(b.success))
     )
-    variant_str = dict(b.variant) if b.variant else {}
+    variant_str = str(b.variant.as_dict())
     label_str = b.variant_label or "<none>"
 
     return "\n".join(

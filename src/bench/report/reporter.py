@@ -187,7 +187,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
             w.writeheader()
 
             for e in report.executions:
-                variant_map = dict(e.variant)
+                variant_map = e.variant.as_dict()
                 base: dict[str, Any] = {
                     "suite": e.suite,
                     "benchmark": e.benchmark,

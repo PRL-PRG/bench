@@ -25,7 +25,7 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from bench.builder.base import (
     BuilderBase,
@@ -98,7 +98,7 @@ class BenchmarkBuilder(BuilderBase):
 
         names = list(self.matrix)
         if not names:
-            yield self._resolve_cell(suite, (), bench_ctx)
+            yield self._resolve_cell(suite, Variant(), bench_ctx)
             return
 
         # Resolve callable axes once, before expanding the product. The axis
@@ -107,7 +107,7 @@ class BenchmarkBuilder(BuilderBase):
         axes = [tuple(v(bench_ctx)) for v in self.matrix.values()]
         for combo in itertools.product(*axes):
             chosen = dict(zip(names, combo))
-            variant = tuple(sorted((k, _stringify(v)) for k, v in chosen.items()))
+            variant = Variant.of(chosen)
 
             cell = dataclasses.replace(
                 self,
@@ -244,12 +244,6 @@ class Benchmark:
     @property
     def variant_label(self) -> str:
         return self.label_fn(self)
-
-
-def _stringify(v: Any) -> str:
-    if isinstance(v, (list, tuple)):
-        return " ".join(str(x) for x in cast("Sequence[object]", v))
-    return str(v)
 
 
 # ---------------------------------------------------------------------------
