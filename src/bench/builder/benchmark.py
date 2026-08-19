@@ -41,6 +41,7 @@ from bench.core.policy import StoppingPolicy
 from bench.builder.base import (
     Factory,
     BuilderBase,
+    LabelFn,
     as_build,
     const,
     merge_mapping,
@@ -192,7 +193,7 @@ class BenchmarkBuilder(BuilderBase):
         if self.label_fn is None:
             raise ValueError()
 
-        b = Benchmark(
+        return Benchmark(
             suite=suite,
             name=self.name,
             invocation=invocation,
@@ -205,8 +206,8 @@ class BenchmarkBuilder(BuilderBase):
             cooldown=self.cooldown,
             controller=self.controller(ctx),
             data=self.data,
+            label_fn=self.label_fn,
         )
-        return dataclasses.replace(b, variant_label=self.label_fn(b))
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,10 +226,11 @@ class Benchmark:
     cooldown: float
     controller: Controller
     data: Mapping[str, Any]
-    # Filled by a follow-up `dataclasses.replace` once the benchmark exists
-    # (the label fn needs the resolved Benchmark), so it keeps a default and
-    # sits last.
-    variant_label: str = ""
+    label_fn: LabelFn
+
+    @property
+    def variant_label(self) -> str:
+        return self.label_fn(self)
 
 
 def _stringify(v: Any) -> str:
