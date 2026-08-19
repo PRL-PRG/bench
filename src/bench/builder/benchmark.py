@@ -31,13 +31,14 @@ from bench.core.invocation import (
     Invocation,
     SuccessFn,
     Variant,
+    default_success,
     format_variant,
 )
 from bench.core.metric import (
     Metric,
 )
-from bench.core.outlier import OutlierDetection
-from bench.core.policy import StoppingPolicy
+from bench.core.outlier import ModifiedZScore, OutlierDetection
+from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.builder.base import (
     Factory,
     BuilderBase,
@@ -55,7 +56,6 @@ if TYPE_CHECKING:
 def default_label(b: Benchmark) -> str:
     """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
     return format_variant(b.variant).strip(" ()")
-
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkBuilder(BuilderBase):
@@ -148,17 +148,19 @@ class BenchmarkBuilder(BuilderBase):
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this
         variant's matrix values). No field reads another's resolved value."""
-        # TODO: Right now only raises generic ValueError
         if self.env is None:
             env = dict[str, str]()
         else:
             env = self.env(ctx)
 
         if self.command is None:
-            raise ValueError()
+            raise ValueError(f"Benchmark f{self.name} (suite {suite}) is missing a command!")
+        command = tuple(map(os.fsdecode, self.command(ctx)))
 
         if self.cwd is None:
-            raise ValueError()
+            cwd = Path.cwd()
+        else:
+            cwd = self.cwd(ctx)
 
         if self.timeout is None:
             timeout = None
@@ -166,8 +168,8 @@ class BenchmarkBuilder(BuilderBase):
             timeout = self.timeout(ctx)
 
         invocation = Invocation(
-            command=tuple(os.fsdecode(a) for a in self.command(ctx)),
-            cwd=Path(self.cwd(ctx)),
+            command=command,
+            cwd=cwd,
             env=env,
             timeout=timeout,
             stdin=self.stdin(ctx),
@@ -176,25 +178,39 @@ class BenchmarkBuilder(BuilderBase):
         metrics = [m(ctx) for m in self.metrics]
 
         if self.success is None:
-            raise ValueError()
+            success = default_success
+        else:
+            success = self.success(ctx)
 
         if self.warmup is None:
-            raise ValueError()
+            warmup = FixedRuns(0)
+        else:
+            warmup = self.warmup(ctx)
 
         if self.runs is None:
-            raise ValueError()
+            runs = FixedRuns(1)
+        else:
+            runs = self.runs(ctx)
 
         if self.outlier_detection is None:
-            raise ValueError()
+            outlier_detection = ModifiedZScore()
+        else:
+            outlier_detection = self.outlier_detection
 
         if self.cooldown is None:
-            raise ValueError()
+            cooldown = 0.0
+        else:
+            cooldown = self.cooldown
 
         if self.controller is None:
-            raise ValueError()
+            controller = Controller()
+        else:
+            controller = self.controller(ctx)
 
         if self.label_fn is None:
-            raise ValueError()
+            label_fn = default_label
+        else:
+            label_fn = self.label_fn
 
         return Benchmark(
             suite=suite,
@@ -202,14 +218,14 @@ class BenchmarkBuilder(BuilderBase):
             invocation=invocation,
             variant=variant,
             metrics=metrics,
-            success=self.success(ctx),
-            warmup=self.warmup(ctx),
-            runs=self.runs(ctx),
-            outlier_detection=self.outlier_detection,
-            cooldown=self.cooldown,
-            controller=self.controller(ctx),
+            success=success,
+            warmup=warmup,
+            runs=runs,
+            outlier_detection=outlier_detection,
+            cooldown=cooldown,
+            controller=controller,
             data=self.data,
-            label_fn=self.label_fn,
+            label_fn=label_fn,
         )
 
 

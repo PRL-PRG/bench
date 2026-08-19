@@ -10,20 +10,14 @@ order never matters.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Sequence
 
-from bench.builder.base import BuilderBase, const, merge_sequence
-from bench.builder.benchmark import Benchmark, BenchmarkBuilder, default_label
-from bench.core.invocation import (
-    default_success,
-)
-from bench.core.outlier import ModifiedZScore
-from bench.core.policy import FixedRuns
-from bench.runner.controller import Controller
+from bench.builder.base import BuilderBase, merge_sequence
+from bench.builder.benchmark import Benchmark, BenchmarkBuilder
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,26 +25,8 @@ class SuiteContext[T]:
     params: T
     suite: str
 
+
 type BenchmarkGenerator = Callable[[SuiteContext[Any]], list[BenchmarkBuilder]]
-
-
-# The inheritance root: the concrete defaults a benchmark falls back to when no
-# level (app/suite/benchmark) set a field. `command` has no sensible default and
-# is checked at materialize. Folded in via `overlay` as the weakest layer.
-DEFAULTS = BuilderBase(
-    command=None,
-    cwd=lambda _: Path.cwd(),
-    env=const({}),
-    timeout=const(None),
-    metrics=(),
-    success=const(default_success),
-    warmup=const(FixedRuns(0)),
-    runs=const(FixedRuns(1)),
-    outlier_detection=ModifiedZScore(),
-    cooldown=0.0,
-    controller=const(Controller()),
-    label_fn=default_label,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,25 +88,17 @@ class SuiteBuilder(BuilderBase):
             params=params,
             suite=self.name,
         )
-        collected = list(self.benchmarks)
-        for f in self.generators:
-            collected.extend(f(ctx))
 
-        # Fold the inheritance chain: DEFAULTS < this suite < each benchmark.
-        # (An enclosing app has already folded itself into this suite via overlay.)
-        base = DEFAULTS.overlay(self)
         out: list[Benchmark] = []
-        for b in collected:
-            resolved = base.overlay(b)
-            if resolved.command is None:
-                raise ValueError(
-                    f"Benchmark {b.name!r} has no command - set one with "
-                    f"BenchmarkBuilder.with_command or SuiteBuilder.with_command"
-                )
+        for b in itertools.chain(
+            self.benchmarks, *(gen(ctx) for gen in self.generators)
+        ):
+            resolved = self.overlay(b)
             out.extend(resolved.create(params, suite=self.name))
 
         if self.shuffle:
             random.Random(self.shuffle_seed).shuffle(out)
+
         return out
 
 
