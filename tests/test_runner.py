@@ -431,7 +431,7 @@ def test_plan_wraps_factory_failure_with_suite_name_and_command_output():
     def boom(ctx):
         raise err
 
-    s = suite("Renaissance Suite").factory(boom)
+    s = suite("Renaissance Suite").generator(boom)
     with pytest.raises(SuiteMaterializationError) as ei:
         plan([s], None)
 

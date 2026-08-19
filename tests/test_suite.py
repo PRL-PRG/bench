@@ -106,7 +106,7 @@ def test_with_command_order_independent():
 
 
 def test_defaults_reach_factory_benchmarks():
-    s = suite("S").with_command(["true"]).with_runs(4).factory(lambda ctx: [bench("f")])
+    s = suite("S").with_command(["true"]).with_runs(4).generator(lambda ctx: [bench("f")])
     b = _mat(s)[0]
     assert b.runs == FixedRuns(4)
     assert b.invocation.command == ("true",)
@@ -226,7 +226,7 @@ def test_from_files_ctx_root_via_factory(tmp_path: Path):
     (tmp_path / "p.lox").write_text("")
     s = (
         suite("X")
-        .factory(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
+        .generator(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
         .with_command(["true"])
         .with_cwd(tmp_path)
         .with_metric(Time())

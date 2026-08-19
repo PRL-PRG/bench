@@ -26,8 +26,7 @@ from bench.core.outlier import ModifiedZScore
 from bench.core.policy import FixedRuns
 from bench.runner.controller import Controller
 
-
-type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
+type BenchmarkGenerator = Callable[[Context[Any]], list[BenchmarkBuilder]]
 
 
 # The inheritance root: the concrete defaults a benchmark falls back to when no
@@ -51,11 +50,11 @@ DEFAULTS = BuilderBase(
 
 @dataclass(frozen=True, slots=True)
 class SuiteBuilder(BuilderBase):
-    """A named, frozen collection of benchmarks, factories, and defaults."""
+    """A named, frozen collection of benchmarks, generators, and defaults."""
 
     name: str = ""
     benchmarks: Sequence[BenchmarkBuilder] = ()
-    factories: Sequence[BenchmarkFactory] = ()
+    generators: Sequence[BenchmarkGenerator] = ()
 
     # ----- suite-only fields (inheritable config lives on BuilderBase) -----
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
@@ -84,11 +83,11 @@ class SuiteBuilder(BuilderBase):
             merge=merge_sequence,
         )
 
-    def factory(self, fn: BenchmarkFactory) -> SuiteBuilder:
+    def generator(self, fn: BenchmarkGenerator) -> SuiteBuilder:
         """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
         called when the suite materializes."""
         return self.replace(
-            "factories",
+            "generators",
             (fn,),
             override=False,
             merge=merge_sequence,
@@ -111,7 +110,7 @@ class SuiteBuilder(BuilderBase):
             data=Data(),
         )
         collected = list(self.benchmarks)
-        for f in self.factories:
+        for f in self.generators:
             collected.extend(f(ctx))
         # Fold the inheritance chain: DEFAULTS < this suite < each benchmark.
         # (An enclosing app has already folded itself into this suite via overlay.)

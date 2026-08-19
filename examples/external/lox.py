@@ -46,7 +46,7 @@ def _bench_root(ctx: LoxParams) -> Path:
 
 lox_suite = (
     suite("LoxSuite")
-    .factory(
+    .generator(
         lambda ctx: from_files(
             _bench_root(ctx.params), pattern=r"\.lox$", exclude={"zoo_batch"}
         )

@@ -272,7 +272,7 @@ def _boom_factory(ctx):
 
 
 def test_run_reports_friendly_materialization_error():
-    s = suite("My Suite").factory(_boom_factory)
+    s = suite("My Suite").generator(_boom_factory)
     with pytest.raises(SuiteMaterializationError) as ei:
         bench_app().add(s).run([])
     msg = str(ei.value)
@@ -309,7 +309,7 @@ def test_run_callable_factory_receives_parsed_params():
 
     report = (
         bench_app(params=_Params)
-        .factory(discover)
+        .generator(discover)
         .run(["--label", "hello", "--no-progress"])
     )
     assert seen["label"] == "hello"
@@ -322,7 +322,7 @@ def test_bench_combines_static_and_discovered_suites():
     def discover(_p):
         return [_trivial("Disc")]
 
-    report = bench_app().add(static).factory(discover).run(["--no-progress"])
+    report = bench_app().add(static).generator(discover).run(["--no-progress"])
     assert {r.suite for r in report.executions} == {"Static", "Disc"}
 
 

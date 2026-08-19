@@ -182,7 +182,7 @@ def reporter(ctx: Context[CpythonParams]):
 
 cpython = (
     suite("CPython pyperformance")
-    .factory(lambda ctx: [bench(n) for n in list_benchmarks()])
+    .generator(lambda ctx: [bench(n) for n in list_benchmarks()])
     .with_command(command)
     .with_monitor_fn(monitor)
     .with_matrix(runs=lambda ctx: range(ctx.params.runs))

@@ -57,7 +57,7 @@ def _bench_root(ctx: RcpParams) -> Path:
 
 rcp_suite = (
     suite("RCPSuite")
-    .factory(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
+    .generator(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
     .with_metric(Rebench())

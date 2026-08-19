@@ -212,7 +212,7 @@ def test_suite_level_matrix_axis_callable_applies_per_benchmark():
         suite("S")
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
-        .factory(lambda _ctx: [bench("a"), bench("b")])
+        .generator(lambda _ctx: [bench("a"), bench("b")])
         .with_matrix(tag=lambda ctx: [ctx.benchmark])
     )
     bs = s.materialize(None)

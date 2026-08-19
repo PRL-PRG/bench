@@ -62,7 +62,7 @@ from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
 
 
-type SuiteFactory = Callable[[Any], list[SuiteBuilder]]
+type SuiteGenerator = Callable[[Any], list[SuiteBuilder]]
 
 
 class NoBenchmarksMatchedError(Exception):
@@ -71,7 +71,7 @@ class NoBenchmarksMatchedError(Exception):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class BenchAppBuilder(BuilderBase):
-    """Top-level builder: static suites + deferred suite factories, plus common
+    """Top-level builder: static suites + deferred suite generators, plus common
     settings applied to every suite.
 
     The third builder level after `bench()`/`suite()`, sharing the same
@@ -83,7 +83,7 @@ class BenchAppBuilder(BuilderBase):
 
     name: str = ""
     suites: Sequence[SuiteBuilder] = ()
-    factories: Sequence[SuiteFactory] = ()
+    generators: Sequence[SuiteGenerator] = ()
     params: type | None = None
     reporter: Factory[Reporter] | None = None
     summary: Factory[Reporter] | None = None
@@ -103,10 +103,10 @@ class BenchAppBuilder(BuilderBase):
             merge=merge_sequence,
         )
 
-    def factory(self, fn: SuiteFactory) -> BenchAppBuilder:
+    def generator(self, fn: SuiteGenerator) -> BenchAppBuilder:
         """Register a deferred suite producer."""
         return self.replace(
-            "factories",
+            "generators",
             (fn,),
             override=False,
             merge=merge_sequence,
@@ -146,7 +146,7 @@ class BenchAppBuilder(BuilderBase):
     # ----- run -----------
 
     def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
-        """Resolve factories, apply app defaults, and run every suite."""
+        """Resolve generators, apply app defaults, and run every suite."""
 
         if isinstance(args, argparse.Namespace):
             cli_args = args
@@ -160,7 +160,7 @@ class BenchAppBuilder(BuilderBase):
         build_params = build_dataclass(effective, cli_args)
 
         collected = list(self.suites)
-        for f in self.factories:
+        for f in self.generators:
             collected.extend(f(build_params))
         suites = [self.overlay(s) for s in collected]
 

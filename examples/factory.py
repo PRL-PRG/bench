@@ -30,7 +30,7 @@ def make_benchmarks(ctx):
 
 s = (
     suite("factory_demo")
-    .factory(make_benchmarks)
+    .generator(make_benchmarks)
     .with_process_metric(Time())
     .with_runs(5)
 )

@@ -117,7 +117,7 @@ def make_benchmarks(ctx: Context[Params]) -> list[BenchmarkBuilder]:
 
 renaissance = (
     suite("Renaissance Benchmark Suite")
-    .factory(make_benchmarks)
+    .generator(make_benchmarks)
     .with_harness(monitor=renaissance_monitor)
     .with_metric(
         Regex(

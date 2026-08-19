@@ -128,7 +128,7 @@ def lox_cmd(ctx: Context[TestParams]) -> list[str]:
 
 lox_tests = (
     suite("LoxTests")
-    .factory(lambda ctx: from_files(_test_root(ctx.params), pattern=r"\.lox$"))
+    .generator(lambda ctx: from_files(_test_root(ctx.params), pattern=r"\.lox$"))
     .with_command(lox_cmd)
     .with_cwd(lambda ctx: _test_root(ctx.params))
     .with_timeout(10)
