@@ -161,7 +161,7 @@ class BenchmarkBuilder(BuilderBase):
             raise ValueError()
 
         if self.timeout is None:
-            timeout = 0
+            timeout = None
         else:
             timeout = self.timeout(ctx)
 
