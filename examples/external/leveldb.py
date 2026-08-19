@@ -29,7 +29,6 @@ from bench import (
 )
 
 
-@dataclass(frozen=True)
 class LevelDBParams(SharedBenchParams):
     db_bench: Path  # required: path to the built db_bench binary
     num: int = 100000  # key/value pairs written (and read)

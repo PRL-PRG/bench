@@ -60,7 +60,6 @@ from bench import (
 from bench.run import default_reporter
 
 
-@dataclass(frozen=True)
 class CpythonParams(SharedBenchParams):
     python: Path = field(
         default=Path(sys.executable),

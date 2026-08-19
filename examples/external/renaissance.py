@@ -37,7 +37,6 @@ from bench import (
 )
 
 
-@dataclass(frozen=True)
 class Params(SharedBenchParams):
     java: Path = Path("java")
     renaissance: Path = Path("renaissance-gpl-0.16.1.jar")

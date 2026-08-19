@@ -23,7 +23,6 @@ from bench import (
 )
 
 
-@dataclass(frozen=True)
 class RcpParams(SharedBenchParams):
     RSH_HOME: Path  # path to RSH client
     R_HOME: Path  # R installation root

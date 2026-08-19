@@ -294,7 +294,6 @@ def _trivial(suite_name: str, bench_name: str = "b"):
     )
 
 
-@dataclass(frozen=True)
 class _Params(SharedBenchParams):
     label: str = "x"
 

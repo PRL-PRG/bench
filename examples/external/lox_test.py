@@ -113,7 +113,6 @@ class LoxTestSummary(Reporter):
 # ----------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
 class TestParams(SharedBenchParams):
     lox: Path  # required: lox binary
     cwd: Path = HERE

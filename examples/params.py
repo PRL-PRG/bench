@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from bench import Context, SharedBenchParams, Time, bench, bench_app, suite
 
 
-@dataclass(frozen=True)
 class Params(SharedBenchParams):
     # Inherit SharedBenchParams to keep the builtin flags (-j/--json/--include/
     # ...); a plain @dataclass would expose only the fields declared here.

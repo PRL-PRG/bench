@@ -35,7 +35,6 @@ LOCALE = {
 }
 
 
-@dataclass(frozen=True)
 class RParams(SharedBenchParams):
     Rpath: Path  # required: path to R install
     iterations: int = 15  # optional

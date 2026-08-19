@@ -23,7 +23,8 @@ import types
 import typing
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, dataclass_transform
+
 
 
 class Data:
@@ -44,8 +45,43 @@ class Data:
         return f"Data({self._data!r})"
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SharedSelectionParams:
+@dataclass_transform(
+    frozen_default=True,
+    kw_only_default=True,
+    field_specifiers=(field,),
+)
+class ParamsMeta(type):
+    """Makes every `Params` subclass a frozen, slotted, keyword-only dataclass.
+
+    A user declaring params writes a plain class body of annotated fields; the
+    `@dataclass(...)` call and its options live here, so every params class is
+    uniform. `dataclass_transform` tells type checkers the same thing, so the
+    synthesized `__init__` and the field types are checked as usual.
+    """
+
+    def __new__(
+        mcls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        /,
+        **kwargs: Any,
+    ):
+        cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+        if namespace.get("_params_dataclass_applied"):
+            return cls
+        setattr(cls, "_params_dataclass_applied", True)
+        return dataclass(frozen=True, slots=True, kw_only=True)(cls)
+
+
+class Params(metaclass=ParamsMeta):
+    """Base for a user's params class: subclass it and declare annotated fields.
+
+    Needs no `@dataclass` decorator - `ParamsMeta` applies it, frozen, slotted
+    and keyword-only."""
+
+
+class SharedSelectionParams(Params):
     """The bench selection flags (`--include`/`--exclude`). A user's params
     dataclass inherits this to opt into `--include`/`--exclude` on the CLI and
     have the default `with_filter(...)` honor them."""
@@ -68,7 +104,6 @@ class SharedSelectionParams:
     )
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class SharedBenchParams(SharedSelectionParams):
     """The bench runtime + selection flags. A user's params dataclass inherits
     this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...

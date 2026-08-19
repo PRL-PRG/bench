@@ -52,7 +52,6 @@ if (!exists("verifyResult"))
 """
 
 
-@dataclass(frozen=True)
 class RshParams(SharedBenchParams):
     Rscript: Path  # required: Rscript executable (GNU-R, PIR-LLVM, FASTR, ...)
     benchmarks_path: Path  # required: path to RBenchmarking/Benchmarks

@@ -31,7 +31,6 @@ from bench import (
 HERE = Path(__file__).resolve().parent
 
 
-@dataclass(frozen=True)
 class LoxParams(SharedBenchParams):
     lox: Path  # required: path to the lox binary
     cwd: Path = HERE  # script's base dir

@@ -30,7 +30,6 @@ from bench import (
 )
 
 
-@dataclass(frozen=True)
 class Params(SharedBenchParams):
     awfy: Path = Path("are-we-fast-yet/benchmarks/Python")
     runs: int = 10
