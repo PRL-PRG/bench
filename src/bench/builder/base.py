@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from bench.builder.context import Context
-from bench.core.invocation import SuccessFn
+from bench.core.invocation import SuccessFn, Timeout
 from bench.core.metric import (
     Metric,
 )
@@ -49,8 +49,6 @@ type BenchmarkPred = Callable[[Benchmark], bool]
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
 type Factory[T] = Callable[[Context[Any]], T]
-
-type Timeout = float | None
 
 # A matrix axis: a sequence of values for some dimension.
 type MatrixAxis = Sequence[Any]

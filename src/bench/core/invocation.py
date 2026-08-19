@@ -25,6 +25,9 @@ def to_argv(command: Any) -> tuple[Any, ...]:
     return tuple(command)
 
 
+type Timeout = float | None
+
+
 @dataclass(frozen=True, slots=True)
 class Invocation:
     """Pure description of one subprocess invocation."""
@@ -33,7 +36,7 @@ class Invocation:
     cwd: Path
     env: Mapping[str, str] = dataclasses.field(default_factory=dict[str, str])
     inherit_env: bool = False
-    timeout: float | None = None
+    timeout: Timeout = None
     stdin: bytes | None = None
     capture_output: bool = True
 
