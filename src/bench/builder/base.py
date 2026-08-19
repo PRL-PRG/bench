@@ -63,7 +63,7 @@ type MatrixAxisValues = tuple[Any, ...] | Factory[Sequence[Any]]
 
 def const[T](value: T) -> Factory[T]:
     """Wrap a static value as a constant builder."""
-    return lambda _ctx: value
+    return lambda _: value
 
 
 def merge_mapping[K, V](outer: Mapping[K, V], inner: Mapping[K, V]) -> Mapping[K, V]:

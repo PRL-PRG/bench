@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -30,23 +30,13 @@ from bench.runner.controller import Controller
 type BenchmarkFactory = Callable[[Context[Any]], list[BenchmarkBuilder]]
 
 
-def _default_cwd(ctx: Context[Any]) -> Path:
-    """Default cwd: the invoking process's cwd, read at schedule time."""
-    return Path.cwd()
-
-
-def _default_env(ctx: Context[Any]) -> Mapping[str, str]:
-    """Default env: empty."""
-    return {}
-
-
 # The inheritance root: the concrete defaults a benchmark falls back to when no
 # level (app/suite/benchmark) set a field. `command` has no sensible default and
 # is checked at materialize. Folded in via `overlay` as the weakest layer.
 DEFAULTS = BuilderBase(
     command=None,
-    cwd=_default_cwd,
-    env=_default_env,
+    cwd=lambda _: Path.cwd(),
+    env=const({}),
     timeout=const(None),
     metrics=(),
     success=const(default_success),

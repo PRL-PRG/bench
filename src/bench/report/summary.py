@@ -131,7 +131,17 @@ def summarize(report: Report) -> list[Stat]:
     out: list[Stat] = []
     for (suite, benchmark, variant), a in accs.items():
         for mk, values in a.values.items():
-            out.append(_stat(suite, benchmark, variant, a, mk, values, dir.get(mk, "uncomparable")))
+            out.append(
+                _stat(
+                    suite,
+                    benchmark,
+                    variant,
+                    a,
+                    mk,
+                    values,
+                    dir.get(mk, "uncomparable"),
+                )
+            )
     return out
 
 

@@ -111,7 +111,9 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
                 continue
             raise
 
+
 type Command = Sequence[str]
+
 
 def _resolve_command(command: Command) -> Command:
     """Resolve `argv[0]` against PATH to an absolute path.

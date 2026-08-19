@@ -331,7 +331,11 @@ class RUsage(BuildableMetric):
     ]
 
     def __init__(
-        self, field: Field, metric: str, unit: str = "", direction: Direction = "uncomparable"
+        self,
+        field: Field,
+        metric: str,
+        unit: str = "",
+        direction: Direction = "uncomparable",
     ) -> None:
         super().__init__(metric, unit, direction)
         self.field = field
