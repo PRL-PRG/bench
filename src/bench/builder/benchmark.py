@@ -40,11 +40,8 @@ from bench.core.metric import (
 from bench.core.outlier import ModifiedZScore, OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.builder.base import (
-    Factory,
     BuilderBase,
     LabelFn,
-    as_build,
-    const,
     merge_mapping,
 )
 from bench.builder.context import Context, Data
@@ -57,6 +54,7 @@ def default_label(b: Benchmark) -> str:
     """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
     return format_variant(b.variant).strip(" ()")
 
+
 @dataclass(frozen=True, slots=True)
 class BenchmarkBuilder(BuilderBase):
     """A benchmark *spec*: a builder-style API configuring a workload that
@@ -68,10 +66,9 @@ class BenchmarkBuilder(BuilderBase):
     """
 
     name: str = ""
-    stdin: Factory[bytes | None] = const(None)  # None = no stdin (never inherited)
     data: Mapping[str, Any] = dataclasses.field(default_factory=dict[str, Any])
 
-    # ----- with_* setters (shared ones live on BuilderBase) -----------
+    # ----- with_* setters -----------
 
     def with_data(self, **data: Any) -> BenchmarkBuilder:
         """Attach static key/value data, readable as `ctx.data.<key>` (and `b.<key>`).
@@ -84,15 +81,6 @@ class BenchmarkBuilder(BuilderBase):
             data,
             override=False,
             merge=merge_mapping,
-        )
-
-    def with_stdin(
-        self, data: bytes | str | Factory[bytes], override: bool = False
-    ) -> BenchmarkBuilder:
-        return self.replace(
-            "stdin",
-            as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
-            override=override,
         )
 
     # ----- creation ----------------------------------------------------
@@ -154,7 +142,9 @@ class BenchmarkBuilder(BuilderBase):
             env = self.env(ctx)
 
         if self.command is None:
-            raise ValueError(f"Benchmark f{self.name} (suite {suite}) is missing a command!")
+            raise ValueError(
+                f"Benchmark f{self.name} (suite {suite}) is missing a command!"
+            )
         command = tuple(map(os.fsdecode, self.command(ctx)))
 
         if self.cwd is None:
@@ -167,12 +157,17 @@ class BenchmarkBuilder(BuilderBase):
         else:
             timeout = self.timeout(ctx)
 
+        if self.stdin is None:
+            stdin = None
+        else:
+            stdin = self.stdin(ctx)
+
         invocation = Invocation(
             command=command,
             cwd=cwd,
             env=env,
             timeout=timeout,
-            stdin=self.stdin(ctx),
+            stdin=stdin,
         )
 
         metrics = [m(ctx) for m in self.metrics]

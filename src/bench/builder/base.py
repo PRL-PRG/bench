@@ -134,6 +134,7 @@ class BuilderBase:
     command: Factory[UnresolvedCommand] | None = None
     cwd: Factory[Path] | None = None
     env: Factory[Env] | None = None
+    stdin: Factory[bytes | None] | None = None   # None = no stdin (never inherited)
     timeout: Factory[Timeout] | None = None
     metrics: Sequence[Factory[Metric]] = ()
     success: Factory[SuccessFn] | None = None
@@ -208,6 +209,15 @@ class BuilderBase:
             as_build(env, dict),
             override=override,
             merge=merge_factory(merge_mapping),
+        )
+
+    def with_stdin(
+        self, data: bytes | str | Factory[bytes], override: bool = False
+    ) -> Self:
+        return self.replace(
+            "stdin",
+            as_build(data, lambda d: d.encode() if isinstance(d, str) else d),
+            override=override,
         )
 
     def with_timeout(
