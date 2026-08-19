@@ -139,7 +139,7 @@ class BuilderBase:
     cwd: Factory[Path] | None = None
     env: Factory[Env] | None = None
     timeout: Factory[Timeout] | None = None
-    metrics: Factory[Sequence[Metric]] | None = None
+    metrics: Sequence[Factory[Metric]] = ()
     success: Factory[SuccessFn] | None = None
     warmup: Factory[StoppingPolicy] | None = None
     runs: Factory[StoppingPolicy] | None = None

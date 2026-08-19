@@ -169,10 +169,7 @@ class BenchmarkBuilder(BuilderBase):
             stdin=self.stdin(ctx),
         )
 
-        if self.metrics is None:
-            raise ValueError()
-
-        metrics = self.metrics(ctx)
+        metrics = [m(ctx) for m in self.metrics]
 
         if self.success is None:
             raise ValueError()
