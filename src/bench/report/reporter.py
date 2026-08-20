@@ -356,6 +356,7 @@ class _TUI:
             TimeElapsedColumn(),
             console=console,
         )
+        self.overall_task = None
         self.task_progress = RichProgress(
             # TODO: Split on a new line
             TextColumn("[bold]Running:[/bold] {task.fields[benchmark_name]}"),
@@ -463,6 +464,7 @@ class ProgressReporter(Reporter):
         self._local.reset(total, task_id)
 
     def execution_done(self, execution: Execution) -> None:
+        self._local.n += 1
         if self._tui is None:
             self._print_plain(execution)
             return
@@ -491,14 +493,14 @@ class ProgressReporter(Reporter):
                 )
                 self._tui.overall_progress.advance(self._tui.overall_task)
 
-            self._console.print(self._summary_line(b, name, executions))
+            self._console.print(self._summary_line(name, executions))
 
     def finalize(self, report: Report) -> None:
         if self._tui is not None:
             self._tui.live.stop()
 
     @staticmethod
-    def _summary_line(b: Benchmark, name: str, executions: list[Execution]) -> str:
+    def _summary_line(name: str, executions: list[Execution]) -> str:
         from bench.report.summary import stat_line, summarize
 
         stats = summarize(Report(executions=list(executions)))
