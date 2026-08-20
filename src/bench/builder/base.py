@@ -332,11 +332,7 @@ class BuilderBase:
             raise ValueError("At least one predicate should be defined")
 
         def rule(b: Benchmark) -> bool:
-            for k, v in kwargs.items():
-                if k not in b.data or b.data[k] != v:
-                    return False
-
-            return True
+            return any(k not in b.data or b.data[k] != v for k, v in kwargs.items())
 
         return self.replace(
             "filters",
