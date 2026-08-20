@@ -187,7 +187,6 @@ class CsvReporter(_EnvironmentAware, Reporter):
             w.writeheader()
 
             for e in report.executions:
-                variant_map = e.variant.as_dict()
                 base: dict[str, Any] = {
                     "suite": e.suite,
                     "benchmark": e.benchmark,
@@ -195,7 +194,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
                     "failure": e.failure or "",
                 }
                 for k in variant_cols:
-                    base[k] = variant_map.get(k, "")
+                    base[k] = e.variant.get(k, "")
 
                 w.writerow(
                     base
@@ -216,7 +215,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
                             if sample.iteration is not None
                             else "",
                             "metric": sample.metric,
-                            "value": sample.unit,
+                            "value": sample.value,
                             "unit": sample.unit,
                             "lower_is_better": True
                             if sample.direction == "lower better"
@@ -224,6 +223,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
                             if sample.direction == "higher better"
                             else "",
                         }
+                        | {name: sample.extra.get(name, "") for name in samples_extra}
                     )
 
 
