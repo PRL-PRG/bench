@@ -199,7 +199,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
                 w.writerow(
                     base
                     | {
-                        "metric": "runtime",
+                        "metric": "elapsed",
                         "value": str(e.runtime),
                         "unit": "s",
                     }
