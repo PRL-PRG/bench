@@ -113,9 +113,14 @@ class Variant:
             tuple((k, Variant._stringify_value(v)) for k, v in mapping.items())
         )
 
+    def __getitem__(self, dim: str, /) -> str:
+        for k, v in self.pairs:
+            if k == dim:
+                return v
+
+        raise KeyError(dim)
+
     def get(self, dim: str, default: str | None = None) -> str | None:
-        # A plain scan, not a generator: a variant carries a handful of
-        # dimensions, so the generator frame costs more than the comparisons.
         for k, v in self.pairs:
             if k == dim:
                 return v
