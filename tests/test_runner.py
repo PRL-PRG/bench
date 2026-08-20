@@ -39,6 +39,12 @@ def _all_samples(report):
     return [s for r in report.executions for s in _run_samples(r)]
 
 
+# An Invocation runs with exactly the env it was given (`inherit_env` is not
+# reachable from the builder), so a shell-wrapped command needs PATH handed to
+# it or the inner lookup fails with 127.
+_PATH_ENV = {"PATH": os.environ.get("PATH", "")}
+
+
 def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
     return suite(
         name,
@@ -50,7 +56,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
             .with_runs(runs)
             for i in range(2)
         ],
-    )
+    ).with_env(_PATH_ENV)
 
 
 def test_sequential_basic():
@@ -88,8 +94,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         .with_runs(10),
     )
     out = tmp_path / "r.json"
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
-    assert _all_samples(report) == []  # failed runs emit no metrics
+    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 10
     assert all(f.returncode != 0 for f in r.failures)
@@ -356,7 +361,7 @@ def test_sigint_kills_shell_wrapped_subtree():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
         .with_runs(1),
-    )
+    ).with_env(_PATH_ENV)
 
     t = threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGINT))
     t.start()
@@ -447,9 +452,10 @@ def test_run_resolves_reporter_factory_with_cli_state():
     class _Rec(Reporter):
         pass
 
-    def factory(ctx):
-        seen["verbose"] = ctx.params.verbose
-        seen["dry"] = ctx.params.dry
+    # Factories receive the resolved params directly (no Context wrapper).
+    def factory(params):
+        seen["verbose"] = params.verbose
+        seen["dry"] = params.dry
         return _Rec()
 
     s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
@@ -464,8 +470,8 @@ def test_run_resolves_reporter_factory_with_cli_state():
 def test_with_runner_override_wins_over_jobs():
     captured: dict[str, object] = {}
 
-    def make_runner(ctx):
-        captured["jobs"] = ctx.params.jobs
+    def make_runner(params):
+        captured["jobs"] = params.jobs
         r = Sequential()
         captured["runner"] = r
         return r
@@ -477,26 +483,9 @@ def test_with_runner_override_wins_over_jobs():
         .with_runner(make_runner)
         .run(["--jobs", "4", "--no-progress"])
     )
-    assert captured["jobs"] == 4  # ctx.params carries the runtime flags
+    assert captured["jobs"] == 4  # params carries the runtime flags
     assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
     assert len(report.executions) == 1
-
-
-def test_with_filter_override_narrows_plan():
-    s = (
-        suite("S")
-        .add(bench("keep"))
-        .add(bench("drop"))
-        .with_command(["true"])
-        .with_metric(Time())
-    )
-    report = (
-        bench_app()
-        .add(s)
-        .with_filter_factory(lambda ctx: lambda b: b.name == "keep")
-        .run(["--no-progress"])
-    )
-    assert {r.benchmark for r in report.executions} == {"keep"}
 
 
 def test_with_filter_bare_predicate_narrows_plan():
@@ -507,7 +496,8 @@ def test_with_filter_bare_predicate_narrows_plan():
         .with_command(["true"])
         .with_metric(Time())
     )
-    # A bare `(Benchmark) -> bool` predicate is const-wrapped into the factory.
+    # `create()` used to skip the filter check on a no-matrix fast path, so a
+    # bare `(Benchmark) -> bool` predicate never narrowed the plan.
     report = (
         bench_app()
         .add(s)

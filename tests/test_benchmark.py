@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from bench import FixedRuns, FloatPerLine, bench, suite
-from bench.builder.base import UNSET
 from bench.core.metric import StderrMetricSource, StdoutMetricSource
 
 
@@ -25,10 +24,11 @@ def _base():
 
 
 def test_runs_sugar_equivalent_to_fixed_runs():
-    # `.runs` is stored as a builder now, so compare the resolved values.
+    # `.runs` is stored as a builder now, and policies compare by identity, so
+    # compare the resolved bound instead of the policy objects.
     a = _mat(_base().with_runs(3))
     b = _mat(_base().with_runs(FixedRuns(3)))
-    assert a.runs == b.runs == FixedRuns(3)
+    assert a.runs.max_runs() == b.runs.max_runs() == 3
 
 
 def test_materialize_stamps_identity():
@@ -38,7 +38,7 @@ def test_materialize_stamps_identity():
 
 
 def test_missing_command_raises_on_materialize():
-    with pytest.raises(ValueError, match="no command"):
+    with pytest.raises(ValueError, match="missing a command"):
         suite("S", bench("x")).materialize(None)
 
 
@@ -50,26 +50,11 @@ def test_bench_kwargs_attach_to_data():
 
 def test_policy_defaults_resolve_via_suite():
     b = bench("x")
-    assert b.warmup is UNSET and b.runs is UNSET
+    # An unconfigured field is `None`; the resolver substitutes the default.
+    assert b.warmup is None and b.runs is None
     m = _mat(b.with_command(["true"]))
-    assert m.warmup == FixedRuns(0)
-    assert m.runs == FixedRuns(1)
-
-
-def test_unresolved_cwd_raises_on_create():
-    # never materialized: command set but cwd/env still UNSET
-    b = bench("x").with_command(["true"])
-    with pytest.raises(RuntimeError, match="unset"):
-        list(b.create(None, suite="s"))
-
-
-def test_unset_raises_on_any_use():
-    with pytest.raises(RuntimeError, match="unset"):
-        UNSET(None)  # calling (command/env/label fns)
-    with pytest.raises(RuntimeError, match="unset"):
-        UNSET.start()  # attribute access (policies)
-    with pytest.raises(RuntimeError, match="unset"):
-        bool(UNSET)  # truth-testing (harness flag)
+    assert isinstance(m.warmup, FixedRuns) and m.warmup.max_runs() == 0
+    assert isinstance(m.runs, FixedRuns) and m.runs.max_runs() == 1
 
 
 def test_with_stdin_str_is_encoded():
@@ -121,12 +106,15 @@ def test_add_metric_appends_with_source():
     assert len(b.metrics) == 2
 
 
-def test_with_matrix_replaces_dimensions():
+def test_with_matrix_accumulates_dimensions():
+    # `with_matrix` merges across calls rather than replacing.
     b = bench("x").with_matrix(a=[1]).with_matrix(b=[2])
-    assert list(b.matrix) == ["b"]
+    assert sorted(b.matrix) == ["a", "b"]
 
 
 def test_add_matrix_skip_unions_rules_on_one_benchmark():
+    # Multiple skips compose as OR: each drops the cell matching all of its own
+    # kwargs.
     b = (
         bench("x")
         .with_command(["true"])
@@ -192,13 +180,13 @@ def test_matrix_axis_callable_sees_benchmark_name():
     assert {x.data["tag"] for x in bs} == {"x"}
 
 
-def test_add_matrix_accepts_callable_axis():
+def test_with_matrix_accepts_callable_axis():
     b = (
         bench("x")
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_matrix(size=[100])
-        .add_matrix(vm=lambda ctx: ["clox", "jlox"])
+        .with_matrix(vm=lambda ctx: ["clox", "jlox"])
     )
     bs = suite("S", b).materialize(None)
     assert {(x.data["vm"], x.data["size"]) for x in bs} == {

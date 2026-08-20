@@ -17,6 +17,8 @@ from bench import (
     Summary,
     SummaryReporter,
 )
+from bench.core.invocation import Variant
+from bench.core.results import Direction
 from bench.report.summary import Stat, summarize
 from bench.report.theme import BENCHR_THEME
 
@@ -25,11 +27,9 @@ def _smp(
     metric: str = "runtime",
     value: float = 0.5,
     unit: str = "s",
-    lower_is_better: bool | None = True,
+    direction: Direction = "lower better",
 ) -> Sample:
-    return Sample(
-        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better
-    )
+    return Sample(metric=metric, value=value, unit=unit, direction=direction)
 
 
 def _ok(
@@ -45,8 +45,9 @@ def _ok(
     return Execution(
         suite=suite,
         benchmark=bench,
-        variant=variant,
+        variant=Variant(tuple(variant)),
         run=run,
+        runtime=0.5,
         command=("x",),
         variant_label=variant_label,
         iterations=[Iteration(samples=list(samples) if samples else [], warmup=warmup)],
@@ -62,7 +63,7 @@ def _vrun(
     suite: str = "S",
     metric: str = "elapsed",
     unit: str = "s",
-    lower_is_better: bool | None = True,
+    direction: Direction = "lower better",
 ) -> Execution:
     return _ok(
         run,
@@ -70,7 +71,7 @@ def _vrun(
         suite=suite,
         variant=(("k", label),),
         variant_label=label,
-        samples=[_smp(metric, value, unit=unit, lower_is_better=lower_is_better)],
+        samples=[_smp(metric, value, unit=unit, direction=direction)],
     )
 
 
@@ -121,7 +122,7 @@ def test_results_warns_on_outliers():
                         "runtime",
                         100.0,
                         unit="s",
-                        lower_is_better=True,
+                        direction="lower better",
                         extra={"outlier": True},
                     )
                 ],
@@ -206,7 +207,7 @@ def test_ranking_uses_better_worse_for_higher_is_better():
                 label="fast",
                 metric="throughput",
                 unit="iter/s",
-                lower_is_better=False,
+                direction="higher better",
             )
         )
         runs.append(
@@ -216,7 +217,7 @@ def test_ranking_uses_better_worse_for_higher_is_better():
                 label="slow",
                 metric="throughput",
                 unit="iter/s",
-                lower_is_better=False,
+                direction="higher better",
             )
         )
     out = _strip(Summary()(_data(Report(executions=runs))))
@@ -268,9 +269,7 @@ def test_summary_reporter_renders_composed_formatter():
         Results() & GeomeanSummary(axis="interp", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    for run in _axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}).executions:
-        rep.execution_done(run)
-    rep.finalize()
+    rep.finalize(_axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}))
     out = buf.getvalue()
     assert "S/x" in out  # Results
     assert "Summary (geomean) - interp" in out  # GeomeanSummary

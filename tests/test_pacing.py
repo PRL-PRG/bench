@@ -21,6 +21,7 @@ def test_cooldown_benchmark_overrides_suite():
         0.5
     )
     [bm] = s.materialize(None)
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
     assert bm.cooldown == 0.1
 
 

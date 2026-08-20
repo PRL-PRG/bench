@@ -14,6 +14,7 @@ from bench import (
     from_files,
     suite,
 )
+from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
 
 
@@ -30,13 +31,14 @@ def _mat(s):
 
 def test_runs_propagates():
     s = suite("S", _b("a"), _b("b")).with_command(["true"]).with_runs(7)
-    assert all(b.runs == FixedRuns(7) for b in _mat(s))
+    assert all(b.runs.max_runs() == 7 for b in _mat(s))
 
 
 def test_runs_preserves_benchmark_override():
     a = _b("a").with_runs(FixedRuns(5))
     s = suite("S", a, _b("b")).with_command(["true"]).with_runs(10)
-    assert [b.runs for b in _mat(s)] == [FixedRuns(5), FixedRuns(10)]
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
+    assert [b.runs.max_runs() for b in _mat(s)] == [5, 10]
 
 
 # ----- suite defaults accept (ctx) -> value builders ----------------------
@@ -49,7 +51,7 @@ def test_with_runs_accepts_ctx_callable():
         .with_runs(lambda ctx: FixedRuns(ctx.params.n))
     )
     b = s.materialize(SimpleNamespace(n=4))[0]
-    assert b.runs == FixedRuns(4)
+    assert b.runs.max_runs() == 4
 
 
 def test_with_warmup_accepts_ctx_callable():
@@ -59,7 +61,7 @@ def test_with_warmup_accepts_ctx_callable():
         .with_warmup(lambda ctx: FixedRuns(ctx.params.w))
     )
     b = s.materialize(SimpleNamespace(w=2))[0]
-    assert b.warmup == FixedRuns(2)
+    assert b.warmup.max_runs() == 2
 
 
 def test_with_timeout_accepts_ctx_callable():
@@ -73,8 +75,9 @@ def test_with_timeout_accepts_ctx_callable():
 
 
 def test_with_metric_accepts_ctx_callable():
+    # A metric factory resolves to one metric, not a tuple of them.
     m = FloatPerLine(StdoutMetricSource, "runtime", unit="s")
-    s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: (m,))
+    s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: m)
     b = s.materialize(None)[0]
     assert list(b.metrics) == [m]
 
@@ -86,10 +89,8 @@ def test_suite_callable_runs_still_loses_to_benchmark_override():
         .with_command(["true"])
         .with_runs(lambda ctx: FixedRuns(ctx.params.n))
     )
-    assert [b.runs for b in s.materialize(SimpleNamespace(n=9))] == [
-        FixedRuns(5),
-        FixedRuns(9),
-    ]
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
+    assert [b.runs.max_runs() for b in s.materialize(SimpleNamespace(n=9))] == [5, 9]
 
 
 def test_with_command_propagates_when_unset():
@@ -106,14 +107,19 @@ def test_with_command_order_independent():
 
 
 def test_defaults_reach_factory_benchmarks():
-    s = suite("S").with_command(["true"]).with_runs(4).generator(lambda ctx: [bench("f")])
+    s = (
+        suite("S")
+        .with_command(["true"])
+        .with_runs(4)
+        .generator(lambda ctx: [bench("f")])
+    )
     b = _mat(s)[0]
-    assert b.runs == FixedRuns(4)
+    assert b.runs.max_runs() == 4
     assert b.invocation.command == ("true",)
 
 
 def test_materialize_missing_command_fails_fast():
-    with pytest.raises(ValueError, match="no command"):
+    with pytest.raises(ValueError, match="missing a command"):
         suite("S", _b("a")).materialize(None)
 
 
@@ -122,7 +128,7 @@ def test_with_env_merges():
     s = suite("S", a).with_env({"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
     env = b.invocation.env
-    # benchmark wins for Y
+    # RED ON PURPOSE: BUG-13 - the benchmark should win for Y, the suite does.
     assert env["X"] == "1" and env["Y"] == "from_b" and env["Z"] == "1"
 
 
@@ -134,19 +140,27 @@ def test_env_merge_both_callable():
     )
     s = suite("S", a).with_env(lambda ctx: {"Y": "from_s", "Z": "1"})
     b = _mat(s)[0]
+    # RED ON PURPOSE: BUG-13 - the benchmark should win for Y, the suite does.
     assert b.invocation.env == {"X": "a", "Y": "from_b", "Z": "1"}
+
+
+def test_benchmark_env_without_suite_env_materializes():
+    a = _b("a").with_command(["true"]).with_env({"X": "1"})
+    assert _mat(suite("S", a))[0].invocation.env == {"X": "1"}
 
 
 def test_suite_warmup_respects_explicit_zero():
     b = bench("x").with_warmup(0)
     s = suite("s", b).with_command(["true"]).with_warmup(3)
-    assert _mat(s)[0].warmup == FixedRuns(0)
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the explicit 0.
+    assert _mat(s)[0].warmup.max_runs() == 0
 
 
 def test_suite_measure_respects_explicit_one():
     b = bench("x").with_runs(1)
     s = suite("s", b).with_command(["true"]).with_runs(9)
-    assert _mat(s)[0].runs == FixedRuns(1)
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the explicit 1.
+    assert _mat(s)[0].runs.max_runs() == 1
 
 
 def test_suite_with_success_propagates_and_respects_override():
@@ -158,6 +172,7 @@ def test_suite_with_success_propagates_and_respects_override():
         .with_success(suite_fn)
     )
     resolved = _mat(s)
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
     assert resolved[0].success is suite_fn
     assert resolved[1].success is bench_fn
 
@@ -171,6 +186,7 @@ def test_suite_with_label_propagates_and_respects_override():
         .with_label(suite_label)
     )
     resolved = _mat(s)
+    # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
     assert resolved[0].variant_label == "suite"
     assert resolved[1].variant_label == "bench"
 
@@ -180,16 +196,29 @@ def test_suite_with_label_propagates_and_respects_override():
 
 def test_filter():
     # Deferred: applies after expansion (per-variant) and is order-independent
-    # (added before the benchmark it filters).
+    # (added before the benchmark it filters). A filter KEEPS what it matches.
     s = (
         suite("S")
-        .filter(lambda b: b.data["size"] != 500)
+        .with_filter(lambda b: b.data["size"] != 500)
         .add(_b("c").with_matrix(size=[100, 500]))
         .with_command(["true"])
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
     assert sorted(b.data["size"] for b in _mat(s)) == [100]
+
+
+def test_filter_without_matrix_drops_variant():
+    s = (
+        suite("S")
+        .add(_b("keep"))
+        .add(_b("drop"))
+        .with_filter(lambda b: b.name == "keep")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+    )
+    assert [b.name for b in _mat(s)] == ["keep"]
 
 
 def test_from_files(tmp_path: Path):
@@ -253,7 +282,10 @@ def test_with_matrix_expands_and_stamps_variant():
     assert len(benchmarks) == 2
     assert sorted(b.data["opt"] for b in benchmarks) == ["O0", "O2"]
     # The variant is stamped on the resolved benchmark.
-    assert benchmarks[0].variant == (("opt", "O0"),)
+    assert {b.variant for b in benchmarks} == {
+        Variant.of({"opt": "O0"}),
+        Variant.of({"opt": "O2"}),
+    }
 
 
 def test_suite_with_matrix_applies_to_all_benchmarks():
@@ -278,7 +310,8 @@ def test_suite_dimensions_append_after_benchmark_dimensions():
     )
     bs = _mat(s)
     assert len(bs) == 4
-    # Benchmark dimensions expand first, suite dimensions after (stamped in that order).
+    # RED ON PURPOSE: BUG-13 - the same inverted inheritance puts the suite's
+    # dimensions before the benchmark's.
     assert [k for k in bs[0].data if not k.startswith("_")] == ["size", "vm"]
 
 
@@ -286,7 +319,7 @@ def test_suite_dimension_collision_with_benchmark_dimension_raises():
     s = suite("M", _b("a").with_command(["true"]).with_matrix(vm=["a"])).with_matrix(
         vm=["b"]
     )
-    with pytest.raises(ValueError, match="already declared"):
+    with pytest.raises(ValueError, match="Duplicate matrix axis"):
         s.materialize(None)
 
 
@@ -303,18 +336,21 @@ def test_with_skip_kwargs_drops_variant():
         .with_metric(Time())
     )
     bs = list(s.materialize(None))
+    # The skip drops the one cell matching all its kwargs, nothing else.
     assert len(bs) == 3
     assert ("v8", 500) not in {(b.data["vm"], b.data["size"]) for b in bs}
 
 
-def test_with_skip_predicate_drops_variant():
+def test_with_filter_predicate_keeps_matching_variants():
+    # `add_matrix_skip` is kwargs-only now; a predicate goes through
+    # `with_filter`, which KEEPS (rather than drops) what it matches.
     s = (
         suite(
             "M",
             _b("c")
             .with_command(lambda ctx: ["x", ctx.data.vm, str(ctx.data.size)])
             .with_matrix(vm=["v8", "jsc"], size=[100, 500])
-            .add_matrix_skip(lambda b: b.data["vm"] != "jsc"),
+            .with_filter(lambda b: b.data["vm"] == "jsc"),
         )
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
@@ -333,6 +369,7 @@ def test_suite_skip_unions_with_benchmark_skip():
         .add_matrix_skip(vm="v8", size=500),
     ).add_matrix_skip(vm="jsc", size=100)
     bs = _mat(s)
+    # A suite skip and a benchmark skip union: each drops its own cell.
     assert {(b.data["vm"], b.data["size"]) for b in bs} == {("v8", 100), ("jsc", 500)}
 
 
@@ -365,7 +402,10 @@ def test_command_via_matrix_builder():
         .with_metric(Time())
     )
     bs = list(s.materialize(None))
-    assert sorted(b.invocation.command for b in bs) == [("echo", "a"), ("echo", "b")]
+    assert sorted(tuple(b.invocation.command) for b in bs) == [
+        ("echo", "a"),
+        ("echo", "b"),
+    ]
 
 
 # ----- CLI state reaches builder contexts ---------------------------------

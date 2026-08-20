@@ -19,7 +19,8 @@ def _run() -> Execution:
     return Execution(
         suite="s",
         benchmark="b",
-        iterations=[Iteration(samples=[Sample("elapsed", 1.0, "s")])],
+        runtime=1.0,
+        iterations=[Iteration(samples=[Sample("elapsed", 1.0, "s", iteration=0)])],
     )
 
 
@@ -46,8 +47,7 @@ def test_json_reporter_embeds_environment(tmp_path: Path):
     r = JsonReporter(
         tmp_path / "o.json", environment=env, diagnostics=[Diagnostic("warn", "m", "f")]
     )
-    r.execution_done(_run())
-    r.finalize()
+    r.finalize(Report(executions=[_run()]))
     data = json.loads((tmp_path / "o.json").read_text())
     assert data["environment"]["cpu_model"] == "X"
     assert data["diagnostics"][0]["message"] == "m"
@@ -56,8 +56,7 @@ def test_json_reporter_embeds_environment(tmp_path: Path):
 def test_csv_reporter_writes_environment_comments(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
     r = CsvReporter(tmp_path / "o.csv", environment=env)
-    r.execution_done(_run())
-    r.finalize()
+    r.finalize(Report(executions=[_run()]))
     text = (tmp_path / "o.csv").read_text()
     assert text.splitlines()[0].startswith("#")
     assert "# cpu_model: X" in text
@@ -69,7 +68,7 @@ def test_dir_reporter_writes_environment_json(tmp_path: Path):
     r = DirReporter(tmp_path, environment=env)
     r.start([])
     r.execution_done(_run())
-    r.finalize()
+    r.finalize(Report(executions=[_run()]))
     data = json.loads((tmp_path / "environment.json").read_text())
     assert data["environment"]["cpu_model"] == "X"
 
@@ -77,5 +76,5 @@ def test_dir_reporter_writes_environment_json(tmp_path: Path):
 def test_dir_reporter_without_environment_writes_no_file(tmp_path: Path):
     r = DirReporter(tmp_path)
     r.start([])
-    r.finalize()
+    r.finalize(Report())
     assert not (tmp_path / "environment.json").exists()

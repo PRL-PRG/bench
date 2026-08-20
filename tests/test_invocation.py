@@ -4,13 +4,15 @@ import time
 from pathlib import Path
 
 from bench import Invocation
-from bench.core.invocation import format_identifier
+from bench.core.invocation import Variant, format_identifier
 from bench.core.process import spawn_streaming
 
 
 def test_format_identifier():
-    s = format_identifier("S", "B", (("opt", "O2"), ("cc", "gcc")), 3)
-    assert s == "S/B (opt=O2, cc=gcc) #3"
+    # A Variant canonicalizes its pairs by sorting on the dimension name, so the
+    # rendered order is `cc` before `opt` regardless of declaration order.
+    s = format_identifier("S", "B", Variant((("opt", "O2"), ("cc", "gcc"))), 3)
+    assert s == "S/B (cc=gcc, opt=O2) #3"
 
 
 def test_spawn_streaming_writes_incrementally_then_finishes():

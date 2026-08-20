@@ -7,6 +7,8 @@ import math
 import re
 
 from bench import Iteration, Report, Execution, Sample
+from bench.core.invocation import Variant
+from bench.core.results import Direction
 from bench.report.render import RICH
 from bench.report.summary import (
     by_axis,
@@ -30,11 +32,9 @@ def _strip(lines: list[str]) -> str:
 
 
 def _smp(
-    metric: str, value: float, *, unit: str = "s", lower_is_better: bool | None = True
+    metric: str, value: float, *, unit: str = "s", direction: Direction = "lower better"
 ) -> Sample:
-    return Sample(
-        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better
-    )
+    return Sample(metric=metric, value=value, unit=unit, direction=direction)
 
 
 def _run(
@@ -52,8 +52,9 @@ def _run(
     return Execution(
         suite=suite,
         benchmark=bench,
-        variant=variant,
+        variant=Variant(tuple(variant)),
         run=run,
+        runtime=0.5,
         command=("x",),
         failure=failure,
         iterations=[it],
@@ -62,14 +63,17 @@ def _run(
 
 
 def _fail(run: int, *, warmup: bool = False) -> Execution:
+    # `Iteration` no longer carries a failure - the Execution does, and a failed
+    # run yields no iterations at all.
     return Execution(
         suite="S",
         benchmark="b",
         run=run,
+        runtime=0.0,
         command=("x",),
         returncode=7,
         failure="boom",
-        iterations=[Iteration(failure="boom", warmup=warmup)],
+        iterations=[Iteration(warmup=True)] if warmup else [],
     )
 
 
@@ -100,6 +104,7 @@ def test_summarize_process_samples_not_counted_as_runs():
                 suite="S",
                 benchmark="b",
                 run=1,
+                runtime=0.5,
                 command=("x",),
                 iterations=[
                     Iteration(samples=[_smp("runtime", 1.0)]),
@@ -123,6 +128,7 @@ def test_summarize_process_only_counts_once():
                 suite="S",
                 benchmark="b",
                 run=1,
+                runtime=0.5,
                 command=("x",),
                 iterations=[],
                 process_samples=[_smp("max_rss", 1024.0, unit="kB")],
@@ -173,7 +179,7 @@ def test_summarize_outliers_stay_in_stats_but_are_counted():
                         "runtime",
                         100.0,
                         unit="s",
-                        lower_is_better=True,
+                        direction="lower better",
                         extra={"outlier": True},
                     )
                 ],
@@ -209,10 +215,10 @@ def test_stat_single_value_zero_stdev():
 # ----- math ------------------------------------------------------------------
 
 
-def _stat(values: list[float], *, lower_is_better: bool | None = True):
+def _stat(values: list[float], *, direction: Direction = "lower better"):
     r = Report(
         executions=[
-            _run(i + 1, samples=[_smp("rt", v, lower_is_better=lower_is_better)])
+            _run(i + 1, samples=[_smp("rt", v, direction=direction)])
             for i, v in enumerate(values)
         ]
     )
@@ -226,7 +232,8 @@ def test_ratio_lower_is_better_speedup():
 
 def test_ratio_higher_is_better():
     out = ratio(
-        _stat([100.0], lower_is_better=False), _stat([200.0], lower_is_better=False)
+        _stat([100.0], direction="higher better"),
+        _stat([200.0], direction="higher better"),
     )
     assert out is not None and abs(out[0] - 2.0) < 1e-9
 
@@ -375,7 +382,7 @@ def test_merge_reports_tags_each_run_with_compare_axis():
     b = Report(executions=[_run(1, bench="fib", samples=[_smp("elapsed", 1.0)])])
     merged = merge_reports([("a", a), ("b", b)])
     assert len(merged.executions) == 2
-    assert {dict(run.variant)["compare"] for run in merged.executions} == {"a", "b"}
+    assert {run.variant.as_dict()["compare"] for run in merged.executions} == {"a", "b"}
     # Summarized over the compare axis, the two files rank against each other.
     out = _strip(by_axis(summarize(merged), "compare", RICH, metrics={"elapsed"}))
     assert "Summary (geomean) - compare - S" in out
@@ -418,6 +425,7 @@ def test_stat_line_matches_summary_format():
                 suite="S",
                 benchmark="b",
                 run=i,
+                runtime=float(i),
                 iterations=[Iteration(samples=[Sample("elapsed", float(i), unit="s")])],
             )
             for i in (1, 2, 3)

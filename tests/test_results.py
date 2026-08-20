@@ -1,23 +1,33 @@
-"""Sample, Observation, Execution, Report, and JSON round-trip."""
+"""Sample, Iteration, Execution, Report, and JSON round-trip."""
 
 from typing import Any
 
 from bench import Iteration, Report, Execution, Sample, report_from_json, report_to_json
+from bench.core.invocation import Variant
+from bench.core.results import Direction
 
 
-def _smp(metric="runtime", value=1.5, unit="s", lower_is_better=True) -> Sample:
+def _smp(
+    metric: str = "runtime",
+    value: float = 1.5,
+    unit: str = "s",
+    direction: Direction = "lower better",
+    iteration: int | None = None,
+) -> Sample:
     return Sample(
-        metric=metric, value=value, unit=unit, lower_is_better=lower_is_better
+        metric=metric, value=value, unit=unit, direction=direction, iteration=iteration
     )
 
 
-def _it(
-    *samples: Sample, failure: str | None = None, warmup: bool = False
-) -> Iteration:
-    return Iteration(samples=list(samples), failure=failure, warmup=warmup)
+def _it(*samples: Sample, warmup: bool = False) -> Iteration:
+    return Iteration(samples=list(samples), warmup=warmup)
 
 
-def _run(variant=(), iterations=None, **kw) -> Execution:
+def _var(**dims: str) -> Variant:
+    return Variant.of(dims)
+
+
+def _run(variant: Variant = Variant(), iterations=None, **kw: Any) -> Execution:
     base: dict[str, Any] = dict(
         suite="S",
         benchmark="B",
@@ -35,9 +45,9 @@ def _run(variant=(), iterations=None, **kw) -> Execution:
 def test_variant_keys_orders_first_seen():
     r = Report(
         executions=[
-            _run(variant=(("a", "1"),)),
-            _run(variant=(("b", "2"),)),
-            _run(variant=(("a", "3"),)),
+            _run(variant=_var(a="1")),
+            _run(variant=_var(b="2")),
+            _run(variant=_var(a="3")),
         ]
     )
     assert r.variant_keys() == ["a", "b"]
@@ -66,13 +76,14 @@ def test_json_round_trip():
             Execution(
                 suite="S",
                 benchmark="B",
-                variant=(("opt", "O2"),),
+                variant=_var(opt="O2"),
                 run=3,
+                runtime=0.2,
                 command=("./bench", "--opt"),
                 returncode=7,
                 failure="exit 7",
                 message="boom",
-                iterations=[_it(failure="exit 7")],
+                iterations=[_it()],
             ),
         ],
     )
@@ -80,6 +91,31 @@ def test_json_round_trip():
     r2 = report_from_json(text)
     assert r2.executions == r.executions  # warmup flag + process_samples survive
     assert r2.failures == r.failures
+
+
+def test_json_round_trip_keeps_sample_extra_and_iteration_index():
+    # `extra` is the free-form replacement for the old `Sample.outlier` field.
+    r = Report(
+        executions=[
+            _run(
+                iterations=[
+                    _it(Sample(metric="runtime", value=1.0, iteration=0)),
+                    _it(
+                        Sample(
+                            metric="runtime",
+                            value=99.0,
+                            iteration=1,
+                            extra={"outlier": True},
+                        )
+                    ),
+                ]
+            )
+        ]
+    )
+    back = report_from_json(report_to_json(r))
+    samples = [s for it in back.executions[0].iterations for s in it.samples]
+    assert [s.iteration for s in samples] == [0, 1]
+    assert [s.extra.get("outlier", False) for s in samples] == [False, True]
 
 
 def test_json_excludes_output_by_default():
@@ -105,7 +141,7 @@ def test_failures_are_failed_runs():
     r = Report(
         executions=[
             _run(),
-            _run(returncode=1, failure="exit 1", iterations=[_it(failure="exit 1")]),
+            _run(returncode=1, failure="exit 1"),
         ]
     )
     assert len(r.failures) == 1 and r.failures[0].returncode == 1

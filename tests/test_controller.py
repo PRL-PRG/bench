@@ -17,14 +17,11 @@ from bench.runner.controller import Controller
 
 
 class _Collect(Reporter):
-    def __init__(self):
-        self.iterations = []
-        self.labels = []
-        self.runs = []
+    """`Reporter.iteration` is gone - the controller only reports whole
+    Executions now, so that is all we collect."""
 
-    def iteration(self, it, label):
-        self.iterations.append(it)
-        self.labels.append(label)
+    def __init__(self):
+        self.runs = []
 
     def execution_done(self, execution):
         self.runs.append(execution)
@@ -46,8 +43,9 @@ class _FakeController(Controller):
             benchmark=b.name,
             variant=b.variant,
             run=run,
+            runtime=0.01,
             command=("true",),
-            iterations=[Iteration(samples=[Sample("t", value)])],
+            iterations=[Iteration(samples=[Sample("t", value, iteration=0)])],
         )
 
 
@@ -76,8 +74,7 @@ def test_records_run_per_slot(monkeypatch):
         3.0,
     ]
     assert len(rep.runs) == 3
-    assert len(rep.iterations) == 3
-    assert rep.labels[0] == "S/b #1"
+    assert rep.runs[0].identifier() == "S/b #1"
     assert ctrl.calls == 3
 
 

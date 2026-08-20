@@ -28,6 +28,13 @@ REPO = Path(__file__).resolve().parents[1]
 def _run(*args, env_extra: dict | None = None, cwd: Path | None = None):
     env = os.environ.copy()
     env["PYTHONPATH"] = str(REPO / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    # rich reads these and reports a terminal even when stdout is a pipe, which
+    # flips the CLI into the TTY progress path and wraps every string these
+    # tests grep for in ANSI escapes. Scrub them so the subprocess sees the
+    # non-TTY it actually has, whatever the caller's shell exports.
+    for var in ("FORCE_COLOR", "COLORTERM", "CLICOLOR_FORCE"):
+        env.pop(var, None)
+    env["TERM"] = "dumb"
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
@@ -229,10 +236,10 @@ def test_bench_help_describes_subcommand():
 def test_bench_no_progress_omits_progress_lines():
     r = _run("run", "--no-progress", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
-    # Plain-progress lines look like "[N|M] run/sleep 0.01 #X ok".
+    # Plain-progress lines look like "[N/M] run/sleep 0.01 #X ok".
     # With --no-progress they should not appear.
-    assert "[1|2]" not in r.stdout
-    assert "[2|2]" not in r.stdout
+    assert "[1/2]" not in r.stdout
+    assert "[2/2]" not in r.stdout
     # Summary still prints.
     assert "sleep 0.01" in r.stdout
 
@@ -241,8 +248,9 @@ def test_bench_non_tty_shows_plain_progress():
     r = _run("run", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
     # subprocess capture is a non-TTY -> Progress falls back to plain lines.
-    assert "[1|2]" in r.stdout
-    assert "[2|2]" in r.stdout
+    # The counter used to print the pre-increment value on this path.
+    assert "[1/2]" in r.stdout
+    assert "[2/2]" in r.stdout
 
 
 def test_bench_surfaces_failure_diagnostics():
@@ -357,6 +365,7 @@ def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
     runs = {r.suite: r for r in report.executions}
     assert set(runs) == {"S1", "S2"}
     assert runs["S1"].command == ("true",)  # app default filled a suite that set none
+    # RED ON PURPOSE: BUG-13 - the app default overrides the suite's command.
     assert runs["S2"].command == ("echo", "s2")  # inner-wins: suite's command survived
     assert runs["S2"].cwd == "/tmp"  # suite-only setting the app never set survives
 
@@ -449,7 +458,7 @@ def test_include_selects_single_variant():
         .add(_matrix_suite("M", "b", jdk=(11, 17)))
         .run(["--include", "jdk=17", "--no-progress"])
     )
-    assert [dict(r.variant).get("jdk") for r in report.executions] == ["17"]
+    assert [r.variant.get("jdk") for r in report.executions] == ["17"]
 
 
 def test_bad_regex_raises():

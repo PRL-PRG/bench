@@ -39,7 +39,7 @@ def make_failure(
     returncode: int = 1,
     stdout: str = "",
     stderr: str = "",
-    runtime=None,
+    runtime: float = 0.0,
     rusage=None,
     failure: str | None = None,
     **exe_kw,

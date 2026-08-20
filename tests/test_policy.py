@@ -1,9 +1,10 @@
 """Stopping policies: FixedRuns, CoV, combinators.
 
-Protocol: ``policy.start()`` returns a ``PolicyState``. ``observe(observation)``
-feeds one ``Iteration``. ``satisfied()`` reports whether the policy has
-converged (and is also valid before any observation). Execution numbering lives in
-the caller. A policy keeps its own counter if it needs one.
+Protocol: ``policy.start()`` returns a ``PolicyState``. ``observe(execution)``
+feeds one whole ``Execution`` - policies see the finished run, not individual
+iterations. ``satisfied()`` reports whether the policy has converged (and is
+also valid before any observation). Execution numbering lives in the caller. A
+policy keeps its own counter if it needs one.
 """
 
 import random
@@ -13,6 +14,7 @@ import pytest
 
 from bench import (
     CoefficientOfVariation,
+    Execution,
     FixedRuns,
     MaxDuration,
     Iteration,
@@ -23,12 +25,17 @@ from bench import (
 
 
 def _mk(value: float, *, metric: str = "rt") -> Sample:
-    return Sample(metric=metric, value=value, unit="s", lower_is_better=True)
+    return Sample(metric=metric, value=value, unit="s", direction="lower better")
 
 
-def _rr(*samples: Sample, runtime: float = 0.0) -> Iteration:
-    """An Iteration carrying the given samples (empty = failed observation)."""
-    return Iteration(samples=list(samples), runtime=runtime)
+def _ex(*samples: Sample, runtime: float = 0.0) -> Execution:
+    """An Execution carrying the given samples (empty = failed run)."""
+    return Execution(
+        suite="S",
+        benchmark="B",
+        runtime=runtime,
+        iterations=[Iteration(samples=list(samples))],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -40,10 +47,10 @@ def test_fixed_runs_counts_every_observation():
     state = FixedRuns(3).start()
     assert not state.satisfied()
     # Every run counts, success or failure (failed runs observe with no samples).
-    state.observe(_rr())
-    state.observe(_rr(_mk(1.0)))
+    state.observe(_ex())
+    state.observe(_ex(_mk(1.0)))
     assert not state.satisfied()
-    state.observe(_rr())
+    state.observe(_ex())
     assert state.satisfied()
 
 
@@ -60,7 +67,7 @@ def test_fixed_runs_zero_satisfied_at_entry():
 def test_cov_converges_on_stable_input():
     state = CoefficientOfVariation("rt", threshold=0.01, window=5, min_runs=10).start()
     for _ in range(14):
-        state.observe(_rr(_mk(10.0)))
+        state.observe(_ex(_mk(10.0)))
     assert state.satisfied()
 
 
@@ -68,7 +75,7 @@ def test_cov_does_not_converge_on_noisy_input():
     random.seed(42)
     state = CoefficientOfVariation("rt", threshold=0.01, window=5, min_runs=10).start()
     for _ in range(19):
-        state.observe(_rr(_mk(10 + random.uniform(-2, 2))))
+        state.observe(_ex(_mk(10 + random.uniform(-2, 2))))
     assert not state.satisfied()
 
 
@@ -77,7 +84,7 @@ def test_cov_matches_reference_stdev():
     state = CoefficientOfVariation("rt", threshold=0.0, window=5, min_runs=5).start()
     values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
     for v in values:
-        state.observe(_rr(_mk(v)))
+        state.observe(_ex(_mk(v)))
     window = values[-5:]
     ref = statistics.stdev(window) / statistics.mean(window)
     mean = state.sum / len(state.window)
@@ -98,14 +105,14 @@ def test_cov_window_validates_min():
 def test_cov_ignores_unrelated_metrics():
     state = CoefficientOfVariation("rt", threshold=0.0, window=2, min_runs=2).start()
     for _ in range(3):
-        state.observe(_rr(_mk(10.0, metric="other")))
+        state.observe(_ex(_mk(10.0, metric="other")))
     assert not state.satisfied()
 
 
 def test_cov_raises_on_multiple_matching_samples():
     state = CoefficientOfVariation("rt", window=2, min_runs=2).start()
     with pytest.raises(ValueError, match="at most one"):
-        state.observe(_rr(_mk(1.0), _mk(2.0)))
+        state.observe(_ex(_mk(1.0), _mk(2.0)))
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +124,7 @@ def test_and_requires_both():
     p = FixedRuns(3) & CoefficientOfVariation("rt", threshold=0.0, window=3, min_runs=3)
     state = p.start()
     for _ in range(3):
-        state.observe(_rr(_mk(10.0)))
+        state.observe(_ex(_mk(10.0)))
     # CoV: 3 obs at value=10.0 -> window full, mean=10, stdev=0, threshold=0 ok.
     # Fixed(3): 3 obs ok.
     assert state.satisfied()
@@ -127,10 +134,10 @@ def test_and_blocks_until_slowest():
     p = FixedRuns(5) & FixedRuns(3)
     state = p.start()
     for _ in range(3):
-        state.observe(_rr(_mk(1.0)))
+        state.observe(_ex(_mk(1.0)))
     assert not state.satisfied()
     for _ in range(2):
-        state.observe(_rr(_mk(1.0)))
+        state.observe(_ex(_mk(1.0)))
     assert state.satisfied()
 
 
@@ -138,7 +145,7 @@ def test_or_stops_at_first():
     p = FixedRuns(3) | FixedRuns(10)
     state = p.start()
     for _ in range(3):
-        state.observe(_rr(_mk(1.0)))
+        state.observe(_ex(_mk(1.0)))
     assert state.satisfied()
 
 
@@ -151,7 +158,7 @@ def test_at_least_at_most_sugar():
     state = p.start()
     # 7 stable values: at_most kicks in at run 7.
     for _ in range(7):
-        state.observe(_rr(_mk(10.0)))
+        state.observe(_ex(_mk(10.0)))
     assert state.satisfied()
 
 
@@ -166,8 +173,9 @@ class _SeenNState(PolicyState):
         self.target = n
         self.cur = 0
 
-    def observe(self, iteration):
-        if any(s.value > 0 for s in iteration.samples):
+    def observe(self, execution):
+        samples = [s for it in execution.iterations for s in it.samples]
+        if any(s.value > 0 for s in samples):
             self.cur += 1
 
     def satisfied(self):
@@ -185,9 +193,9 @@ class SeenN(StoppingPolicy):
 def test_custom_policy_via_subclassing():
     state = SeenN(2).start()
     assert not state.satisfied()
-    state.observe(_rr(_mk(0.0)))
-    state.observe(_rr(_mk(1.0)))
-    state.observe(_rr(_mk(2.0)))
+    state.observe(_ex(_mk(0.0)))
+    state.observe(_ex(_mk(1.0)))
+    state.observe(_ex(_mk(2.0)))
     assert state.satisfied()
 
 
@@ -247,25 +255,25 @@ def test_max_duration_satisfied_when_runtime_accumulates():
     state = MaxDuration(0.05).start()
     assert not state.satisfied()
     # A run with no measured runtime (e.g. spawn failure) doesn't spend budget.
-    state.observe(_rr(_mk(1.0), runtime=0.0))
+    state.observe(_ex(_mk(1.0), runtime=0.0))
     assert not state.satisfied()
-    state.observe(_rr(_mk(1.0), runtime=0.03))
+    state.observe(_ex(_mk(1.0), runtime=0.03))
     assert not state.satisfied()
-    state.observe(_rr(_mk(1.0), runtime=0.03))
+    state.observe(_ex(_mk(1.0), runtime=0.03))
     assert state.satisfied()
 
 
 def test_fixed_or_duration_stops_on_whichever_first():
     # Count cap reached before the (long) time bound.
     state = (FixedRuns(2) | MaxDuration(30.0)).start()
-    state.observe(_rr(_mk(1.0)))
+    state.observe(_ex(_mk(1.0)))
     assert not state.satisfied()
-    state.observe(_rr(_mk(1.0)))
+    state.observe(_ex(_mk(1.0)))
     assert state.satisfied()  # FixedRuns(2) fired first
 
     # Time bound reached before the (high) count cap.
     state = (FixedRuns(1000) | MaxDuration(0.05)).start()
-    state.observe(_rr(_mk(1.0), runtime=0.06))
+    state.observe(_ex(_mk(1.0), runtime=0.06))
     assert state.satisfied()  # MaxDuration fired first
 
 

@@ -1,5 +1,6 @@
 """End-to-end: real subprocess + full pipeline through Sample stats."""
 
+import os
 from pathlib import Path
 
 from bench import (
@@ -32,10 +33,15 @@ def test_e2e_sleep_runs_produce_expected_count():
         bench("a")
         .with_command(["sleep", "0.02"])
         .with_cwd(Path("/tmp"))
+        .with_env({"PATH": os.environ["PATH"]})
         .with_metric(Time())
         .with_runs(3),
     )
-    pairs = _all_samples(Sequential().run(plan([s], None)))
+
+    report = Sequential().run(plan([s], None))
+    assert len(report.failures) == 0
+
+    pairs = _all_samples(report)
     elapsed = [sm.value for _, sm in pairs if sm.metric == "elapsed"]
     assert len(elapsed) == 3
     assert all(0.01 < v < 0.5 for v in elapsed)
@@ -47,6 +53,7 @@ def test_e2e_warmup_then_measure():
         bench("a")
         .with_command(["sh", "-c", "echo 0.01"])
         .with_cwd(Path("/tmp"))
+        .with_env({"PATH": os.environ["PATH"]})
         .with_metric(
             FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
         )
@@ -54,6 +61,8 @@ def test_e2e_warmup_then_measure():
         .with_runs(2),
     )
     report = Sequential().run(plan([s], None))
+    assert len(report.failures) == 0
+
     # Continuous numbering: the first two iterations are flagged warmup.
     assert [r.run for r in report.executions] == [1, 2, 3, 4]
     assert [o.warmup for r in report.executions for o in r.iterations] == [
@@ -71,11 +80,11 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
+        .with_env({"PATH": os.environ["PATH"]})
         .with_metric(Time())
         .with_runs(3),
     )
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
-    assert _all_samples(report) == []
+    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
     assert all(f.returncode == -1 for f in r.failures)  # spawn failure
@@ -88,12 +97,12 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         bench("hang")
         .with_command(["sh", "-c", "sleep 5"])
         .with_cwd(Path("/tmp"))
+        .with_env({"PATH": os.environ["PATH"]})
         .with_metric(Time())
         .with_timeout(0.05)
         .with_runs(1),
     )
-    report = Sequential(reporter=JsonReporter(out)).run(plan([s], None))
-    assert _all_samples(report) == []
+    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 1
     assert r.failures[0].returncode == 124  # timeout

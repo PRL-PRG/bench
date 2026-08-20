@@ -25,9 +25,10 @@ from bench import (
     suite,
 )
 from bench.runner.base import plan
+from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
-from bench.core.results import Iteration, Execution, Sample
-from bench.report.reporter import DirReporter as _DirReporter
+from bench.core.results import Iteration, Execution, Report, Sample
+from bench.report.reporter import _TUI, DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
 
 
@@ -37,8 +38,9 @@ def test_dirreporter_writes_on_execution_done(tmp_path):
     run = Execution(
         suite="S",
         benchmark="b",
-        variant=(),
+        variant=Variant(),
         run=1,
+        runtime=0.01,
         command=("echo", "hi"),
         cwd="/tmp",
         returncode=0,
@@ -58,8 +60,8 @@ def _s():
         .with_command(["sh", "-c", "echo 1.5; echo 2.5"])
         .with_cwd(Path("/tmp"))
         .with_metric(
-            FloatPerLine.last_line(
-                StdoutMetricSource, "runtime", unit="s"
+            FloatPerLine(
+                StdoutMetricSource, "score", line=2, unit="s"
             ).lower_is_better()
         )
         .with_runs(2),
@@ -72,10 +74,11 @@ def test_csv_writer(tmp_path: Path):
     text = out.read_text()
     lines = text.splitlines()
     assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
-    assert sum(1 for ln in lines[1:] if ",runtime," in ln) == 2  # 2 runs
-    assert (
-        sum(1 for ln in lines[1:] if ",elapsed," in ln) == 2
-    )  # elapsed always measured
+    assert sum(1 for ln in lines[1:] if ",score," in ln) == 2  # 2 runs
+    # There is no implicit `elapsed` metric any more, but the CSV always writes
+    # the execution's wall time as a row named `elapsed`, matching what `Time()`
+    # calls its sample.
+    assert sum(1 for ln in lines[1:] if ",elapsed," in ln) == 2
 
 
 def test_json_writer_round_trip(tmp_path: Path):
@@ -84,7 +87,7 @@ def test_json_writer_round_trip(tmp_path: Path):
     r = report_from_json(out.read_text())
     all_samples = [s for run in r.executions for o in run.iterations for s in o.samples]
     assert len(all_samples) == 2
-    assert all(s.metric == "runtime" for s in all_samples)
+    assert all(s.metric == "score" for s in all_samples)
 
 
 def test_dir_writer_creates_tree(tmp_path: Path):
@@ -129,18 +132,19 @@ def _flagged_run() -> Execution:
     return Execution(
         suite="S",
         benchmark="b",
-        variant=(),
+        variant=Variant(),
         run=1,
+        runtime=1.0,
         command=("x",),
         iterations=[
             Iteration(
                 samples=[
-                    Sample("runtime", 1.0, unit="s", lower_is_better=True),
+                    Sample("score", 1.0, unit="s", direction="lower better"),
                     Sample(
-                        "runtime",
+                        "score",
                         100.0,
                         unit="s",
-                        lower_is_better=True,
+                        direction="lower better",
                         extra={"outlier": True},
                     ),
                 ]
@@ -149,23 +153,28 @@ def _flagged_run() -> Execution:
     )
 
 
-def test_csv_includes_outlier_column(tmp_path: Path):
+def test_csv_writes_sample_values(tmp_path: Path):
     out = tmp_path / "r.csv"
-    rep = CsvReporter(out)
-    rep.execution_done(_flagged_run())
-    rep.finalize()
-    rows = list(csv.DictReader(out.open()))
+    CsvReporter(out).finalize(Report(executions=[_flagged_run()]))
+    rows = [r for r in csv.DictReader(out.open()) if r["metric"] == "score"]
+    assert sorted(r["value"] for r in rows) == ["1.0", "100.0"]
+
+
+def test_csv_includes_outlier_column(tmp_path: Path):
+    # `outlier` becomes a column because some sample carries it in `extra`
+    # `extra` is free-form, so a sample without the key is blank rather than False -
+    # the writer cannot know that every extra key is a boolean.
+    out = tmp_path / "r.csv"
+    CsvReporter(out).finalize(Report(executions=[_flagged_run()]))
+    rows = [r for r in csv.DictReader(out.open()) if r["metric"] == "score"]
     assert "outlier" in rows[0]
-    flags = {r["value"]: r["outlier"] for r in rows}
-    assert flags["1.0"] == "False"
-    assert flags["100.0"] == "True"
+    assert sorted(r["outlier"] for r in rows) == ["", "True"]
 
 
 def test_json_persists_outlier_flag(tmp_path: Path):
     out = tmp_path / "r.json"
     rep = JsonReporter(out)
-    rep.execution_done(_flagged_run())
-    rep.finalize()
+    rep.finalize(Report(executions=[_flagged_run()]))
     samples = [
         s
         for run in report_from_json(out.read_text()).executions
@@ -224,7 +233,6 @@ def test_summary_appends_failures_block_with_diagnostic():
     )
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep).run(plan([s], None))
-    rep.finalize()
     text = buf.getvalue()
     assert "Failures:" in text
     assert "F/bad" in text
@@ -244,7 +252,6 @@ def test_summary_failures_block_handles_spawn_failure():
     )
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep).run(plan([s], None))
-    rep.finalize()
     text = buf.getvalue()
     assert "spawn failed" in text
     assert "Command not found" in text
@@ -262,7 +269,6 @@ def test_summary_no_failures_block_when_all_succeed():
     )
     rep = SummaryReporter(target_console=c)
     Sequential(reporter=rep).run(plan([s], None))
-    rep.finalize()
     assert "Failures:" not in buf.getvalue()
 
 
@@ -283,8 +289,8 @@ def test_progress_plain_lines_in_non_tty():
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
     text = buf.getvalue()
-    # One line per sample, with running count and 'ok' tag.
-    assert "[1|3]" in text and "[2|3]" in text and "[3|3]" in text
+    # One line per sample, with running count and 'ok' tag
+    assert "[1/3]" in text and "[2/3]" in text and "[3/3]" in text
     assert text.count(" ok") >= 3
 
 
@@ -334,7 +340,7 @@ def test_summary_failure_line_escapes_identifier_markup():
 
 
 def test_progress_plain_count_scopes_per_benchmark():
-    # In non-TTY mode each benchmark restarts its own [n|total] iteration count.
+    # In non-TTY mode each benchmark restarts its own [n/total] iteration count.
     c, buf = _string_console()
     s = suite(
         "S",
@@ -351,7 +357,7 @@ def test_progress_plain_count_scopes_per_benchmark():
     )
     Sequential(reporter=ProgressReporter(target_console=c)).run(plan([s], None))
     text = buf.getvalue()
-    assert text.count("[1|2]") == 2 and text.count("[2|2]") == 2
+    assert text.count("[1/2]") == 2 and text.count("[2/2]") == 2
     assert "S/a" in text and "S/b" in text
 
 
@@ -387,10 +393,8 @@ def test_summary_channel_keeps_progress_and_swaps_summary():
     from bench.report.reporter import CompositeReporter, ProgressReporter
 
     marker = SummaryReporter()
-    ctx = SimpleNamespace(
-        params=SimpleNamespace(progress=True, json=None, csv=None, dir=None)
-    )
-    rep = default_reporter(ctx, marker)  # type: ignore[arg-type]
+    params = SimpleNamespace(progress=True, json=None, csv=None, dir=None)
+    rep = default_reporter(params, marker)
     assert isinstance(rep, CompositeReporter)
     assert any(isinstance(r, ProgressReporter) for r in rep.reporters)
     assert marker in rep.reporters
@@ -399,9 +403,7 @@ def test_summary_channel_keeps_progress_and_swaps_summary():
 def test_eta_column_blank_for_single_or_unknown_total():
     from types import SimpleNamespace
 
-    from bench.report.reporter import _EtaColumn
-
-    col = _EtaColumn()
+    col = _TUI._EtaColumn()
     assert str(col.render(SimpleNamespace(total=1))) == ""  # type: ignore[arg-type]
     assert str(col.render(SimpleNamespace(total=None))) == ""  # type: ignore[arg-type]
 
@@ -427,29 +429,12 @@ def test_progress_prints_completed_summary_scrollback():
     assert "(3 runs, 0 failed)" in out
 
 
-def test_eta_column_present_and_estimate_kept_for_command_bar():
-    # Command bars carry an "elapsed estimate" column and an ETA column
-    # (_EtaColumn self-blanks when the total is unknown or a single iteration).
-    from rich.progress import TextColumn
-
-    from bench.report.reporter import _EtaColumn
-
+def test_task_bar_carries_eta_column():
+    # The per-iteration "elapsed estimate" column was removed on purpose (see
+    # CHANGES.md); the ETA column on the running-benchmark bar survives.
     c = Console(theme=BENCHR_THEME, file=io.StringIO(), force_terminal=True, width=120)
-
-    def _columns(bench_builder):
-        s = suite("S", bench_builder.with_cwd(Path("/tmp")).with_runs(1))
-        b = plan([s], None)[0]
-        rep = ProgressReporter(target_console=c)
-        rep.benchmark_start(b)
-        return rep._local.prog.columns
-
-    def _has_estimate(cols) -> bool:
-        return any(
-            isinstance(col, TextColumn) and "elapsed estimate" in col.text_format
-            for col in cols
-        )
-
-    command = _columns(bench("c").with_command(["true"]).with_metric(Time()))
-
-    assert _has_estimate(command)
-    assert any(isinstance(col, _EtaColumn) for col in command)
+    rep = ProgressReporter(target_console=c)
+    assert rep._tui is not None
+    assert any(
+        isinstance(col, _TUI._EtaColumn) for col in rep._tui.task_progress.columns
+    )

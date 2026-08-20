@@ -75,9 +75,9 @@ def test_line_select_last_and_nth():
 
 def test_direction_decorator():
     proc = FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
-    assert next(iter(proc.process_text("1\n"))).lower_is_better is True
+    assert next(iter(proc.process_text("1\n"))).direction == "lower better"
     proc = FloatPerLine(StdoutMetricSource, "runtime", unit="s").higher_is_better()
-    assert next(iter(proc.process_text("1\n"))).lower_is_better is False
+    assert next(iter(proc.process_text("1\n"))).direction == "higher better"
 
 
 def test_regex_unit_in_pattern_or_arg():
@@ -144,3 +144,15 @@ def test_metric_source_shorthands():
 def test_metric_source_callable_passthrough():
     src = as_metric_source(lambda r: (r.stdout or "").upper())
     assert src(make_success(stdout="hi")) == "HI"
+
+
+def test_last_line_indexes_the_first_iteration():
+    # A negative `line` used to leak straight into `Sample.iteration`, and the
+    # Controller then routed it to `iterations[-1]` of an empty list.
+    samples = list(
+        FloatPerLine.last_line(StdoutMetricSource, "runtime", unit="s").process_text(
+            "1\n2\n3\n"
+        )
+    )
+    assert [s.value for s in samples] == [3.0]
+    assert [s.iteration for s in samples] == [0]
