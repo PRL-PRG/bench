@@ -5,9 +5,19 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
+"""Harness workloads: one process streams all the iterations.
+
+No switch turns this on. `FloatPerLine` indexes each parsed line, so a single
+process's output becomes `Iteration` 0, 1, 2, ... `.with_runs(1)` means one
+process per variant; the workload's own argument decides how many iterations it
+does, and its second argument how many leading ones it discards as warmup
+(bench's `.with_warmup()` counts whole processes, not iterations).
+"""
+
 from __future__ import annotations
 
 from bench import FloatPerLine, bench, run, suite
+from bench.core.metric import StdoutMetricSource
 
 WARMUP, RUNS = 5, 10
 
@@ -15,18 +25,19 @@ s = (
     suite("harness")
     .add(bench("fib"))
     .add(bench("hanoi"))
-    .with_matrix(vm=["python3.9", "python3.14", "pypy3"], runs=range(2))
+    .with_matrix(vm=["python3.9", "python3.14", "pypy3"], repeat=range(2))
     .with_command(
         lambda ctx: [
             ctx.data.vm,
             f"benchmarks/{ctx.benchmark}.py",
-            str(WARMUP + RUNS),
+            str(RUNS),
+            str(WARMUP),
         ]
     )
-    .with_harness()  # one process streams all iterations
-    .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
-    .with_warmup(WARMUP)
-    .with_runs(RUNS)
+    .with_metric(
+        FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+    )
+    .with_runs(1)  # one process per variant; RUNS iterations come out of it
 )
 
 run(s)

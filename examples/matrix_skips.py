@@ -11,15 +11,18 @@
 One workload parameterized by `vm` by `size`. Three benchmarks show the
 common skip shapes:
 
-  1. `minus_one`: full cartesian minus one cell (drop `VM1` x `500`)
-  2. `slice_vm2`: keep only `vm=VM2` (predicate skip)
-  3. `slice_500`: keep only `size=500` (predicate skip)
+  1. `minus_one`: full cartesian minus one cell (`add_matrix_skip` drops a cell)
+  2. `slice_vm2`: keep only `vm=VM2` (`with_filter` keeps what it matches)
+  3. `slice_500`: keep only `size=500` (`with_filter`)
 
-Commands are fake `sh -c` snippets (a sleep then an echo) shaped so VM1 is roughly 2x slower
-than VM2 and bigger `size` slightly slower.
+Commands are fake `sh -c` snippets (a sleep then an echo) shaped so VM1 is
+roughly 2x slower than VM2 and bigger `size` slightly slower.
 """
 
+import os
+
 from bench import FloatPerLine, bench, run, suite
+from bench.core.metric import StdoutMetricSource
 
 
 def cmd(ctx):
@@ -41,15 +44,20 @@ s = (
         bench("slice_vm2")
         .with_command(cmd)
         .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
-        .add_matrix_skip(lambda b: b.vm != "VM2"),
+        .with_filter(lambda b: b.data["vm"] == "VM2"),
         # 3. Slice - fix size=500, vary vm. 2 variants.
         bench("slice_500")
         .with_command(cmd)
         .with_matrix(vm=["VM1", "VM2"], size=[100, 500])
-        .add_matrix_skip(lambda b: b.size != 500),
+        .with_filter(lambda b: b.data["size"] == 500),
     )
-    .with_metric(FloatPerLine("ms", metric="runtime").lower_is_better())
+    .with_metric(
+        FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+    )
     .with_runs(5)
+    # A benchmark runs with exactly the environment it is given, so a command
+    # that shells out needs PATH handed to it.
+    .with_env({"PATH": os.environ["PATH"]})
 )
 
 

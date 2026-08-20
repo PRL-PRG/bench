@@ -11,13 +11,15 @@
 Stop as soon as we've seen the value '1' on the `READY` metric for three
 consecutive runs. Demonstrates inheriting from `StoppingPolicy` (the frozen
 config that returns a fresh `PolicyState` from `start()`) and
-`PolicyState` (the per-observation observer: `observe` records each
-observation, `satisfied` reports whether the policy has converged).
+`PolicyState` (the per-run observer: `observe` records one finished
+`Execution`, `satisfied` reports whether the policy has converged).
 """
 
+import os
 from dataclasses import dataclass
 
 from bench import PolicyState, Regex, StoppingPolicy, bench, run, suite
+from bench.core.metric import StdoutMetricSource
 
 
 class _ConsecutiveReadyState(PolicyState):
@@ -25,8 +27,9 @@ class _ConsecutiveReadyState(PolicyState):
         self.target = n
         self.cur = 0
 
-    def observe(self, iteration):
-        for s in iteration.samples:
+    def observe(self, execution):
+        samples = [s for it in execution.iterations for s in it.samples]
+        for s in samples + list(execution.process_samples):
             if s.metric == "READY" and s.value == 1.0:
                 self.cur += 1
                 break
@@ -46,6 +49,8 @@ class ConsecutiveReady(StoppingPolicy):
 
 
 # Script "warms up" for a few runs (printing READY=0), then becomes READY.
+COUNTER = "/tmp/_bench_demo/cnt"
+
 SCRIPT = """
 mkdir -p /tmp/_bench_demo
 counter=/tmp/_bench_demo/cnt
@@ -60,17 +65,17 @@ s = suite(
     "ready_loop",
     bench("p")
     .with_command(["bash", "-c", SCRIPT])
-    .with_metric(Regex("READY", r"READY\s+(\d)", unit=""))
+    .with_metric(Regex("READY", r"READY\s+(\d)", StdoutMetricSource, iterate=True))
     .with_runs(ConsecutiveReady(n=3).at_most(20)),
-)
+    # A benchmark runs with exactly the environment it is given, so the script
+    # needs PATH handed to it to find `mkdir`/`cat`.
+).with_env({"PATH": os.environ["PATH"]})
 
 
 if __name__ == "__main__":
-    import os
-
     # Reset the demo counter so the example is deterministic.
     try:
-        os.remove("/tmp/_bench_demo/cnt")
+        os.remove(COUNTER)
     except FileNotFoundError:
         pass
     run(s)

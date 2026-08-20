@@ -15,7 +15,7 @@ s = (
     .add(bench("hanoi"))
     .with_matrix(vm=["python3.9", "python3.14"], experiment=[1, 2])
     .with_command(lambda ctx: [ctx.data.vm, f"benchmarks/{ctx.benchmark}.py"])
-    .with_process_metric(Time(elapsed=True), max_rss())
+    .with_metric(Time(), max_rss())
     .with_runs(5)
 )
 

@@ -15,6 +15,8 @@ Typical workflow:
     bench compare a.json b.json               # diff the two, first is baseline
 """
 
+import os
+
 from bench import Time, bench, run, suite
 
 
@@ -24,8 +26,11 @@ s = (
         bench("fast").with_command(["sh", "-c", "sleep 0.02"]),
         bench("slow").with_command(["sh", "-c", "sleep 0.05"]),
     )
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_runs(5)
+    # A benchmark runs with exactly the environment it is given, so a command
+    # that shells out needs PATH handed to it.
+    .with_env({"PATH": os.environ["PATH"]})
 )
 
 

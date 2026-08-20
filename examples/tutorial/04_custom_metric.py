@@ -13,6 +13,7 @@ from bench import (
     bench_app,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 
 s1 = suite("example").add(bench("fib")).add(bench("hanoi"))
 
@@ -20,7 +21,9 @@ s2 = (
     suite("custom_metric")
     .add(bench("zoo_batch"))
     .with_metric(
-        FloatPerLine(metric="throughput", unit="iters", line=1).higher_is_better()
+        FloatPerLine(
+            StdoutMetricSource, "throughput", line=1, unit="iters"
+        ).higher_is_better()
     )
 )
 

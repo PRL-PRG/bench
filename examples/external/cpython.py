@@ -8,49 +8,46 @@
 # ///
 """CPython benchmarks via pyperformance.
 
-Each pyperformance benchmark becomes one bench *harness* benchmark: the
-command runs `pyperformance run` once, writing its JSON to a known path.
-Nothing is observable while pyperformance runs - it only writes that JSON
-once fully done - so the monitor just waits for the process to exit, then
-reads the JSON directly and yields each measured value as its own bench
-Iteration. bench's own warmup policy marks the first --warmup of those as
-warmup (excluded from stats, still visible in the report/--json); the
-framework default of keeping exactly one more after that is what's kept as
-the measurement - a harness process runs once, so it contributes once.
+Each pyperformance benchmark is one bench execution: the command runs
+`pyperformance run` once, writing its JSON to a known path. Nothing is
+observable while pyperformance works - it only writes that JSON once fully
+done - so the old harness monitor did nothing but wait for the exit and then
+read the file.
 
-Wanting more independent measurements is a --runs concern, not --warmup or
-runs: --runs spawns that many separate pyperformance processes (matrix
-variants), each contributing its own kept sample and its own report row.
+That is exactly what a `MetricSource` is: a `(InvocationResult) -> str` called
+after the process exits. `json_values_source` reads the result JSON and returns
+one measured value per line, and `FloatPerLine` turns each of those lines into
+its own `Iteration`. No monitor, no streaming, no harness switch.
+
+Wanting more independent measurements is a `--runs` concern: it spawns that many
+separate pyperformance processes (matrix variants), each contributing its own
+execution and its own set of iterations.
 
 The default suite is discovered from `pyperformance list`, so this tracks
 whatever pyperformance ships; subset it with bench's --include/--exclude.
 
-pyperformance is this script's own dependency (see the PEP 723 header
-above), so `uv run` installs it into the same environment that runs this
-script - no separate pyperformance install or venv to manage, and no stale
-console-script shebang to hit. sys.executable only *hosts* pyperformance's
-orchestration; --python is the interpreter UNDER TEST, entirely independent
-of it - pyperformance builds each benchmark's venv using --python itself.
-Benchmark venvs, per-benchmark JSON, and bench's own bench.json all land
-under --output.
+pyperformance is this script's own dependency (see the PEP 723 header above), so
+`uv run` installs it into the same environment that runs this script - no
+separate pyperformance install or venv to manage, and no stale console-script
+shebang to hit. sys.executable only *hosts* pyperformance's orchestration;
+--python is the interpreter UNDER TEST, entirely independent of it -
+pyperformance builds each benchmark's venv using --python itself. Benchmark
+venvs, per-benchmark JSON, and bench's own bench.json all land under --output.
 """
 
 import json
 import re
 import subprocess
 import sys
-import time
-from collections.abc import Iterator
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import field
 from pathlib import Path
 
 from bench import (
     CompositeReporter,
     Context,
-    FixedRuns,
     FloatPerLine,
-    HarnessHandle,
-    HarnessMonitor,
+    InvocationResult,
     JsonReporter,
     SharedBenchParams,
     bench,
@@ -108,14 +105,7 @@ class CpythonParams(SharedBenchParams):
         default=1,
         metadata={
             "help": "How many independent times to run this benchmark "
-            "(each its own process, contributing one measured sample)."
-        },
-    )
-    warmup: int = field(
-        default=0,
-        metadata={
-            "help": "How many of each runs's leading measured values "
-            "to discard as warmup before keeping the next one."
+            "(each its own process, contributing its own iterations)."
         },
     )
 
@@ -132,13 +122,16 @@ def list_benchmarks() -> list[str]:
     return names
 
 
+def _raw_json(ctx: Context[CpythonParams]) -> Path:
+    return ctx.params.output.resolve() / "raw" / f"{ctx.benchmark}.{ctx.data.runs}.json"
+
+
 def command(ctx: Context[CpythonParams]) -> list[str]:
     p = ctx.params
     out = p.output.resolve()
     name = ctx.benchmark
-    runs = ctx.data.runs
-    raw = out / "raw" / f"{name}.{runs}.json"
-    log = out / "raw" / f"{name}.{runs}.log"
+    raw = _raw_json(ctx)
+    log = out / "raw" / f"{name}.{ctx.data.runs}.log"
 
     opts = ""
     if p.rigorous:
@@ -158,25 +151,31 @@ def command(ctx: Context[CpythonParams]) -> list[str]:
     return ["bash", "-c", script]
 
 
-def monitor(ctx: Context[CpythonParams]) -> HarnessMonitor:
-    p = ctx.params
-    raw = p.output.resolve() / "raw" / f"{ctx.benchmark}.{ctx.data.runs}.json"
+def json_values_source(raw: Path) -> Callable[[InvocationResult], str]:
+    """A MetricSource: read pyperformance's result JSON once the process is
+    done and lay every measured value out one per line, for FloatPerLine."""
 
-    def read(handle: HarnessHandle) -> Iterator[str]:
-        while handle.is_alive():
-            time.sleep(0.05)
+    def read(_result: InvocationResult) -> str:
         data = json.loads(raw.read_text())
-        for run in data["benchmarks"][0]["runs"]:
-            for value in run.get("values", []):
-                yield str(value)
+        return "\n".join(
+            str(value)
+            for run in data["benchmarks"][0]["runs"]
+            for value in run.get("values", [])
+        )
 
     return read
 
 
-def reporter(ctx: Context[CpythonParams]):
+def runtime_metric(ctx: Context[CpythonParams]) -> FloatPerLine:
+    return FloatPerLine(
+        json_values_source(_raw_json(ctx)), "runtime", unit="s"
+    ).lower_is_better()
+
+
+def reporter(params: CpythonParams):
     return CompositeReporter(
-        default_reporter(ctx),
-        JsonReporter(ctx.params.output.resolve() / "bench.json"),
+        default_reporter(params),
+        JsonReporter(params.output.resolve() / "bench.json"),
     )
 
 
@@ -184,10 +183,9 @@ cpython = (
     suite("CPython pyperformance")
     .generator(lambda ctx: [bench(n) for n in list_benchmarks()])
     .with_command(command)
-    .with_monitor_fn(monitor)
     .with_matrix(runs=lambda ctx: range(ctx.params.runs))
-    .with_warmup(lambda ctx: FixedRuns(ctx.params.warmup))
-    .with_metric(FloatPerLine("s", metric="runtime").lower_is_better())
+    .with_metric(runtime_metric)
+    .with_runs(1)  # one pyperformance process per variant
 )
 
 

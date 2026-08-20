@@ -5,43 +5,47 @@
 # [tool.uv.sources]
 # bench = { path = "../..", editable = true }
 # ///
+"""Are-We-Fast-Yet: a real harness, driven with nothing but a metric.
+
+AWFY's `harness.py` runs one benchmark N times in a single process and prints a
+line per iteration:
+
+    Bounce: iterations=1 runtime: 1234us
+
+The old `awfy_monitor` framed those lines into iterations by hand. A
+`Regex(..., iterate=True)` does the same job: it walks its matches in order and
+stamps each one with its iteration index, so match N lands in `Iteration` N.
+Lines that do not match (AWFY's totals and startup noise) are simply skipped.
+
+AWFY's harness has no warmup flag, so the JIT curve is *in* the data - which is
+the point of keeping per-iteration samples. Feed it `warmup + runs` iterations
+and read the curve, or post-filter on `Sample.iteration`.
+"""
+
 from __future__ import annotations
 
-import re
-from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (
     Context,
-    FixedRuns,
-    FloatPerLine,
     GeomeanSummary,
-    HarnessHandle,
+    Regex,
     Results,
     SharedBenchParams,
     Summary,
     SummaryReporter,
     bench,
     bench_app,
-    line_monitor,
     max_rss,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 
 
 class Params(SharedBenchParams):
     awfy: Path = Path("are-we-fast-yet/benchmarks/Python")
     runs: int = 10
     warmup: int = 5
-
-
-def awfy_monitor(handle: HarnessHandle) -> Iterator[str]:
-    """Frame each `... runtime: <us>us` line as one iteration, drop the rest."""
-    for line in line_monitor(handle):
-        match = re.search(r"runtime: (\d+)us", line)
-        if match:
-            yield match.group(1)
 
 
 def command(ctx: Context[Params]) -> list[str]:
@@ -70,18 +74,25 @@ awfy = (
     .with_matrix(vm=["python3.9", "python3.14", "pypy3"])
     .with_command(command)
     .with_cwd(lambda ctx: ctx.params.awfy)  # so AWFY's `import <bench>` resolves
-    .with_harness(monitor=awfy_monitor)
-    .with_metric(FloatPerLine(metric="runtime", unit="us").lower_is_better())
-    .with_process_metric(max_rss())
+    .with_metric(
+        # One Iteration per `runtime: <us>us` line - this replaces the monitor.
+        Regex(
+            "runtime",
+            r"runtime: (\d+)us",
+            StdoutMetricSource,
+            unit="us",
+            iterate=True,
+        ).lower_is_better(),
+        max_rss(),  # whole-process, so it stays out of the iterations
+    )
     .with_timeout(600)
-    .with_warmup(lambda ctx: FixedRuns(ctx.params.warmup))
-    .with_runs(lambda ctx: FixedRuns(ctx.params.runs))
+    .with_runs(1)  # one harness process per variant
 )
 
 
 grouped = GeomeanSummary(axis="vm", metrics={"runtime", "max_rss"})
 summary = SummaryReporter(Results() & Summary() & grouped)
 
-bench_app("AWFY", params=Params, summary=summary).add_all(awfy).run()
+bench_app("AWFY", params=Params, summary=summary).add(awfy).run()
 
 # vim: ft=python

@@ -21,6 +21,7 @@ from bench import (
     max_rss,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 
 
 class RcpParams(SharedBenchParams):
@@ -60,10 +61,9 @@ rcp_suite = (
     .generator(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
-    .with_metric(Rebench())
-    .with_process_metric(max_rss())
+    .with_metric(Rebench(StdoutMetricSource), max_rss())
 )
 
 
 if __name__ == "__main__":
-    bench_app(params=RcpParams).add_all(rcp_suite).run()
+    bench_app(params=RcpParams).add(rcp_suite).run()

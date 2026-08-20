@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bench import Rebench, SharedBenchParams, bench as B, bench_app, suite
+from bench.core.metric import StdoutMetricSource
 
 
 HERE = Path(__file__).resolve().parent
@@ -65,7 +66,7 @@ areWeFast = (
             str(ctx.data.size),
         ]
     )
-    .with_metric(Rebench())
+    .with_metric(Rebench(StdoutMetricSource))
 )
 
 
@@ -100,7 +101,7 @@ shootout = (
             str(ctx.data.arg),
         ]
     )
-    .with_metric(Rebench())
+    .with_metric(Rebench(StdoutMetricSource))
 )
 
 
@@ -120,7 +121,7 @@ realThing = (
             str(ctx.data.size),
         ]
     )
-    .with_metric(Rebench())
+    .with_metric(Rebench(StdoutMetricSource))
 )
 
 
@@ -140,7 +141,7 @@ kaggle = (
             str(ctx.params.iterations),
         ]
     )
-    .with_metric(Rebench())
+    .with_metric(Rebench(StdoutMetricSource))
 )
 
 
@@ -149,7 +150,7 @@ recommenderlab = (
     .add(B("recommenderlab"))
     .with_cwd(INPUTS / "recommenderlab")
     .with_command(lambda ctx: [_rscript(ctx.params), "runner.r"])
-    .with_metric(Rebench())
+    .with_metric(Rebench(StdoutMetricSource))
 )
 
 
@@ -159,4 +160,4 @@ SUITES = [s.with_env(LOCALE) for s in SUITES]
 
 
 if __name__ == "__main__":
-    bench_app(params=RParams).add_all(*SUITES).run()
+    bench_app(params=RParams).add(*SUITES).run()

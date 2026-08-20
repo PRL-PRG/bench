@@ -27,6 +27,7 @@ from bench import (
     max_rss,
     suite,
 )
+from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 
 class LevelDBParams(SharedBenchParams):
@@ -44,6 +45,7 @@ def _micros(op: str) -> Regex:
     return Regex(
         "micros_per_op",
         rf"(?m)^{re.escape(op)}\s+:\s+([\d.]+) micros/op",
+        StdoutMetricSource,
         unit="us",
     ).lower_is_better()
 
@@ -52,6 +54,7 @@ def _throughput(op: str) -> Regex:
     return Regex(
         "throughput",
         rf"(?m)^{re.escape(op)}\s+:\s+[\d.]+ micros/op;\s+([\d.]+) MB/s",
+        StdoutMetricSource,
         unit="MB/s",
     ).higher_is_better()
 
@@ -71,14 +74,14 @@ def make_benchmarks() -> list[BenchmarkBuilder]:
             bench(op)
             .with_command(_command(op))
             .with_metric(_micros(op), _throughput(op))
-            .with_process_metric(max_rss(), Time(user=True, system=True))
+            .with_metric(max_rss(), UserTime(), SystemTime())
         )
     for op in READ_OPS:
         specs.append(
             bench(op)
             .with_command(_command(f"fillseq,{op}"))
             .with_metric(_micros(op))
-            .with_process_metric(max_rss(), Time(user=True, system=True))
+            .with_metric(max_rss(), UserTime(), SystemTime())
         )
     return specs
 
@@ -87,4 +90,4 @@ leveldb = suite("LevelDB db_bench").add(*make_benchmarks()).with_runs(5)
 
 
 if __name__ == "__main__":
-    bench_app(params=LevelDBParams).add_all(leveldb).run()
+    bench_app(params=LevelDBParams).add(leveldb).run()

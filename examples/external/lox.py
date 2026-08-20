@@ -26,6 +26,7 @@ from bench import (
     max_rss,
     suite,
 )
+from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 
 HERE = Path(__file__).resolve().parent
@@ -56,11 +57,12 @@ lox_suite = (
     .with_timeout(20)
     .with_runs(10)
     .with_metric(
-        FloatPerLine("s", metric="runtime").last_line().lower_is_better(),
-    )
-    .with_process_metric(
+        FloatPerLine.last_line(
+            StdoutMetricSource, "runtime", unit="s"
+        ).lower_is_better(),
         max_rss(),
-        Time(user=True, system=True),
+        UserTime(),
+        SystemTime(),
     )
 )
 
@@ -76,7 +78,11 @@ zoo_suite = (
     )
     .with_timeout(12)
     .with_runs(5)
-    .with_metric(FloatPerLine("iter", metric="throughput").nth(2).higher_is_better())
+    .with_metric(
+        FloatPerLine(
+            StdoutMetricSource, "throughput", line=2, unit="iter"
+        ).higher_is_better()
+    )
 )
 
 
@@ -87,4 +93,4 @@ if __name__ == "__main__":
             SummaryReporter(Compact("runtime", suite="LoxSuite")),
             SummaryReporter(Compact("throughput", suite="ZooBatch")),
         ),
-    ).add_all(lox_suite, zoo_suite).run()
+    ).add(lox_suite, zoo_suite).run()

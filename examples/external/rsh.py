@@ -27,6 +27,7 @@ from bench import (
     max_rss,
     suite,
 )
+from bench.core.metric import StdoutMetricSource
 
 
 _HARNESS_R = r"""
@@ -75,7 +76,7 @@ def _suite_cwd(subdir: str):
 # Suites
 # ----------------------------------------------------------------------
 
-_ITER = (FloatPerLine("us", metric="runtime").lower_is_better(),)
+_ITER = (FloatPerLine(StdoutMetricSource, "runtime", unit="us").lower_is_better(),)
 _PROC = (max_rss(),)
 
 
@@ -89,8 +90,7 @@ are_we_fast_r = (
     .with_cwd(_suite_cwd("areWeFast"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_ITER)
-    .with_process_metric(*_PROC)
+    .with_metric(*_ITER, *_PROC)
 )
 
 
@@ -171,8 +171,7 @@ shootout = (
     .with_cwd(_suite_cwd("shootout"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_ITER)
-    .with_process_metric(*_PROC)
+    .with_metric(*_ITER, *_PROC)
 )
 
 
@@ -183,8 +182,7 @@ simple_extra = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_ITER)
-    .with_process_metric(*_PROC)
+    .with_metric(*_ITER, *_PROC)
 )
 
 
@@ -209,8 +207,7 @@ simple_reduced = (
     .with_cwd(_suite_cwd("simple"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_ITER)
-    .with_process_metric(*_PROC)
+    .with_metric(*_ITER, *_PROC)
 )
 
 
@@ -225,8 +222,7 @@ real_thing = (
     .with_cwd(_suite_cwd("RealThing"))
     .with_command(_cmd)
     .with_timeout(6000)
-    .with_metric(*_ITER)
-    .with_process_metric(*_PROC)
+    .with_metric(*_ITER, *_PROC)
 )
 
 
@@ -240,6 +236,6 @@ if __name__ == "__main__":
             f.write(_HARNESS_R)
         env = {"R_PROFILE_USER": harness_path}
         suites = [s.with_env(env) for s in SUITES]
-        bench_app(params=RshParams).add_all(*suites).run()
+        bench_app(params=RshParams).add(*suites).run()
     finally:
         os.unlink(harness_path)

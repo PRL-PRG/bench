@@ -13,6 +13,8 @@ the summary lists in a `Failures:` block. `.with_runs(N)` counts every attempt,
 so `broken` runs exactly 3 times and reports 3 failures (no fake timings).
 """
 
+import os
+
 from bench import Time, bench, run, suite
 
 
@@ -21,14 +23,14 @@ s = suite(
     # Always succeeds:
     bench("ok")
     .with_command(["sh", "-c", "sleep 0.02"])
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_runs(3),
     # Always fails: 3 runs, 3 recorded failures (exit 7):
     bench("broken")
     .with_command(["sh", "-c", "exit 7"])
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_runs(3),
-)
+).with_env({"PATH": os.environ["PATH"]})  # `sh -c "sleep …"` needs PATH
 
 
 if __name__ == "__main__":

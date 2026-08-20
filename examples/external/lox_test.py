@@ -34,6 +34,7 @@ from bench import (
     from_files,
     suite,
 )
+from bench.core.results import Report
 from bench.report.reporter import console
 
 
@@ -91,7 +92,7 @@ class LoxTestSummary(Reporter):
         else:
             self.passed += 1
 
-    def finalize(self) -> None:
+    def finalize(self, report: Report) -> None:
         total = self.passed + self.failed
         if total == 0:
             return
@@ -132,7 +133,7 @@ lox_tests = (
     .with_command(lox_cmd)
     .with_cwd(lambda ctx: _test_root(ctx.params))
     .with_timeout(10)
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_success(lox_expect)
     .with_runs(1)
 )
@@ -140,7 +141,7 @@ lox_tests = (
 
 if __name__ == "__main__":
     reporter = LoxTestSummary()
-    bench_app(params=TestParams, reporter=reporter).add_all(lox_tests).run()
+    bench_app(params=TestParams, reporter=reporter).add(lox_tests).run()
     sys.exit(1 if reporter.failed > 0 else 0)
 
 # vim: ft=python

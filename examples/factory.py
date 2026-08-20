@@ -8,7 +8,7 @@
 # ///
 """Factory: build benchmarks programmatically at materialization time.
 
-`.factory(fn)` registers a deferred `(ctx) -> [Benchmark]` producer. It runs
+`.generator(fn)` registers a deferred `(ctx) -> [BenchmarkBuilder]` producer. It runs
 when the Runner materializes the suite, so the benchmark list can depend on
 `ctx` (CLI params) or anything computed at run time. SuiteBuilder defaults
 (`.with_cwd` / `.with_metric` / `.runs`) resolve at the same moment, so
@@ -28,12 +28,7 @@ def make_benchmarks(ctx):
     ]
 
 
-s = (
-    suite("factory_demo")
-    .generator(make_benchmarks)
-    .with_process_metric(Time())
-    .with_runs(5)
-)
+s = suite("factory_demo").generator(make_benchmarks).with_metric(Time()).with_runs(5)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,8 @@ Each suite gets its own `SummaryReporter` whose `Compact` formatter is
 scoped with `suite=...`. A `CompositeReporter` fans the run out to both.
 """
 
+import os
+
 from bench import (
     Compact,
     CompositeReporter,
@@ -27,16 +29,20 @@ fast = (
     suite("fast")
     .add(bench("a").with_command(["sh", "-c", "sleep 0.01"]))
     .add(bench("b").with_command(["sh", "-c", "sleep 0.02"]))
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_runs(5)
+    # A benchmark runs with exactly the environment it is given, so a command
+    # that shells out needs PATH handed to it.
+    .with_env({"PATH": os.environ["PATH"]})
 )
 
 slow = (
     suite("slow")
     .add(bench("x").with_command(["sh", "-c", "sleep 0.05"]))
     .add(bench("y").with_command(["sh", "-c", "sleep 0.08"]))
-    .with_process_metric(Time())
+    .with_metric(Time())
     .with_runs(5)
+    .with_env({"PATH": os.environ["PATH"]})
 )
 
 
@@ -46,4 +52,4 @@ if __name__ == "__main__":
             SummaryReporter(Compact("elapsed", suite="fast")),
             SummaryReporter(Compact("elapsed", suite="slow")),
         )
-    ).add_all(fast, slow).run()
+    ).add(fast, slow).run()
