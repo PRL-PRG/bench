@@ -6,8 +6,7 @@ A dry run shows the plan's *upper bound*: bounded policies enumerate runs
 `1..warmup.max_runs() + runs.max_runs()` (a convergence-driven policy may
 stop earlier on real observations). Unbounded policies (e.g.
 CoefficientOfVariation) have no bound to enumerate, so they print one line
-with an `[unbounded]` marker. A harness benchmark is one execution, so it
-prints one line with a `[harness]` marker.
+with an `[unbounded]` marker.
 """
 
 from __future__ import annotations
