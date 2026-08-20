@@ -96,14 +96,10 @@ class BenchmarkBuilder(BuilderBase):
             data=Data(self.data),
         )
 
-        names = list(self.matrix)
-        if not names:
-            yield self._resolve_cell(suite, Variant(), bench_ctx)
-            return
-
         # Resolve callable axes once, before expanding the product. The axis
         # Context has no per-variant matrix yet (we are defining it), so axes
         # can read params/suite/benchmark but not sibling axes.
+        names = list(self.matrix)
         axes = [tuple(v(bench_ctx)) for v in self.matrix.values()]
         for combo in itertools.product(*axes):
             chosen = dict(zip(names, combo))
