@@ -168,9 +168,9 @@ class FloatPerLine(IterationMetric, BuildableMetric):
             return
         lines = [s for s in (ln.strip() for ln in text.split("\n")) if s]
         if self.line is not None:
-            idx = self.line - 1 if self.line > 0 else self.line
+            select_idx = self.line - 1 if self.line > 0 else self.line
             try:
-                lines = [lines[idx]]
+                lines = [lines[select_idx]]
             except IndexError:
                 return
         for line in lines:
