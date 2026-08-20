@@ -28,11 +28,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from bench.core.invocation import InvocationResult, to_argv
-from bench.core.metric import Direction, Metric
+from bench.core.metric import BuildableMetric, Direction
 from bench.core.results import Sample
 
 
-class PerfStat(Metric):
+class PerfStat(BuildableMetric):
     """Run a command under `perf stat` and read its counters from stderr.
 
     `events` is a tuple of symbolic perf event names. `direction` and the
@@ -40,14 +40,17 @@ class PerfStat(Metric):
     `Metric` base unchanged.
     """
 
-    events: tuple[str, ...] = ()
+    events: tuple[str, ...]
 
-    def __init__(self, direction: Direction = "uncomparable") -> None:
+    def __init__(
+        self, events: tuple[str, ...] = (), direction: Direction = "uncomparable"
+    ) -> None:
         super().__init__("", "", direction)
 
-    def __post_init__(self) -> None:
-        if not self.events:
+        if len(events) == 0:
             raise ValueError("PerfStat needs at least one event")
+
+        self.events = events
 
     def _prefix(self) -> list[str]:
         return ["perf", "stat", "-x", ",", "-e", ",".join(self.events), "--"]
