@@ -173,10 +173,10 @@ def runtime_metric(ctx: Context[CpythonParams]) -> FloatPerLine:
 
 
 def reporter(params: CpythonParams):
-    return CompositeReporter(
-        default_reporter(params),
-        JsonReporter(params.output.resolve() / "bench.json"),
-    )
+    default = default_reporter(params)
+    json = JsonReporter(params.output.resolve() / "bench.json")
+
+    return CompositeReporter(default, json) if default is not None else json
 
 
 cpython = (
