@@ -5,10 +5,11 @@ symbol on the package, keeping `from bench import run` pointing at the
 function rather than at this submodule.
 """
 
-from __future__ import annotations
+from __future__ import annotations, generators
 
 import argparse
 import dataclasses
+import itertools
 import re
 import sys
 from collections.abc import Callable
@@ -18,10 +19,9 @@ from typing import Any, Sequence
 from rich.text import Text
 from rich.tree import Tree
 
-from bench.builder.base import BuilderBase, as_build, merge_sequence
+from bench.builder.base import BenchmarkPred, BuilderBase, as_build, merge_sequence
 from bench.builder.benchmark import Benchmark
 from bench.builder.context import (
-    Context,
     SharedBenchParams,
     SharedSelectionParams,
     add_dataclass_args,
@@ -50,8 +50,9 @@ from bench.report.reporter import (
     Reporter,
     SummaryReporter,
     console,
-    print_diagnostics,
+    print_diagnostics as do_print_diagnostics,
 )
+from bench.report.summary import summarize
 from bench.runner.base import (
     Runner,
     plan,
@@ -148,94 +149,132 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
+    # ----- Instantiate benchmarks -----------
+
+    def plan_benchmarks(
+        self,
+        build_params: Any,
+        *,
+        use_defaults: bool = False,
+    ):
+        suites = [
+            s.inherit_from(self)
+            for s in itertools.chain(
+                self.suites, *(gen(build_params) for gen in self.generators)
+            )
+        ]
+
+        planned = plan(suites, build_params)
+        if use_defaults:
+            pred = default_filter(build_params)
+            planned = [b for b in planned if pred(b)]
+
+        return planned
+
     # ----- run -----------
 
-    def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
-    def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
-        """Resolve generators, apply app defaults, and run every suite."""
-
-        if isinstance(args, argparse.Namespace):
-            cli_args = args
-        else:
-            parser = _make_run_parser(self.params, description=self.name)
-            cli_args = parser.parse_args(args)
-        # A user's params type is the single source of settings. When they
-        # declare none, SharedBenchParams is the effective type, so the builtin
-        # flags are still generated and honored.
-        effective = self.params if self.params is not None else SharedBenchParams
-        build_params = build_dataclass(effective, cli_args)
-
-        collected = list(self.suites)
-        for f in self.generators:
-            collected.extend(f(build_params))
-        suites = [s.inherit_from(self) for s in collected]
-
+    def run(
+        self,
+        build_params: Any,
+        planned: list[Benchmark] | None = None,
+        *,
+        use_defaults: bool = False,
+        print_diagnostics: bool = True,
+    ) -> Report:
+        # Setup environment
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
 
+        if print_diagnostics:
+            do_print_diagnostics(env_diagnostics, "Environment checks")
+
+        # Setup reporters
         if self.reporter is not None:
             reporter = self.reporter(build_params)
+        elif use_defaults:
+            reporter = default_reporter(build_params)
+            if reporter is None:
+                raise ValueError(
+                    "Cannot instantiate default reporters without SharedBenchParams parameters"
+                )
         else:
-            summary = self.summary(build_params) if self.summary is not None else None
-            reporter = default_reporter(build_params, summary)
+            raise ValueError("No reporter is defined")
 
-        # --show
-        show = getattr(cli_args, "show", None)
-        if show:
-            return self._do_show(reporter, show)
+        # Add summary
+        if self.summary is not None:
+            reporter = CompositeReporter(reporter, self.summary(build_params))
+        elif use_defaults:
+            reporter = CompositeReporter(reporter, SummaryReporter(DefaultSummary()))
 
-        planned = plan(suites, build_params)
+        # Get runner
+        if self.runner is not None:
+            runner = self.runner(build_params)
+        elif use_defaults:
+            runner = default_runner(build_params)
+            if runner is None:
+                raise ValueError(
+                    "Cannot instantiate default runner without SharedBenchParams parameters"
+                )
+        else:
+            raise ValueError("No runner is defined")
 
-        # --list
-        if getattr(cli_args, "list_plan", False):
-            return self._do_list(planned)
-
-        planned = self._filter_benchmarks(build_params, planned)
-        selecting = isinstance(build_params, SharedSelectionParams) and (
-            build_params.include or build_params.exclude
-        )
-        if selecting and not planned:
-            raise NoBenchmarksMatchedError(
-                "No benchmarks matched --include/--exclude "
-                "(run with --list to see what's available)."
+        # Get benchmarks
+        if planned is None:
+            planned = self.plan_benchmarks(
+                build_params,
+                use_defaults=use_defaults,
             )
 
-        print_diagnostics(env_diagnostics, "Environment checks")
+        if len(planned) == 0:
+            raise ValueError("No benchmark planned")
 
-        runner = (self.runner or default_runner)(build_params)
-
+        # Run
         if self.denoise:
             if not is_root():
                 raise PermissionError(
-                    "--denoise requires root (try: sudo bench run --denoise ...)"
+                    "Denoise requires root (try running witg `sudo` ONLY IF YOU TRUST THE SUITE)"
                 )
             with denoise_session() as applied:
                 console.print(
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                report = runner.run(planned, reporter, env, env_diagnostics)
+                return runner.run(planned, reporter, env, env_diagnostics)
         else:
-            report = runner.run(planned, reporter, env, env_diagnostics)
+            return runner.run(planned, reporter, env, env_diagnostics)
 
-        return report
+    # ----- run_cli -----------
 
-    def _do_show(self, reporter: Reporter, path: str) -> Report:
-        report = report_from_json(Path(path).read_text())
-        for r in report.executions:
-            reporter.execution_done(r)
-        reporter.finalize(report)
-        return report
+    def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
+        """Resolve generators, apply app defaults, and run every suite."""
 
-    def _do_list(self, planned: list[Benchmark]) -> Report:
-        console.print(_list_planned_benchmarks(planned))
-        return Report()
+        params = self.params if self.params is not None else SharedBenchParams
 
-    def _filter_benchmarks(
-        self, ctx: Context[Any], planned: list[Benchmark]
-    ) -> list[Benchmark]:
-        pred = default_filter(ctx)
-        return [b for b in planned if pred(b)]
+        if isinstance(args, argparse.Namespace):
+            cli_args = args
+        else:
+            parser = _make_run_parser(params, description=self.name)
+            cli_args = parser.parse_args(args)
+
+        build_params = build_dataclass(params, cli_args)
+
+        # --show
+        # TODO: This should be higher
+        show_path = getattr(cli_args, "show", None)
+        if show_path is not None:
+            return show_report(default_reporter(build_params), show_path)
+
+        planned = self.plan_benchmarks(build_params, use_defaults=True)
+
+        # --list
+        if getattr(cli_args, "list_plan", False):
+            # TODO: list_plan should be a parameter
+            console.print(_list_planned_benchmarks(planned))
+            return Report()
+
+        return self.run(
+            build_params, planned, use_defaults=True, print_diagnostics=True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -286,13 +325,13 @@ def bench_app(
 # ---------------------------------------------------------------------------
 
 
-def default_reporter(params: Any, summary: Reporter | None = None) -> Reporter:
+def default_reporter(params: Any) -> Reporter | None:
+    if not isinstance(params, SharedBenchParams):
+        return None
+
     sinks: list[Reporter] = []
     if params.progress:
         sinks.append(ProgressReporter())
-
-    sinks.append(summary or SummaryReporter(DefaultSummary()))
-
     if params.json:
         sinks.append(JsonReporter(Path(params.json)))
     if params.csv:
@@ -303,7 +342,10 @@ def default_reporter(params: Any, summary: Reporter | None = None) -> Reporter:
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
-def default_runner(params: Any) -> Runner:
+def default_runner(params: Any) -> Runner | None:
+    if not isinstance(params, SharedBenchParams):
+        return None
+
     if params.dry:
         return Dry(verbose=params.verbose)
     if params.jobs > 1:
@@ -311,10 +353,9 @@ def default_runner(params: Any) -> Runner:
     return Sequential(verbose=params.verbose)
 
 
-def default_filter(params: Any) -> Callable[[Benchmark], bool]:
-    # selection is opt-in
+def default_filter(params: Any) -> BenchmarkPred:
     if not isinstance(params, SharedSelectionParams):
-        return lambda _b: True
+        return lambda _: True
 
     inc = [re.compile(pat) for pat in (params.include or [])]
     exc = [re.compile(pat) for pat in (params.exclude or [])]
@@ -333,8 +374,9 @@ def default_filter(params: Any) -> Callable[[Benchmark], bool]:
 # ---------------------------------------------------------------------------
 
 
+# TODO: This should live somewhere else
 def _make_run_parser(
-    params: type | None, description: str = ""
+    params: type, description: str = ""
 ) -> argparse.ArgumentParser:
     # No prog= override: argparse derives it from sys.argv[0], so a user script
     # shows its own name (the `bench` console subcommands set their own prog).
@@ -344,8 +386,7 @@ def _make_run_parser(
     # via inheritance, the shared bench/selection flags. Route each field to a
     # `--help` group by which base declares it (fields the user's type doesn't
     # inherit simply have no group). Missing groups are skipped entirely.
-    effective = params if params is not None else SharedBenchParams
-    all_names = {f.name for f in dataclasses.fields(effective)}
+    all_names = {f.name for f in dataclasses.fields(params)}
     selection_names = {
         f.name for f in dataclasses.fields(SharedSelectionParams)
     } & all_names
@@ -361,7 +402,7 @@ def _make_run_parser(
     ):
         if names:
             add_dataclass_args(
-                p.add_argument_group(title), effective, skip=all_names - names
+                p.add_argument_group(title), params, skip=all_names - names
             )
 
     p.add_argument(
@@ -382,7 +423,7 @@ def _make_run_parser(
 
 
 # ---------------------------------------------------------------------------
-# list
+# Pretty-printing helpers
 # ---------------------------------------------------------------------------
 
 
@@ -428,3 +469,15 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
                 b = variants[0]
                 node.add(Text(format_benchmark(b.name, b.name, b.variant)))
     return root
+
+
+def show_report(reporter: Reporter | None, path: str) -> Report:
+    report = report_from_json(Path(path).read_text())
+
+    if reporter is not None:
+        for r in report.executions:
+            reporter.execution_done(r)
+        reporter.finalize(report)
+
+    DefaultSummary()(summarize(report))
+    return report

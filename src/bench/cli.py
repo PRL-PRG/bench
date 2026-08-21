@@ -31,7 +31,13 @@ from bench.report.formatter import (
     Results,
     Summary,
 )
-from bench.report.reporter import SummaryReporter, console, print_diagnostics
+from bench.report.reporter import (
+    CompositeReporter,
+    Reporter,
+    SummaryReporter,
+    console,
+    print_diagnostics,
+)
 from bench.report.summary import merge_reports, summarize
 from bench.runner.base import SuiteMaterializationError
 from bench.utils import print_exception
@@ -235,13 +241,20 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     s = suite("run", b)
 
     metrics = {ns.metric} if ns.metric else None
-    reporter = SummaryReporter(DefaultSummary(metrics=metrics))
     environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
+
+    def build_reporter(ctx: Any) -> Reporter:
+        summary = SummaryReporter(DefaultSummary(metrics=metrics))
+        reporter = default_reporter(ctx)
+        if reporter is None:
+            return summary
+        else:
+            return CompositeReporter(reporter, summary)
 
     app = (
         bench_app("bench", environment=environment, denoise=ns.denoise)
         .add(s)
-        .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
+        .with_reporter(build_reporter)
     )
     try:
         app.run_cli(ns)
