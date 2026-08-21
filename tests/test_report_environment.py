@@ -44,10 +44,14 @@ def test_old_json_without_environment_loads():
 
 def test_json_reporter_embeds_environment(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
-    r = JsonReporter(
-        tmp_path / "o.json", environment=env, diagnostics=[Diagnostic("warn", "m", "f")]
+    r = JsonReporter(tmp_path / "o.json")
+    r.finalize(
+        Report(
+            executions=[_run()],
+            environment=env,
+            diagnostics=[Diagnostic("warn", "m", "f")],
+        )
     )
-    r.finalize(Report(executions=[_run()]))
     data = json.loads((tmp_path / "o.json").read_text())
     assert data["environment"]["cpu_model"] == "X"
     assert data["diagnostics"][0]["message"] == "m"
@@ -55,8 +59,8 @@ def test_json_reporter_embeds_environment(tmp_path: Path):
 
 def test_csv_reporter_writes_environment_comments(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
-    r = CsvReporter(tmp_path / "o.csv", environment=env)
-    r.finalize(Report(executions=[_run()]))
+    r = CsvReporter(tmp_path / "o.csv")
+    r.finalize(Report(executions=[_run()], environment=env))
     text = (tmp_path / "o.csv").read_text()
     assert text.splitlines()[0].startswith("#")
     assert "# cpu_model: X" in text
@@ -65,10 +69,10 @@ def test_csv_reporter_writes_environment_comments(tmp_path: Path):
 
 def test_dir_reporter_writes_environment_json(tmp_path: Path):
     env = Environment(system="Linux", cpu_model="X")
-    r = DirReporter(tmp_path, environment=env)
+    r = DirReporter(tmp_path)
     r.start([])
     r.execution_done(_run())
-    r.finalize(Report(executions=[_run()]))
+    r.finalize(Report(executions=[_run()], environment=env))
     data = json.loads((tmp_path / "environment.json").read_text())
     assert data["environment"]["cpu_model"] == "X"
 

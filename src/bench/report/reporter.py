@@ -70,15 +70,6 @@ def _environment_comments(env: Environment | None) -> list[str]:
 class Reporter(abc.ABC):
     """Streaming sink for benchmark progress and results."""
 
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        """Inject the collected machine snapshot. Called once before `start()`.
-
-        Reporters that embed the environment override this. The rest ignore it.
-        """
-        pass
-
     def start(self, plan: list[Benchmark]) -> None:
         pass
 
@@ -95,31 +86,11 @@ class Reporter(abc.ABC):
         pass
 
 
-class _EnvironmentAware:
-    """Mixin for sinks that embed the machine snapshot; stores what
-    `set_environment` injects."""
-
-    _environment: Environment | None
-    _diagnostics: list[Diagnostic]
-
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        self._environment = environment
-        self._diagnostics = diagnostics
-
-
 class CompositeReporter(Reporter):
     """Fan out events to multiple Reporters in registration order."""
 
     def __init__(self, *reporters: Reporter) -> None:
         self.reporters = list(reporters)
-
-    def set_environment(
-        self, environment: Environment | None, diagnostics: list[Diagnostic]
-    ) -> None:
-        for r in self.reporters:
-            r.set_environment(environment, diagnostics)
 
     def start(self, plan: list[Benchmark]) -> None:
         for r in self.reporters:
@@ -147,7 +118,7 @@ class CompositeReporter(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class CsvReporter(_EnvironmentAware, Reporter):
+class CsvReporter(Reporter):
     """Buffer runs, write CSV on `finalize()`.
 
     Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
@@ -162,12 +133,10 @@ class CsvReporter(_EnvironmentAware, Reporter):
         path: Path,
         *,
         delimiter: str = ",",
-        environment: Environment | None = None,
     ) -> None:
         super().__init__()
         self.path = path
         self.delimiter = delimiter
-        self._environment = environment
 
     def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +150,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
         )
 
         with open(self.path, "wt", newline="") as f:
-            for line in _environment_comments(self._environment):
+            for line in _environment_comments(report.environment):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
@@ -232,7 +201,7 @@ class CsvReporter(_EnvironmentAware, Reporter):
 # ---------------------------------------------------------------------------
 
 
-class JsonReporter(_EnvironmentAware, Reporter):
+class JsonReporter(Reporter):
     """Buffer runs in memory, write a single JSON file on finalize().
 
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
@@ -243,19 +212,13 @@ class JsonReporter(_EnvironmentAware, Reporter):
         path: Path,
         *,
         include_output: bool = False,
-        environment: Environment | None = None,
-        diagnostics: list[Diagnostic] | None = None,
     ) -> None:
         super().__init__()
         self.path = path
         self.include_output = include_output
-        self._environment = environment
-        self._diagnostics = diagnostics or []
 
     def finalize(self, report: Report) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        report.environment = self._environment
-        report.diagnostics.extend(self._diagnostics)
         self.path.write_text(report_to_json(report, include_output=self.include_output))
 
 
@@ -264,7 +227,7 @@ class JsonReporter(_EnvironmentAware, Reporter):
 # ---------------------------------------------------------------------------
 
 
-class DirReporter(_EnvironmentAware, Reporter):
+class DirReporter(Reporter):
     """Per-execution tree at `<out>/<suite>/<bench>/<n>/`.
 
     Files: stdout, stderr, exitcode, seq (cwd + cmd + info). Directories count
@@ -274,29 +237,14 @@ class DirReporter(_EnvironmentAware, Reporter):
     def __init__(
         self,
         root: Path,
-        *,
-        environment: Environment | None = None,
-        diagnostics: list[Diagnostic] | None = None,
     ) -> None:
         self.root = root
-        self._environment = environment
-        self._diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
 
     def start(self, plan: list[Benchmark]) -> None:
         self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
-        if self._environment is not None:
-            (self.root / "environment.json").write_text(
-                json.dumps(
-                    {
-                        "environment": unstructure(self._environment),
-                        "diagnostics": unstructure(self._diagnostics),
-                    },
-                    indent=2,
-                )
-            )
 
     def execution_done(self, execution: Execution) -> None:
         key = (execution.suite, execution.benchmark)
@@ -320,6 +268,18 @@ class DirReporter(_EnvironmentAware, Reporter):
         (exec_dir / "stdout").write_text(execution.stdout)
         (exec_dir / "stderr").write_text(execution.stderr)
         (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
+
+    def finalize(self, report: Report) -> None:
+        if report.environment is not None:
+            (self.root / "environment.json").write_text(
+                json.dumps(
+                    {
+                        "environment": unstructure(report.environment),
+                        "diagnostics": unstructure(report.diagnostics),
+                    },
+                    indent=2,
+                )
+            )
 
 
 @dataclasses.dataclass

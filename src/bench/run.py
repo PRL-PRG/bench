@@ -177,7 +177,6 @@ class BenchAppBuilder(BuilderBase):
         else:
             summary = self.summary(build_params) if self.summary is not None else None
             reporter = default_reporter(build_params, summary)
-        reporter.set_environment(env, env_diagnostics)
 
         # --show
         show = getattr(cli_args, "show", None)
@@ -215,17 +214,14 @@ class BenchAppBuilder(BuilderBase):
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                report = runner.run(planned)
+                report = runner.run(planned, env, env_diagnostics)
         else:
-            report = runner.run(planned)
+            report = runner.run(planned, env, env_diagnostics)
 
-        report.environment = env
-        report.diagnostics = env_diagnostics
         return report
 
     def _do_show(self, reporter: Reporter, path: str) -> Report:
         report = report_from_json(Path(path).read_text())
-        reporter.set_environment(report.environment, report.diagnostics)
         for r in report.executions:
             reporter.execution_done(r)
         reporter.finalize(report)

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from bench.core.environment import Diagnostic, Environment
 from bench.core.invocation import (
     Invocation,
     default_success,
@@ -145,9 +146,14 @@ class Runner(abc.ABC):
         self.reporter = reporter or _NoopReporter()
         self.verbose = verbose
 
-    def run(self, planned: list[Benchmark]) -> Report:
+    def run(
+        self,
+        planned: list[Benchmark],
+        environment: Environment | None = None,
+        diagnostics: list[Diagnostic] = [],
+    ) -> Report:
         self.reporter.start(planned)
-        report = Report()
+        report = Report(environment=environment, diagnostics=diagnostics)
 
         try:
             with install_sigint_handler():
