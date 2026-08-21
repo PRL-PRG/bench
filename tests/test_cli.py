@@ -195,7 +195,9 @@ def test_compare_missing_file_errors(tmp_path: Path):
 
 def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     # `./my-bench --show r.json` renders a saved report with the script's own
-    # configured formatter (here a GeomeanSummary), running nothing.
+    # configured formatter (here a GeomeanSummary), running nothing. The path
+    # used to substitute the default reporter for the configured one, then crash
+    # inside it.
     from io import StringIO
 
     from rich.console import Console
@@ -406,13 +408,18 @@ def test_list_shows_variants(capsys):
     assert "jdk=17" in out
 
 
-def test_list_ignores_include_exclude(capsys):
-    bench_app().add(_trivial("Alpha"), _trivial("Beta")).run_cli(
-        ["--list", "--include", "no-such-bench", "--no-progress"]
-    )
+def test_list_reflects_include_exclude(capsys):
+    # `--list` answers "what would this command run", so it honors the same
+    # selection the run would: a matching filter narrows the listing...
+    app = bench_app().add(_trivial("Alpha"), _trivial("Beta"))
+    app.run_cli(["--list", "--include", "Alpha", "--no-progress"])
     out = capsys.readouterr().out
     assert "Alpha" in out
-    assert "Beta" in out
+    assert "Beta" not in out
+
+    # ...and one that matches nothing lists nothing.
+    app.run_cli(["--list", "--include", "no-such-bench", "--no-progress"])
+    assert "0 benchmarks" in capsys.readouterr().out
 
 
 def test_include_keeps_only_matching():
@@ -467,6 +474,8 @@ def test_bad_regex_raises():
 
 
 def test_empty_selection_raises():
+    # A selection that matches nothing raises the dedicated error, not a bare
+    # ValueError - the type is public, so callers can catch just this case.
     with pytest.raises(NoBenchmarksMatchedError):
         bench_app().add(_trivial("A")).run_cli(
             ["--include", "no-such-bench", "--no-progress"]

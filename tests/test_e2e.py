@@ -1,6 +1,5 @@
 """End-to-end: real subprocess + full pipeline through Sample stats."""
 
-import os
 from pathlib import Path
 
 from bench import (
@@ -33,7 +32,7 @@ def test_e2e_sleep_runs_produce_expected_count():
         bench("a")
         .with_command(["sleep", "0.02"])
         .with_cwd(Path("/tmp"))
-        .with_env({"PATH": os.environ["PATH"]})
+        .with_inherit_env()
         .with_metric(Time())
         .with_runs(3),
     )
@@ -53,7 +52,7 @@ def test_e2e_warmup_then_measure():
         bench("a")
         .with_command(["sh", "-c", "echo 0.01"])
         .with_cwd(Path("/tmp"))
-        .with_env({"PATH": os.environ["PATH"]})
+        .with_inherit_env()
         .with_metric(
             FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
         )
@@ -80,7 +79,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         bench("missing")
         .with_command(["/no_such_binary_xyzzy"])
         .with_cwd(Path("/tmp"))
-        .with_env({"PATH": os.environ["PATH"]})
+        .with_inherit_env()
         .with_metric(Time())
         .with_runs(3),
     )
@@ -97,7 +96,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         bench("hang")
         .with_command(["sh", "-c", "sleep 5"])
         .with_cwd(Path("/tmp"))
-        .with_env({"PATH": os.environ["PATH"]})
+        .with_inherit_env()
         .with_metric(Time())
         .with_timeout(0.05)
         .with_runs(1),

@@ -385,20 +385,50 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
     assert rep._passed == 1 and rep._failed == 1
 
 
-def test_summary_channel_keeps_progress_and_swaps_summary():
-    # bench_app(summary=...) must keep the progress bar (and CLI sinks) while
-    # replacing only the default summary.
-    from types import SimpleNamespace
+def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
+    # bench_app(summary=...) must keep the progress bar (and the CLI sinks)
+    # while replacing only the default summary. The composition used to happen
+    # inside default_reporter(params, summary); it now happens in
+    # BenchAppBuilder.run, so assert the behaviour rather than the plumbing.
+    buf = io.StringIO()
+    marker = SummaryReporter(
+        target_console=Console(file=buf, force_terminal=False, width=200)
+    )
+    s = suite(
+        "S",
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    bench_app(summary=marker).add(s).run_cli([])
 
-    from bench.run import default_reporter
-    from bench.report.reporter import CompositeReporter, ProgressReporter
+    # Progress still reports to the real console...
+    assert "Finished:" in capsys.readouterr().out
+    # ...while the summary went to the swapped-in reporter alone.
+    assert "elapsed" in buf.getvalue()
 
-    marker = SummaryReporter()
-    params = SimpleNamespace(progress=True, json=None, csv=None, dir=None)
-    rep = default_reporter(params, marker)
-    assert isinstance(rep, CompositeReporter)
-    assert any(isinstance(r, ProgressReporter) for r in rep.reporters)
-    assert marker in rep.reporters
+
+def test_app_reporter_replaces_the_whole_reporter(capsys):
+    # `bench_app(reporter=...)` replaces the whole reporter, progress and summary
+    # included. run() used to append a default SummaryReporter on top of it, so
+    # the app's chosen output gained a summary it never asked for.
+    from bench import Reporter
+
+    class Silent(Reporter):
+        pass
+
+    s = suite(
+        "S",
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    bench_app(reporter=Silent()).add(s).run_cli(["--no-progress"])
+    assert capsys.readouterr().out == ""
 
 
 def test_eta_column_blank_for_single_or_unknown_total():

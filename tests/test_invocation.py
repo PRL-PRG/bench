@@ -59,7 +59,14 @@ def test_spawn_streaming_finish_cancels_timeout_timer():
     # A generous timeout that should never fire for a fast command: finish()
     # must return promptly (the unfired Timer must be cancelled, not left to
     # block interpreter exit for the whole timeout window).
-    exe = Invocation(command=("sh", "-c", "sleep 0.05"), cwd=Path("/tmp"), timeout=30)
+    # `sleep` is an external binary, so the shell needs a PATH: the streaming
+    # path honors `inherit_env` exactly as `execute` does.
+    exe = Invocation(
+        command=("sh", "-c", "sleep 0.05"),
+        cwd=Path("/tmp"),
+        timeout=30,
+        inherit_env=True,
+    )
     live = spawn_streaming(exe)
     t = time.monotonic()
     res = live.finish()

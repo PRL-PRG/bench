@@ -40,6 +40,8 @@ def test_doctor_json_is_valid():
 
 
 def test_run_check_environment_embeds_environment(tmp_path: Path):
+    # `bench run` used to crash before writing the report: a nested composite
+    # re-delivered benchmark_done, removing the progress task twice.
     out = tmp_path / "o.json"
     r = _run(
         "run", "--check-environment", "--runs", "2", "--json", str(out), "sleep 0.01"

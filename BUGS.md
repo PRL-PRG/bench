@@ -13,10 +13,18 @@ defect. **No `src/` files were modified by the test migration.**
 > `# pyright: ignore[...]  # BUG-N` marker where the defect is a type error), so
 > the failure list and this file stay in step.
 
-**Current state:** `pyright` is clean across `src/`, `tests/` and `examples/`.
-`pytest` reports **12 failures**, all listed below. The aggregate failure set
-now equals the union of the isolated per-file runs (the old ordering
-interference is gone — see *Fixed* below).
+**Current state:** `pyright` reports **1 error**, in `examples/` (see the
+`default_reporter` smell under *Low-severity observations*); `src/` and `tests/`
+are clean. `pytest` reports **12 failures**, all listed below — 11 for BUG-13 and
+one for BUG-22. The aggregate failure set equals the union of the isolated
+per-file runs.
+
+This pass filed five new defects, all regressions from the CLI/reporter
+decoupling (`361f069`, `5c4ca81`), and every one of them is already resolved:
+BUG-23, BUG-24, BUG-26 and BUG-27 were fixed in the working tree as the pass ran
+(between them, every `bench run` printed its summary three times and then
+crashed, and `--show` ignored the app's own reporter), and BUG-25 was closed as
+intended. What is left is the two long-standing entries below.
 
 ---
 
@@ -44,7 +52,7 @@ interference is gone — see *Fixed* below).
   exposed), then dropped everything *except* the matched cell (a `True`-on-match
   rule fed to a keep-predicate), then dropped on *any* kwarg match instead of all
   of them (`all(mismatch)` where `any(mismatch)` was meant). `rule` is now
-  `any(k not in b.data or b.data[k] != v ...)` (`builder/base.py:335`), so a skip
+  `any(k not in b.data or b.data[k] != v ...)` (`builder/base.py:337`), so a skip
   drops exactly the cell matching all its kwargs and several skips union.
   Covered by `test_benchmark.py::test_add_matrix_skip_unions_rules_on_one_benchmark`,
   `test_suite.py::test_with_skip_kwargs_drops_variant` and
@@ -67,7 +75,7 @@ interference is gone — see *Fixed* below).
   `inherit_from` merged the mergeable fields unconditionally, so an env factory
   merged against the level above's `None` produced a lambda calling `None(ctx)`.
   `inherit_from` now skips a mergeable field whose incoming value is `None`
-  (`builder/base.py:395`), and `with_env` works at every level:
+  (`builder/base.py:410`), and `with_env` works at every level:
   ```python
   from bench import bench, suite
   suite("S", bench("a").with_command(["true"]).with_env({"X": "1"})).materialize(None)
@@ -86,35 +94,76 @@ interference is gone — see *Fixed* below).
   `self._local.n += 1` first lived only on the TTY branch (so the plain lines
   printed `[0/N]` forever), then moved onto both branches but *after*
   `_print_plain`, so each line showed the pre-increment value. It is now hoisted
-  above the branch (`report/reporter.py:467`) and both paths share it. Covered by
+  above the branch (`report/reporter.py:436`) and both paths share it. Covered by
   `test_reporter.py::test_progress_plain_lines_in_non_tty`,
   `test_reporter.py::test_progress_plain_count_scopes_per_benchmark` and
-  `test_cli.py::test_bench_non_tty_shows_plain_progress`.
+  `test_cli.py::test_bench_non_tty_shows_plain_progress`. (The `_local` state it
+  lives in has no default, which is what **BUG-27** trips over on replay.)
 - **BUG-18 — TTY progress crashed on a single-benchmark plan.** `_TUI` declared
   `overall_task` without assigning it, and `start()` only set it for plans of
   more than one benchmark, so `benchmark_done` raised `AttributeError`.
-  `_TUI.__init__` initializes it to `None` (`report/reporter.py:359`). Covered by
+  `_TUI.__init__` initializes it to `None`. Covered by
   `test_reporter.py::test_progress_prints_completed_summary_scrollback`.
 - **BUG-19 — a negative `line` leaked into `Sample.iteration`.**
   `FloatPerLine.process_text` reused one `idx` for both line selection and
   iteration numbering, so `.last_line()` emitted `iteration=-1` and the
   Controller then indexed `iterations[-1]` of an empty list. Selection now uses a
-  separate `select_idx` (`core/metric.py:171`) and the iteration counter starts
-  at 0. Covered by `test_metric.py::test_last_line_indexes_the_first_iteration`.
+  separate `select_idx` and the iteration counter starts at 0. Covered by
+  `test_metric.py::test_last_line_indexes_the_first_iteration`.
 - **BUG-21 — filters were ignored for benchmarks without a matrix.**
   `BenchmarkBuilder.create` had a no-matrix fast path that yielded without
   consulting `self.filters`, so `with_filter`/`add_matrix_skip` only bit on
   matrix-expanded variants. The fast path is gone — a zero-axis
   `itertools.product` yields the single variant through the same filtered loop
-  (`builder/benchmark.py:104`, filtered at `builder/benchmark.py:119`). The routing was never at fault: `filters` is a
-  mergeable field, so `inherit_from` already carried it app → suite → benchmark.
-  Covered by `test_suite.py::test_filter_without_matrix_drops_variant` and
+  (`builder/benchmark.py:104`, filtered at `builder/benchmark.py:119`). The
+  routing was never at fault: `filters` is a mergeable field, so `inherit_from`
+  already carried it app → suite → benchmark. Covered by
+  `test_suite.py::test_filter_without_matrix_drops_variant` and
   `test_runner.py::test_with_filter_bare_predicate_narrows_plan`.
+- **BUG-23 — `CompositeReporter` re-delivered every event to the composite it had
+  just flattened.** The helper added by `5c4ca81` yielded the expanded composite
+  *in addition to* its children, because `yield r` sat outside the `isinstance`
+  branch. So `CompositeReporter(CompositeReporter(P, J), S)` held
+  `[P, J, Composite(P,J), S]` and every event reached `P` and `J` twice —
+  `ProgressReporter.benchmark_done` removed its rich task on the first delivery
+  and raised `KeyError` on the second, which crashed **every `bench run`**
+  (`cli.py:246` wraps `default_reporter(ctx)` in a second composite and
+  `run.py:207` wraps that again). A `return` after the recursive expansion
+  (`report/reporter.py:98`) ends the walk, so a composite contributes only its
+  leaves:
+  ```python
+  inner = CompositeReporter(ProgressReporter(), JsonReporter(Path("/tmp/x.json")))
+  [type(r).__name__ for r in CompositeReporter(inner, ProgressReporter()).reporters]
+  # ['ProgressReporter', 'JsonReporter', 'ProgressReporter']
+  ```
+  The four `test_cli_environment.py` tests that were failing on the crash
+  (`test_run_check_environment_embeds_environment`,
+  `test_run_omits_environment_by_default`,
+  `test_run_check_environment_csv_has_comments`,
+  `test_run_csv_has_no_comments_by_default`) are green. The duplicate *summary*
+  on `bench run` is a separate defect — see **BUG-26**.
+- **BUG-24 — `NoBenchmarksMatchedError` was exported but never raised.** The type
+  was public (`run.py:70`, re-exported at `src/bench/__init__.py:101`) with a
+  docstring naming exactly one situation, while `run` raised a bare `ValueError`;
+  `361f069` had dropped the raise site along with its guard. `run.py:232` raises
+  the dedicated type again, so a caller can catch just the empty-selection case.
+  Covered by `test_cli.py::test_empty_selection_raises`.
+- **BUG-26 — an app-supplied reporter gained a default summary.** `bench_app`'s
+  docstring promises that `reporter=` "replace[s] the whole reporter (progress
+  included)", but `run` checked only whether `summary` was set before appending
+  the builtin one, and `use_defaults` is always `True` from `run_cli`. Since
+  `bench run` is itself such an app (`cli.py:246` builds a reporter that already
+  carries a `SummaryReporter`), every invocation printed the summary table twice
+  — three times before BUG-23 was fixed. The summary is now composed inside each
+  reporter branch, so it is appended only when the reporter was defaulted too.
+  Covered by `test_reporter.py::test_app_reporter_replaces_the_whole_reporter`
+  and `test_reporter.py::test_summary_channel_keeps_progress_and_swaps_summary`
+  (the swap channel still works).
 - **Test isolation.** `tests/test_runner.py` used to poison every later-ordered
   file: `test_sigint_kills_shell_wrapped_subtree` raced a `threading.Timer`
-  against a benchmark that exited instantly (see BUG-20), so its
-  `os.kill(getpid(), SIGINT)` landed *after* the test, taking pytest with it.
-  Fixed in the test. The aggregate run is now authoritative again.
+  against a benchmark that exited instantly, so its `os.kill(getpid(), SIGINT)`
+  landed *after* the test, taking pytest with it. Fixed in the test. The
+  aggregate run is now authoritative again.
 
 ## 🚫 Closed as intended (not defects)
 
@@ -134,22 +183,72 @@ interference is gone — see *Fixed* below).
   at all; `ProgressReporter._print_plain` reads `Execution.failure` and prints
   `FAIL (exit code N)`. Covered green by
   `test_reporter.py::test_progress_plain_marks_failures`.
+- **BUG-20 — benchmarks run with an empty environment unless they opt in.**
+  `Invocation.inherit_env` defaults to `False` (`core/invocation.py:38`, mirrored
+  by the builder field at `builder/base.py:150`) and `execute` builds
+  `env = dict(exe.env)` (`core/process.py:147`), so a benchmark that sets neither
+  `env` nor `inherit_env` hands the child no environment at all — no `PATH`.
+  `argv[0]` still resolves (against the *invoker's* PATH, in `_resolve_command`),
+  so this only bites once something shells out:
+  ```python
+  b = bench("x").with_command(["sh", "-c", "sleep 0.01"]).with_cwd(Path("/tmp")).with_runs(1)
+  Sequential().run(plan([suite("S", b)], None)).executions[0].returncode   # 127
+  b.with_inherit_env()                                                    # 0
+  ```
+  **This default is intentional** (owner's call, 2026-08-21): a benchmark's
+  environment is declared, not ambient, which is what makes a run reproducible
+  across machines. There are two ways to satisfy a command that shells out, and
+  both are first-class:
+  - name the variables it needs — `with_env({"PATH": os.environ["PATH"]})`. This
+    is what `examples/` does, deliberately: passing the one variable the workload
+    needs keeps the declared environment minimal and is the discipline the
+    examples exist to demonstrate.
+  - hand over the ambient environment wholesale — `with_inherit_env()`
+    (`builder/base.py:228`), which reaches the invocation via `_resolve_cell`
+    (`builder/benchmark.py:163`) and is a mergeable field combined with `_or`
+    (`builder/base.py:437`), so setting it at any level turns it on for
+    everything below. It landed in `baee7cb` and is verified working. The tests
+    use this one (`tests/test_runner.py`, `tests/test_e2e.py`): they only need
+    the subprocess to run, so the shorter call is the clearer statement of
+    intent there.
+- **BUG-27 — `--show` ignored the configured reporter, then crashed.** `run_cli`
+  hardcoded `show_report(default_reporter(build_params), ...)`, discarding
+  `self.reporter`, so an app's formatter never ran on a saved report — and the
+  substituted default carried a `ProgressReporter`, which died on its
+  thread-local counter (`AttributeError: 'Local' object has no attribute 'n'`)
+  because the replay never calls `start()`. `361f069` had dropped the reporter
+  argument that the old `_do_show(reporter, show)` took. The path is now a method
+  that resolves the reporter the same way a run does — `do_show_report`
+  (`run.py:290`) calls `self.get_reporter(build_params, use_defaults=True)`.
+  Covered by
+  `test_cli.py::test_script_show_replays_through_configured_reporter`.
+- **BUG-25 — `--list` applies `--include`/`--exclude`.** `run_cli` computes
+  `plan_benchmarks(..., use_defaults=True)`, which applies the selection
+  predicate (`run.py:170`), before the `--list` branch reads it (`run.py:275`),
+  so `--list` shows the *filtered* plan where it used to show everything.
+  **This is intentional** (owner's call, 2026-08-21): `--list` answers "what will
+  this command run", so it has to honour the same selection the run would. The
+  test that asserted the old unfiltered listing was rewritten to assert the
+  filtered one (`test_cli.py::test_list_reflects_include_exclude`).
 - **BUG-11 — ProgressReporter dropped the "elapsed estimate" column.** CHANGES.md
   records this as a deliberate simplification. The test that asserted it is
-  deleted; only the `ProgressReporter` class docstring
-  (`report/reporter.py:382`) still promises the column and is now stale.
+  deleted; only the `ProgressReporter` class docstring still promises the column
+  and is now stale.
 
 ---
 
 ## ❗ Open defects
+
+Ordered by severity, not by number.
 
 ### BUG-13 — inheritance precedence is inverted (High)
 The documented cascade is `defaults < app < suite < benchmark` (the more
 specific level wins). It runs the other way: `SuiteBuilder.materialize` calls
 `builder.inherit_from(self)` (`src/bench/builder/suite.py:96`) and
 `inherit_from(over)` lets **`over`** win every non-mergeable field
-(`builder/base.py:368`, `override=True` at `builder/base.py:390`). So a suite default silently overrides
-an explicit benchmark setting, and the same happens one level up at app→suite.
+(`builder/base.py:382`, `override=True` at `builder/base.py:404`). So a suite
+default silently overrides an explicit benchmark setting, and the same happens
+one level up at app→suite.
 ```python
 from pathlib import Path
 from bench import bench, suite
@@ -171,34 +270,11 @@ Tests: `test_suite.py` — `test_runs_preserves_benchmark_override`,
 Also `test_pacing.py::test_cooldown_benchmark_overrides_suite` and
 `test_cli.py::test_bench_app_defaults_fill_suites_but_lose_to_overrides`.
 
-### BUG-20 — benchmarks run with an empty environment, and `inherit_env` is unreachable (High)
-`Invocation.inherit_env` defaults to `False` and `execute` builds
-`env = dict(exe.env)` (`core/process.py:147`), so unless the user sets `env`
-the child gets **no environment at all** — no `PATH`. `argv[0]` still resolves
-(against the *invoker's* PATH, in `_resolve_command`), which hides the problem
-until something shells out:
-```python
-bench("x").with_command(["sh", "-c", "sleep 1"])   # -> exit 127, "sleep: command not found"
-```
-Three things compound it:
-- `BenchmarkBuilder._resolve_cell` never passes `inherit_env`, and no `with_*`
-  setter exposes it, so the flag cannot be turned on from the builder API.
-- `stream_process` (`core/process.py:362`) does the opposite — it falls back to
-  `os.environ` when `env` is empty — so the two execution paths disagree.
-- The workaround is `with_env({"PATH": os.environ["PATH"]})` on the suite (or
-  any level — BUG-14 no longer restricts where it can go), which every example
-  that shells out now does.
-
-No dedicated test: the suite and the examples pass PATH explicitly
-(`tests/test_runner.py::_PATH_ENV`, `.with_env({"PATH": ...})` in the examples).
-Fix one of: default `inherit_env` to `True`, expose a `with_inherit_env` setter,
-or make `execute` mirror `stream_process`.
-
 ### BUG-22 — no way to discard leading iterations inside one execution (Medium)
 `Iteration.warmup` still exists, the Controller still stamps it, and
 `summarize` still excludes flagged iterations from the stats while counting them
 (`report/summary.py:115`) — but nothing can ever set it for a *subset* of one
-execution's iterations. `run_benchmark` (`runner/controller.py:189`) flags
+execution's iterations. `run_benchmark` (`runner/controller.py:192`) flags
 **every** iteration of an execution while the warmup policy is unsatisfied, and
 observes the policy once per execution, so `with_warmup(2)` means "two extra
 whole processes", not "drop the first two iterations".
@@ -207,12 +283,14 @@ That is precisely the harness shape: one process prints N measurements and the
 leading ones are the JIT warming up.
 ```python
 # one process printing 5 values, warmup=2
-# want: 1 execution, iterations flagged [True, True, False, False, False]
-# get:  3 executions of 5 iterations each, the first 2 entirely warmup
+# want: 1 execution,  iterations flagged [True, True, False, False, False]
+# get:  3 executions of 5 iterations each, the first 2 flagged in full:
+#       [[T,T,T,T,T], [T,T,T,T,T], [F,F,F,F,F]]
 ```
 Workaround in the examples: the harness discards its own warmup
 (`examples/workloads/fakevm.py -w`, Renaissance `-r`), so bench never sees it.
-Unlike BUG-20 this one has no builder-level escape hatch.
+Unlike the empty-environment default (BUG-20) this one has no builder-level
+escape hatch.
 Fix: let the warmup policy observe iterations, or add a "first N iterations of
 each execution are warmup" setting.
 Test: `test_iterations.py::test_leading_iterations_can_be_marked_warmup`.
@@ -221,16 +299,15 @@ Test: `test_iterations.py::test_leading_iterations_can_be_marked_warmup`.
 
 ## 🔍 Low-severity observations (no red test)
 
-- **`PerfStat`'s docstring names the wrong base.** It says `direction` and the
-  combinators "come from the `Metric` base unchanged" (`perf.py:38`); they come
-  from `BuildableMetric`, which it extends as of the BUG-3 fix.
-- **Policies lost value equality.** `FixedRuns`, `MaxDuration` and
-  `CoefficientOfVariation` were frozen dataclasses and are now plain
-  `__slots__` classes, so `FixedRuns(3) == FixedRuns(3)` is `False` — while
-  `And`/`Or` are still dataclasses and *do* compare by value. Probably
-  incidental; the tests compare `.max_runs()` instead.
+- **`default_reporter` returns `Reporter | None` but nothing accepts that.**
+  `CompositeReporter(*reporters: Reporter)` rejects `None`, so the natural
+  composition does not typecheck and every caller repeats a None-dance
+  (`cli.py:248-253` does it; `examples/external/cpython.py:177` does not, which
+  is the one remaining `pyright` error). Either return a no-op reporter instead
+  of `None`, or let `CompositeReporter` drop `None`s. Fixing the example is
+  `/sync-tests` work — this pass does not write `examples/`.
 
-### Resolved this pass
+### Resolved in earlier passes
 
 - **`Variant` is a half-mapping** — `__getitem__` added, so `dict(variant)`
   works and `keys()` is no longer a trap.
@@ -239,3 +316,15 @@ Test: `test_iterations.py::test_leading_iterations_can_be_marked_warmup`.
   named `runtime` no longer collides with it.
 - **`Dry`'s docstring is stale** — the `[harness]` sentence is gone; the
   `[unbounded]` marker it describes alongside is still real.
+- **`PerfStat`'s docstring named the wrong base** — it now says the combinators
+  "come from bases unchanged" rather than naming `Metric` (`perf.py:38`).
+- **`stream_process`'s env comment contradicted its code** — the streaming path
+  gates `child_env |= os.environ` on `exe.inherit_env` (`core/process.py:359`)
+  just as `execute` does, and the comment below it no longer promises that an
+  empty env inherits the parent's.
+- **Policies lost value equality** — `FixedRuns`/`MaxDuration`/
+  `CoefficientOfVariation` compare by identity, not value. Intended: nothing
+  needs to compare policies.
+- **`ProgressReporter._local` has no defaults** — `Local(threading.local)` takes
+  its fields from `reset()` on the `start`/`benchmark_start` path. Intended: a
+  consumer that skips the lifecycle is the bug, not the missing default.

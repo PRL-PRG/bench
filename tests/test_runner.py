@@ -39,10 +39,10 @@ def _all_samples(report):
     return [s for r in report.executions for s in _run_samples(r)]
 
 
-# An Invocation runs with exactly the env it was given (`inherit_env` is not
-# reachable from the builder), so a shell-wrapped command needs PATH handed to
-# it or the inner lookup fails with 127.
-_PATH_ENV = {"PATH": os.environ.get("PATH", "")}
+# An Invocation runs with exactly the env it was given, and `inherit_env`
+# defaults to False by design: a benchmark's environment is declared, not
+# ambient. A shell-wrapped command therefore has no PATH for its inner lookup
+# (127) until it opts in with `with_inherit_env()`.
 
 
 def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
@@ -56,7 +56,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
             .with_runs(runs)
             for i in range(2)
         ],
-    ).with_env(_PATH_ENV)
+    ).with_inherit_env()
 
 
 def test_sequential_basic():
@@ -361,7 +361,7 @@ def test_sigint_kills_shell_wrapped_subtree():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
         .with_runs(1),
-    ).with_env(_PATH_ENV)
+    ).with_inherit_env()
 
     t = threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGINT))
     t.start()
