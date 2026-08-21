@@ -14,12 +14,18 @@ import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 from rich.text import Text
 from rich.tree import Tree
 
-from bench.builder.base import BenchmarkPred, BuilderBase, as_build, merge_sequence
+from bench.builder.base import (
+    BenchmarkPred,
+    BuilderBase,
+    as_build,
+    const,
+    merge_sequence,
+)
 from bench.builder.benchmark import Benchmark
 from bench.builder.context import (
     SharedBenchParams,
@@ -60,15 +66,24 @@ from bench.runner.base import (
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
+from bench.builder.context import Params
 
+# HACK: The argument should be "Params or its child" but this is the best
+# we have for now
 type ParamFactory[T] = Callable[[Any], T]
-"""A factory that produces based on the parameters"""
+"""A factory that produces based on the parameters."""
 
 type SuiteGenerator = ParamFactory[Sequence[SuiteBuilder]]
 
 
 class NoBenchmarksMatchedError(Exception):
     """No benchmark matched the --include/--exclude selection."""
+
+
+def as_param_build[T](value: T | ParamFactory[T]) -> ParamFactory[T]:
+    if callable(value):
+        return cast(ParamFactory[T], value)
+    return const(value)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -87,7 +102,7 @@ class BenchAppBuilder(BuilderBase):
     suites: Sequence[SuiteBuilder] = ()
     generators: Sequence[SuiteGenerator] = ()
 
-    params: type | None = None
+    params: type[Params] | None = None
 
     reporter: ParamFactory[Reporter] | None = None
     summary: ParamFactory[Reporter] | None = None
@@ -153,7 +168,7 @@ class BenchAppBuilder(BuilderBase):
 
     def plan_benchmarks(
         self,
-        build_params: Any,
+        build_params: Params,
         *,
         use_defaults: bool = False,
     ):
@@ -172,7 +187,9 @@ class BenchAppBuilder(BuilderBase):
         return planned
 
     # ----- instantiate reporter -----------
-    def get_reporter(self, build_params: Any, *, use_defaults: bool) -> Reporter | None:
+    def get_reporter(
+        self, build_params: Params, *, use_defaults: bool
+    ) -> Reporter | None:
         if self.reporter is not None:
             reporter = self.reporter(build_params)
             if self.summary is not None:
@@ -199,7 +216,7 @@ class BenchAppBuilder(BuilderBase):
 
     def run(
         self,
-        build_params: Any,
+        build_params: Params,
         planned: list[Benchmark] | None = None,
         *,
         use_defaults: bool = False,
@@ -287,7 +304,7 @@ class BenchAppBuilder(BuilderBase):
             build_params, planned, use_defaults=True, print_diagnostics=True
         )
 
-    def do_show_report(self, build_params: Any, path: str):
+    def do_show_report(self, build_params: Params, path: str):
         report = report_from_json(Path(path).read_text())
 
         reporter = self.get_reporter(build_params, use_defaults=True)
@@ -318,12 +335,12 @@ def run(*suites: SuiteBuilder) -> Report:
     return bench_app(Path(sys.argv[0]).stem).add(*suites).run_cli()
 
 
-def bench_app(
+def bench_app[P: Params](
     name: str = "",
     *,
-    params: type | None = None,
-    reporter: Reporter | ParamFactory[Reporter] | None = None,
-    summary: Reporter | ParamFactory[Reporter] | None = None,
+    params: type[P] | None = None,
+    reporter: Reporter | Callable[[P], Reporter] | None = None,
+    summary: Reporter | Callable[[P], Reporter] | None = None,
     environment: EnvironmentCollector | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
@@ -334,11 +351,14 @@ def bench_app(
     (progress included).
     """
 
+    reporter = cast(ParamFactory[Reporter], reporter)
+    summary = cast(ParamFactory[Reporter], summary)
+
     return BenchAppBuilder(
         name=name,
         params=params,
-        reporter=as_build(reporter) if reporter is not None else None,
-        summary=as_build(summary) if summary is not None else None,
+        reporter=as_param_build(reporter) if reporter is not None else None,
+        summary=as_param_build(summary) if summary is not None else None,
         environment=environment or NoEnvironment(),
         denoise=denoise,
     )
@@ -349,7 +369,7 @@ def bench_app(
 # ---------------------------------------------------------------------------
 
 
-def default_reporter(params: Any) -> Reporter | None:
+def default_reporter(params: Params) -> Reporter | None:
     if not isinstance(params, SharedBenchParams):
         return None
 
@@ -366,7 +386,7 @@ def default_reporter(params: Any) -> Reporter | None:
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
 
-def default_runner(params: Any) -> Runner | None:
+def default_runner(params: Params) -> Runner | None:
     if not isinstance(params, SharedBenchParams):
         return None
 
@@ -377,7 +397,7 @@ def default_runner(params: Any) -> Runner | None:
     return Sequential(verbose=params.verbose)
 
 
-def default_filter(params: Any) -> BenchmarkPred:
+def default_filter(params: Params) -> BenchmarkPred:
     if not isinstance(params, SharedSelectionParams):
         return lambda _: True
 

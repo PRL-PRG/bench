@@ -24,6 +24,7 @@ from bench import (
     report_from_json,
     suite,
 )
+from bench.builder.context import Params
 from bench.runner.base import plan
 from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
@@ -70,7 +71,7 @@ def _s():
 
 def test_csv_writer(tmp_path: Path):
     out = tmp_path / "r.csv"
-    Sequential().run(plan([_s()], None), reporter=CsvReporter(out))
+    Sequential().run(plan([_s()], Params()), reporter=CsvReporter(out))
     text = out.read_text()
     lines = text.splitlines()
     assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
@@ -83,7 +84,7 @@ def test_csv_writer(tmp_path: Path):
 
 def test_json_writer_round_trip(tmp_path: Path):
     out = tmp_path / "r.json"
-    Sequential().run(plan([_s()], None), reporter=JsonReporter(out))
+    Sequential().run(plan([_s()], Params()), reporter=JsonReporter(out))
     r = report_from_json(out.read_text())
     all_samples = [s for run in r.executions for o in run.iterations for s in o.samples]
     assert len(all_samples) == 2
@@ -92,7 +93,7 @@ def test_json_writer_round_trip(tmp_path: Path):
 
 def test_dir_writer_creates_tree(tmp_path: Path):
     root = tmp_path / "tree"
-    Sequential().run(plan([_s()], None), reporter=DirReporter(root))
+    Sequential().run(plan([_s()], Params()), reporter=DirReporter(root))
     files = sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
     expected_files = {"seq", "stdout", "stderr", "exitcode"}
     leaf_files = {f.name for f in files}
@@ -106,7 +107,7 @@ def test_mixed_fans_out(tmp_path: Path):
     js = tmp_path / "r.json"
     cs = tmp_path / "r.csv"
     Sequential().run(
-        plan([_s()], None),
+        plan([_s()], Params()),
         reporter=CompositeReporter(JsonReporter(js), CsvReporter(cs)),
     )
     assert js.exists() and cs.exists()
@@ -198,7 +199,7 @@ def test_csv_header_includes_variant_columns(tmp_path: Path):
         .with_metric(Time())
         .with_runs(1)
     )
-    Sequential().run(plan([s], None), reporter=CsvReporter(out))
+    Sequential().run(plan([s], Params()), reporter=CsvReporter(out))
     header = out.read_text().splitlines()[0]
     assert "compiler" in header.split(",")
 
@@ -233,7 +234,7 @@ def test_summary_appends_failures_block_with_diagnostic():
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
-    Sequential().run(plan([s], None), reporter=rep)
+    Sequential().run(plan([s], Params()), reporter=rep)
     text = buf.getvalue()
     assert "Failures:" in text
     assert "F/bad" in text
@@ -252,7 +253,7 @@ def test_summary_failures_block_handles_spawn_failure():
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
-    Sequential().run(plan([s], None), reporter=rep)
+    Sequential().run(plan([s], Params()), reporter=rep)
     text = buf.getvalue()
     assert "spawn failed" in text
     assert "Command not found" in text
@@ -269,7 +270,7 @@ def test_summary_no_failures_block_when_all_succeed():
         .with_runs(1),
     )
     rep = SummaryReporter(target_console=c)
-    Sequential().run(plan([s], None), reporter=rep)
+    Sequential().run(plan([s], Params()), reporter=rep)
     assert "Failures:" not in buf.getvalue()
 
 
@@ -288,7 +289,7 @@ def test_progress_plain_lines_in_non_tty():
         .with_metric(Time())
         .with_runs(3),
     )
-    Sequential().run(plan([s], None), reporter=ProgressReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=ProgressReporter(target_console=c))
     text = buf.getvalue()
     # One line per sample, with running count and 'ok' tag
     assert "[1/3]" in text and "[2/3]" in text and "[3/3]" in text
@@ -305,7 +306,7 @@ def test_progress_plain_marks_failures():
         .with_metric(Time())
         .with_runs(1),
     )
-    Sequential().run(plan([s], None), reporter=ProgressReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=ProgressReporter(target_console=c))
     text = buf.getvalue()
     assert "FAIL" in text and "exit code 11" in text
 
@@ -322,7 +323,7 @@ def test_progress_plain_escapes_identifier_markup():
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
-    Sequential().run(plan([s], None), reporter=ProgressReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=ProgressReporter(target_console=c))
     assert "[v1]" in buf.getvalue()
 
 
@@ -336,7 +337,7 @@ def test_summary_failure_line_escapes_identifier_markup():
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
-    Sequential().run(plan([s], None), reporter=SummaryReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=SummaryReporter(target_console=c))
     assert "[v1]" in buf.getvalue()
 
 
@@ -356,7 +357,7 @@ def test_progress_plain_count_scopes_per_benchmark():
         .with_metric(Time())
         .with_runs(2),
     )
-    Sequential().run(plan([s], None), reporter=ProgressReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=ProgressReporter(target_console=c))
     text = buf.getvalue()
     assert text.count("[1/2]") == 2 and text.count("[2/2]") == 2
     assert "S/a" in text and "S/b" in text
@@ -381,7 +382,7 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
         .with_metric(Time())
         .with_runs(2),
     )
-    Sequential().run(plan([s], None), reporter=rep)
+    Sequential().run(plan([s], Params()), reporter=rep)
     assert rep._passed == 1 and rep._failed == 1
 
 
@@ -454,7 +455,7 @@ def test_progress_prints_completed_summary_scrollback():
         .with_metric(Time())
         .with_runs(3),
     )
-    Sequential().run(plan([s], None), reporter=ProgressReporter(target_console=c))
+    Sequential().run(plan([s], Params()), reporter=ProgressReporter(target_console=c))
     out = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
     assert "Finished: S/a" in out
     assert "(3 runs, 0 failed)" in out

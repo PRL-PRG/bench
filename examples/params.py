@@ -18,14 +18,14 @@ from dataclasses import dataclass
 from bench import Context, SharedBenchParams, Time, bench, bench_app, suite
 
 
-class Params(SharedBenchParams):
+class ExampleParams(SharedBenchParams):
     # Inherit SharedBenchParams to keep the builtin flags (-j/--json/--include/
     # ...); a plain @dataclass would expose only the fields declared here.
     n: int = 100_000  # --n INT       (default: 100000)
     python: str = "python3"  # --python STR  (default: python3)
 
 
-def cmd(ctx: Context[Params]):
+def cmd(ctx: Context[ExampleParams]):
     return [ctx.params.python, "-c", f"sum(range({ctx.params.n}))"]
 
 
@@ -33,4 +33,4 @@ s = suite("params", bench("sum").with_command(cmd).with_metric(Time()).with_runs
 
 
 if __name__ == "__main__":
-    bench_app(params=Params).add(s).run_cli()
+    bench_app(params=ExampleParams).add(s).run_cli()

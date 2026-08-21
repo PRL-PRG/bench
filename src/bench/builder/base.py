@@ -52,6 +52,7 @@ type BenchmarkPred = Callable[[Benchmark], bool]
 # ---------------------------------------------------------------------------
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
+# A bit of a hack using Any here - allows for callers to use more concrete types of "Params"
 type Factory[T] = Callable[[Context[Any]], T]
 
 # A matrix axis: a sequence of values for some dimension.
@@ -62,7 +63,7 @@ type MatrixAxis = Sequence[Any]
 # ---------------------------------------------------------------------------
 
 
-def const[T](value: T) -> Factory[T]:
+def const[T](value: T) -> Callable[[Any], T]:
     """Wrap a static value as a constant builder."""
     return lambda _: value
 

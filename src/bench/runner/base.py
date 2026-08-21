@@ -18,6 +18,7 @@ from bench.core.policy import StoppingPolicy
 from bench.core.process import install_sigint_handler, interrupted
 from bench.report.reporter import Reporter
 from bench.core.results import Report
+from bench.builder.context import Params
 
 if TYPE_CHECKING:
     from bench.builder.benchmark import Benchmark
@@ -57,7 +58,7 @@ class SuiteMaterializationError(Exception):
 
 def plan(
     suites: list[SuiteBuilder],
-    params: Any = None,
+    params: Params,
 ) -> list[Benchmark]:
     """Flatten suites + their deferred factories into resolved benchmarks."""
     out: list[Benchmark] = []

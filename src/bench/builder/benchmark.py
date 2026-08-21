@@ -46,6 +46,7 @@ from bench.core.metric import (
 from bench.core.outlier import ModifiedZScore, OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.runner.controller import Controller
+from bench.builder.context import Params
 
 
 def default_label(b: Benchmark) -> str:
@@ -83,13 +84,13 @@ class BenchmarkBuilder(BuilderBase):
 
     # ----- creation ----------------------------------------------------
 
-    def create(self, params: Any, *, suite: str) -> Iterator[Benchmark]:
+    def create(self, params: Params, *, suite: str) -> Iterator[Benchmark]:
         """Yield one fully-resolved `Benchmark` per surviving matrix variant.
 
         Expands the matrix (cartesian product), resolves every field against the
         variant `Context`, then drops any variant matched by a skip rule.
         """
-        bench_ctx: Context[Any] = Context(
+        bench_ctx: Context[Params] = Context(
             params=params,
             suite=suite,
             benchmark=self.name,
@@ -125,7 +126,7 @@ class BenchmarkBuilder(BuilderBase):
         self,
         suite: str,
         variant: Variant,
-        ctx: Context[Any],
+        ctx: Context[Params],
     ) -> Benchmark:
         """Resolve every field for one variant in a single pass: every builder
         sees the same `Context` (params + the suite/benchmark names + this

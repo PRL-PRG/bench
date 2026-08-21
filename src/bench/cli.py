@@ -8,7 +8,6 @@ import json
 import sys
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any
 
 from bench.run import bench_app, default_reporter
 from bench.builder.benchmark import Benchmark, bench
@@ -41,6 +40,7 @@ from bench.report.reporter import (
 from bench.report.summary import merge_reports, summarize
 from bench.runner.base import SuiteMaterializationError
 from bench.utils import print_exception
+from bench.builder.context import Params
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +207,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     matrix_dims = {name: tuple(values.split(",")) for name, values in matrix_args}
     names = list(matrix_dims)
 
-    def cmd(ctx: Context[Any]) -> list[str]:
+    def cmd(ctx: Context[Params]) -> list[str]:
         argv = list(ctx.data.command)
         if not names:
             return argv
@@ -243,7 +243,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     metrics = {ns.metric} if ns.metric else None
     environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
 
-    def build_reporter(ctx: Any) -> Reporter:
+    def build_reporter(ctx: Params) -> Reporter:
         summary = SummaryReporter(DefaultSummary(metrics=metrics))
         reporter = default_reporter(ctx)
         if reporter is None:

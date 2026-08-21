@@ -6,12 +6,13 @@ from pathlib import Path
 import pytest
 
 from bench import FixedRuns, FloatPerLine, bench, suite
+from bench.builder.context import Params
 from bench.core.metric import StderrMetricSource, StdoutMetricSource
 
 
 def _mat(b):
     """Resolve one factory against an otherwise-default suite."""
-    return suite("S", b).materialize(None)[0]
+    return suite("S", b).materialize(Params())[0]
 
 
 def _base():
@@ -39,7 +40,7 @@ def test_materialize_stamps_identity():
 
 def test_missing_command_raises_on_materialize():
     with pytest.raises(ValueError, match="missing a command"):
-        suite("S", bench("x")).materialize(None)
+        suite("S", bench("x")).materialize(Params())
 
 
 def test_bench_kwargs_attach_to_data():
@@ -122,7 +123,7 @@ def test_add_matrix_skip_unions_rules_on_one_benchmark():
         .add_matrix_skip(vm="v8", size=500)
         .add_matrix_skip(vm="jsc", size=100)
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {(x.data["vm"], x.data["size"]) for x in bs} == {("v8", 100), ("jsc", 500)}
 
 
@@ -133,14 +134,13 @@ def test_matrix_axis_callable_expands_to_returned_values():
         .with_cwd(Path("/tmp"))
         .with_matrix(vm=lambda ctx: ["clox", "jlox"])
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {x.data["vm"] for x in bs} == {"clox", "jlox"}
     assert {x.variant_label for x in bs} == {"vm=clox", "vm=jlox"}
 
 
 def test_matrix_axis_callable_reads_params():
-    @dataclass
-    class P:
+    class P(Params):
         sizes: list
 
     b = (
@@ -160,7 +160,7 @@ def test_matrix_axis_callable_mixes_with_static():
         .with_cwd(Path("/tmp"))
         .with_matrix(vm=lambda ctx: ["clox", "jlox"], size=[100, 200])
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {(x.data["vm"], x.data["size"]) for x in bs} == {
         ("clox", 100),
         ("clox", 200),
@@ -176,7 +176,7 @@ def test_matrix_axis_callable_sees_benchmark_name():
         .with_cwd(Path("/tmp"))
         .with_matrix(tag=lambda ctx: [ctx.benchmark])
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {x.data["tag"] for x in bs} == {"x"}
 
 
@@ -188,7 +188,7 @@ def test_with_matrix_accepts_callable_axis():
         .with_matrix(size=[100])
         .with_matrix(vm=lambda ctx: ["clox", "jlox"])
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {(x.data["vm"], x.data["size"]) for x in bs} == {
         ("clox", 100),
         ("jlox", 100),
@@ -203,7 +203,7 @@ def test_suite_level_matrix_axis_callable_applies_per_benchmark():
         .generator(lambda _ctx: [bench("a"), bench("b")])
         .with_matrix(tag=lambda ctx: [ctx.benchmark])
     )
-    bs = s.materialize(None)
+    bs = s.materialize(Params())
     assert {(x.name, x.data["tag"]) for x in bs} == {("a", "a"), ("b", "b")}
 
 
@@ -214,7 +214,7 @@ def test_matrix_axis_callable_empty_yields_no_variants():
         .with_cwd(Path("/tmp"))
         .with_matrix(vm=lambda ctx: [])
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert bs == []
 
 
@@ -229,7 +229,7 @@ def test_value_field_bare_callable_resolved_per_variant():
         .with_matrix(size=[100, 200])
         .with_timeout(lambda ctx: ctx.data.size / 1000)
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {x.invocation.timeout for x in bs} == {0.1, 0.2}
 
 
@@ -241,7 +241,7 @@ def test_dynamic_runs_resolved_per_variant():
         .with_matrix(n=[2, 5])
         .with_runs(lambda ctx: FixedRuns(ctx.data.n))
     )
-    bs = suite("S", b).materialize(None)
+    bs = suite("S", b).materialize(Params())
     assert {x.runs.max_runs() for x in bs} == {2, 5}
 
 

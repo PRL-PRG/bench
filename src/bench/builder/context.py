@@ -23,7 +23,7 @@ import types
 import typing
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
-from typing import Any, Mapping, dataclass_transform
+from typing import TYPE_CHECKING, Any, Mapping, dataclass_transform
 
 _MISSING_DEFAULT = object()
 
@@ -90,6 +90,10 @@ class Params(metaclass=ParamsMeta):
 
     Needs no `@dataclass` decorator - `ParamsMeta` applies it, frozen, slotted
     and keyword-only."""
+
+    if TYPE_CHECKING:
+        # Any attribute access is "ok" from the view of typechecker
+        def __getattr__(self, name: str) -> Any: ...
 
 
 class SharedSelectionParams(Params):
@@ -170,7 +174,7 @@ class SharedBenchParams(SharedSelectionParams):
 
 
 @dataclass(frozen=True, slots=True)
-class Context[T]:
+class Context[T: Params]:
     """Context for the benchmark builder callable `with_*(lambda ctx: )` methods.
 
     `params` is the single object carrying every setting: the user's own fields
@@ -183,6 +187,7 @@ class Context[T]:
     suite: str
     benchmark: str
     data: Data
+
 
 
 def add_dataclass_args(
@@ -246,10 +251,8 @@ def add_dataclass_args(
         parser.add_argument(*flags, **kwargs)
 
 
-def build_dataclass(dc: type, namespace: argparse.Namespace) -> Any:
+def build_dataclass[T: Params](dc: type[T], namespace: argparse.Namespace) -> T:
     """Instantiate the user dataclass from an argparse Namespace."""
-    if not is_dataclass(dc):
-        raise TypeError(f"{dc!r} must be a @dataclass")
     kwargs: dict[str, Any] = {}
     for f in fields(dc):
         if f.name not in namespace:

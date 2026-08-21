@@ -3,16 +3,17 @@
 import pytest
 
 from bench import NoEnvironment, bench, bench_app, suite
+from bench.builder.context import Params
 
 
 def test_cooldown_defaults_zero():
-    [bm] = suite("s", bench("b").with_command(["true"])).materialize(None)
+    [bm] = suite("s", bench("b").with_command(["true"])).materialize(Params())
     assert bm.cooldown == 0.0
 
 
 def test_cooldown_inherits_from_suite():
     s = suite("s", bench("b").with_command(["true"])).with_cooldown(0.5)
-    [bm] = s.materialize(None)
+    [bm] = s.materialize(Params())
     assert bm.cooldown == 0.5
 
 
@@ -20,7 +21,7 @@ def test_cooldown_benchmark_overrides_suite():
     s = suite("s", bench("b").with_command(["true"]).with_cooldown(0.1)).with_cooldown(
         0.5
     )
-    [bm] = s.materialize(None)
+    [bm] = s.materialize(Params())
     # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
     assert bm.cooldown == 0.1
 
@@ -36,7 +37,7 @@ def test_cooldown_sleeps_between_runs(monkeypatch: pytest.MonkeyPatch):
 def test_no_shuffle_preserves_order():
     names = [f"b{i}" for i in range(5)]
     s = suite("s", *(bench(n).with_command(["true"]) for n in names))
-    assert [b.name for b in s.materialize(None)] == names
+    assert [b.name for b in s.materialize(Params())] == names
 
 
 def test_shuffle_is_deterministic_and_reorders():
@@ -47,8 +48,8 @@ def test_shuffle_is_deterministic_and_reorders():
             "s", *(bench(n).with_command(["true"]) for n in names)
         ).with_shuffle(seed=1)
 
-    first = [b.name for b in make().materialize(None)]
-    again = [b.name for b in make().materialize(None)]
+    first = [b.name for b in make().materialize(Params())]
+    again = [b.name for b in make().materialize(Params())]
     assert first == again  # same seed -> same order
     assert sorted(first) == names  # same set
     assert first != names  # actually reordered

@@ -14,6 +14,7 @@ from bench import (
     from_files,
     suite,
 )
+from bench.builder.context import Params
 from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
 
@@ -45,32 +46,41 @@ def test_runs_preserves_benchmark_override():
 
 
 def test_with_runs_accepts_ctx_callable():
+    class P(Params):
+        n: int
+
     s = (
         suite("S", _b("a"))
         .with_command(["true"])
         .with_runs(lambda ctx: FixedRuns(ctx.params.n))
     )
-    b = s.materialize(SimpleNamespace(n=4))[0]
+    b = s.materialize(P(n=4))[0]
     assert b.runs.max_runs() == 4
 
 
 def test_with_warmup_accepts_ctx_callable():
+    class P(Params):
+        w: int
+
     s = (
         suite("S", _b("a"))
         .with_command(["true"])
         .with_warmup(lambda ctx: FixedRuns(ctx.params.w))
     )
-    b = s.materialize(SimpleNamespace(w=2))[0]
+    b = s.materialize(P(w=2))[0]
     assert b.warmup.max_runs() == 2
 
 
 def test_with_timeout_accepts_ctx_callable():
+    class P(Params):
+        t: int
+
     s = (
         suite("S", _b("a"))
         .with_command(["true"])
         .with_timeout(lambda ctx: float(ctx.params.t))
     )
-    b = s.materialize(SimpleNamespace(t=30))[0]
+    b = s.materialize(P(t=30))[0]
     assert b.invocation.timeout == 30.0
 
 
@@ -78,11 +88,14 @@ def test_with_metric_accepts_ctx_callable():
     # A metric factory resolves to one metric, not a tuple of them.
     m = FloatPerLine(StdoutMetricSource, "runtime", unit="s")
     s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: m)
-    b = s.materialize(None)[0]
+    b = s.materialize(Params())[0]
     assert list(b.metrics) == [m]
 
 
 def test_suite_callable_runs_still_loses_to_benchmark_override():
+    class P(Params):
+        n: int
+
     a = _b("a").with_runs(FixedRuns(5))
     s = (
         suite("S", a, _b("b"))
@@ -90,7 +103,7 @@ def test_suite_callable_runs_still_loses_to_benchmark_override():
         .with_runs(lambda ctx: FixedRuns(ctx.params.n))
     )
     # RED ON PURPOSE: BUG-13 - the suite default overrides the benchmark's.
-    assert [b.runs.max_runs() for b in s.materialize(SimpleNamespace(n=9))] == [5, 9]
+    assert [b.runs.max_runs() for b in s.materialize(P(n=9))] == [5, 9]
 
 
 def test_with_command_propagates_when_unset():
@@ -120,7 +133,7 @@ def test_defaults_reach_factory_benchmarks():
 
 def test_materialize_missing_command_fails_fast():
     with pytest.raises(ValueError, match="missing a command"):
-        suite("S", _b("a")).materialize(None)
+        suite("S", _b("a")).materialize(Params())
 
 
 def test_with_env_merges():
@@ -231,7 +244,7 @@ def test_from_files(tmp_path: Path):
         .with_cwd(tmp_path)
         .with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(None))
+    names = sorted(b.name for b in s.materialize(Params()))
     assert names == ["a", "b"]
 
 
@@ -247,20 +260,23 @@ def test_from_files_recursive_with_exclude(tmp_path: Path):
         .with_cwd(tmp_path)
         .with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(None))
+    names = sorted(b.name for b in s.materialize(Params()))
     assert names == ["a", "sub/nested"]
 
 
 def test_from_files_ctx_root_via_factory(tmp_path: Path):
+    class P(Params):
+        path: Path
+
     (tmp_path / "p.lox").write_text("")
     s = (
         suite("X")
-        .generator(lambda ctx: from_files(ctx.params, pattern=r"\.lox$"))
+        .generator(lambda ctx: from_files(ctx.params.path, pattern=r"\.lox$"))
         .with_command(["true"])
         .with_cwd(tmp_path)
         .with_metric(Time())
     )
-    names = sorted(b.name for b in s.materialize(tmp_path))
+    names = sorted(b.name for b in s.materialize(P(path=tmp_path)))
     assert names == ["p"]
 
 
@@ -278,7 +294,7 @@ def test_with_matrix_expands_and_stamps_variant():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    benchmarks = list(s.materialize(None))
+    benchmarks = list(s.materialize(Params()))
     assert len(benchmarks) == 2
     assert sorted(b.data["opt"] for b in benchmarks) == ["O0", "O2"]
     # The variant is stamped on the resolved benchmark.
@@ -299,7 +315,7 @@ def test_suite_with_matrix_applies_to_all_benchmarks():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    bs = list(s.materialize(None))
+    bs = list(s.materialize(Params()))
     names_vms = sorted((b.name, b.data["vm"]) for b in bs)
     assert names_vms == [("a", "jsc"), ("a", "v8"), ("b", "jsc"), ("b", "v8")]
 
@@ -320,7 +336,7 @@ def test_suite_dimension_collision_with_benchmark_dimension_raises():
         vm=["b"]
     )
     with pytest.raises(ValueError, match="Duplicate matrix axis"):
-        s.materialize(None)
+        s.materialize(Params())
 
 
 def test_with_skip_kwargs_drops_variant():
@@ -335,7 +351,7 @@ def test_with_skip_kwargs_drops_variant():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    bs = list(s.materialize(None))
+    bs = list(s.materialize(Params()))
     # The skip drops the one cell matching all its kwargs, nothing else.
     assert len(bs) == 3
     assert ("v8", 500) not in {(b.data["vm"], b.data["size"]) for b in bs}
@@ -355,7 +371,7 @@ def test_with_filter_predicate_keeps_matching_variants():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    bs = list(s.materialize(None))
+    bs = list(s.materialize(Params()))
     assert all(b.data["vm"] == "jsc" for b in bs)
     assert sorted(b.data["size"] for b in bs) == [100, 500]
 
@@ -385,7 +401,7 @@ def test_with_label_overrides_default():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    bs = list(s.materialize(None))
+    bs = list(s.materialize(Params()))
     assert sorted(b.variant_label for b in bs) == ["<one>", "<two>"]
 
 
@@ -401,7 +417,7 @@ def test_command_via_matrix_builder():
         .with_cwd(Path("/tmp"))
         .with_metric(Time())
     )
-    bs = list(s.materialize(None))
+    bs = list(s.materialize(Params()))
     assert sorted(tuple(b.invocation.command) for b in bs) == [
         ("echo", "a"),
         ("echo", "b"),

@@ -10,14 +10,14 @@ import pytest
 from bench.builder.context import (
     Context,
     Data,
+    Params,
     SharedBenchParams,
     add_dataclass_args,
     build_dataclass,
 )
 
 
-@dataclass
-class _Params:
+class _Params(Params):
     name: Path  # required (no default)
     iterations: int = 15
     cwd: Path = Path("/tmp")
@@ -73,8 +73,7 @@ def test_bool_uses_boolean_optional_action():
 
 
 def test_dash_to_underscore():
-    @dataclass
-    class Multi:
+    class Multi(Params):
         my_long_name: str = "x"
 
     p = argparse.ArgumentParser()
@@ -87,7 +86,7 @@ def test_dash_to_underscore():
 # ----- Context value object -----------------------------------------------
 
 
-def _ctx(**overrides: Any) -> Context[Any]:
+def _ctx(**overrides: Any) -> Context[Params]:
     base: dict[str, Any] = dict(
         params=None,
         suite="S",
@@ -118,8 +117,7 @@ def test_context_suite_level_has_no_benchmark_or_data():
 
 
 def test_list_field_is_repeatable_append():
-    @dataclass
-    class DC:
+    class DC(Params):
         tags: list[str] | None = None
 
     p = argparse.ArgumentParser()

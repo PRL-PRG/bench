@@ -18,14 +18,17 @@ from typing import Any, Sequence
 
 from bench.builder.base import BuilderBase, merge_sequence
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder
+from bench.builder.context import Params
 
 
 @dataclass(frozen=True, slots=True)
-class SuiteContext[T]:
+class SuiteContext[T: Params]:
     params: T
     suite: str
 
 
+# HACK: The argument should be "Params or its child" but this is the best
+# we have for now
 type BenchmarkGenerator = Callable[[SuiteContext[Any]], list[BenchmarkBuilder]]
 
 
@@ -80,10 +83,10 @@ class SuiteBuilder(BuilderBase):
 
     # ----- creation ----------------------------------------------------
 
-    def materialize(self, params: Any) -> list[Benchmark]:
+    def materialize(self, params: Params) -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
-        ctx: SuiteContext[Any] = SuiteContext(
+        ctx: SuiteContext[Params] = SuiteContext(
             params=params,
             suite=self.name,
         )
@@ -105,6 +108,7 @@ class SuiteBuilder(BuilderBase):
 # ---------------------------------------------------------------------------
 # Shorthand constructors
 # ---------------------------------------------------------------------------
+
 
 def suite(name: str, *benchmarks: BenchmarkBuilder) -> SuiteBuilder:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""

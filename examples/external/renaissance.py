@@ -49,7 +49,7 @@ from bench.builder.suite import SuiteContext
 from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 
-class Params(SharedBenchParams):
+class RenaissanceParams(SharedBenchParams):
     java: Path = Path("java")
     renaissance: Path = Path("renaissance-gpl-0.16.1.jar")
     runs: int | None = None
@@ -62,7 +62,7 @@ class RenaissanceBenchmark:
     reps: int
 
 
-def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
+def list_benchmarks(params: RenaissanceParams) -> list[RenaissanceBenchmark]:
     cmd = [params.java, "-jar", params.renaissance, "--list"]
     res = subprocess.run(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
@@ -87,7 +87,7 @@ def list_benchmarks(params: Params) -> list[RenaissanceBenchmark]:
     return benchmarks
 
 
-def make_benchmarks(ctx: SuiteContext[Params]) -> list[BenchmarkBuilder]:
+def make_benchmarks(ctx: SuiteContext[RenaissanceParams]) -> list[BenchmarkBuilder]:
     runs = ctx.params.runs
     return [
         bench(rb.name).with_command(
@@ -133,4 +133,4 @@ renaissance = (
 )
 
 if __name__ == "__main__":
-    bench_app(params=Params).add(renaissance).run_cli()
+    bench_app(params=RenaissanceParams).add(renaissance).run_cli()

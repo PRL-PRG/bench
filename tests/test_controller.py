@@ -58,7 +58,7 @@ def _planned(runs, *, warmup=0, outlier_detection=None):
     )
     if outlier_detection is not None:
         s = s.with_outlier_detection(outlier_detection)
-    return plan([s], None)[0]
+    return plan([s], Params())[0]
 
 
 def test_records_run_per_slot(monkeypatch):
