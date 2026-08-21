@@ -193,7 +193,7 @@ class BuilderBase:
 
         return dataclasses.replace(self, **{field: value})
 
-    # ----- command / environment / execution -------------------------
+    # ----- invocation -------------------------
 
     def with_command(
         self,
@@ -249,6 +249,8 @@ class BuilderBase:
             as_build(timeout),
             override=override,
         )
+
+    # ----- execution control -------------------------
 
     def with_controller(
         self, controller: Controller | Factory[Controller], override: bool = False
@@ -315,7 +317,7 @@ class BuilderBase:
             override=override,
         )
 
-    # ----- matrix / skip / label --------------------------------------
+    # ----- matrix --------------------------------------
 
     def with_matrix(self, **dims: MatrixAxis | Factory[MatrixAxis]) -> Self:
         """Add matrix dimensions, merging with any already declared ones."""
@@ -324,14 +326,6 @@ class BuilderBase:
             normalize_matrix(dims),
             override=False,
             merge=merge_mapping,
-        )
-
-    def with_filter(self, predicate: BenchmarkPred) -> Self:
-        return self.replace(
-            "filters",
-            [predicate],
-            override=False,
-            merge=merge_sequence,
         )
 
     def add_matrix_skip(self, /, **kwargs: Any) -> Self:
@@ -348,6 +342,18 @@ class BuilderBase:
             override=False,
             merge=merge_sequence,
         )
+
+    # ----- filter --------------------------------------
+
+    def with_filter(self, predicate: BenchmarkPred) -> Self:
+        return self.replace(
+            "filters",
+            [predicate],
+            override=False,
+            merge=merge_sequence,
+        )
+
+    # ----- label -------------------------
 
     def with_label(self, fn: LabelFn, override: bool = False) -> Self:
         """Override how each variant's label renders in reports."""
@@ -417,8 +423,10 @@ class BuilderBase:
 # Overlay helpers
 # ---------------------------------------------------------------------------
 
+
 def _or(l: bool, r: bool) -> bool:
     return l or r
+
 
 _BUILDER_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
 _BUILDER_MERGABLE_FIELDS = {
