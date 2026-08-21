@@ -354,12 +354,18 @@ def spawn_streaming(exe: Invocation) -> LiveProcess:
     out_f = open(out_path, "wb")
     err_f = open(err_path, "wb")
     killed = threading.Event()
+
+    child_env = dict(exe.env)
+    if exe.inherit_env:
+        child_env |= os.environ
+
     # A harness streams per-iteration lines, so the (Python) child's stdout must
     # not block-buffer, otherwise it buffers when writing to a file and flushes
     # every line at once on exit, defeating live framing. Force PYTHONUNBUFFERED
-    # (a no-op for non-Python children) while keeping env semantics: an empty env
-    # still inherits the parent's.
-    child_env = {**(dict(exe.env) if exe.env else os.environ), "PYTHONUNBUFFERED": "1"}
+    # (a no-op for non-Python children) on top of the env resolved above, which
+    # follows the same rule as `execute`: nothing is inherited unless asked for.
+    child_env["PYTHONUNBUFFERED"] = "1"
+
     proc = subprocess.Popen(
         cmd,
         cwd=str(exe.cwd),

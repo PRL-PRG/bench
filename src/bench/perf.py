@@ -36,8 +36,7 @@ class PerfStat(BuildableMetric):
     """Run a command under `perf stat` and read its counters from stderr.
 
     `events` is a tuple of symbolic perf event names. `direction` and the
-    `lower_is_better`/`higher_is_better` combinators come from the
-    `Metric` base unchanged.
+    `lower_is_better`/`higher_is_better` combinators come from bases unchanged.
     """
 
     events: tuple[str, ...]

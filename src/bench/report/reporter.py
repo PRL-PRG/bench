@@ -95,6 +95,7 @@ class CompositeReporter(Reporter):
             if isinstance(r, CompositeReporter):
                 for subr in r.reporters:
                     yield from iterate(subr)
+                return
 
             yield r
 
@@ -362,6 +363,13 @@ class ProgressReporter(Reporter):
         total: int | None
         runtime: float
         task_id: TaskID
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.n = 0
+            self.total = None
+            self.runtime = 0.0
+            self.task_id = TaskID(-1)
 
         def reset(self, total: int | None, task_id: TaskID) -> None:
             self.n = 0
