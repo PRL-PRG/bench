@@ -84,7 +84,7 @@ def test_e2e_command_not_found_marks_failure(tmp_path: Path):
         .with_metric(Time())
         .with_runs(3),
     )
-    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
+    Sequential().run(plan([s], None), reporter=JsonReporter(out))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 3
     assert all(f.returncode == -1 for f in r.failures)  # spawn failure
@@ -102,7 +102,7 @@ def test_e2e_timeout_marks_failure(tmp_path: Path):
         .with_timeout(0.05)
         .with_runs(1),
     )
-    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
+    Sequential().run(plan([s], None), reporter=JsonReporter(out))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 1
     assert r.failures[0].returncode == 124  # timeout

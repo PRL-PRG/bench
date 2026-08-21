@@ -14,6 +14,7 @@ from __future__ import annotations
 from bench.core.invocation import format_identifier
 from bench.core.results import Report
 from bench.builder.benchmark import Benchmark
+from bench.report.reporter import Reporter
 from bench.runner.base import (
     Runner,
     format_benchmark_verbose,
@@ -28,7 +29,9 @@ class Dry(Runner):
     produces no results to report.
     """
 
-    def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
+    def run_with_report(
+        self, planned: list[Benchmark], reporter: Reporter, report: Report
+    ) -> None:
         for b in planned:
             self._print_executions(b)
 

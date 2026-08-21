@@ -186,7 +186,7 @@ def test_process_metric_travels_alongside_iterations(tmp_path: Path):
     # the file sinks as `process_samples`.
     out = tmp_path / "r.json"
     s = _iteration_suite(_echo_lines("1.0", "2.0")).with_metric(Time())
-    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
+    Sequential().run(plan([s], None), reporter=JsonReporter(out))
     loaded = report_from_json(out.read_text())
     assert any(
         s.metric == "elapsed" for run in loaded.executions for s in run.process_samples

@@ -139,31 +139,32 @@ class Runner(abc.ABC):
 
     def __init__(
         self,
-        reporter: Reporter | None = None,
         *,
         verbose: bool = False,
     ) -> None:
-        self.reporter = reporter or _NoopReporter()
         self.verbose = verbose
 
     def run(
         self,
         planned: list[Benchmark],
+        reporter: Reporter = _NoopReporter(),
         environment: Environment | None = None,
         diagnostics: list[Diagnostic] = [],
     ) -> Report:
-        self.reporter.start(planned)
+        reporter.start(planned)
         report = Report(environment=environment, diagnostics=diagnostics)
 
         try:
             with install_sigint_handler():
-                self.run_with_report(planned, report)
+                self.run_with_report(planned, reporter, report)
                 if interrupted():
                     raise KeyboardInterrupt
         finally:
-            self.reporter.finalize(report)
+            reporter.finalize(report)
 
         return report
 
     @abc.abstractmethod
-    def run_with_report(self, planned: list[Benchmark], report: Report) -> None: ...
+    def run_with_report(
+        self, planned: list[Benchmark], reporter: Reporter, report: Report
+    ) -> None: ...

@@ -63,17 +63,18 @@ class Parallel(Runner):
     def __init__(
         self,
         workers: int,
-        reporter: Reporter | None = None,
         *,
         verbose: bool = False,
     ) -> None:
-        super().__init__(reporter, verbose=verbose)
+        super().__init__(verbose=verbose)
         self.workers = workers
 
-    def run_with_report(self, planned: list[Benchmark], report: Report) -> None:
+    def run_with_report(
+        self, planned: list[Benchmark], reporter: Reporter, report: Report
+    ) -> None:
         lock = threading.Lock()
         locked_report = _LockedReport(report, lock)
-        locked_reporter = _LockedReporter(self.reporter, lock)
+        locked_reporter = _LockedReporter(reporter, lock)
 
         def _one(p: Benchmark) -> None:
             # Don't start a benchmark once Ctrl+C has fired. The kill sweep

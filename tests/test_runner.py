@@ -94,7 +94,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         .with_runs(10),
     )
     out = tmp_path / "r.json"
-    Sequential(reporter=JsonReporter(out)).run(plan([s], None))
+    Sequential().run(plan([s], None), reporter=JsonReporter(out))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 10
     assert all(f.returncode != 0 for f in r.failures)
@@ -277,7 +277,7 @@ def test_mixed_reporter_lifecycle(tmp_path: Path):
     json_path = tmp_path / "r.json"
     csv_path = tmp_path / "r.csv"
     sinks = CompositeReporter(JsonReporter(json_path), CsvReporter(csv_path))
-    Sequential(reporter=sinks).run(plan([_sleep_suite(runs=1)], None))
+    Sequential().run(plan([_sleep_suite(runs=1)], None), reporter=sinks)
     assert json_path.exists() and csv_path.exists()
     assert json_path.read_text().count('"metric"') >= 2
 
@@ -307,7 +307,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential(reporter=JsonReporter(json_path)).run(plan([s], None))
+        Sequential().run(plan([s], None), reporter=JsonReporter(json_path))
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -341,7 +341,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Parallel(workers=4, reporter=JsonReporter(json_path)).run(plan([s], None))
+        Parallel(workers=4).run(plan([s], None), reporter=JsonReporter(json_path))
     elapsed = time.monotonic() - t0
     t.cancel()
 

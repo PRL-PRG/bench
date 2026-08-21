@@ -202,7 +202,6 @@ class BenchAppBuilder(BuilderBase):
         print_diagnostics(env_diagnostics, "Environment checks")
 
         runner = (self.runner or default_runner)(build_params)
-        runner.reporter = reporter
 
         if self.denoise:
             if not is_root():
@@ -214,9 +213,9 @@ class BenchAppBuilder(BuilderBase):
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                report = runner.run(planned, env, env_diagnostics)
+                report = runner.run(planned, reporter, env, env_diagnostics)
         else:
-            report = runner.run(planned, env, env_diagnostics)
+            report = runner.run(planned, reporter, env, env_diagnostics)
 
         return report
 
