@@ -149,7 +149,7 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
-    # ----- Instantiate benchmarks -----------
+    # ----- instantiate benchmarks -----------
 
     def plan_benchmarks(
         self,
@@ -171,6 +171,30 @@ class BenchAppBuilder(BuilderBase):
 
         return planned
 
+    # ----- instantiate reporter -----------
+    def get_reporter(self, build_params: Any, *, use_defaults: bool) -> Reporter | None:
+        if self.reporter is not None:
+            reporter = self.reporter(build_params)
+            if self.summary is not None:
+                reporter = CompositeReporter(reporter, self.summary(build_params))
+        elif use_defaults:
+            reporter = default_reporter(build_params)
+            if reporter is None:
+                raise ValueError(
+                    "Cannot instantiate default reporters without SharedBenchParams parameters"
+                )
+
+            if self.summary is not None:
+                reporter = CompositeReporter(reporter, self.summary(build_params))
+            else:
+                reporter = CompositeReporter(
+                    reporter, SummaryReporter(DefaultSummary())
+                )
+        else:
+            return None
+
+        return reporter
+
     # ----- run -----------
 
     def run(
@@ -189,22 +213,9 @@ class BenchAppBuilder(BuilderBase):
             do_print_diagnostics(env_diagnostics, "Environment checks")
 
         # Setup reporters
-        if self.reporter is not None:
-            reporter = self.reporter(build_params)
-        elif use_defaults:
-            reporter = default_reporter(build_params)
-            if reporter is None:
-                raise ValueError(
-                    "Cannot instantiate default reporters without SharedBenchParams parameters"
-                )
-        else:
+        reporter = self.get_reporter(build_params, use_defaults=use_defaults)
+        if reporter is None:
             raise ValueError("No reporter is defined")
-
-        # Add summary
-        if self.summary is not None:
-            reporter = CompositeReporter(reporter, self.summary(build_params))
-        elif use_defaults:
-            reporter = CompositeReporter(reporter, SummaryReporter(DefaultSummary()))
 
         # Get runner
         if self.runner is not None:
@@ -226,7 +237,7 @@ class BenchAppBuilder(BuilderBase):
             )
 
         if len(planned) == 0:
-            raise ValueError("No benchmark planned")
+            raise NoBenchmarksMatchedError("No benchmark planned")
 
         # Run
         if self.denoise:
@@ -262,7 +273,7 @@ class BenchAppBuilder(BuilderBase):
         # TODO: This should be higher
         show_path = getattr(cli_args, "show", None)
         if show_path is not None:
-            return show_report(default_reporter(build_params), show_path)
+            return self.do_show_report(build_params, show_path)
 
         planned = self.plan_benchmarks(build_params, use_defaults=True)
 
@@ -275,6 +286,19 @@ class BenchAppBuilder(BuilderBase):
         return self.run(
             build_params, planned, use_defaults=True, print_diagnostics=True
         )
+
+    def do_show_report(self, build_params: Any, path: str):
+        report = report_from_json(Path(path).read_text())
+
+        reporter = self.get_reporter(build_params, use_defaults=True)
+
+        if reporter is not None:
+            for r in report.executions:
+                reporter.execution_done(r)
+            reporter.finalize(report)
+
+        DefaultSummary()(summarize(report))
+        return report
 
 
 # ---------------------------------------------------------------------------
@@ -375,9 +399,7 @@ def default_filter(params: Any) -> BenchmarkPred:
 
 
 # TODO: This should live somewhere else
-def _make_run_parser(
-    params: type, description: str = ""
-) -> argparse.ArgumentParser:
+def _make_run_parser(params: type, description: str = "") -> argparse.ArgumentParser:
     # No prog= override: argparse derives it from sys.argv[0], so a user script
     # shows its own name (the `bench` console subcommands set their own prog).
     p = argparse.ArgumentParser(description=description or None)
@@ -469,15 +491,3 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
                 b = variants[0]
                 node.add(Text(format_benchmark(b.name, b.name, b.variant)))
     return root
-
-
-def show_report(reporter: Reporter | None, path: str) -> Report:
-    report = report_from_json(Path(path).read_text())
-
-    if reporter is not None:
-        for r in report.executions:
-            reporter.execution_done(r)
-        reporter.finalize(report)
-
-    DefaultSummary()(summarize(report))
-    return report
