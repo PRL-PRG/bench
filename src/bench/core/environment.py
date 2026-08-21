@@ -83,25 +83,35 @@ class EnvironmentCollector(abc.ABC):
         """Return a snapshot, or `None` to record no environment."""
 
 
-@dataclass(frozen=True, slots=True)
 class NoEnvironment(EnvironmentCollector):
     """Collects nothing - the off switch."""
+
+    __slots__ = ()
 
     def collect(self) -> Environment | None:
         return None
 
 
-@dataclass(frozen=True, slots=True)
 class SystemEnvironment(EnvironmentCollector):
     """Probe the host, dispatching on the platform."""
 
+    __slots__ = ("_cache",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cache: Environment | None = None
+
     def collect(self) -> Environment | None:
-        system = platform.system()
-        if system == "Linux":
-            return collect_linux()
-        if system == "Darwin":
-            return collect_macos()
-        return _base()
+        if self._cache is None:
+            system = platform.system()
+            if system == "Linux":
+                self._cache = collect_linux()
+            elif system == "Darwin":
+                self._cache = collect_macos()
+            else:
+                self._cache = _base()
+
+        return self._cache
 
 
 # ---------------------------------------------------------------------------
