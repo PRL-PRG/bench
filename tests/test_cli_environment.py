@@ -80,13 +80,13 @@ def _suite():
 
 
 def test_run_api_omits_environment_by_default():
-    rep = bench_app().add(_suite()).run(["--no-progress"])
+    rep = bench_app().add(_suite()).run_cli(["--no-progress"])
     assert rep.environment is None
 
 
 def test_run_api_collects_with_system_environment():
     rep = (
-        bench_app(environment=SystemEnvironment()).add(_suite()).run(["--no-progress"])
+        bench_app(environment=SystemEnvironment()).add(_suite()).run_cli(["--no-progress"])
     )
     assert rep.environment is not None
 

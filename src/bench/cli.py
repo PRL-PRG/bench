@@ -244,7 +244,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
     )
     try:
-        app.run(ns)
+        app.run_cli(ns)
     except SuiteMaterializationError as e:
         print_exception(e)
         return 1

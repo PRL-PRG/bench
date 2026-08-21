@@ -122,7 +122,7 @@ def test_user_composite_reporter_receives_environment(tmp_path: Path):
             environment=SystemEnvironment(),
         )
         .add(_s())
-        .run(["--no-progress"])
+        .run_cli(["--no-progress"])
     )
     env_file = root / "environment.json"
     assert env_file.exists()

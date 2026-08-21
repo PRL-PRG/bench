@@ -93,4 +93,4 @@ if __name__ == "__main__":
             SummaryReporter(Compact("runtime", suite="LoxSuite")),
             SummaryReporter(Compact("throughput", suite="ZooBatch")),
         ),
-    ).add(lox_suite, zoo_suite).run()
+    ).add(lox_suite, zoo_suite).run_cli()

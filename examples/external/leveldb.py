@@ -90,4 +90,4 @@ leveldb = suite("LevelDB db_bench").add(*make_benchmarks()).with_runs(5)
 
 
 if __name__ == "__main__":
-    bench_app(params=LevelDBParams).add(leveldb).run()
+    bench_app(params=LevelDBParams).add(leveldb).run_cli()

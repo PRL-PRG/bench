@@ -28,6 +28,6 @@ bench_app(
     summary=SummaryReporter(
         Results() & Summary() & GeomeanSummary(axis="vm", metrics="elapsed"),
     )
-).add(s).run()
+).add(s).run_cli()
 
 # vim: ft=python

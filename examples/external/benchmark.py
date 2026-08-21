@@ -160,4 +160,4 @@ SUITES = [s.with_env(LOCALE) for s in SUITES]
 
 
 if __name__ == "__main__":
-    bench_app(params=RParams).add(*SUITES).run()
+    bench_app(params=RParams).add(*SUITES).run_cli()

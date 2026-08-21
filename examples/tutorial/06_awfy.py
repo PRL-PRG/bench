@@ -93,6 +93,6 @@ awfy = (
 grouped = GeomeanSummary(axis="vm", metrics={"runtime", "max_rss"})
 summary = SummaryReporter(Results() & Summary() & grouped)
 
-bench_app("AWFY", params=Params, summary=summary).add(awfy).run()
+bench_app("AWFY", params=Params, summary=summary).add(awfy).run_cli()
 
 # vim: ft=python

@@ -459,11 +459,11 @@ def test_run_resolves_reporter_factory_with_cli_state():
         return _Rec()
 
     s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
-    bench_app(reporter=factory).add(s).run(["--dry", "--verbose"])
+    bench_app(reporter=factory).add(s).run_cli(["--dry", "--verbose"])
     assert seen == {"verbose": True, "dry": True}
 
     seen.clear()
-    bench_app(reporter=factory).add(s).run(["--dry"])
+    bench_app(reporter=factory).add(s).run_cli(["--dry"])
     assert seen["verbose"] is False
 
 
@@ -481,7 +481,7 @@ def test_with_runner_override_wins_over_jobs():
         bench_app()
         .add(s)
         .with_runner(make_runner)
-        .run(["--jobs", "4", "--no-progress"])
+        .run_cli(["--jobs", "4", "--no-progress"])
     )
     assert captured["jobs"] == 4  # params carries the runtime flags
     assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
@@ -502,7 +502,7 @@ def test_with_filter_bare_predicate_narrows_plan():
         bench_app()
         .add(s)
         .with_filter(lambda b: b.name == "keep")
-        .run(["--no-progress"])
+        .run_cli(["--no-progress"])
     )
     assert {r.benchmark for r in report.executions} == {"keep"}
 
@@ -511,7 +511,7 @@ def test_with_reporter_factory_takes_full_control(tmp_path: Path):
     out = tmp_path / "r.json"
     s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     # A factory result is used as-is: only the JsonReporter, no --json flag needed.
-    bench_app().add(s).with_reporter(lambda ctx: JsonReporter(out)).run(
+    bench_app().add(s).with_reporter(lambda ctx: JsonReporter(out)).run_cli(
         ["--no-progress"]
     )
     assert out.exists()
@@ -524,7 +524,7 @@ def test_bare_reporter_takes_full_control(tmp_path: Path):
     s = suite("S", bench("a")).with_command(["true"]).with_metric(Time())
     # A bare reporter is wrapped as `lambda _: reporter` and used as-is: it IS a
     # JsonReporter, so --json is not needed and its sink is not added.
-    bench_app(reporter=JsonReporter(direct)).add(s).run(
+    bench_app(reporter=JsonReporter(direct)).add(s).run_cli(
         ["--no-progress", "--json", str(flag)]
     )
     assert direct.exists()  # bare reporter ran, used as-is

@@ -141,7 +141,7 @@ lox_tests = (
 
 if __name__ == "__main__":
     reporter = LoxTestSummary()
-    bench_app(params=TestParams, reporter=reporter).add(lox_tests).run()
+    bench_app(params=TestParams, reporter=reporter).add(lox_tests).run_cli()
     sys.exit(1 if reporter.failed > 0 else 0)
 
 # vim: ft=python

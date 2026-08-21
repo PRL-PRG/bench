@@ -36,7 +36,7 @@ s2 = (
     .with_matrix(vm=["python3.9", "python3.14"])
     .with_command(lambda ctx: [ctx.data.vm, f"benchmarks/{ctx.benchmark}.py"])
     .with_runs(3)
-    .run()
+    .run_cli()
 )
 
 

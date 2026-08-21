@@ -52,4 +52,4 @@ if __name__ == "__main__":
             SummaryReporter(Compact("elapsed", suite="fast")),
             SummaryReporter(Compact("elapsed", suite="slow")),
         )
-    ).add(fast, slow).run()
+    ).add(fast, slow).run_cli()

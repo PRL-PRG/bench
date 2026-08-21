@@ -152,4 +152,4 @@ def discover_suites(p: Spec2026Params) -> list[SuiteBuilder]:
     return suites
 
 
-bench_app(params=Spec2026Params).generator(discover_suites).run()
+bench_app(params=Spec2026Params).generator(discover_suites).run_cli()

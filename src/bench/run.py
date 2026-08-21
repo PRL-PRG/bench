@@ -151,6 +151,7 @@ class BenchAppBuilder(BuilderBase):
     # ----- run -----------
 
     def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
+    def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve generators, apply app defaults, and run every suite."""
 
         if isinstance(args, argparse.Namespace):
@@ -251,7 +252,7 @@ def run(*suites: SuiteBuilder) -> Report:
     Returns:
         The report of running all the benchmarks.
     """
-    return bench_app(Path(sys.argv[0]).stem).add(*suites).run()
+    return bench_app(Path(sys.argv[0]).stem).add(*suites).run_cli()
 
 
 def bench_app(
