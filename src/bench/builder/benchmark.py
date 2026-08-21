@@ -160,6 +160,7 @@ class BenchmarkBuilder(BuilderBase):
             command=command,
             cwd=cwd,
             env=env,
+            inherit_env=self.inherit_env,
             timeout=timeout,
             stdin=stdin,
         )

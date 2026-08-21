@@ -147,6 +147,7 @@ class BuilderBase:
     command: Factory[UnresolvedCommand] | None = None
     cwd: Factory[Path] | None = None
     env: Factory[Env] | None = None
+    inherit_env: bool = False
     stdin: Factory[bytes | None] | None = None  # None = no stdin (never inherited)
     timeout: Factory[Timeout] | None = None
     metrics: Sequence[Factory[Metric]] = ()
@@ -222,6 +223,13 @@ class BuilderBase:
             as_build(env, dict),
             override=override,
             merge=merge_factory(merge_mapping),
+        )
+
+    def with_inherit_env(self, inherit: bool = True) -> Self:
+        return self.replace(
+            "inherit_env",
+            inherit,
+            override=True,
         )
 
     def with_stdin(
@@ -409,10 +417,14 @@ class BuilderBase:
 # Overlay helpers
 # ---------------------------------------------------------------------------
 
+def _or(l: bool, r: bool) -> bool:
+    return l or r
+
 _BUILDER_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
 _BUILDER_MERGABLE_FIELDS = {
     "env": merge_factory(merge_mapping),
     "metrics": merge_sequence,
     "matrix": merge_matrix,
     "filters": merge_sequence,
+    "inherit_env": _or,
 }
