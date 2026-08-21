@@ -9,7 +9,7 @@ import itertools
 import json
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 from cattrs import unstructure
 
@@ -90,7 +90,15 @@ class CompositeReporter(Reporter):
     """Fan out events to multiple Reporters in registration order."""
 
     def __init__(self, *reporters: Reporter) -> None:
-        self.reporters = list(reporters)
+        # Flatten the reporters
+        def iterate(r: Reporter) -> Iterator[Reporter]:
+            if isinstance(r, CompositeReporter):
+                for subr in r.reporters:
+                    yield from iterate(subr)
+
+            yield r
+
+        self.reporters = list(flat_r for r in reporters for flat_r in iterate(r))
 
     def start(self, plan: list[Benchmark]) -> None:
         for r in self.reporters:
