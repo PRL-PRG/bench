@@ -10,13 +10,12 @@ order never matters.
 from __future__ import annotations
 
 import dataclasses
-import itertools
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from bench.builder.base import BuilderBase, merge_sequence
+from bench.builder.base import BuilderBase, const, merge_sequence
 from bench.builder.benchmark import Benchmark, BenchmarkBuilder
 from bench.builder.context import Params
 
@@ -37,8 +36,7 @@ class SuiteBuilder(BuilderBase):
     """A named, frozen collection of benchmarks, generators, and defaults."""
 
     name: str = ""
-    benchmarks: Sequence[BenchmarkBuilder] = ()
-    generators: Sequence[BenchmarkGenerator] = ()
+    benchmarks: Sequence[BenchmarkGenerator] = ()
 
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
     # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
@@ -61,7 +59,7 @@ class SuiteBuilder(BuilderBase):
     def add(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
         return self.replace(
             "benchmarks",
-            tuple(bs),
+            tuple(const((b,)) for b in bs),
             override=False,
             merge=merge_sequence,
         )
@@ -70,7 +68,7 @@ class SuiteBuilder(BuilderBase):
         """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
         called when the suite materializes."""
         return self.replace(
-            "generators",
+            "benchmarks",
             (fn,),
             override=False,
             merge=merge_sequence,
@@ -93,9 +91,8 @@ class SuiteBuilder(BuilderBase):
 
         out: list[Benchmark] = [
             bench
-            for builder in itertools.chain(
-                self.benchmarks, *(gen(ctx) for gen in self.generators)
-            )
+            for generator in self.benchmarks
+            for builder in generator(ctx)
             for bench in builder.inherit_from(self).create(params, suite=self.name)
         ]
 
@@ -112,4 +109,4 @@ class SuiteBuilder(BuilderBase):
 
 def suite(name: str, *benchmarks: BenchmarkBuilder) -> SuiteBuilder:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""
-    return SuiteBuilder(name=name, benchmarks=tuple(benchmarks))
+    return SuiteBuilder(name=name).add(*benchmarks)

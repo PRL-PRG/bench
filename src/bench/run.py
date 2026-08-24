@@ -9,7 +9,6 @@ from __future__ import annotations, generators
 
 import argparse
 import dataclasses
-import itertools
 import re
 import sys
 from collections.abc import Callable
@@ -99,8 +98,7 @@ class BenchAppBuilder(BuilderBase):
     """
 
     name: str = ""
-    suites: Sequence[SuiteBuilder] = ()
-    generators: Sequence[SuiteGenerator] = ()
+    suites: Sequence[SuiteGenerator] = ()
 
     params: type[Params] | None = None
 
@@ -117,7 +115,7 @@ class BenchAppBuilder(BuilderBase):
         """Register several suites."""
         return self.replace(
             "suites",
-            ss,
+            tuple(const((s,)) for s in ss),
             override=False,
             merge=merge_sequence,
         )
@@ -125,7 +123,7 @@ class BenchAppBuilder(BuilderBase):
     def generator(self, fn: SuiteGenerator) -> BenchAppBuilder:
         """Register a deferred suite producer."""
         return self.replace(
-            "generators",
+            "suites",
             (fn,),
             override=False,
             merge=merge_sequence,
@@ -173,10 +171,7 @@ class BenchAppBuilder(BuilderBase):
         use_defaults: bool = False,
     ):
         suites = [
-            s.inherit_from(self)
-            for s in itertools.chain(
-                self.suites, *(gen(build_params) for gen in self.generators)
-            )
+            s.inherit_from(self) for generator in self.suites for s in generator(build_params)
         ]
 
         planned = plan(suites, build_params)
