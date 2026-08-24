@@ -11,9 +11,9 @@ Both carry an optional `direction`.
 from __future__ import annotations
 
 import abc
+import copy
 import re
 import sys
-import copy
 from collections.abc import Callable, Iterable
 from typing import Any, Literal, Mapping, Self
 

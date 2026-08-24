@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from bench import Iteration, Report, Execution, Sample, report_from_json, report_to_json
+from bench import Execution, Iteration, Report, Sample, report_from_json, report_to_json
 from bench.core.invocation import Variant
 from bench.core.results import Direction
 

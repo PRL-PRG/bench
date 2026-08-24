@@ -5,11 +5,9 @@ perf's `-x,` CSV from the process stderr. It never touches argv on its own.
 """
 
 import pytest
-
-from bench import PerfStat, Sample
-
 from conftest import make_success
 
+from bench import PerfStat, Sample
 
 # ----- construction ---------------------------------------------------------
 

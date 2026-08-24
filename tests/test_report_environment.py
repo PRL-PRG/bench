@@ -5,9 +5,9 @@ from pathlib import Path
 
 from bench.core.environment import Diagnostic, Environment
 from bench.core.results import (
+    Execution,
     Iteration,
     Report,
-    Execution,
     Sample,
     report_from_json,
     report_to_json,

@@ -9,11 +9,11 @@ and override ``execute_benchmark`` to return canned ``Execution`` objects — on
 
 from pathlib import Path
 
-from bench import FixedRuns, Iteration, NoDetection, Execution, Sample, bench, suite
+from bench import Execution, FixedRuns, Iteration, NoDetection, Sample, bench, suite
 from bench.builder.context import Params
-from bench.runner.base import plan
 from bench.core.results import Report
 from bench.report.reporter import Reporter
+from bench.runner.base import plan
 from bench.runner.controller import Controller
 
 

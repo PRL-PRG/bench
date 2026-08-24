@@ -12,7 +12,6 @@ import os
 
 from bench import CoefficientOfVariation, FixedRuns, Time, bench, run, suite
 
-
 s = suite(
     "jit",
     bench("workload")

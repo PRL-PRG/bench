@@ -9,7 +9,6 @@
 """RCP: programmatic suite construction with ctx-driven `from_files` discovery."""
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (

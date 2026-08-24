@@ -5,7 +5,6 @@ from __future__ import annotations
 from rich.console import Console
 from rich.theme import Theme
 
-
 BENCHR_THEME = Theme(
     {
         "bench.success": "green",

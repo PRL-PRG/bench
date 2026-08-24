@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from bench.core.invocation import InvocationResult
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
-from bench.core.results import Iteration, Report, Execution, Sample, diagnostic_excerpt
+from bench.core.results import Execution, Iteration, Report, Sample, diagnostic_excerpt
 from bench.report.reporter import Reporter
 from bench.runner.base import format_benchmark_verbose
 

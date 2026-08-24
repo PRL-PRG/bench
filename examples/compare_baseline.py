@@ -19,7 +19,6 @@ import os
 
 from bench import Time, bench, run, suite
 
-
 s = (
     suite(
         "cmp",

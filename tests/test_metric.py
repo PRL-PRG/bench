@@ -8,6 +8,8 @@ argument; the parsing tests exercise `process_text` directly.
 
 import re
 
+from conftest import make_rusage, make_success
+
 from bench import (
     FloatPerLine,
     Rebench,
@@ -22,9 +24,6 @@ from bench.core.metric import (
     UserTime,
     as_metric_source,
 )
-
-from conftest import make_success, make_rusage
-
 
 # ----- iteration metrics (parse text) ---------------------------------------
 

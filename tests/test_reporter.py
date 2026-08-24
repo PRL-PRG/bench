@@ -9,11 +9,11 @@ from pathlib import Path
 from rich.console import Console
 
 from bench import (
+    CompositeReporter,
     CsvReporter,
     DirReporter,
-    JsonReporter,
-    CompositeReporter,
     FloatPerLine,
+    JsonReporter,
     ProgressReporter,
     Sequential,
     SummaryReporter,
@@ -25,12 +25,13 @@ from bench import (
     suite,
 )
 from bench.builder.context import Params
-from bench.runner.base import plan
 from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
-from bench.core.results import Iteration, Execution, Report, Sample
-from bench.report.reporter import _TUI, DirReporter as _DirReporter
+from bench.core.results import Execution, Iteration, Report, Sample
+from bench.report.reporter import _TUI
+from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
+from bench.runner.base import plan
 
 
 def test_dirreporter_writes_on_execution_done(tmp_path):

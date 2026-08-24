@@ -17,7 +17,6 @@ import os
 
 from bench import Time, bench, run, suite
 
-
 s = suite(
     "flaky",
     # Always succeeds:

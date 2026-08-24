@@ -24,7 +24,6 @@ from bench import (
     suite,
 )
 
-
 fast = (
     suite("fast")
     .add(bench("a").with_command(["sh", "-c", "sleep 0.01"]))

@@ -5,7 +5,6 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,6 @@ from bench import (
     run,
     suite,
 )
-
 
 REPO = Path(__file__).resolve().parents[1]
 

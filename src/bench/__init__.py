@@ -1,20 +1,35 @@
 """bench - a benchmarking framework."""
 
 # Atoms
+# Benchmark / SuiteBuilder
+from bench.builder.benchmark import (
+    Benchmark,
+    BenchmarkBuilder,
+    bench,
+    default_label,
+    from_files,
+)
+from bench.builder.context import Context, SharedBenchParams, SharedSelectionParams
+from bench.builder.suite import SuiteBuilder, suite
+
+# CLI
+from bench.cli import main
+from bench.core.checks import run_checks
+
+# Environment + diagnostics
+from bench.core.environment import (
+    Diagnostic,
+    Environment,
+    EnvironmentCollector,
+    NoEnvironment,
+    SystemEnvironment,
+)
 from bench.core.invocation import (
     Invocation,
     InvocationResult,
     Variant,
     Verdict,
     default_success,
-)
-from bench.core.results import (
-    Iteration,
-    Report,
-    Execution,
-    Sample,
-    report_from_json,
-    report_to_json,
 )
 
 # Metrics
@@ -28,7 +43,13 @@ from bench.core.metric import (
     Time,
     max_rss,
 )
-from bench.perf import PerfStat
+
+# Outlier detection
+from bench.core.outlier import (
+    ModifiedZScore,
+    NoDetection,
+    OutlierDetection,
+)
 
 # Stopping policies
 from bench.core.policy import (
@@ -38,43 +59,25 @@ from bench.core.policy import (
     PolicyState,
     StoppingPolicy,
 )
-
-# Outlier detection
-from bench.core.outlier import (
-    ModifiedZScore,
-    NoDetection,
-    OutlierDetection,
+from bench.core.results import (
+    Execution,
+    Iteration,
+    Report,
+    Sample,
+    report_from_json,
+    report_to_json,
 )
+from bench.perf import PerfStat
 
-# Environment + diagnostics
-from bench.core.environment import (
-    Diagnostic,
-    Environment,
-    EnvironmentCollector,
-    NoEnvironment,
-    SystemEnvironment,
+# Formatters
+from bench.report.formatter import (
+    Compact,
+    DefaultSummary,
+    Formatter,
+    GeomeanSummary,
+    Results,
+    Summary,
 )
-from bench.core.checks import run_checks
-
-# Benchmark / SuiteBuilder
-from bench.builder.benchmark import (
-    Benchmark,
-    BenchmarkBuilder,
-    bench,
-    default_label,
-    from_files,
-)
-from bench.builder.suite import SuiteBuilder, suite
-from bench.builder.context import Context, SharedBenchParams, SharedSelectionParams
-
-# Runners
-from bench.runner.base import (
-    Runner,
-    SuiteMaterializationError,
-)
-from bench.runner.dry import Dry
-from bench.runner.parallel import Parallel
-from bench.runner.sequential import Sequential
 
 # Reporters
 from bench.report.reporter import (
@@ -87,21 +90,17 @@ from bench.report.reporter import (
     SummaryReporter,
 )
 
-# Formatters
-from bench.report.formatter import (
-    Compact,
-    DefaultSummary,
-    Formatter,
-    GeomeanSummary,
-    Results,
-    Summary,
-)
-
 # BenchAppBuilder abstraction + run pipeline
 from bench.run import BenchAppBuilder, NoBenchmarksMatchedError, bench_app, run
 
-# CLI
-from bench.cli import main
+# Runners
+from bench.runner.base import (
+    Runner,
+    SuiteMaterializationError,
+)
+from bench.runner.dry import Dry
+from bench.runner.parallel import Parallel
+from bench.runner.sequential import Sequential
 
 __all__ = [
     # Atoms

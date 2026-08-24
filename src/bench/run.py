@@ -27,6 +27,7 @@ from bench.builder.base import (
 )
 from bench.builder.benchmark import Benchmark
 from bench.builder.context import (
+    Params,
     SharedBenchParams,
     SharedSelectionParams,
     add_dataclass_args,
@@ -55,6 +56,8 @@ from bench.report.reporter import (
     Reporter,
     SummaryReporter,
     console,
+)
+from bench.report.reporter import (
     print_diagnostics as do_print_diagnostics,
 )
 from bench.report.summary import summarize
@@ -65,7 +68,6 @@ from bench.runner.base import (
 from bench.runner.dry import Dry
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import Sequential
-from bench.builder.context import Params
 
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now

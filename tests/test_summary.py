@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import math
-
 import re
 
-from bench import Iteration, Report, Execution, Sample
+from bench import Execution, Iteration, Report, Sample
 from bench.core.invocation import Variant
 from bench.core.results import Direction
 from bench.report.render import RICH

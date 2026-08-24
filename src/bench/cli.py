@@ -9,13 +9,14 @@ import sys
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
-from bench.run import bench_app, default_reporter
 from bench.builder.benchmark import Benchmark, bench
-from bench.builder.context import Context, SharedBenchParams, add_dataclass_args
+from bench.builder.context import Context, Params, SharedBenchParams, add_dataclass_args
+from bench.builder.suite import suite
 from bench.core.checks import run_checks
 from bench.core.environment import NoEnvironment, SystemEnvironment
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
+from bench.core.results import Report, report_from_json
 from bench.denoise import (
     STATE_PATH,
     is_root,
@@ -23,8 +24,6 @@ from bench.denoise import (
     restore,
     status,
 )
-from bench.builder.suite import suite
-from bench.core.results import Report, report_from_json
 from bench.report.formatter import (
     DefaultSummary,
     Results,
@@ -38,10 +37,9 @@ from bench.report.reporter import (
     print_diagnostics,
 )
 from bench.report.summary import merge_reports, summarize
+from bench.run import bench_app, default_reporter
 from bench.runner.base import SuiteMaterializationError
 from bench.utils import print_exception
-from bench.builder.context import Params
-
 
 # ---------------------------------------------------------------------------
 # `bench` CLI: run / compare

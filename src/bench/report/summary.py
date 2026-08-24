@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, replace
 
 from bench.core.invocation import Variant, format_benchmark
 from bench.core.metric import Direction
-from bench.core.results import Report, Execution, Sample
+from bench.core.results import Execution, Report, Sample
 from bench.report.render import RICH, Cell, Renderer, cell, cells, table, tag
 
 type MetricKey = tuple[str, str]  # (metric, unit)

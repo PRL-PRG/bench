@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from bench.report.render import PLAIN, RICH, cell, cells, tag, table
-
+from bench.report.render import PLAIN, RICH, cell, cells, table, tag
 
 # ----- tag -------------------------------------------------------------------
 

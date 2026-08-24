@@ -20,14 +20,13 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (
     Context,
+    Execution,
     InvocationResult,
     Reporter,
-    Execution,
     SharedBenchParams,
     Time,
     bench_app,
@@ -36,7 +35,6 @@ from bench import (
 )
 from bench.core.results import Report
 from bench.report.reporter import console
-
 
 HERE = Path(__file__).resolve().parent
 

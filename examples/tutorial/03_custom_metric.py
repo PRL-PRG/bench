@@ -8,8 +8,8 @@
 from __future__ import annotations
 
 from bench import (
-    Time,
     FloatPerLine,
+    Time,
     bench,
     run,
     suite,

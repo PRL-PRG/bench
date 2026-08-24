@@ -32,7 +32,7 @@ from bench.builder.base import (
     LabelFn,
     merge_mapping,
 )
-from bench.builder.context import Context, Data
+from bench.builder.context import Context, Data, Params
 from bench.core.invocation import (
     Invocation,
     SuccessFn,
@@ -46,7 +46,6 @@ from bench.core.metric import (
 from bench.core.outlier import ModifiedZScore, OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.runner.controller import Controller
-from bench.builder.context import Params
 
 
 def default_label(b: Benchmark) -> str:

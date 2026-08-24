@@ -9,7 +9,6 @@
 """Lox: two file-discovered suites, each with its own metrics and a per-suite
 Compact summary (via `CompositeReporter`)."""
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (
@@ -19,7 +18,6 @@ from bench import (
     FloatPerLine,
     SharedBenchParams,
     SummaryReporter,
-    Time,
     bench,
     bench_app,
     from_files,
@@ -27,7 +25,6 @@ from bench import (
     suite,
 )
 from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
-
 
 HERE = Path(__file__).resolve().parent
 

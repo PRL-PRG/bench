@@ -1,6 +1,5 @@
 """BenchmarkBuilder: builders, create()/materialize, per-variant builder fields."""
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest

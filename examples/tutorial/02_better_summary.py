@@ -7,7 +7,7 @@
 # ///
 from __future__ import annotations
 
-from bench import Time, bench, run, suite, max_rss
+from bench import Time, bench, max_rss, run, suite
 
 s = (
     suite("simple")

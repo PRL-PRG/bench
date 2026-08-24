@@ -12,20 +12,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
 from cattrs import unstructure
-
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markup import escape as markup_escape
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
-    Progress as RichProgress,
     SpinnerColumn,
     Task,
     TaskID,
     TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
+)
+from rich.progress import (
+    Progress as RichProgress,
 )
 from rich.text import Text
 
@@ -36,7 +37,7 @@ from bench.core.invocation import (
     format_benchmark,
     format_identifier,
 )
-from bench.core.results import Report, Execution, report_to_json
+from bench.core.results import Execution, Report, report_to_json
 from bench.report.theme import BENCHR_THEME, console
 
 if TYPE_CHECKING:

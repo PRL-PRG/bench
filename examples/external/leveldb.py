@@ -14,14 +14,12 @@ invocation. A per-op Regex anchored to the op name ignores that fill.
 """
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from bench import (
     BenchmarkBuilder,
     Regex,
     SharedBenchParams,
-    Time,
     bench,
     bench_app,
     max_rss,

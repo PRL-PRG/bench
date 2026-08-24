@@ -8,12 +8,11 @@
 # ///
 """Multi-suite R benchmark config: five suites sharing a common locale env."""
 
-from dataclasses import dataclass
 from pathlib import Path
 
-from bench import Rebench, SharedBenchParams, bench as B, bench_app, suite
+from bench import Rebench, SharedBenchParams, bench_app, suite
+from bench import bench as B
 from bench.core.metric import StdoutMetricSource
-
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / "inputs"

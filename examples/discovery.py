@@ -16,7 +16,6 @@ from pathlib import Path
 
 from bench import Time, from_files, run, suite
 
-
 HERE = Path(__file__).resolve().parent
 
 s = (

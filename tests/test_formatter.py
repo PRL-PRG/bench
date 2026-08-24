@@ -8,11 +8,11 @@ from rich.console import Console
 from bench import (
     Compact,
     DefaultSummary,
+    Execution,
     GeomeanSummary,
     Iteration,
     Report,
     Results,
-    Execution,
     Sample,
     Summary,
     SummaryReporter,
