@@ -10,6 +10,7 @@ order never matters.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ class SuiteContext[T: Params]:
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now
 type BenchmarkGenerator = Callable[[SuiteContext[Any]], list[BenchmarkBuilder]]
+type SubsuiteGenerator = Callable[[SuiteContext[Any]], list[SuiteBuilder]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,13 +39,14 @@ class SuiteBuilder(BuilderBase):
 
     name: str = ""
     benchmarks: Sequence[BenchmarkGenerator] = ()
+    suites: Sequence[SubsuiteGenerator] = ()
 
     # Randomize the materialized benchmark order (Mytkowicz et al.), seeded for
     # reproducibility. SuiteBuilder-level: each suite shuffles its own benchmarks.
     shuffle: bool = False
     shuffle_seed: int | None = None
 
-    # ----- with_* setters -----------
+    # ----- name -----------
 
     def with_name(self, name: str, override: bool = False) -> SuiteBuilder:
         # Special case - allow override for empty name
@@ -55,6 +58,8 @@ class SuiteBuilder(BuilderBase):
             name,
             override=override,
         )
+
+    # ----- add benchmarks -----------
 
     def add(self, *bs: BenchmarkBuilder) -> SuiteBuilder:
         return self.replace(
@@ -74,6 +79,28 @@ class SuiteBuilder(BuilderBase):
             merge=merge_sequence,
         )
 
+    # ----- add subsuites -----------
+
+    def add_suites(self, *ss: SuiteBuilder) -> SuiteBuilder:
+        """Register suite(s)."""
+        return self.replace(
+            "suites",
+            tuple(const((s,)) for s in ss),
+            override=False,
+            merge=merge_sequence,
+        )
+
+    def add_suite_generator(self, fn: SubsuiteGenerator) -> SuiteBuilder:
+        """Register a deferred suite producer."""
+        return self.replace(
+            "suites",
+            (fn,),
+            override=False,
+            merge=merge_sequence,
+        )
+
+    # ----- shuffle -----------
+
     def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
         # TODO: !!!
@@ -81,20 +108,36 @@ class SuiteBuilder(BuilderBase):
 
     # ----- creation ----------------------------------------------------
 
-    def materialize(self, params: Params) -> list[Benchmark]:
+    def materialize(self, params: Params, parent_suite: str = "") -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
+
+        actual_name = self.name if parent_suite == "" else f"{parent_suite}/{self.name}"
 
         ctx: SuiteContext[Params] = SuiteContext(
             params=params,
-            suite=self.name,
+            suite=actual_name,
         )
 
-        out: list[Benchmark] = [
-            bench
-            for generator in self.benchmarks
-            for builder in generator(ctx)
-            for bench in builder.inherit_from(self).create(params, suite=self.name)
-        ]
+        out: list[Benchmark] = list(
+            itertools.chain(
+                (
+                    bench
+                    for generator in self.benchmarks
+                    for builder in generator(ctx)
+                    for bench in builder.inherit_from(self).create(
+                        params, suite=actual_name
+                    )
+                ),
+                (
+                    bench
+                    for generator in self.suites
+                    for builder in generator(ctx)
+                    for bench in builder.inherit_from(self).materialize(
+                        params, actual_name
+                    )
+                ),
+            )
+        )
 
         if self.shuffle:
             random.Random(self.shuffle_seed).shuffle(out)
@@ -107,6 +150,10 @@ class SuiteBuilder(BuilderBase):
 # ---------------------------------------------------------------------------
 
 
-def suite(name: str, *benchmarks: BenchmarkBuilder) -> SuiteBuilder:
+def suite(name: str, *children: BenchmarkBuilder | SuiteBuilder) -> SuiteBuilder:
     """Concise constructor: `suite("LoxSuite", b1, b2, ...)`."""
-    return SuiteBuilder(name=name).add(*benchmarks)
+    return (
+        SuiteBuilder(name=name)
+        .add(*(ch for ch in children if isinstance(ch, BenchmarkBuilder)))
+        .add_suites(*(ch for ch in children if isinstance(ch, SuiteBuilder)))
+    )
