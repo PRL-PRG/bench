@@ -17,7 +17,3 @@ docs:
 docs-serve:
 	uv run --group docs mkdocs serve
 
-schema:
-	uv run --group schema python scripts/generate_schema.py
-
-
