@@ -27,10 +27,15 @@
           devShells.default = pkgs.mkShell {
             name = "Python";
             packages = with pkgs; [
+              uv
+
+              # Dev packages
               ruff
               pyright
-              uv
+              python314
             ];
+
+            UV_NO_SYNC = 1;
           };
         };
     };

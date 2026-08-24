@@ -12,6 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+lint = ["ruff>=0.15.17", "pyright>=1.1.408"]
 
 [project.scripts]
 bench = "bench.__main__:cli"
@@ -29,6 +30,12 @@ testpaths = ["tests"]
 [tool.ruff.format]
 docstring-code-format = true
 
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = [
+  "E741" # ambiguous-variable-name
+]
+
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
@@ -40,5 +47,4 @@ strict = ["src"]
 docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=1.0.4",
-    "ruff>=0.15.17",
 ]
