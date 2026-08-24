@@ -112,7 +112,6 @@ class BenchAppBuilder(BuilderBase):
 
     def add(self, *ss: SuiteBuilder) -> BenchAppBuilder:
         """Register suite(s)."""
-        """Register several suites."""
         return self.replace(
             "suites",
             tuple(const((s,)) for s in ss),
