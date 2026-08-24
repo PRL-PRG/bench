@@ -367,9 +367,24 @@ def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
     runs = {r.suite: r for r in report.executions}
     assert set(runs) == {"S1", "S2"}
     assert runs["S1"].command == ("true",)  # app default filled a suite that set none
-    # RED ON PURPOSE: BUG-13 - the app default overrides the suite's command.
     assert runs["S2"].command == ("echo", "s2")  # inner-wins: suite's command survived
     assert runs["S2"].cwd == "/tmp"  # suite-only setting the app never set survives
+
+
+def test_bench_app_defaults_reach_subsuite_benchmarks():
+    # The app is the weakest level, and its defaults keep cascading past the
+    # top-level suite into the sub-suites it contains.
+    inner = suite("Inner", bench("b").with_cwd(Path("/tmp")).with_metric(Time()))
+    report = (
+        bench_app("demo")
+        .add(suite("Outer", inner))
+        .with_command(["true"])
+        .with_runs(1)
+        .run_cli(["--no-progress"])
+    )
+    [run_] = report.executions
+    assert run_.suite == "Outer/Inner"
+    assert run_.command == ("true",)
 
 
 # ----- --list / --include / --exclude -------------------------------------
@@ -457,6 +472,22 @@ def test_include_anchored_regex_targets_whole_suite():
         .run_cli(["--include", "^alpha/", "--no-progress"])
     )
     assert {r.suite for r in report.executions} == {"alpha"}
+
+
+def test_include_matches_the_nested_suite_path():
+    # Selection runs on `suite/benchmark`, and a sub-suite's suite name is the
+    # whole path - so a pattern can address one branch of the tree.
+    def _leaf(name: str):
+        return suite(name, bench("b").with_cwd(Path("/tmp")).with_metric(Time()))
+
+    report = (
+        bench_app()
+        .add(suite("Top", _leaf("Keep"), _leaf("Drop")))
+        .with_command(["true"])
+        .with_runs(1)
+        .run_cli(["--include", "^Top/Keep/", "--no-progress"])
+    )
+    assert {r.suite for r in report.executions} == {"Top/Keep"}
 
 
 def test_include_selects_single_variant():

@@ -405,8 +405,8 @@ def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
     )
     bench_app(summary=marker).add(s).run_cli([])
 
-    # Progress still reports to the real console...
-    assert "Finished:" in capsys.readouterr().out
+    # Progress still reports to the real console (plain lines, capsys is no TTY)...
+    assert "S/x #1 ok" in capsys.readouterr().out
     # ...while the summary went to the swapped-in reporter alone.
     assert "elapsed" in buf.getvalue()
 
