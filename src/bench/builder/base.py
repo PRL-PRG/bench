@@ -69,7 +69,7 @@ def const[T](value: T) -> Callable[[Any], T]:
 
 
 def merge_mapping[K, V](outer: Mapping[K, V], inner: Mapping[K, V]) -> Mapping[K, V]:
-    return dict(outer) | dict(inner)
+    return {**outer, **inner}
 
 
 def merge_sequence[T](outer: Sequence[T], inner: Sequence[T]) -> Sequence[T]:
