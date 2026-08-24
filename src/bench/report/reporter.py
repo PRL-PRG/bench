@@ -291,7 +291,7 @@ class DirReporter(Reporter):
             )
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class _TUI:
     class _EtaColumn(TimeRemainingColumn):
         """ETA prefixed with 'ETA', blank when the total is unknown or a single

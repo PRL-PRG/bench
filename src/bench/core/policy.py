@@ -6,8 +6,7 @@ import abc
 import itertools
 import math
 from collections import deque
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable
 
 from bench.core.results import Execution
 
@@ -194,13 +193,16 @@ class _CoVState(PolicyState):
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
 class And(StoppingPolicy):
-    a: StoppingPolicy
-    b: StoppingPolicy
+    __slots__ = ("a", "b")
+
+    def __init__(self, a: StoppingPolicy, b: StoppingPolicy) -> None:
+        super().__init__()
+        self.a = a
+        self.b = b
 
     def start(self) -> PairState:
-        return PairState(self.a.start(), self.b.start(), all)
+        return PairState(self.a.start(), self.b.start(), lambda a, b: a and b)
 
     def max_runs(self) -> int | None:
         # Stops only when both converge, so worst case is the later of the two.
@@ -211,13 +213,16 @@ class And(StoppingPolicy):
         return max(a, b)
 
 
-@dataclass(frozen=True, slots=True)
 class Or(StoppingPolicy):
-    a: StoppingPolicy
-    b: StoppingPolicy
+    __slots__ = ("a", "b")
+
+    def __init__(self, a: StoppingPolicy, b: StoppingPolicy) -> None:
+        super().__init__()
+        self.a = a
+        self.b = b
 
     def start(self) -> PairState:
-        return PairState(self.a.start(), self.b.start(), any)
+        return PairState(self.a.start(), self.b.start(), lambda a, b: a or b)
 
     def max_runs(self) -> int | None:
         # Stops as soon as either converges, so at most the earlier of the two.
@@ -234,7 +239,7 @@ class PairState(PolicyState):
     __slots__ = ("a", "b", "op")
 
     def __init__(
-        self, a: PolicyState, b: PolicyState, op: Callable[[Iterable[bool]], bool]
+        self, a: PolicyState, b: PolicyState, op: Callable[[bool, bool], bool]
     ):
         self.a = a
         self.b = b
@@ -245,4 +250,4 @@ class PairState(PolicyState):
         self.b.observe(execution)
 
     def satisfied(self) -> bool:
-        return self.op((self.a.satisfied(), self.b.satisfied()))
+        return self.op(self.a.satisfied(), self.b.satisfied())

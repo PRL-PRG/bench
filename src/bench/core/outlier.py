@@ -16,7 +16,6 @@ from __future__ import annotations
 import abc
 import statistics
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 # Minimum modified Z-score for a datapoint to be an outlier. 1.4826 converts the
 # MAD into an estimator for the standard deviation. 10 is the number of standard
@@ -47,19 +46,23 @@ class OutlierDetection(abc.ABC):
         """Return a boolean mask, one entry per value, True where outlier."""
 
 
-@dataclass(frozen=True, slots=True)
 class NoDetection(OutlierDetection):
     """Flags nothing - the off switch."""
+
+    __slots__ = ()
 
     def detect(self, values: Sequence[float]) -> list[bool]:
         return [False] * len(values)
 
 
-@dataclass(frozen=True, slots=True)
 class ModifiedZScore(OutlierDetection):
     """Flags values whose modified Z-score exceeds `threshold`."""
 
-    threshold: float = OUTLIER_THRESHOLD
+    __slots__ = "threshold"
+
+    def __init__(self, threshold: float = OUTLIER_THRESHOLD) -> None:
+        super().__init__()
+        self.threshold = threshold
 
     def detect(self, values: Sequence[float]) -> list[bool]:
         if not values:
