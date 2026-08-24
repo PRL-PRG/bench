@@ -128,7 +128,7 @@ def merge_matrix(
     dup = inner.keys() & outer.keys()
     if dup:
         raise ValueError(f"Duplicate matrix axis '{next(iter(dup))!r}'")
-    return merge_mapping(inner, outer)
+    return merge_mapping(outer, inner)
 
 
 # ---------------------------------------------------------------------------
