@@ -85,6 +85,10 @@ def merge_factory[T](
     return merge
 
 
+def merge_swap[T](fun: Callable[[T, T], T]) -> Callable[[T, T], T]:
+    return lambda lhs, rhs: fun(rhs, lhs)
+
+
 def as_build[T, U](
     value: T | Factory[U], normalize: Callable[[T], U] = lambda v: v
 ) -> Factory[U]:
@@ -384,7 +388,7 @@ class BuilderBase:
     # ----- inheritance ------------------------------------------------
 
     def inherit_from(self, over: BuilderBase) -> Self:
-        """Merge `over` on top of `self` (over wins): the inheritance step used
+        """Merge `over` on top of `self` (self wins): the inheritance step used
         at every builder boundary (app < suite < benchmark).
 
         Each scalar/builder field takes `over`'s value if set, else `self`'s, except
@@ -396,6 +400,9 @@ class BuilderBase:
         result = self
         for name in _BUILDER_FIELDS:
             if name in _BUILDER_MERGABLE_FIELDS:
+                continue
+
+            if getattr(self, name) is not None:
                 continue
 
             val = getattr(over, name)
@@ -434,7 +441,9 @@ def _or(l: bool, r: bool) -> bool:
 
 _BUILDER_FIELDS = tuple(f.name for f in dataclasses.fields(BuilderBase))
 _BUILDER_MERGABLE_FIELDS = {
-    "env": merge_factory(merge_mapping),
+    "env": merge_factory(
+        merge_swap(merge_mapping)  # The "self" values should override the "over" ones
+    ),
     "metrics": merge_sequence,
     "matrix": merge_matrix,
     "filters": merge_sequence,
