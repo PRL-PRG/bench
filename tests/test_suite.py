@@ -588,7 +588,7 @@ def test_unnamed_parent_suite_does_not_prefix_its_subsuites():
 
 
 def test_unnamed_subsuite_does_not_add_a_path_component():
-    # RED ON PURPOSE: BUG-28 - an empty *parent* name collapses (the test above)
+    # RED ON PURPOSE: BUG-1 - an empty *parent* name collapses (the test above)
     # but an empty *sub-suite* name does not, so an unnamed grouping suite leaves
     # a dangling separator in the suite path and in every selection key.
     s = suite("P", suite("", _b("x"))).with_command(["true"])
