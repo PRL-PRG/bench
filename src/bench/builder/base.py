@@ -180,6 +180,9 @@ class BuilderBase:
         merge the previous value with the new one. Otherwise print a warning and
         replace the value.
         """
+        if field not in (f.name for f in dataclasses.fields(self)):
+            raise ValueError(f"Field {field} is not field of {type(self)}")
+
         prev = getattr(self, field)
         if prev is not None:
             if not override:
