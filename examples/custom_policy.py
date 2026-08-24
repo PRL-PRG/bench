@@ -18,7 +18,7 @@ config that returns a fresh `PolicyState` from `start()`) and
 import os
 from dataclasses import dataclass
 
-from bench import PolicyState, Regex, StoppingPolicy, bench, run, suite
+from bench import PolicyState, RegexMetric, StoppingPolicy, bench, run, suite
 from bench.core.metric import StdoutMetricSource
 
 
@@ -65,7 +65,9 @@ s = suite(
     "ready_loop",
     bench("p")
     .with_command(["bash", "-c", SCRIPT])
-    .with_metric(Regex("READY", r"READY\s+(\d)", StdoutMetricSource, iterate=True))
+    .with_metric(
+        RegexMetric("READY", r"READY\s+(\d)", StdoutMetricSource, iterate=True)
+    )
     .with_runs(ConsecutiveReady(n=3).at_most(20)),
     # A benchmark runs with exactly the environment it is given, so the script
     # needs PATH handed to it to find `mkdir`/`cat`.

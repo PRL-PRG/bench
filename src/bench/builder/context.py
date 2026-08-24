@@ -189,7 +189,6 @@ class Context[T: Params]:
     data: Data
 
 
-
 def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]

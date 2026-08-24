@@ -9,7 +9,7 @@ from bench.report.reporter import Reporter
 from bench.runner.base import Runner
 
 
-class Sequential(Runner):
+class SequentialRunner(Runner):
     """Run benchmarks one at a time, in suite-then-benchmark order."""
 
     def __init__(

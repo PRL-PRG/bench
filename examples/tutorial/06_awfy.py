@@ -29,7 +29,7 @@ from pathlib import Path
 from bench import (
     Context,
     GeomeanSummary,
-    Regex,
+    RegexMetric,
     Results,
     SharedBenchParams,
     Summary,
@@ -76,7 +76,7 @@ awfy = (
     .with_cwd(lambda ctx: ctx.params.awfy)  # so AWFY's `import <bench>` resolves
     .with_metric(
         # One Iteration per `runtime: <us>us` line - this replaces the monitor.
-        Regex(
+        RegexMetric(
             "runtime",
             r"runtime: (\d+)us",
             StdoutMetricSource,

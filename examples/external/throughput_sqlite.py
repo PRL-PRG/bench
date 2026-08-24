@@ -11,7 +11,7 @@
 import sys
 from pathlib import Path
 
-from bench import Regex, bench, run, suite
+from bench import RegexMetric, bench, run, suite
 from bench.core.metric import StdoutMetricSource
 
 SQLITE_BENCH = Path(__file__).resolve().parent / "sqlite_bench.py"
@@ -37,7 +37,7 @@ s = (
         ),
     )
     .with_metric(
-        Regex(
+        RegexMetric(
             "throughput",
             r"throughput:\s*([\d.]+)",
             StdoutMetricSource,

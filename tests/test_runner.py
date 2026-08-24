@@ -13,12 +13,12 @@ from bench import (
     CoefficientOfVariation,
     CompositeReporter,
     CsvReporter,
-    Dry,
+    DryRunner,
     FloatPerLine,
     JsonReporter,
     Parallel,
     Reporter,
-    Sequential,
+    SequentialRunner,
     SuiteMaterializationError,
     Time,
     bench,
@@ -61,7 +61,7 @@ def _sleep_suite(name: str = "S", duration: float = 0.05, runs: int = 2):
 
 
 def test_sequential_basic():
-    report = Sequential().run(plan([_sleep_suite()], Params()))
+    report = SequentialRunner().run(plan([_sleep_suite()], Params()))
     assert len(_all_samples(report)) == 4  # 2 benchmarks x 2 runs
 
 
@@ -76,7 +76,7 @@ def test_sequential_three_runs_yields_three_samples():
         )
         .with_runs(3),
     )
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     # Only the FloatPerLine iteration samples; elapsed is a separate process metric.
     pairs = [(r, s) for r in report.executions for o in r.iterations for s in o.samples]
     assert len(pairs) == 3
@@ -95,7 +95,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
         .with_runs(10),
     )
     out = tmp_path / "r.json"
-    Sequential().run(plan([s], Params()), reporter=JsonReporter(out))
+    SequentialRunner().run(plan([s], Params()), reporter=JsonReporter(out))
     r = report_from_json(out.read_text())
     assert len(r.failures) == 10
     assert all(f.returncode != 0 for f in r.failures)
@@ -104,7 +104,7 @@ def test_sequential_runs_bounded_policy_to_completion_despite_failures(tmp_path:
 def test_parallel_runs_faster_than_sequential():
     s = _sleep_suite(duration=0.1, runs=2)
     t0 = time.monotonic()
-    Sequential().run(plan([s], Params()))
+    SequentialRunner().run(plan([s], Params()))
     seq_t = time.monotonic() - t0
     t0 = time.monotonic()
     Parallel(workers=4).run(plan([s], Params()))
@@ -190,7 +190,7 @@ def test_dry_no_subprocess():
         .with_metric(Time())
         .with_runs(5),
     )
-    out = _all_samples(Dry().run(plan([s], Params())))
+    out = _all_samples(DryRunner().run(plan([s], Params())))
     assert out == []
 
 
@@ -203,7 +203,7 @@ def test_dry_compact_prints_one_line_per_execution(capsys):
         .with_metric(Time())
         .with_runs(5),
     )
-    Dry().run(plan([s], Params()))
+    DryRunner().run(plan([s], Params()))
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
@@ -222,7 +222,7 @@ def test_dry_compact_enumerates_warmup_and_measure(capsys):
         .with_warmup(2)
         .with_runs(3),
     )
-    Dry().run(plan([s], Params()))
+    DryRunner().run(plan([s], Params()))
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 5
@@ -240,7 +240,7 @@ def test_dry_compact_unbounded_policy_prints_single_marker(capsys):
         .with_metric(Time())
         .with_runs(CoefficientOfVariation("elapsed")),
     )
-    Dry().run(plan([s], Params()))
+    DryRunner().run(plan([s], Params()))
     out = capsys.readouterr().out
     lines = [ln for ln in out.splitlines() if ln.strip()]
     assert len(lines) == 1
@@ -256,7 +256,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
         .with_metric(Time())
         .with_runs(5),
     )
-    Dry(verbose=True).run(plan([s], Params()))
+    DryRunner(verbose=True).run(plan([s], Params()))
     out = capsys.readouterr().out
     assert "command:    /bin/echo hi" in out
     assert "cwd:" in out
@@ -269,7 +269,7 @@ def test_dry_verbose_prints_full_block_per_execution(capsys):
 
 
 def test_sequential_quiet_prints_no_block(capsys):
-    Sequential().run(plan([_sleep_suite(runs=1)], Params()))
+    SequentialRunner().run(plan([_sleep_suite(runs=1)], Params()))
     out = capsys.readouterr().out
     assert "command:" not in out and "plan:" not in out
 
@@ -278,7 +278,7 @@ def test_mixed_reporter_lifecycle(tmp_path: Path):
     json_path = tmp_path / "r.json"
     csv_path = tmp_path / "r.csv"
     sinks = CompositeReporter(JsonReporter(json_path), CsvReporter(csv_path))
-    Sequential().run(plan([_sleep_suite(runs=1)], Params()), reporter=sinks)
+    SequentialRunner().run(plan([_sleep_suite(runs=1)], Params()), reporter=sinks)
     assert json_path.exists() and csv_path.exists()
     assert json_path.read_text().count('"metric"') >= 2
 
@@ -308,7 +308,7 @@ def test_sigint_kills_subprocesses_sequential(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential().run(plan([s], Params()), reporter=JsonReporter(json_path))
+        SequentialRunner().run(plan([s], Params()), reporter=JsonReporter(json_path))
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -368,7 +368,7 @@ def test_sigint_kills_shell_wrapped_subtree():
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Sequential().run(plan([s], Params()))
+        SequentialRunner().run(plan([s], Params()))
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -407,7 +407,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
         .with_metric(Time())  # emits one `elapsed` sample on success
         .with_runs(2),
     )
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     samples = _all_samples(report)
     # If the relative path leaked through, every spawn would fail.
     # abspath() in execute() prevents that.
@@ -417,7 +417,7 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
 
 def test_default_metric_is_time():
     s = suite("s", bench("x").with_command(["true"]))
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     # No metric configured: the refactored default is an empty metrics tuple
     # (DEFAULTS.metrics == ()), so nothing is emitted - not even `elapsed`.
     assert report.executions[0].process_samples == []
@@ -425,7 +425,7 @@ def test_default_metric_is_time():
 
 def test_plan_default_params():
     s = suite("s", bench("a").with_command(["true"]))
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
 
 
@@ -473,7 +473,7 @@ def test_with_runner_override_wins_over_jobs():
 
     def make_runner(params):
         captured["jobs"] = params.jobs
-        r = Sequential()
+        r = SequentialRunner()
         captured["runner"] = r
         return r
 
@@ -485,7 +485,9 @@ def test_with_runner_override_wins_over_jobs():
         .run_cli(["--jobs", "4", "--no-progress"])
     )
     assert captured["jobs"] == 4  # params carries the runtime flags
-    assert isinstance(captured["runner"], Sequential)  # not the --jobs Parallel default
+    assert isinstance(
+        captured["runner"], SequentialRunner
+    )  # not the --jobs Parallel default
     assert len(report.executions) == 1
 
 

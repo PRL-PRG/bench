@@ -65,9 +65,9 @@ from bench.runner.base import (
     Runner,
     plan,
 )
-from bench.runner.dry import Dry
+from bench.runner.dry import DryRunner
 from bench.runner.parallel import Parallel
-from bench.runner.sequential import Sequential
+from bench.runner.sequential import SequentialRunner
 
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now
@@ -172,7 +172,9 @@ class BenchAppBuilder(BuilderBase):
         use_defaults: bool = False,
     ):
         suites = [
-            s.inherit_from(self) for generator in self.suites for s in generator(build_params)
+            s.inherit_from(self)
+            for generator in self.suites
+            for s in generator(build_params)
         ]
 
         planned = plan(suites, build_params)
@@ -387,10 +389,10 @@ def default_runner(params: Params) -> Runner | None:
         return None
 
     if params.dry:
-        return Dry(verbose=params.verbose)
+        return DryRunner(verbose=params.verbose)
     if params.jobs > 1:
         return Parallel(workers=params.jobs, verbose=params.verbose)
-    return Sequential(verbose=params.verbose)
+    return SequentialRunner(verbose=params.verbose)
 
 
 def default_filter(params: Params) -> BenchmarkPred:

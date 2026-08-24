@@ -22,7 +22,7 @@ from bench.runner.base import (
 )
 
 
-class Dry(Runner):
+class DryRunner(Runner):
     """Enumerate planned Executions per Benchmark. Do not subprocess.
 
     The `reporter` accepted by `Runner.__init__` is ignored. A dry run

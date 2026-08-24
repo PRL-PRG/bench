@@ -178,8 +178,10 @@ def test_suite_measure_respects_explicit_one():
 def test_suite_with_success_propagates_and_respects_override():
     def suite_fn(r):
         return None
+
     def bench_fn(r):
         return "nope"
+
     s = (
         suite("s", bench("a"), bench("b").with_success(bench_fn))
         .with_command(["true"])
@@ -194,8 +196,10 @@ def test_suite_with_success_propagates_and_respects_override():
 def test_suite_with_label_propagates_and_respects_override():
     def suite_label(b):
         return "suite"
+
     def bench_label(b):
         return "bench"
+
     s = (
         suite("s", bench("a"), bench("b").with_label(bench_label))
         .with_command(["true"])

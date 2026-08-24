@@ -12,8 +12,8 @@ from conftest import make_rusage, make_success
 
 from bench import (
     FloatPerLine,
-    Rebench,
-    Regex,
+    RebenchMetric,
+    RegexMetric,
     Time,
     max_rss,
 )
@@ -80,7 +80,7 @@ def test_direction_decorator():
 
 
 def test_regex_unit_in_pattern_or_arg():
-    proc = Regex(
+    proc = RegexMetric(
         "rt",
         re.compile(r"time:\s*([\d.]+)\s*(ms|us)"),
         StdoutMetricSource,
@@ -93,7 +93,7 @@ def test_regex_unit_in_pattern_or_arg():
 
 
 def test_regex_unit_defaults_to_empty():
-    samples = list(Regex("n", r"(\d+)", StdoutMetricSource).process_text("42\n"))
+    samples = list(RegexMetric("n", r"(\d+)", StdoutMetricSource).process_text("42\n"))
     assert samples[0].unit == ""
 
 
@@ -101,7 +101,7 @@ def test_rebench_metric():
     text = (
         "log: bench1 total: iterations=1 runtime: 1500ms\nlog: bench1: gc-rate: 12kB\n"
     )
-    samples = list(Rebench(StdoutMetricSource).process_text(text))
+    samples = list(RebenchMetric(StdoutMetricSource).process_text(text))
     assert any(s.metric == "runtime" and s.unit == "ms" for s in samples)
     assert any(s.metric == "gc-rate" for s in samples)
 

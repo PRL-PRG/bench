@@ -13,7 +13,7 @@ from pathlib import Path
 
 from bench import (
     Context,
-    Rebench,
+    RebenchMetric,
     SharedBenchParams,
     bench_app,
     from_files,
@@ -60,7 +60,7 @@ rcp_suite = (
     .generator(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
-    .with_metric(Rebench(StdoutMetricSource), max_rss())
+    .with_metric(RebenchMetric(StdoutMetricSource), max_rss())
 )
 
 

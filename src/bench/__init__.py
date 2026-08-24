@@ -37,8 +37,8 @@ from bench.core.metric import (
     FloatPerLine,
     IterationMetric,
     Metric,
-    Rebench,
-    Regex,
+    RebenchMetric,
+    RegexMetric,
     RUsage,
     Time,
     max_rss,
@@ -98,9 +98,9 @@ from bench.runner.base import (
     Runner,
     SuiteMaterializationError,
 )
-from bench.runner.dry import Dry
+from bench.runner.dry import DryRunner
 from bench.runner.parallel import Parallel
-from bench.runner.sequential import Sequential
+from bench.runner.sequential import SequentialRunner
 
 __all__ = [
     # Atoms
@@ -119,9 +119,9 @@ __all__ = [
     "IterationMetric",
     "Metric",
     "Time",
-    "Regex",
+    "RegexMetric",
     "FloatPerLine",
-    "Rebench",
+    "RebenchMetric",
     "RUsage",
     "max_rss",
     "PerfStat",
@@ -155,9 +155,9 @@ __all__ = [
     "SharedSelectionParams",
     # Runners
     "Runner",
-    "Sequential",
+    "SequentialRunner",
     "Parallel",
-    "Dry",
+    "DryRunner",
     "SuiteMaterializationError",
     # Reporters
     "Reporter",

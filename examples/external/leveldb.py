@@ -18,7 +18,7 @@ from pathlib import Path
 
 from bench import (
     BenchmarkBuilder,
-    Regex,
+    RegexMetric,
     SharedBenchParams,
     bench,
     bench_app,
@@ -39,8 +39,8 @@ WRITE_OPS = ["fillseq", "fillrandom", "overwrite", "fillsync", "fill100K", "crc3
 READ_OPS = ["readseq", "readreverse", "readrandom", "readhot", "seekrandom"]
 
 
-def _micros(op: str) -> Regex:
-    return Regex(
+def _micros(op: str) -> RegexMetric:
+    return RegexMetric(
         "micros_per_op",
         rf"(?m)^{re.escape(op)}\s+:\s+([\d.]+) micros/op",
         StdoutMetricSource,
@@ -48,8 +48,8 @@ def _micros(op: str) -> Regex:
     ).lower_is_better()
 
 
-def _throughput(op: str) -> Regex:
-    return Regex(
+def _throughput(op: str) -> RegexMetric:
+    return RegexMetric(
         "throughput",
         rf"(?m)^{re.escape(op)}\s+:\s+[\d.]+ micros/op;\s+([\d.]+) MB/s",
         StdoutMetricSource,

@@ -37,7 +37,7 @@ from pathlib import Path
 
 from bench import (
     BenchmarkBuilder,
-    Regex,
+    RegexMetric,
     SharedBenchParams,
     Time,
     bench,
@@ -104,10 +104,10 @@ def make_benchmarks(ctx: SuiteContext[RenaissanceParams]) -> list[BenchmarkBuild
     ]
 
 
-def _iterating(metric: str, pattern: str, unit: str) -> Regex:
+def _iterating(metric: str, pattern: str, unit: str) -> RegexMetric:
     """One sample per match, indexed in match order - the replacement for the
     old block-framing monitor."""
-    return Regex(metric, pattern, StdoutMetricSource, unit=unit, iterate=True)
+    return RegexMetric(metric, pattern, StdoutMetricSource, unit=unit, iterate=True)
 
 
 renaissance = (

@@ -21,12 +21,12 @@ from pathlib import Path
 import pytest
 
 from bench import (
-    Dry,
+    DryRunner,
     FloatPerLine,
     JsonReporter,
     Parallel,
-    Regex,
-    Sequential,
+    RegexMetric,
+    SequentialRunner,
     Time,
     bench,
     report_from_json,
@@ -68,7 +68,7 @@ def _values(execution) -> list[float]:
 
 def test_one_execution_yields_one_iteration_per_line():
     s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"))
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     execution = report.executions[0]
     assert _values(execution) == [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -87,7 +87,7 @@ def test_one_execution_yields_one_iteration_per_line():
 )
 def test_leading_iterations_can_be_marked_warmup():
     s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"), warmup=2)
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     assert [it.warmup for it in report.executions[0].iterations] == [
         True,
@@ -104,9 +104,9 @@ def test_multi_metric_iterations_pair_up():
     cmd = ["sh", "-c", "echo 't: 1.0 m: 10'; echo 't: 2.0 m: 20'"]
     s = _iteration_suite(
         cmd,
-        metric=Regex("t", r"t: ([\d.]+)", StdoutMetricSource, iterate=True),
-    ).with_metric(Regex("m", r"m: ([\d.]+)", StdoutMetricSource, iterate=True))
-    report = Sequential().run(plan([s], Params()))
+        metric=RegexMetric("t", r"t: ([\d.]+)", StdoutMetricSource, iterate=True),
+    ).with_metric(RegexMetric("m", r"m: ([\d.]+)", StdoutMetricSource, iterate=True))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     iterations = report.executions[0].iterations
     assert [(s.metric, s.value) for s in iterations[0].samples] == [
@@ -123,8 +123,10 @@ def test_regex_without_iterate_stays_a_process_sample():
     # `iterate=False` (the Regex default) keeps every match a whole-process
     # sample, so nothing is framed into iterations.
     cmd = ["sh", "-c", "echo 'x: 1.0'; echo 'x: 2.0'"]
-    s = _iteration_suite(cmd, metric=Regex("x", r"x: ([\d.]+)", StdoutMetricSource))
-    execution = Sequential().run(plan([s], Params())).executions[0]
+    s = _iteration_suite(
+        cmd, metric=RegexMetric("x", r"x: ([\d.]+)", StdoutMetricSource)
+    )
+    execution = SequentialRunner().run(plan([s], Params())).executions[0]
     assert execution.iterations == []
     assert [s.value for s in execution.process_samples] == [1.0, 2.0]
 
@@ -142,7 +144,7 @@ def test_metric_reads_a_source_other_than_stdout(tmp_path: Path):
         ["sh", "-c", f"printf '1.5\\n2.5\\n3.5\\n' > {log}"],
         metric=FloatPerLine(from_log, "runtime", unit="ms").lower_is_better(),
     )
-    execution = Sequential().run(plan([s], Params())).executions[0]
+    execution = SequentialRunner().run(plan([s], Params())).executions[0]
     assert _values(execution) == [1.5, 2.5, 3.5]
 
 
@@ -154,20 +156,20 @@ def test_every_delivered_iteration_is_kept():
     # the surplus. A process now runs to completion and everything it printed is
     # recorded - the runs policy bounds *processes*, not iterations.
     s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0", "4.0"))
-    execution = Sequential().run(plan([s], Params())).executions[0]
+    execution = SequentialRunner().run(plan([s], Params())).executions[0]
     assert _values(execution) == [1.0, 2.0, 3.0, 4.0]
 
 
 def test_failed_execution_is_one_failed_record():
     s = _iteration_suite(["sh", "-c", "exit 3"])
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     assert report.executions[0].failure == "exit code 3"
 
 
 def test_timeout_is_one_failed_record():
     s = _iteration_suite(["sleep", "5"]).with_timeout(0.1)
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     assert report.executions[0].returncode == 124
 
@@ -177,7 +179,7 @@ def test_unparsable_output_yields_no_iterations_and_no_failure():
     # that matches nothing is simply silent: the run succeeded, it just carries
     # no samples.
     s = _iteration_suite(["sh", "-c", "echo hello"])
-    report = Sequential().run(plan([s], Params()))
+    report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     assert report.executions[0].iterations == []
     assert report.failures == []
@@ -188,7 +190,7 @@ def test_process_metric_travels_alongside_iterations(tmp_path: Path):
     # the file sinks as `process_samples`.
     out = tmp_path / "r.json"
     s = _iteration_suite(_echo_lines("1.0", "2.0")).with_metric(Time())
-    Sequential().run(plan([s], Params()), reporter=JsonReporter(out))
+    SequentialRunner().run(plan([s], Params()), reporter=JsonReporter(out))
     loaded = report_from_json(out.read_text())
     assert any(
         s.metric == "elapsed" for run in loaded.executions for s in run.process_samples
@@ -219,7 +221,7 @@ def test_dry_prints_one_line_per_planned_execution(capsys):
     # A harness benchmark is one process, so `--runs 1` is one dry line - the
     # iteration count lives inside the process and a dry run cannot know it.
     s = _iteration_suite(_echo_lines("1.0"))
-    Dry().run(plan([s], Params()))
+    DryRunner().run(plan([s], Params()))
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
     assert len(lines) == 1
     assert "H/a #1" in lines[0]

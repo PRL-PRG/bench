@@ -18,10 +18,10 @@ class StoppingPolicy(abc.ABC):
     def start(self) -> PolicyState: ...
 
     def __and__(self, other: StoppingPolicy) -> StoppingPolicy:
-        return And(self, other)
+        return AndStoppingPolicy(self, other)
 
     def __or__(self, other: StoppingPolicy) -> StoppingPolicy:
-        return Or(self, other)
+        return OrStoppingPolicy(self, other)
 
     def at_least(self, n: int) -> StoppingPolicy:
         return self & FixedRuns(n)
@@ -193,7 +193,7 @@ class _CoVState(PolicyState):
 # ---------------------------------------------------------------------------
 
 
-class And(StoppingPolicy):
+class AndStoppingPolicy(StoppingPolicy):
     __slots__ = ("a", "b")
 
     def __init__(self, a: StoppingPolicy, b: StoppingPolicy) -> None:
@@ -213,7 +213,7 @@ class And(StoppingPolicy):
         return max(a, b)
 
 
-class Or(StoppingPolicy):
+class OrStoppingPolicy(StoppingPolicy):
     __slots__ = ("a", "b")
 
     def __init__(self, a: StoppingPolicy, b: StoppingPolicy) -> None:

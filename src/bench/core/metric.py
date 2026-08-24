@@ -195,7 +195,7 @@ class FloatPerLine(IterationMetric, BuildableMetric):
         )
 
 
-class Regex(IterationMetric, BuildableMetric):
+class RegexMetric(IterationMetric, BuildableMetric):
     """Extract metric values via a regex against the iteration text."""
 
     def __init__(
@@ -240,7 +240,7 @@ class Regex(IterationMetric, BuildableMetric):
             idx += 1
 
 
-class Rebench(IterationMetric):
+class RebenchMetric(IterationMetric):
     """ReBench log format adapter.
 
     `optional_prefix: name optional_criterion: iterations=N runtime: V[ms|us]`

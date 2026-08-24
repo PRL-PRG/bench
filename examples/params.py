@@ -13,7 +13,6 @@ Run with defaults, or override:
     ./params.py --n 1000000 --python python3.13
 """
 
-
 from bench import Context, SharedBenchParams, Time, bench, bench_app, suite
 
 

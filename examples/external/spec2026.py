@@ -31,7 +31,7 @@ from pathlib import Path
 from bench import (
     Context,
     InvocationResult,
-    Regex,
+    RegexMetric,
     SharedBenchParams,
     SuiteBuilder,
     bench,
@@ -95,23 +95,23 @@ def _metrics(source: Callable[[InvocationResult], str]):
     """One sample per `Success` line, indexed in order: iteration N of every
     metric lands in Iteration N."""
     return (
-        Regex(
+        RegexMetric(
             "runtime", _success("runtime", r"[\d.]+"), source, unit="s", iterate=True
         ).lower_is_better(),
-        Regex(
+        RegexMetric(
             "ratio", _success("ratio", r"[\d.]+"), source, iterate=True
         ).higher_is_better(),
-        Regex(
+        RegexMetric(
             "max_rss", _success("max_rss_kib", r"\d+"), source, unit="kB", iterate=True
         ).lower_is_better(),
-        Regex(
+        RegexMetric(
             "user_time",
             _success("user_time", r"[\d.]+"),
             source,
             unit="s",
             iterate=True,
         ).lower_is_better(),
-        Regex(
+        RegexMetric(
             "sys_time", _success("sys_time", r"[\d.]+"), source, unit="s", iterate=True
         ).lower_is_better(),
     )
