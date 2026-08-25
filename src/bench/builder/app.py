@@ -44,8 +44,8 @@ from bench.model.benchmark import Benchmark, format_benchmark, format_variant
 from bench.model.results import Report, report_from_json
 from bench.params import (
     Params,
+    ParamsGroup,
     SharedBenchParams,
-    SharedSelectionParams,
     add_dataclass_args,
     build_dataclass,
 )
@@ -306,27 +306,29 @@ class BenchAppBuilder(BuilderBase):
     def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve generators, apply app defaults, and run every suite."""
 
-        params = self.params if self.params is not None else SharedBenchParams
+        params = (
+            BenchAppParams(self.params)
+            if self.params is not None
+            else SharedBenchAppParams
+        )
 
         if isinstance(args, argparse.Namespace):
             cli_args = args
         else:
-            parser = _make_run_parser(params, description=self.name)
+            parser = argparse.ArgumentParser(description=self.name)
+            add_dataclass_args(parser, params)
             cli_args = parser.parse_args(args)
 
         build_params = build_dataclass(params, cli_args)
 
         # --show
-        # TODO: This should be higher
-        show_path = getattr(cli_args, "show", None)
-        if show_path is not None:
-            return self.do_show_report(build_params, show_path)
+        if build_params.show is not None:
+            return self.do_show_report(build_params, build_params.show)
 
         planned = self.plan_benchmarks(build_params, use_defaults=True)
 
         # --list
-        if getattr(cli_args, "list_plan", False):
-            # TODO: list_plan should be a parameter
+        if build_params.list:
             console.print(_list_planned_benchmarks(planned))
             return Report()
 
@@ -408,58 +410,38 @@ def bench_app[P: Params](
 
 
 # ---------------------------------------------------------------------------
-# Argparse builders
+# Params
 # ---------------------------------------------------------------------------
 
 
-# TODO: This should live somewhere else
-def _make_run_parser(params: type, description: str = "") -> argparse.ArgumentParser:
-    # No prog= override: argparse derives it from sys.argv[0], so a user script
-    # shows its own name (the `bench` console subcommands set their own prog).
-    p = argparse.ArgumentParser(description=description or None)
-
-    # The effective params type carries every flag: the user's own fields plus,
-    # via inheritance, the shared bench/selection flags. Route each field to a
-    # `--help` group by which base declares it (fields the user's type doesn't
-    # inherit simply have no group). Missing groups are skipped entirely.
-    all_names = {f.name for f in dataclasses.fields(params)}
-    selection_names = {
-        f.name for f in dataclasses.fields(SharedSelectionParams)
-    } & all_names
-    runtime_names = (
-        {f.name for f in dataclasses.fields(SharedBenchParams)} - selection_names
-    ) & all_names
-    user_names = all_names - selection_names - runtime_names
-
-    for title, names in (
-        ("context parameters", user_names),
-        ("bench flags", runtime_names),
-        ("selection", selection_names),
-    ):
-        # TODO: fix
-        _ = title
-        if names:
-            add_dataclass_args(
-                # p.add_argument_group(title), params, skip=all_names - names
-                p, params, skip=all_names - names
-            )
-
-    p.add_argument(
-        "--list",
-        action="store_true",
-        dest="list_plan",
-        help="List the suite/benchmark/variant tree and exit (run nothing).",
+def BenchAppParams[T: Params](t: type[T]) -> type[T]:
+    default_actions_group = ParamsGroup(
+        "default actions"
     )
-    p.add_argument(
-        "--show",
-        type=str,
-        default=None,
-        metavar="JSON",
-        help="Render a previously saved JSON report with the default summary, "
-        "then exit (run nothing).",
-    )
-    return p
 
+    class Ps(t):
+        list: bool = dataclasses.field(
+            default=False,
+            metadata={
+                "group": default_actions_group,
+                "action": "store_true",
+                "help": "List the suite/benchmark/variant tree and exit (run nothing).",
+            },
+        )
+
+        show: str | None = dataclasses.field(
+            default=None,
+            metadata={
+                "group": default_actions_group,
+                "metavar": "JSON",
+                "help": "Render a previously saved JSON report with the default summary, then exit (run nothing).",
+            },
+        )
+
+    return cast(type[T], Ps)
+
+
+SharedBenchAppParams = BenchAppParams(SharedBenchParams)
 
 # ---------------------------------------------------------------------------
 # Pretty-printing helpers
