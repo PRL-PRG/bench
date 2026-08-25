@@ -39,7 +39,7 @@ from bench.core.environment import (
     EnvironmentCollector,
     NoEnvironment,
 )
-from bench.core.invocation import format_benchmark
+from bench.core.invocation import format_benchmark, format_variant
 from bench.core.results import Report, report_from_json
 from bench.denoise import (
     STATE_PATH,
@@ -61,6 +61,7 @@ from bench.report.reporter import (
     print_diagnostics as do_print_diagnostics,
 )
 from bench.report.summary import summarize
+from bench.report.theme import error_console
 from bench.runner.base import (
     Runner,
     plan,
@@ -68,6 +69,7 @@ from bench.runner.base import (
 from bench.runner.dry import DryRunner
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import SequentialRunner
+from bench.utils import BenchError, print_exception
 
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now
@@ -77,7 +79,7 @@ type ParamFactory[T] = Callable[[Any], T]
 type SuiteGenerator = ParamFactory[Sequence[SuiteBuilder]]
 
 
-class NoBenchmarksMatchedError(Exception):
+class NoBenchmarksMatchedError(BenchError):
     """No benchmark matched the --include/--exclude selection."""
 
 
@@ -131,6 +133,15 @@ class BenchAppBuilder(BuilderBase):
         )
 
     # ----- Run setters -------------------------------------------------
+    def with_params(
+        self, params: type[Params], override: bool = True
+    ) -> BenchAppBuilder:
+        """Replace the params dataclass whose fields become the CLI flags.
+
+        Lets one app be reused with a different parameter set - e.g. a profiling
+        variant that swaps in its own flags while inheriting the suites and the
+        shared `with_*` configuration."""
+        return self.replace("params", params, override=override)
 
     def with_reporter(
         self, reporter: Reporter | ParamFactory[Reporter], override: bool = False
@@ -160,6 +171,26 @@ class BenchAppBuilder(BuilderBase):
         return self.replace(
             "runner",
             as_build(runner),
+            override=override,
+        )
+
+    def with_environment(
+        self, environment: EnvironmentCollector, override: bool = True
+    ) -> BenchAppBuilder:
+        """Set the environment collector (snapshot + diagnostics)."""
+        return self.replace(
+            "environment",
+            environment,
+            override=override,
+        )
+
+    def with_denoise(
+        self, value: bool = True, override: bool = True
+    ) -> BenchAppBuilder:
+        """Minimize system noise knobs around the run (requires root)."""
+        return self.replace(
+            "denoise",
+            value,
             override=override,
         )
 
@@ -257,8 +288,10 @@ class BenchAppBuilder(BuilderBase):
         # Run
         if self.denoise:
             if not is_root():
-                raise PermissionError(
-                    "Denoise requires root (try running witg `sudo` ONLY IF YOU TRUST THE SUITE)"
+                raise BenchError(
+                    "Denoise requires root "
+                    "(try running with `sudo` ONLY IF YOU TRUST THE SUITE)",
+                    exit_code=2,
                 )
             with denoise_session() as applied:
                 console.print(
@@ -301,6 +334,19 @@ class BenchAppBuilder(BuilderBase):
         return self.run(
             build_params, planned, use_defaults=True, print_diagnostics=True
         )
+
+    def main(self, args: list[str] | argparse.Namespace | None = None) -> int:
+        """`run_cli` as a process exit code: user-facing errors become a clean
+        stderr message instead of a traceback. The entry point a `__main__` wants."""
+        try:
+            self.run_cli(args)
+            return 0
+        except BenchError as e:
+            print_exception(e, with_traceback=False)
+            return e.exit_code
+        except KeyboardInterrupt:
+            error_console.print("[bench.failure]Interrupted[/]")
+            return 130
 
     def do_show_report(self, build_params: Params, path: str):
         report = report_from_json(Path(path).read_text())
@@ -367,19 +413,48 @@ def bench_app[P: Params](
 # ---------------------------------------------------------------------------
 
 
-def default_reporter(params: Params) -> Reporter | None:
+def default_reporter(
+    params: Params,
+    *,
+    summary: Reporter | None = None,
+    json: str | Path | JsonReporter | None = None,
+    csv: str | Path | CsvReporter | None = None,
+    dir: str | Path | DirReporter | None = None,
+) -> Reporter | None:
+    """Assemble the builtin reporter bundle: a progress bar and the json, csv and
+    dir output sinks, plus `summary` if one is given.
+
+    Each of `summary`/`json`/`csv`/`dir` is the value to use when the matching CLI
+    flag is unset: the flag wins, else this default, else the sink stays off. An
+    app that always wants a sink supplies its default here, e.g.
+    `with_reporter(lambda p: default_reporter(p, dir=...))`; a non-builtin sink is
+    added by composition, e.g. `CompositeReporter(default_reporter(p), MyReporter())`.
+    """
     if not isinstance(params, SharedBenchParams):
         return None
 
     sinks: list[Reporter] = []
     if params.progress:
         sinks.append(ProgressReporter())
-    if params.json:
-        sinks.append(JsonReporter(Path(params.json)))
-    if params.csv:
-        sinks.append(CsvReporter(Path(params.csv)))
-    if params.dir:
-        sinks.append(DirReporter(Path(params.dir)))
+    if summary is not None:
+        sinks.append(summary)
+
+    # A reporter instance is authoritative: the app took control of that sink
+    # (e.g. a DirReporter shared with `perf` via `output_dir`, or a JsonReporter
+    # built with `include_output=True`), so it already folded in the flag.
+    # Otherwise the flag wins over a path default.
+    if isinstance(json, JsonReporter):
+        sinks.append(json)
+    elif j := (params.json or json):
+        sinks.append(JsonReporter(Path(j)))
+    if isinstance(csv, CsvReporter):
+        sinks.append(csv)
+    elif c := (params.csv or csv):
+        sinks.append(CsvReporter(Path(c)))
+    if isinstance(dir, DirReporter):
+        sinks.append(dir)
+    elif d := (params.dir or dir):
+        sinks.append(DirReporter(Path(d)))
 
     return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
 
@@ -403,10 +478,16 @@ def default_filter(params: Params) -> BenchmarkPred:
     exc = [re.compile(pat) for pat in (params.exclude or [])]
 
     def keep(b: Benchmark) -> bool:
-        key = format_benchmark(b.suite, b.name, b.variant)
-        if inc and not any(r.search(key) for r in inc):
+        # Both spellings of the same variant: the canonical `(k=v, ...)` key and,
+        # when the app sets one, the label the reports show. A pattern written
+        # against what the terminal prints then selects what the user expects,
+        # without the `k=v` form ceasing to work.
+        keys = [format_benchmark(b.suite, b.name, b.variant)]
+        if b.variant_label:
+            keys.append(format_benchmark(b.suite, b.name, b.variant, b.variant_label))
+        if inc and not any(r.search(k) for k in keys for r in inc):
             return False
-        return not any(r.search(key) for r in exc)
+        return not any(r.search(k) for k in keys for r in exc)
 
     return keep
 
@@ -504,8 +585,12 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
             if len(variants) > 1:
                 bench_node = node.add(Text(name, style="bench.label"))
                 for b in variants:
-                    bench_node.add(Text(b.variant_label))
+                    bench_node.add(
+                        Text(b.variant_label or format_variant(b.variant).strip())
+                    )
             else:
                 b = variants[0]
-                node.add(Text(format_benchmark(b.name, b.name, b.variant)))
+                node.add(
+                    Text(format_benchmark(b.name, b.name, b.variant, b.variant_label))
+                )
     return root

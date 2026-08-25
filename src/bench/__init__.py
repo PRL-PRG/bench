@@ -88,6 +88,8 @@ from bench.report.reporter import (
     ProgressReporter,
     Reporter,
     SummaryReporter,
+    execution_dir,
+    variant_path,
 )
 
 # BenchAppBuilder abstraction + run pipeline
@@ -101,6 +103,9 @@ from bench.runner.base import (
 from bench.runner.dry import DryRunner
 from bench.runner.parallel import Parallel
 from bench.runner.sequential import SequentialRunner
+
+# Errors
+from bench.utils import BenchError
 
 __all__ = [
     # Atoms
@@ -158,6 +163,8 @@ __all__ = [
     "SequentialRunner",
     "Parallel",
     "DryRunner",
+    # Errors
+    "BenchError",
     "SuiteMaterializationError",
     # Reporters
     "Reporter",
@@ -167,6 +174,8 @@ __all__ = [
     "DirReporter",
     "SummaryReporter",
     "ProgressReporter",
+    "execution_dir",
+    "variant_path",
     # Formatters
     "Formatter",
     "Results",

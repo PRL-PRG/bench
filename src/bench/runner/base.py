@@ -19,6 +19,7 @@ from bench.core.policy import StoppingPolicy
 from bench.core.process import install_sigint_handler, interrupted
 from bench.core.results import Report
 from bench.report.reporter import Reporter
+from bench.utils import BenchError
 
 if TYPE_CHECKING:
     from bench.builder.benchmark import Benchmark
@@ -34,7 +35,7 @@ class _NoopReporter(Reporter):
 # ---------------------------------------------------------------------------
 
 
-class SuiteMaterializationError(Exception):
+class SuiteMaterializationError(BenchError):
     """A suite's factory failed while building its benchmarks."""
 
     def __init__(self, suite: str, cause: BaseException) -> None:

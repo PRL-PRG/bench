@@ -104,6 +104,39 @@ def test_dir_writer_creates_tree(tmp_path: Path):
     assert len(run_dirs) == 2
 
 
+def _matrix_suite():
+    return suite(
+        "S",
+        bench("a")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1)
+        .with_matrix(vm=["cpython", "pypy"], opt=["O2"]),
+    )
+
+
+def test_dir_writer_keys_variant_runs_by_their_variant(tmp_path: Path):
+    # A matrix variant gets a stable directory named after it, not a completion
+    # counter, so a wrapped command's `-o <dir>/...` can target the same place.
+    root = tmp_path / "tree"
+    rep = DirReporter(root)
+    planned = plan([_matrix_suite()], Params())
+    SequentialRunner().run(planned, reporter=rep)
+    assert (root / "S" / "a" / "opt=O2, vm=cpython" / "exitcode").read_text() == "0\n"
+    assert (root / "S" / "a" / "opt=O2, vm=pypy" / "exitcode").read_text() == "0\n"
+    # start() pre-creates them, so a wrapped command has the path before it runs
+    assert rep.output_dir("S", "a", planned[0].variant).is_dir()
+
+
+def test_dir_writer_nests_variant_dirs_when_asked(tmp_path: Path):
+    root = tmp_path / "tree"
+    SequentialRunner().run(
+        plan([_matrix_suite()], Params()), reporter=DirReporter(root, nested=True)
+    )
+    assert (root / "S" / "a" / "opt" / "O2" / "vm" / "pypy" / "exitcode").is_file()
+
+
 def test_mixed_fans_out(tmp_path: Path):
     js = tmp_path / "r.json"
     cs = tmp_path / "r.csv"

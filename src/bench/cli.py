@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
-import sys
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
@@ -37,9 +36,9 @@ from bench.report.reporter import (
     print_diagnostics,
 )
 from bench.report.summary import merge_reports, summarize
+from bench.report.theme import error_console
 from bench.run import bench_app, default_reporter
-from bench.runner.base import SuiteMaterializationError
-from bench.utils import print_exception
+from bench.utils import BenchError, print_exception
 
 # ---------------------------------------------------------------------------
 # `bench` CLI: run / compare
@@ -116,7 +115,14 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     ns = parser.parse_args(argv)
-    return ns._func(ns)
+    try:
+        return ns._func(ns)
+    except BenchError as e:
+        print_exception(e, with_traceback=False)
+        return e.exit_code
+    except KeyboardInterrupt:
+        error_console.print("[bench.failure]Interrupted[/]")
+        return 130
 
 
 # ----- run ----------------------------------------------------------------
@@ -254,17 +260,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .add(s)
         .with_reporter(build_reporter)
     )
-    try:
-        app.run_cli(ns)
-    except SuiteMaterializationError as e:
-        print_exception(e)
-        return 1
-    except PermissionError as e:
-        console.print(f"[bench.failure]{e}[/]")
-        return 2
-    except KeyboardInterrupt:
-        console.print("[bench.failure]Interrupted[/]")
-        return 1
+    app.run_cli(ns)
     return 0
 
 
@@ -285,8 +281,7 @@ def _show_subparser(p: argparse.ArgumentParser) -> None:
 def _cmd_show(ns: argparse.Namespace) -> int:
     path = Path(ns.file)
     if not path.exists():
-        print(f"Error: file not found: {path}", file=sys.stderr)
-        return 1
+        raise BenchError(f"file not found: {path}")
     metrics = set(ns.metric.split(",")) if ns.metric else None
     stats = summarize(report_from_json(path.read_text()))
     out = DefaultSummary(metrics)(stats)
@@ -318,8 +313,7 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     for arg in ns.files:
         path = Path(arg)
         if not path.exists():
-            print(f"Error: file not found: {path}", file=sys.stderr)
-            return 1
+            raise BenchError(f"file not found: {path}")
         named.append((arg, report_from_json(path.read_text())))
     stats = summarize(merge_reports(named))
     # Per-benchmark a-vs-b: fold each benchmark's inner matrix and compare the
@@ -379,11 +373,10 @@ def _denoise_subparser(p: argparse.ArgumentParser) -> None:
 
 def _cmd_denoise(ns: argparse.Namespace) -> int:
     if ns.action in ("minimize", "restore") and not is_root():
-        console.print(
-            f"[bench.failure]denoise {ns.action} requires root "
-            f"(try: sudo bench denoise {ns.action})[/]"
+        raise BenchError(
+            f"denoise {ns.action} requires root (try: sudo bench denoise {ns.action})",
+            exit_code=2,
         )
-        return 2
     if ns.action == "minimize":
         applied = minimize()
         console.print(

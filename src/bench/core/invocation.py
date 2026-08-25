@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import resource
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence, cast
@@ -146,12 +146,19 @@ class Variant:
         return False
 
 
+def format_variant_pairs(pairs: Iterable[tuple[str, str]]) -> str:
+    """`k=v, ...` naming a variant on its own. `""` if empty. Unlike
+    `format_variant` this carries no surrounding ` (...)`, so it also serves where
+    the variant is the whole string: a summary label, a directory component."""
+    return ", ".join(f"{k}={v}" for k, v in pairs)
+
+
 def format_variant(variant: Variant) -> str:
     """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
     if not variant:
         return ""
 
-    return " (" + ", ".join(f"{k}={v}" for k, v in variant) + ")"
+    return f" ({format_variant_pairs(variant)})"
 
 
 def format_benchmark(

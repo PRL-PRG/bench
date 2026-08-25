@@ -13,6 +13,7 @@ from bench import (
     NoBenchmarksMatchedError,
     SharedBenchParams,
     SuiteMaterializationError,
+    SystemEnvironment,
     Time,
     bench,
     bench_app,
@@ -335,7 +336,7 @@ def test_bench_combines_static_and_discovered_suites():
 
 
 def test_run_sugar_runs_multiple_suites(monkeypatch):
-    # run(*suites) is sugar for bench_app(<script>).add_all(*suites).run(),
+    # run(*suites) is sugar for bench_app(<script>).add(*suites).run_cli(),
     # reading the argv from sys.argv.
     monkeypatch.setattr(sys, "argv", ["prog", "--no-progress"])
     report = run(_trivial("A"), _trivial("B"))
@@ -509,3 +510,46 @@ def test_empty_selection_raises():
         bench_app().add(_trivial("A")).run_cli(
             ["--include", "no-such-bench", "--no-progress"]
         )
+
+
+# ----- main(): run_cli as an exit code ------------------------------------
+
+
+def test_main_returns_zero_on_success():
+    code = bench_app().add(_trivial("A")).main(["--no-progress"])
+    assert code == 0
+
+
+def test_main_translates_no_match_to_exit_code(capsys):
+    # The same empty selection that raises through .run_cli() is a clean exit via
+    # .main(): a one-line stderr message, exit 1, and crucially no traceback.
+    code = (
+        bench_app()
+        .add(_trivial("A"))
+        .main(["--include", "no-such-bench", "--no-progress"])
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "No benchmark planned" in err
+    assert "Traceback" not in err
+
+
+def test_main_translates_materialization_error_to_exit_code(capsys):
+    s = suite("My Suite").generator(_boom_factory)
+    code = bench_app().add(s).main([])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "Failed to materialize suite 'My Suite'" in err
+    assert "Traceback" not in err
+
+
+# ----- bench_app(): keyword style and setter style agree -------------------
+
+
+def test_bench_app_setters_match_the_constructor_keywords():
+    env = SystemEnvironment()
+    kwargs = bench_app("X", params=_Params, environment=env, denoise=True)
+    setters = bench_app("X").with_params(_Params).with_environment(env).with_denoise()
+    # `suites` holds closures, which never compare equal - the settings do.
+    for field in ("name", "params", "environment", "denoise"):
+        assert getattr(kwargs, field) == getattr(setters, field)

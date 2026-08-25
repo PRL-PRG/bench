@@ -3,9 +3,11 @@
 import re
 from io import StringIO
 
+import pytest
 from rich.console import Console
 
 from bench import (
+    BenchError,
     Compact,
     DefaultSummary,
     Execution,
@@ -89,6 +91,35 @@ def _axis_report(values: dict[str, dict[str, float]]) -> Report:
                 )
             )
     return Report(executions=runs)
+
+
+def _matrix_report(values: dict[tuple[str, str], dict[str, float]]) -> Report:
+    """values[(interp, mode)][benchmark] = elapsed, one run each."""
+    return Report(
+        executions=[
+            _ok(
+                1,
+                bench=b,
+                variant=(("interp", interp), ("mode", mode)),
+                samples=[_smp("elapsed", elapsed)],
+            )
+            for (interp, mode), benches in values.items()
+            for b, elapsed in benches.items()
+        ]
+    )
+
+
+def _matrix_data() -> list[Stat]:
+    return _data(
+        _matrix_report(
+            {
+                ("a", "on"): {"b1": 1.0, "b2": 1.0},
+                ("a", "off"): {"b1": 2.0, "b2": 8.0},  # geomean 4x a/on
+                ("b", "on"): {"b1": 2.0, "b2": 2.0},  # geomean 2x a/on
+                ("b", "off"): {"b1": 6.0, "b2": 6.0},  # geomean 6x a/on
+            }
+        )
+    )
 
 
 def _data(report: Report) -> list[Stat]:
@@ -248,6 +279,141 @@ def test_grouped_summary_about_the_same():
     out = _strip(GeomeanSummary(axis="interp", metrics="elapsed")(_data(r)))
     assert "about the same" in out
     assert "1.00×" not in out
+
+
+# ----- GeomeanSummary over a composite axis ----------------------------------
+
+
+def test_grouped_summary_ranks_the_cells_of_a_composite_axis():
+    out = _strip(
+        GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_matrix_data())
+    )
+    assert "Summary (geomean) - interp, mode - S" in out
+    assert "interp=a, mode=on was" in out
+    assert "2.00× better than interp=b, mode=on" in out
+    assert "4.00× better than interp=a, mode=off" in out
+    assert "6.00× better than interp=b, mode=off" in out
+
+
+def test_grouped_summary_composite_axis_folds_nothing_into_the_geomean():
+    """One axis of the same matrix averages the other one in; both axes don't."""
+    out = _strip(GeomeanSummary(axis="interp", metrics="elapsed")(_matrix_data()))
+    assert "a was" in out
+    # geomean of the four pairwise ratios, both modes mixed in: 2, 2, 3, 0.75.
+    assert "1.73× better than b" in out
+
+
+def test_grouped_summary_composite_axis_ref_pins_one_cell():
+    out = _strip(
+        GeomeanSummary(
+            axis=["interp", "mode"], metrics="elapsed", ref="interp=b, mode=off"
+        )(_matrix_data())
+    )
+    assert "interp=b, mode=off was" in out
+    assert "6.00× worse than interp=a, mode=on" in out
+
+
+def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
+    out = _strip(
+        GeomeanSummary(
+            axis=["interp", "mode"], metrics="elapsed", ref="mode=off,interp=b"
+        )(_matrix_data())
+    )
+    assert "is not a value of axis" not in out
+    assert "interp=b, mode=off was" in out
+
+
+def test_grouped_summary_single_axis_ref_takes_either_form():
+    for ref in ("b", "interp=b"):
+        out = _strip(
+            GeomeanSummary(axis="interp", metrics="elapsed", ref=ref)(_matrix_data())
+        )
+        assert "is not a value of axis" not in out
+        assert "b was" in out
+
+
+def test_grouped_summary_composite_axis_keeps_empty_values_distinct():
+    """`interp=x, mode=` and `interp=, mode=x` are two cells, not one."""
+    r = _matrix_report({("x", ""): {"b1": 1.0}, ("", "x"): {"b1": 100.0}})
+    out = _strip(GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r)))
+    assert "interp=x, mode= was" in out
+    assert "100.00× better than interp=, mode=x" in out
+
+
+def test_grouped_summary_missing_part_of_a_composite_axis_warns():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
+    out = _strip(GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r)))
+    assert "axis 'interp, mode' incomplete: 'mode' not present" in out
+
+
+def test_grouped_summary_missing_axis_of_a_composite_warns():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
+    out = _strip(GeomeanSummary(axis=["vm", "mode"], metrics="elapsed")(_data(r)))
+    assert "axis 'vm, mode' not present in any benchmark" in out
+
+
+def test_grouped_summary_composite_axis_never_combined_warns():
+    r = Report(
+        executions=[
+            _ok(1, variant=(("interp", "a"),), samples=[_smp("elapsed", 1.0)]),
+            _ok(1, variant=(("mode", "on"),), samples=[_smp("elapsed", 2.0)]),
+        ]
+    )
+    out = _strip(GeomeanSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r)))
+    assert "axis 'interp, mode' never combined in one benchmark" in out
+
+
+def test_grouped_summary_unknown_ref_warns_and_falls_back():
+    out = _strip(
+        GeomeanSummary(axis=["interp", "mode"], metrics="elapsed", ref="interp=nope")(
+            _matrix_data()
+        )
+    )
+    assert "ref 'interp=nope' is not a value of axis 'interp, mode'" in out
+    assert "interp=a, mode=on was" in out
+
+
+def test_grouped_summary_bare_ref_on_a_composite_axis_warns():
+    """A bare value cannot say which cell it means once the axis is composite."""
+    out = _strip(
+        GeomeanSummary(axis=["interp", "mode"], metrics="elapsed", ref="b")(
+            _matrix_data()
+        )
+    )
+    assert "ref 'b' is not a value of axis 'interp, mode'" in out
+
+
+def test_grouped_summary_ref_absent_from_one_group_is_silent():
+    """The ref may legitimately be missing from a suite; only an unknown one warns."""
+    out = _strip(
+        GeomeanSummary(axis="interp", metrics="elapsed", ref="b")(
+            _data(
+                Report(
+                    executions=[
+                        *_axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}}).executions,
+                        *[
+                            _ok(
+                                1,
+                                suite="T",
+                                bench="b2",
+                                variant=(("interp", v),),
+                                samples=[_smp("elapsed", e)],
+                            )
+                            for v, e in (("a", 1.0), ("c", 3.0))
+                        ],
+                    ]
+                )
+            )
+        )
+    )
+    assert "is not a value of axis" not in out
+    assert "b was" in out  # suite S, pinned
+    assert "a was" in out  # suite T, best performer
+
+
+def test_grouped_summary_empty_axis_is_an_error():
+    with pytest.raises(BenchError, match="at least one matrix dimension"):
+        GeomeanSummary(axis=[], metrics="elapsed")(_matrix_data())
 
 
 # ----- DefaultSummary + composition ------------------------------------------
