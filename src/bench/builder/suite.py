@@ -111,7 +111,12 @@ class SuiteBuilder(BuilderBase):
     def materialize(self, params: Params, parent_suite: str = "") -> list[Benchmark]:
         """Return the concrete fully resolved benchmark list."""
 
-        actual_name = self.name if parent_suite == "" else f"{parent_suite}/{self.name}"
+        if parent_suite == "":
+            actual_name = self.name
+        elif self.name == "":
+            actual_name = parent_suite
+        else:
+            actual_name = f"{parent_suite}/{self.name}"
 
         ctx: SuiteContext[Params] = SuiteContext(
             params=params,
@@ -133,7 +138,7 @@ class SuiteBuilder(BuilderBase):
                     for generator in self.suites
                     for builder in generator(ctx)
                     for bench in builder.inherit_from(self).materialize(
-                        params, actual_name
+                        params, parent_suite=actual_name
                     )
                 ),
             )
