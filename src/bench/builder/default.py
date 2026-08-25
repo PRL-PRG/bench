@@ -56,13 +56,12 @@ def default_reporter(
     dir: str | Path | DirReporter | None = None,
 ) -> Reporter | None:
     """Assemble the builtin reporter bundle: a progress bar and the json, csv and
-    dir output sinks, plus `summary` if one is given.
+    dir output sinks.
 
-    Each of `summary`/`json`/`csv`/`dir` is the value to use when the matching CLI
-    flag is unset: the flag wins, else this default, else the sink stays off. An
-    app that always wants a sink supplies its default here, e.g.
-    `with_reporter(lambda p: default_reporter(p, dir=...))`; a non-builtin sink is
-    added by composition, e.g. `CompositeReporter(default_reporter(p), MyReporter())`.
+    Each of `json`/`csv`/`dir` is the value to use when the matching CLI flag is
+    unset: the flag wins, else this default, else the sink stays off. An app that
+    always wants a sink supplies its default here, e.g.
+    `with_reporter(lambda p: default_reporter(p, dir=...))`.
     """
     is_params = isinstance(params, SharedReporterParams)
 
@@ -70,10 +69,9 @@ def default_reporter(
     if is_params and params.progress:
         sinks.append(ProgressReporter())
 
-    # A reporter instance is authoritative: the app took control of that sink
-    # (e.g. a DirReporter shared with `perf` via `output_dir`, or a JsonReporter
-    # built with `include_output=True`), so it already folded in the flag.
-    # Otherwise the flag wins over a path default.
+    # A reporter instance is authoritative: the app configured that sink itself
+    # (e.g. a JsonReporter with include_output=True), so it already folded in
+    # the flag. Otherwise the flag wins over a path default.
     if isinstance(json, JsonReporter):
         sinks.append(json)
     elif j := ((is_params and params.json) or json):
@@ -116,10 +114,9 @@ def default_filter(params: Params) -> BenchmarkPred:
     exc = [re.compile(pat) for pat in (params.exclude or [])]
 
     def keep(b: Benchmark) -> bool:
-        # Both spellings of the same variant: the canonical `(k=v, ...)` key and,
-        # when the app sets one, the label the reports show. A pattern written
-        # against what the terminal prints then selects what the user expects,
-        # without the `k=v` form ceasing to work.
+        # Match both spellings of the variant, the canonical `(k=v, ...)` key and
+        # the label the reports show, so a pattern written against what the
+        # terminal prints selects what the user expects.
         keys = [format_benchmark(b.suite, b.name, b.variant)]
         if b.variant_label:
             keys.append(format_benchmark(b.suite, b.name, b.variant, b.variant_label))

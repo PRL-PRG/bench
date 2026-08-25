@@ -83,15 +83,10 @@ class _TUI:
 
 
 class ProgressReporter(Reporter):
-    """Live progress on a terminal.
+    """Live progress on a terminal, plain `[n/total] <run> ok` lines elsewhere.
 
-    A top `Progress` bar tracks how many benchmarks finished and how many failed.
-    Under it, each running benchmark has a bar with its progress count; command
-    benchmarks also show a per-iteration elapsed estimate. Both show an ETA when the
-    iteration count is bounded. Bars stretch to the screen edge. When a
-    benchmark finishes its bar is replaced by a persistent summary line printed
-    above the live region, carrying the same elapsed stats as the final summary
-    (or FAILED).
+    An overall bar over the benchmarks, one bar per running benchmark, and a
+    persistent `Finished:` line with its elapsed stats once it is done.
 
     Each benchmark runs start to finish on one thread, so the bar it owns is held
     on a thread-local.

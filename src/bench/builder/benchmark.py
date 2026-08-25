@@ -1,19 +1,13 @@
 """Benchmark builder: a builder template and the resolved instances it produces.
 
-`BenchmarkBuilder` is the builder for `Benchmark`, one fully resolved variant. The
-builder leaves every inheritable field unset. The resolved benchmark carries concrete
-objects and a frozen `Invocation`, which can be run.
+Every configurable field takes either a static value or a `Factory[T]` =
+`(ctx) -> value` builder, resolved once per variant by `create()`.
 
-Every configurable field is set either as a static value or as a `Factory[T]` =
-`(ctx) -> value` builder, resolved once per variant.
+Variants within a benchmark are what the end-of-run Summary compares;
+comparison across different benchmarks is never emitted.
 
-`create()` expands the matrix (cartesian product of the declared dimensions),
-resolves every field against the variant `Context`, then drops skipped
-variants. Variants within a benchmark are what the end-of-run Summary
-compares. Comparison across different benchmarks is never emitted.
-
-The shared configuration base (`BuilderBase`), the `Factory[T]`/`UNSET` primitives,
-and the matrix/skip helpers live in `bench.builder.base`.
+The shared configuration base (`BuilderBase`), the `Factory[T]` primitive, and
+the matrix/skip helpers live in `bench.builder.base`.
 """
 
 from __future__ import annotations
@@ -51,8 +45,6 @@ class BenchmarkBuilder(BuilderBase):
     `.create()` expands into one resolved `Benchmark` per surviving variant.
 
     `data` holds arbitrary user-supplied keyword args, readable as attributes.
-    Every inheritable field defaults to unset and so inherits the suite's
-    default unless explicitly set.
     """
 
     name: str = ""

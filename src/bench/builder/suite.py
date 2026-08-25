@@ -1,10 +1,8 @@
 """SuiteBuilder: a named collection of Benchmarks plus the defaults they inherit.
 
-It stores defaults (command, env, policies, metrics, ...) next to its member
-benchmarks. Calling a `.with_*` method just sets the suite field, and nothing
-propagates eagerly. Resolution happens once, in `materialize(ctx)`: every
-unset benchmark field is filled from the suite, so builder-call
-order never matters.
+A `.with_*` call only sets the suite's own field; nothing propagates eagerly.
+Resolution happens once, in `materialize(params)`, where every unset benchmark
+field is filled from the suite - so builder-call order never matters.
 """
 
 from __future__ import annotations

@@ -18,13 +18,13 @@ def _fingerprint_comments(fingerprint: Fingerprint | None) -> list[str]:
 
 
 class CsvReporter(Reporter):
-    """Buffer runs, write CSV on `finalize()`.
+    """Write the whole report as CSV on `finalize()`, after a `# key: value`
+    fingerprint preamble.
 
-    Schema: `suite, benchmark, run, <variant_cols...>, metric, value, unit,
-    lower_is_better, outlier, failure`. One row per Sample, for each iteration's samples
-    and then the run's whole-process samples. A failed iteration (or run) emits
-    one row with blank metric and the failure verdict. All runs appear, warmup
-    included.
+    Schema: `suite, benchmark, run, <variant cols...>, failure, iteration,
+    metric, value, unit, lower_is_better, <sample extra cols...>`. Each run
+    contributes one `elapsed` row for the process runtime, then one row per
+    whole-process and per-iteration Sample. All runs appear, warmup included.
     """
 
     def __init__(

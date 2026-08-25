@@ -1,4 +1,4 @@
-"""Reporting: Sample, Report, stats, formatters, and streaming reporter sinks."""
+"""Reporting: the streaming sinks a run's progress and results are fed to."""
 
 from bench.report.base import CompositeReporter, Reporter
 from bench.report.csv import CsvReporter

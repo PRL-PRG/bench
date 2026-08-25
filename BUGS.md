@@ -22,9 +22,10 @@ open**, so there is no red test and no `RED ON PURPOSE` marker anywhere in
 This pass followed the `Fingerprint`-is-a-mapping change, the `__main__`
 params rewrite, and the `PerfRecord` port. All 23 failures were stale tests
 (the old `Fingerprint` dataclass, and `add_dataclass_args(skip=...)`), not
-defects. The "`SharedRunnerParams`/`SharedReporterParams` are not exported"
-observation of the previous pass is **fixed** — both are in `bench.__all__`
-now, alongside every other public symbol — and has been dropped.
+defects. Three observations of the previous pass are **fixed** and have been
+dropped: `SharedRunnerParams`/`SharedReporterParams` are exported now,
+`default_reporter`'s docstring no longer advertises the removed `summary=`
+keyword, and the shared-params docstrings sit on the classes they describe.
 
 ---
 
@@ -36,21 +37,6 @@ None.
 
 ## 🔍 Low-severity observations (no red test)
 
-- **`default_reporter`'s docstring still documents a parameter it no longer
-  has.** The `summary=` keyword moved out of `default_reporter` into
-  `get_reporter`, but the docstring (`builder/default.py:58-59`) still opens
-  with "plus `summary` if one is given" and lists "Each of
-  `summary`/`json`/`csv`/`dir`". Only the three sink keywords remain. Purely
-  documentation, so nothing asserts it; the behaviour it describes is covered by
-  `test_reporter.py::test_summary_channel_keeps_progress_and_swaps_summary` and
-  `::test_summary_channel_survives_an_empty_sink_bundle`.
-- **The shared-params split left the docstring on the wrong class.**
-  `SharedReporterParams` (`params.py:136`) carries the text describing the
-  *whole* flag set ("the full builtin flag set (`-j`/`--progress`/`--json`/…
-  plus `--include`/`--exclude`)"), which is now `SharedBenchParams` — and
-  `SharedBenchParams` (`params.py:178`) has no docstring at all. Purely
-  documentation, so nothing asserts it. The behaviour is pinned by
-  `test_context.py::test_each_shared_half_contributes_only_its_own_flags`.
 - **No way to discard leading iterations inside one execution.**
   `Iteration.warmup` still exists, the Controller still stamps it, and
   `summarize` still excludes flagged iterations from the stats while counting

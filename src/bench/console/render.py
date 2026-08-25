@@ -1,11 +1,10 @@
 """Rendering toolkit: a markup-flag renderer, the styling chokepoint, and a table.
 
-A formatter builds rows of `Cell`s and renders them with a `Renderer`. `RICH`
-wraps each styled span in a `[bench.<style>]...[/]` tag. `PLAIN` leaves bare text.
-Either way the text flows through `console.print`, so `tag` always escapes `[`
-(otherwise a literal `[ms]` would be parsed as markup and eaten). Column widths
-are measured on the *visible* text, never the markup, so styling never skews
-alignment.
+A formatter builds rows of `Cell`s and renders them with a `Renderer` - `RICH`
+tags each styled span, `PLAIN` leaves bare text. Everything flows through
+`console.print`, so `tag` always escapes `[` (a literal `[ms]` would otherwise
+be eaten as markup), and widths are measured on the *visible* text, so styling
+never skews alignment.
 """
 
 from __future__ import annotations

@@ -31,7 +31,8 @@ class Reporter(abc.ABC):
 
 
 class CompositeReporter(Reporter):
-    """Fan out events to multiple Reporters in registration order."""
+    """Fan out events to multiple Reporters in registration order. A nested
+    composite is flattened into its members."""
 
     def __init__(self, *reporters: Reporter) -> None:
         # Flatten the reporters

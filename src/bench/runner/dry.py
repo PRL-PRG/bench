@@ -1,12 +1,9 @@
 """Dry runner: enumerates planned executions without spawning subprocesses.
 
-Prints the plan straight to stdout and ignores any reporter / output sink.
-
-A dry run shows the plan's *upper bound*: bounded policies enumerate runs
-`1..warmup.max_runs() + runs.max_runs()` (a convergence-driven policy may
-stop earlier on real observations). Unbounded policies (e.g.
-CoefficientOfVariation) have no bound to enumerate, so they print one line
-with an `[unbounded]` marker.
+Prints the plan straight to stdout, ignoring any reporter. What it shows is the
+plan's *upper bound* - a convergence-driven policy may stop earlier, and an
+unbounded one has nothing to enumerate at all, so it prints a single
+`[unbounded]` line.
 """
 
 from __future__ import annotations
@@ -23,8 +20,7 @@ from bench.runner.base import (
 class DryRunner(Runner):
     """Enumerate planned Executions per Benchmark. Do not subprocess.
 
-    The `reporter` accepted by `Runner.__init__` is ignored. A dry run
-    produces no results to report.
+    The `reporter` is ignored - a dry run produces no results to report.
     """
 
     def run_with_report(

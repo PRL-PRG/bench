@@ -2,10 +2,11 @@
 
 Two kinds, distinguished by what they read:
 
-  - `IterationMetric` parses one iteration's text into Samples.
   - `Metric` reads the whole `InvocationResult`.
+  - `IterationMetric` parses the text one `MetricSource` pulls out of it
+    (stdout by default) into per-iteration Samples.
 
-Both carry an optional `direction`.
+Both carry a `direction` saying which way is better.
 """
 
 from __future__ import annotations
@@ -24,11 +25,10 @@ from bench.model.results import Direction, Sample
 
 
 class Metric(abc.ABC):
-    """A metric reads input of type `T` and emits Samples.
+    """Reads one run's `InvocationResult` and emits Samples.
 
-    `extract` parses the input. `process` applies the optional `direction`
-    override. `IterationMetric` and `Metric` fix `T` to the iteration
-    text and the `InvocationResult` respectively.
+    Implement `process`; build the Samples with `get_sample`, which fills in the
+    metric name, unit and direction configured here.
     """
 
     metric: str
@@ -64,7 +64,7 @@ class Metric(abc.ABC):
 
 
 class BuildableMetric(Metric):
-    """Mixin for Metric enabling a builder syntax"""
+    """A Metric whose direction can be set fluently, returning a copy."""
 
     def lower_is_better(self) -> Self:
         o = copy.copy(self)

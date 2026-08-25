@@ -16,10 +16,10 @@ if TYPE_CHECKING:
     from bench.core.policy import StoppingPolicy
     from bench.runner import Controller
 
-# A label function turns a resolved benchmark into the human-readable variant
-# identifier shown in reports Benchmark (not a Context) because labels reflect
-# the resolved execution.
+# Takes the resolved `Benchmark`, not a `Context`: a label names what actually
+# ran, so it is written after every field has been resolved.
 type LabelFn = Callable[[Benchmark], str]
+"""Turns a resolved benchmark into the variant identifier shown in reports."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +51,7 @@ type BenchmarkPred = Callable[[Benchmark], bool]
 
 @dataclass(frozen=True, slots=True)
 class Variant:
-    """Representation of a variant"""
+    """One point of a benchmark's matrix: which value each dimension took."""
 
     pairs: tuple[tuple[str, str], ...] = ()
     "Canonical representation: `((dimension, value), ...)`, sorted by dimension"

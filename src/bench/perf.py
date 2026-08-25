@@ -1,16 +1,9 @@
 """Opt-in Linux `perf` integration. A benchmark that doesn't opt in is untouched.
 
-Two ways in, by what perf is asked for:
-
-  - `PerfStat` - hardware-counter totals. It owns the event list, `wrap(command)`
-    runs the command under `perf stat -e <events>` (the only place perf enters
-    the argv, and idempotent, so wrapping at both suite and benchmark level never
-    double-prefixes), and as a `Metric` it parses perf's machine-readable (`-x,`)
-    output back out of the process stderr - captured per process, so parallel
-    runs need no shared file - one Sample per event.
-  - `PerfRecord` - a sampling profile. A `Controller`, so it wraps the invocation
-    it is about to run and post-processes the recording afterwards; attach it
-    with `.with_controller(...)`.
+  - `PerfStat` - hardware-counter totals. A `Metric` that also builds its own
+    `perf stat` prefix, via `wrap`: the only place perf enters the argv.
+  - `PerfRecord` - a sampling profile. A `Controller`, so it can wrap the
+    invocation it is about to run and read the recording back afterwards.
 
 Usage::
 
@@ -22,9 +15,7 @@ Usage::
         .with_controller(PerfRecord(Path("out")))
 
 perf is Linux-only and needs a permissive enough `perf_event_paranoid`; a missing
-`perf` fails loudly. `PerfStat` supports only symbolic event names (raw
-`cpu/event=.../` names that embed commas are not) and its direction applies to
-every event.
+`perf` fails loudly.
 """
 
 from __future__ import annotations
@@ -56,8 +47,8 @@ def to_argv(command: Any) -> tuple[Any, ...]:
 class PerfStat(BuildableMetric):
     """Run a command under `perf stat` and read its counters from stderr.
 
-    `events` is a tuple of symbolic perf event names. `direction` and the
-    `lower_is_better`/`higher_is_better` combinators come from bases unchanged.
+    `events` are symbolic perf event names - raw `cpu/event=.../` names embed
+    commas and are not supported. `direction` applies to every event.
     """
 
     events: tuple[str, ...]
@@ -76,10 +67,10 @@ class PerfStat(BuildableMetric):
         return ["perf", "stat", "-x", ",", "-e", ",".join(self.events), "--"]
 
     def wrap(self, command: object) -> list[str]:
-        """Prepend the `perf stat` invocation to `command` (idempotent).
+        """Prepend the `perf stat` invocation to `command`.
 
-        Uses the same argv normalization as `with_command` (`to_argv`).
-        """
+        Idempotent, so wrapping at both suite and benchmark level never
+        double-prefixes."""
         argv = list(to_argv(command))
         prefix = self._prefix()
         if argv[: len(prefix)] == prefix:
@@ -119,23 +110,15 @@ class PerfStat(BuildableMetric):
 class PerfRecord(Controller):
     """Profile every execution with `perf record`, then read the recording back.
 
-    Wraps the invocation in `perf record` writing `<dir>/perf.data`, then runs
-    `perf script` over that recording into `<dir>/perf-frames.csv` and adds its
-    size and sample / frame counts to the execution's process samples. `<dir>` is
-    the run's directory under `root`, the same layout `DirReporter` writes, so
-    the recording lands next to that run's stdout/stderr.
-
-    `freq`/`call_graph`/`stack_size`/`event` shape the recording (defaults:
-    99 Hz, a 16 kB dwarf stack dump, user-space cpu-cycles). `frames=False`
-    records only - it skips the `perf script` pass and emits just
-    `perf_data_size`.
+    Writes `perf.data` and, unless `frames=False`, the `perf script` frame table
+    `perf-frames.csv`, adding the recording's size and sample / frame counts to
+    the execution's process samples. Both land in the run's directory under
+    `root` - the layout `DirReporter` writes, so they sit beside its stdout.
 
     `call_graph` picks the unwind method: `"dwarf"` copies `stack_size` bytes of
-    user stack into every sample and unwinds offline (works on any binary, but
-    the copy dominates the recording cost and truncates stacks deeper than the
-    dump); `"fp"` walks %rbp in the kernel and copies nothing, which is far
-    cheaper but needs a binary built with frame pointers; `"lbr"` uses the CPU's
-    branch stack. `stack_size` is only used by `"dwarf"`.
+    user stack per sample and unwinds offline (works on any binary, but costs
+    the most and truncates deeper stacks); `"fp"` needs frame pointers; `"lbr"`
+    uses the CPU's branch stack.
     """
 
     def __init__(

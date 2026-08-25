@@ -1,11 +1,9 @@
 """Formatters: composable callables that turn a `list[Stat]` into a string.
 
-Each formatter selects a view from `bench.report and renders it - the
-on-terminal ones with the rich `Renderer`, `Compact` with the plain one. The
-views own all layout and the better/worse vocabulary. These classes only hold
-configuration (which metric(s), which axis). Formatters compose with `&`:
-`Results() & Summary()` builds one formatter whose output is the parts joined by
-a blank line, so `SummaryReporter` takes a single `Formatter`.
+Each formatter only picks a view from `bench.summary.summary` and the config it
+runs with (which metrics, which axis) - the views own all layout. Composing
+with `&` joins the parts by a blank line, so `SummaryReporter` can take a
+single `Formatter`.
 """
 
 from __future__ import annotations
@@ -87,10 +85,9 @@ class Summary(_MetricFilter):
 
 class GeomeanSummary(Formatter):
     """Rank the values of a matrix `axis` by the geometric mean over benchmarks.
-    Several axis names are one composite axis, whose values are their combinations
-    (e.g. `axis=["version", "mode"]`). `ref` pins one axis value as the baseline -
-    a bare value for a single axis, a `name=value` list for a composite one - and
-    otherwise the best performer is used."""
+    Several axis names are one composite axis, whose values are their
+    combinations (e.g. `axis=["version", "mode"]`). `ref` pins one value as the
+    baseline instead of the best performer."""
 
     def __init__(
         self,

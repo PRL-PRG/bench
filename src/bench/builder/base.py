@@ -1,11 +1,10 @@
 """Builder foundation: the shared configuration base for the three builder levels.
 
 `BuilderBase` declares every inheritable field once and carries the `with_*`
-setters plus the `overlay` merge that cascades configuration across
-`BenchAppBuilder` -> `SuiteBuilder` -> `BenchmarkBuilder` (defaults < app <
-suite < benchmark: the more specific level wins). It also holds the small
-primitives the builders share: the `Factory[T]` field-builder concept, the `UNSET`
-sentinel, and the matrix/skip/env merge helpers.
+setters plus the `inherit_from` merge that cascades configuration across
+`BenchAppBuilder` -> `SuiteBuilder` -> `BenchmarkBuilder` (the more specific
+level wins). The `Factory[T]` field-builder concept and the merge helpers live
+here too.
 """
 
 from __future__ import annotations
@@ -36,8 +35,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 type UnresolvedCommand = Sequence[StrOrBytesPath]
 
-# A field builder: a `(ctx) -> value` resolved once per variant at create time
-# A bit of a hack using Any here - allows for callers to use more concrete types of "Params"
+# A field builder: a `(ctx) -> value` resolved once per variant at create time.
+# `Any` is a hack - it lets callers use more concrete types of "Params".
 type Factory[T] = Callable[[Context[Any]], T]
 
 # A matrix axis: a sequence of values for some dimension.
@@ -130,9 +129,8 @@ class BuilderBase:
     """Shared configuration fields and `with_*` setters for the three builders
     (`BenchmarkBuilder`, `SuiteBuilder`, `BenchAppBuilder`).
 
-    Every inheritable field is declared here once (defaulting to `UNSET`). The
-    `with_*` setters each return a replaced copy typed as the concrete `Self`, and
-    the `overlay` merge works uniformly across all three builders."""
+    Every inheritable field defaults to unset (`None` or empty), and each setter
+    returns a replaced copy typed as the concrete `Self`."""
 
     command: Factory[UnresolvedCommand] | None = None
     cwd: Factory[Path] | None = None
@@ -163,12 +161,10 @@ class BuilderBase:
         override: bool,
         merge: Callable[[T, T], T] | None = None,
     ) -> Self:
-        """
-        Replace a field in the current builder. If override is `True`,
-        always replace the previous value. Otherwise if `merge` is not `None`,
-        merge the previous value with the new one. Otherwise print a warning and
-        replace the value.
-        """
+        """Replace a field in the current builder.
+
+        An already-set field is merged with `merge` when one is given, else
+        replaced - with a warning unless `override`."""
         if field not in (f.name for f in dataclasses.fields(self)):
             raise ValueError(f"Field {field} is not field of {type(self)}")
 
@@ -376,11 +372,9 @@ class BuilderBase:
         """Merge `over` on top of `self` (self wins): the inheritance step used
         at every builder boundary (app < suite < benchmark).
 
-        Each scalar/builder field takes `over`'s value if set, else `self`'s, except
-        the mergable ones: `env`, `matrix`, `metrics`, ``
-        `env` merges per key (over wins). `matrix` accumulates with `over`'s dims
-        first (a name on both sides is an error). `skips` concatenate. Returns
-        `over`'s type, so its own (non-shared) fields survive.
+        A field set on `self` keeps its value, except for the mergable ones -
+        `env` merges per key, `matrix` accumulates (a dimension declared on both
+        sides is an error), `metrics`/`filters` concatenate, `inherit_env` ORs.
         """
         result = self
         for name in _BUILDER_FIELDS:

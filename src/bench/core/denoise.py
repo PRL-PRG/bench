@@ -1,12 +1,9 @@
 """Active system denoise (Linux + root), after ReBench's `denoise.py`.
 
-`minimize()` sets the noisy knobs to their quiet values (CPU governor ->
-performance, turbo off, perf_event_paranoid/-1, swappiness/0, ASLR off) and
-saves the originals to a state file. `restore()` writes them back from that
-file (so it is crash-safe and runnable standalone). Each knob is skipped unless
-its file exists and is writable, so a missing knob or lack of privilege is
-reported, never fatal, and the whole thing no-ops where the files are absent
-(e.g. macOS).
+`minimize()` quiets the knobs below and saves the originals to a state file;
+`restore()` writes them back from it, so it survives a crash and runs
+standalone. A knob that is missing or unwritable is skipped and reported, never
+fatal - so this no-ops where the files do not exist (e.g. macOS).
 """
 
 from __future__ import annotations

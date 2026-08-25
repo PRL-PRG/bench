@@ -265,9 +265,7 @@ def merge_reports(named: list[tuple[str, Report]], axis: str = "compare") -> Rep
     an extra `axis` dimension set to the report's name, so comparing files is just
     summarizing over that synthetic axis.
 
-    The `axis=name` tag goes first (in the variant tuple, and at the front of a
-    preset label) so the file reads as the outermost dimension. An empty label
-    stays empty, recomputed later from the now axis-carrying variant."""
+    The tag goes first, so the file reads as the outermost dimension."""
     merged = Report()
     for name, report in named:
         for execution in report.executions:
@@ -584,10 +582,9 @@ def ranking(
     ref: str | None = None,
 ) -> list[str]:
     """Per benchmark: rank the variants best-first. With `axis`, instead fold the
-    other (residual) variants within each benchmark by geomean and compare the
-    values of that axis (e.g. python3.14 vs python3.9). Several axis names are one
-    composite axis, whose values are their combinations, labelled `name=value`;
-    `ref` then names one of those in the same form."""
+    other (residual) variants by geomean and compare the values of that axis
+    (e.g. python3.14 vs python3.9). Several axis names make one composite axis
+    (see `_axes`), and `ref` names one of its values."""
     if axis is not None:
         return _axis_view(
             stats,
@@ -683,10 +680,10 @@ def by_axis(
     ref: str | None = None,
 ) -> list[str]:
     """Per suite: rank the values of `axis` by the geomean over its benchmarks.
-    Several axis names are one composite axis, whose values are their combinations -
-    `["version", "mode"]` ranks `version=4.5.0, mode=bc` against `version=4.5.0,
-    mode=ast` and the rest, instead of averaging the modes into each version's
-    number; `ref` then names one of those combinations in the same form."""
+
+    Several axis names make one composite axis, so `["version", "mode"]` ranks
+    each `version=…, mode=…` combination on its own instead of averaging the
+    modes into each version's number. `ref` names one of those combinations."""
     return _axis_view(
         stats,
         _axes(axis),

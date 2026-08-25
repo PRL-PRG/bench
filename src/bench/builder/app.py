@@ -1,9 +1,5 @@
-"""The `BenchAppBuilder` abstraction and the `run(...)` benchmarking pipeline.
-
-Named `run` so that `from bench.run import run` re-binds the public `run`
-symbol on the package, keeping `from bench import run` pointing at the
-function rather than at this submodule.
-"""
+"""`BenchAppBuilder`: the top builder level, plus the benchmarking pipeline it
+drives - plan the suites, build the reporter and runner, run, report."""
 
 from __future__ import annotations
 
@@ -67,7 +63,7 @@ from bench.summary.summary import summarize
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now
 type ParamFactory[T] = Callable[[Any], T]
-"""A factory that produces based on the parameters."""
+"""Builds a `T` from the resolved params object."""
 
 type SuiteGenerator = ParamFactory[Sequence[SuiteBuilder]]
 
@@ -97,11 +93,8 @@ class BenchAppBuilder(BuilderBase):
     """Top-level builder: static suites + deferred suite generators, plus common
     settings applied to every suite.
 
-    The third builder level after `bench()`/`suite()`, sharing the same
-    `BuilderBase`. The inheritable `.with_*` settings declared here are the
-    weakest layer: they fill fields a suite or benchmark left unset, and a more
-    specific level overrides them (`inherit_from`). `name` is shown as the description
-    in `--help`.
+    Its inheritable `.with_*` settings are the weakest layer - they only fill
+    what a suite or benchmark left unset. `name` is the `--help` description.
     """
 
     name: str = ""
@@ -139,11 +132,8 @@ class BenchAppBuilder(BuilderBase):
     def with_params(
         self, params: type[Params], override: bool = True
     ) -> BenchAppBuilder:
-        """Replace the params dataclass whose fields become the CLI flags.
-
-        Lets one app be reused with a different parameter set - e.g. a profiling
-        variant that swaps in its own flags while inheriting the suites and the
-        shared `with_*` configuration."""
+        """Replace the params class whose fields become the CLI flags, so one
+        app can be reused with a different parameter set."""
         return self.replace("params", params, override=override)
 
     def with_reporter(
@@ -369,13 +359,10 @@ class BenchAppBuilder(BuilderBase):
 
 
 def run(*suites: SuiteBuilder) -> Report:
-    """Run one or more suites with default settings.
+    """Run one or more suites with default settings, returning their report.
 
-    Lightweight sugar for `bench_app(<script>).add_all(*suites).run()`. For
-    anything richer build a `bench_app(...)` directly.
-
-    Returns:
-        The report of running all the benchmarks.
+    Sugar for `bench_app(<script>).add(*suites).run_cli()`. For anything richer
+    build a `bench_app(...)` directly.
     """
     return bench_app(Path(sys.argv[0]).stem).add(*suites).run_cli()
 

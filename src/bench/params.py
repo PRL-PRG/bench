@@ -15,12 +15,11 @@ from typing import TYPE_CHECKING, Any, cast, dataclass_transform
     field_specifiers=(field,),
 )
 class ParamsMeta(type):
-    """Makes every `Params` subclass a frozen, slotted, keyword-only dataclass.
+    """Makes every `Params` subclass a frozen, keyword-only dataclass, so a user
+    declares params as a plain class body of annotated fields.
 
-    A user declaring params writes a plain class body of annotated fields; the
-    `@dataclass(...)` call and its options live here, so every params class is
-    uniform. `dataclass_transform` tells type checkers the same thing, so the
-    synthesized `__init__` and the field types are checked as usual.
+    `dataclass_transform` tells type checkers the same, keeping the synthesized
+    `__init__` checked as usual.
     """
 
     def __new__(
@@ -41,8 +40,8 @@ class ParamsMeta(type):
 class Params(metaclass=ParamsMeta):
     """Base for a user's params class: subclass it and declare annotated fields.
 
-    Needs no `@dataclass` decorator - `ParamsMeta` applies it, frozen, slotted
-    and keyword-only."""
+    Needs no `@dataclass` decorator - `ParamsMeta` applies it, frozen and
+    keyword-only."""
 
     def __post_init__(self) -> None:
         for f in fields(self):
@@ -71,9 +70,8 @@ SELECTION_GROUP = ParamsGroup("selection")
 
 
 class SharedSelectionParams(Params):
-    """The bench selection flags (`--include`/`--exclude`). A user's params
-    dataclass inherits this to opt into `--include`/`--exclude` on the CLI and
-    have the default `with_filter(...)` honor them."""
+    """The selection flags. Inherit to opt into `--include`/`--exclude` and have
+    `default_filter` honor them."""
 
     include: list[str] | None = field(
         default=None,
@@ -99,6 +97,9 @@ RUNNER_GROUP = ParamsGroup("runner")
 
 
 class SharedRunnerParams(Params):
+    """The runner flags. Inherit to opt into `-j`/`--dry`/`--verbose` and have
+    `default_runner` honor them."""
+
     jobs: int = field(
         default=1,
         metadata={
@@ -133,11 +134,8 @@ REPORTER_GROUP = ParamsGroup("reporter")
 
 
 class SharedReporterParams(Params):
-    """The bench runtime + selection flags. A user's params dataclass inherits
-    this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...
-    plus `--include`/`--exclude`) and have the default runner/reporter/filter
-    honor them. When a user declares no params, this is the effective params
-    type, so the builtin flags are always available out of the box."""
+    """The reporter flags. Inherit to opt into `--progress`/`--json`/`--csv`/
+    `--dir` and have `default_reporter` honor them."""
 
     progress: bool = field(
         default=True,
@@ -178,7 +176,9 @@ class SharedReporterParams(Params):
 class SharedBenchParams(
     SharedSelectionParams, SharedRunnerParams, SharedReporterParams
 ):
-    pass
+    """All three halves at once - the full builtin flag set. This is the
+    effective params type when a user declares none, so the builtin flags are
+    always available out of the box."""
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,6 @@ type _Kwargs = dict[str, Any]
 type _Arg = tuple[_Flags, _Kwargs]
 
 
-# TODO: Remove skip
 def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
@@ -200,13 +199,12 @@ def add_dataclass_args(
     """Generate `--<name>` arguments from a dataclass's fields.
 
     Per-field `field(metadata=...)` keys refine the generated argument:
-      - `flags`: extra option strings, e.g. `("-j",)`.
-      - `group`: a group to group this under
-      - `positional`: make it a positional argument instead of an option; a
-        `list[T]` positional becomes `nargs="+"` rather than repeatable
-      - any other keyword: other arguments to argparse `add_argument`
-    A `list[T]` field becomes a repeatable `action="append"` argument. `skip`
-    omits fields by name (used to split inherited fields across argument groups).
+      - `flags`: extra option strings, e.g. `("-j",)`
+      - `group`: the `ParamsGroup` to file this argument under
+      - `positional`: make it a positional argument instead of an option
+      - any other keyword: passed straight to argparse `add_argument`
+    A `list[T]` field is repeatable (`action="append"`), or `nargs="+"` when it
+    is positional.
     """
     if not is_dataclass(dc):
         raise TypeError(f"{dc!r} must be a @dataclass")

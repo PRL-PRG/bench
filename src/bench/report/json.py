@@ -7,7 +7,7 @@ from bench.report.base import Reporter
 
 
 class JsonReporter(Reporter):
-    """Buffer runs in memory, write a single JSON file on finalize().
+    """Write the whole report as a single JSON file on `finalize()`.
 
     `include_output` keeps each run's stdout/stderr/env in the JSON (off by
     default, they bloat the file and are rarely needed offline)."""

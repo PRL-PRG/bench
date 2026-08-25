@@ -1,19 +1,12 @@
-"""Parallel runner.
+"""Parallel runner: up to N benchmark `Controller`s at once (`--jobs N`).
 
-Runs up to N benchmark `Controller`s concurrently (per-benchmark
-parallelism, not per-run). Each benchmark drives its own internal sequential
-feedback loop (or a streaming harness with its own reader thread), so
-convergence-driven (CoV) and order-dependent policies run fine here, each on
-its own worker.
+Parallelism is per benchmark, not per run, so each keeps its own sequential
+loop and convergence-driven policies still work. Timing under contention is
+meaningless, so this is for work where time is **not** the metric: test suites,
+smoke runs, or getting through a batch faster.
 
-This is the *only* sound use of parallelism in a benchmark tool: wall-clock
-timing under contention is meaningless, so `Parallel` is for work where time
-is **not** the metric: test suites (pass/fail), smoke runs ("does everything
-execute"), or just getting through a batch faster.
-
-`--jobs N` means "up to N benchmarks at once." The shared `Report` is
-mutated from worker threads, so both it and the reporter are wrapped in
-lock-guarded proxies to keep concurrent `add` writes from tearing.
+The shared `Report` and reporter are mutated from worker threads, hence the
+lock-guarded proxies below.
 """
 
 from __future__ import annotations

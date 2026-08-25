@@ -1,4 +1,4 @@
-"""Runners: consume a list of Suites and emit Samples."""
+"""Runners: consume the planned benchmarks and produce a `Report`."""
 
 from bench.runner.base import Runner
 from bench.runner.controller import Controller

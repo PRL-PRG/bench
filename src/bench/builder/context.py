@@ -1,18 +1,9 @@
-"""`Context`: the single object passed to every builder callable, plus the
-user-params-from-CLI glue that feeds it.
+"""`Context`: the single object passed to every builder callable, and the
+variant `Data` it carries.
 
-Users declare a `@dataclass` describing their parameters. `bench.run()`
-auto-generates argparse arguments from the field annotations and constructs an
-instance. That instance is exposed as `ctx.params` on the `Context` handed
-to every command/cwd/env callable and suite factory, alongside the resolved
-suite/benchmark properties (see `Context` below).
-
-Supported param field types: `str`, `int`, `float`, `bool`, `Path`,
-`Optional[T]` / `T | None`.
-
-Required vs default:
-  - field with no default              -> required argument
-  - field with a default (or default_factory) -> optional, --help shows default
+A user's `Params` subclass (see `bench.params`) becomes the CLI flags and is
+exposed as `ctx.params`, alongside the resolved suite/benchmark names and this
+variant's data.
 """
 
 from __future__ import annotations
@@ -58,7 +49,7 @@ class Context[T: Params]:
     """Context for the benchmark builder callable `with_*(lambda ctx: )` methods.
 
     `params` is the single object carrying every setting: the user's own fields
-    plus, when their dataclass inherits `SharedBenchParams`/`SharedSelectionParams`,
+    plus, when their `Params` subclass inherits `SharedBenchParams` and friends,
     the builtin flags. When the user declares no params, `params` is a
     `SharedBenchParams` instance so the default pipeline still sees its flags.
     """

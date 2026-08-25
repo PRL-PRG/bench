@@ -17,9 +17,9 @@ import abc
 import statistics
 from collections.abc import Sequence
 
-# Minimum modified Z-score for a datapoint to be an outlier. 1.4826 converts the
-# MAD into an estimator for the standard deviation. 10 is the number of standard
-# deviations. (We use the same hyperfine's scaled out OUTLIER_THRESHOLD.)
+# Minimum modified Z-score for a datapoint to be an outlier: 1.4826 turns the
+# MAD into a standard-deviation estimate, times 10 deviations. Same threshold
+# hyperfine uses.
 OUTLIER_THRESHOLD = 1.4826 * 10.0
 
 

@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 
 
 class SummaryReporter(Reporter):
-    """Buffer runs, format on finalize().
+    """Summarize the report and render it on `finalize()`.
 
-    Takes a single `Formatter` (compose several with `&`). Summarizes the
-    buffered runs once and renders them, defaulting to `DefaultSummary`. After
-    the formatter output, appends a `Failures:` block listing every failed run.
+    Takes a single `Formatter` (compose several with `&`), defaulting to
+    `DefaultSummary`. After the formatter output, appends a `Failures:` block
+    listing every failed run.
     """
 
     def __init__(

@@ -1,4 +1,4 @@
-"""Controller: the per-benchmark feedback loop over an ExecutionSource."""
+"""Controller: the per-benchmark run loop, from Invocation to Executions."""
 
 from __future__ import annotations
 
@@ -106,13 +106,12 @@ def _mark_outliers(
 
 
 class Controller:
-    """Drive `benchmarking_loop` over one benchmark-variant's ExecutionSource.
+    """Run one benchmark variant until its warmup and runs policies are both
+    satisfied.
 
-    Pull one `(Iteration, label)` per slot, feed the stopping policy, count
-    warmup iterations, and `close()` the source on convergence (which kills a
-    running harness and returns the assembled `Execution`(s)). The Controller stamps
-    the warmup iterations onto the executions and records them. It never schedules.
-    The source owns scheduling and spawning.
+    Each pass executes the invocation, judges it, and turns the metrics' samples
+    into an `Execution`. Subclass to change what one execution does, e.g. to
+    wrap the invocation in a profiler (see `PerfRecord`).
     """
 
     def evaluate_invocation(

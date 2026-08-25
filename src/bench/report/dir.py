@@ -22,13 +22,12 @@ from bench.report.base import Reporter
 def execution_dir(
     root: Path, suite: str, benchmark: str, leaf: str | int | Path
 ) -> Path:
-    """The per-execution directory `<root>/<suite>/<benchmark>/<leaf>`.
+    """The per-execution directory `<root>/<suite>/<benchmark>/<leaf>`, the one
+    source of truth for the `--dir` layout.
 
-    The single source of truth for the `--dir` layout, so anything that wants to
-    drop extra artifacts next to a run's `stdout`/`stderr` (e.g. a `perf.data`)
-    joins the same path. `leaf` is the matrix variant sub-path (see `variant_path`)
-    when the benchmark has variants, else the 1-based completion ordinal
-    `DirReporter` assigns per `(suite, benchmark)`.
+    `leaf` is the matrix variant sub-path (see `variant_path`) when the benchmark
+    has variants, else the 1-based completion ordinal `DirReporter` assigns per
+    `(suite, benchmark)`.
     """
     return root / suite / benchmark / (leaf if isinstance(leaf, Path) else str(leaf))
 
@@ -96,9 +95,7 @@ class DirReporter(Reporter):
             self._write_fingerprint(self.fingerprint, self.diagnostics)
 
     def execution_done(self, execution: Execution) -> None:
-        # A matrix variant gets a stable directory from its variant (so a wrapped
-        # command's -o path can target the same place); a plain benchmark's runs
-        # are numbered per (suite, benchmark) in completion order.
+        # Stable path per variant, lazy per-run numbering otherwise (see start).
         if execution.variant:
             exec_dir = self.output_dir(
                 execution.suite, execution.benchmark, execution.variant

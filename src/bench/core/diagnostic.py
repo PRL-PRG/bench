@@ -2,8 +2,8 @@
 
 `run_checks(fp)` inspects a `Fingerprint` snapshot and emits warnings, each
 carrying the concrete fix command (after Google's "reducing variance" guide).
-Every check reads one field and skips itself when that field is `None`, so a
-foreign platform silently omits the knobs it cannot observe.
+Every check reads one fact and skips itself when the probe did not record it, so
+a foreign platform silently omits the knobs it cannot observe.
 
 References:
 - Reducing Variance - Google Benchmark User Guide (https://google.github.io/benchmark/reducing_variance.html)

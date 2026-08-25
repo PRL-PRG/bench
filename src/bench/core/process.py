@@ -1,11 +1,9 @@
 """Subprocess execution.
 
-Also home to the Ctrl+C machinery: every live benchmark subprocess is
-tracked so a SIGINT can kill the whole subtree (each child runs in its own
-process group) before the CLI exits. Without this, Python's
-KeyboardInterrupt only unblocks the main thread's `os.wait4` and leaves
-the children orphaned (and parallel worker threads stuck in `wait4`
-forever, since SIGINT is delivered to the main thread only).
+Also home to the Ctrl+C machinery: every live subprocess is tracked so a SIGINT
+can kill the whole subtree before the CLI exits. Python's KeyboardInterrupt
+alone only unblocks the main thread's `os.wait4`, orphaning the children and
+leaving parallel workers stuck in `wait4` forever.
 """
 
 from __future__ import annotations
@@ -113,12 +111,11 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
 
 
 def _resolve_command(command: Command) -> Command:
-    """Resolve `argv[0]` against PATH to an absolute path.
+    """Resolve `argv[0]` against PATH to an absolute path, raising
+    `FileNotFoundError` if it is not found.
 
-    Raises `FileNotFoundError` if the command is not found. The absolute
-    path is taken against the invoker's cwd so that `Popen(cwd=...)` doesn't
-    re-resolve a relative executable against the subprocess's own cwd.
-    """
+    Resolved against the invoker's cwd, so `Popen(cwd=...)` cannot re-resolve a
+    relative executable against the subprocess's own cwd."""
     cmd = list(command)
     found = shutil.which(cmd[0])
     if found is None:
@@ -157,9 +154,8 @@ def execute(exe: Invocation) -> InvocationResult:
             stdout=stdout_f,
             stderr=stderr_f,
             shell=False,
-            # Put the child in its own process group so a Ctrl+C handler can
-            # kill the whole subtree via `os.killpg` (matters for shell
-            # wrappers like `sh -c "..."` that spawn the real workload).
+            # Own process group, so a Ctrl+C handler can `os.killpg` the whole
+            # subtree - a `sh -c "..."` wrapper spawns the real workload.
             start_new_session=True,
         )
         _register_proc(proc)
@@ -169,9 +165,8 @@ def execute(exe: Invocation) -> InvocationResult:
                 proc.stdin.close()
 
         starttime = time.monotonic()
-        # A Timer kills the process on timeout while the main thread blocks on
-        # `wait4(pid, 0)`, so `runtime` reflects the exact moment the
-        # process exited (no busy-wait poll granularity inflating timed runs).
+        # A Timer kills on timeout while the main thread blocks on `wait4`, so
+        # no busy-wait poll granularity inflates `runtime`.
         killed = threading.Event()
         timer: threading.Timer | None = None
         if exe.timeout is not None:
@@ -250,11 +245,10 @@ class LiveProcess:
     _start: float
     _killed: threading.Event
     timer: threading.Timer | None = None
-    # The reaper runs exactly once and caches its result. is_alive() polls it
-    # non-blockingly (a harness reader thread tails until the process exits),
-    # finish() reaps blockingly. Both go through _reap so the rusage-bearing
-    # wait4 is never lost to a stray poll(). Guarded for the reader thread vs.
-    # finish()/close() racing.
+    # The reaper runs exactly once and caches its result: is_alive() polls it
+    # non-blockingly, finish() reaps blockingly, and both go through _reap so
+    # the rusage-bearing wait4 is never lost to a stray poll(). Locked because
+    # a harness reader thread races finish()/close().
     _reap_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _reaped: bool = False
     _waitstatus: int = 0
@@ -356,11 +350,9 @@ def spawn_streaming(exe: Invocation) -> LiveProcess:
     if exe.inherit_env:
         child_env |= os.environ
 
-    # A harness streams per-iteration lines, so the (Python) child's stdout must
-    # not block-buffer, otherwise it buffers when writing to a file and flushes
-    # every line at once on exit, defeating live framing. Force PYTHONUNBUFFERED
-    # (a no-op for non-Python children) on top of the env resolved above, which
-    # follows the same rule as `execute`: nothing is inherited unless asked for.
+    # A harness streams per-iteration lines, so a Python child must not
+    # block-buffer its stdout - writing to a file it would flush everything at
+    # exit, defeating live framing. A no-op for non-Python children.
     child_env["PYTHONUNBUFFERED"] = "1"
 
     proc = subprocess.Popen(

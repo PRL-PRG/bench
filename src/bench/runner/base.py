@@ -1,4 +1,4 @@
-"""Scheduler base (Runner), the suite->benchmark plan builder, and shared helpers."""
+"""Runner: schedules planned benchmarks and collects them into a `Report`."""
 
 from __future__ import annotations
 
