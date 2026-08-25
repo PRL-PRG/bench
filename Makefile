@@ -1,3 +1,9 @@
+ifeq ($(PYTHON_NO_NATIVE),1)
+LINT_FLAGS :=
+else
+LINT_FLAGS := --group lint
+endif
+
 # -------------
 # check
 # -------------
@@ -5,26 +11,26 @@
 check: lint typecheck test
 
 lint:
-	uv run --extra lint ruff check
+	uv run $(LINT_FLAGS) ruff check
 
 typecheck:
-	uv run --extra lint pyright
+	uv run $(LINT_FLAGS) pyright
 
 test:
-	uv run --extra dev python -m pytest
+	uv run pytest
 
 check-format:
-	uv run --extra lint ruff format --check
+	uv run $(LINT_FLAGS) ruff format --check
 
 # -------------
 # act
 # -------------
 .PHONY: format fix-lint
 format:
-	uv run --extra lint ruff format
+	uv run $(LINT_FLAGS) ruff format
 
 fix-lint:
-	uv run --extra lint ruff check --fix
+	uv run $(LINT_FLAGS) ruff check --fix
 
 # -------------
 # docs

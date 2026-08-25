@@ -42,15 +42,6 @@ dependencies = [
     { name = "rich" },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-]
-lint = [
-    { name = "pyright" },
-    { name = "ruff" },
-]
-
 [package.dev-dependencies]
 docs = [
     { name = "mkdocs-gen-files" },
@@ -58,16 +49,19 @@ docs = [
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
+lint = [
+    { name = "pyright" },
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "cattrs", specifier = ">=26.1.0" },
-    { name = "pyright", marker = "extra == 'lint'", specifier = ">=1.1.408" },
-    { name = "pytest", marker = "extra == 'dev'" },
     { name = "rich" },
-    { name = "ruff", marker = "extra == 'lint'", specifier = ">=0.15.17" },
 ]
-provides-extras = ["dev", "lint"]
 
 [package.metadata.requires-dev]
 docs = [
@@ -76,6 +70,11 @@ docs = [
     { name = "mkdocs-material", specifier = ">=9.7.6" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.4" },
 ]
+lint = [
+    { name = "pyright", specifier = ">=1.1.408" },
+    { name = "ruff", specifier = ">=0.15.17" },
+]
+test = [{ name = "pytest" }]
 
 [[package]]
 name = "cattrs"

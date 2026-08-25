@@ -10,10 +10,9 @@ dependencies = [
     "rich",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest"]
-lint = ["ruff>=0.15.17", "pyright>=1.1.408"]
-
+# ----------
+# Build
+# ----------
 [project.scripts]
 bench = "bench.__main__:cli"
 
@@ -24,9 +23,31 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bench"]
 
+# ----------
+# Dev tools
+# ----------
+[dependency-groups]
+test = ["pytest"]
+lint = ["ruff>=0.15.17", "pyright>=1.1.408"]
+docs = [
+    "mkdocs-gen-files>=0.6.1",
+    "mkdocs-literate-nav>=0.6.3",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.4",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+# ----------
+# Test
+# ----------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+# ----------
+# Lint
+# ----------
 [tool.ruff.format]
 docstring-code-format = true
 
@@ -36,17 +57,12 @@ ignore = [
   "E741" # ambiguous-variable-name
 ]
 
+# ----------
+# Typecheck
+# ----------
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.12"
 include = ["src", "tests", "examples"]
 strict = ["src"]
-
-[dependency-groups]
-docs = [
-    "mkdocs-gen-files>=0.6.1",
-    "mkdocs-literate-nav>=0.6.3",
-    "mkdocs-material>=9.7.6",
-    "mkdocstrings[python]>=1.0.4",
-]
