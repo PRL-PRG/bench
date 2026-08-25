@@ -226,17 +226,16 @@ class BenchAppBuilder(BuilderBase):
                 reporter = CompositeReporter(reporter, self.summary(build_params))
         elif use_defaults:
             reporter = default_reporter(build_params)
-            if reporter is None:
-                raise ValueError(
-                    "Cannot instantiate default reporters without SharedReporterParams parameters"
-                )
 
             if self.summary is not None:
-                reporter = CompositeReporter(reporter, self.summary(build_params))
+                summary = self.summary(build_params)
             else:
-                reporter = CompositeReporter(
-                    reporter, SummaryReporter(DefaultSummary())
-                )
+                summary = SummaryReporter(DefaultSummary())
+
+            if reporter is None:
+                reporter = summary
+            else:
+                reporter = CompositeReporter(reporter, summary)
         else:
             return None
 
@@ -417,7 +416,6 @@ def bench_app[P: Params](
 def default_reporter(
     params: Params,
     *,
-    summary: Reporter | None = None,
     json: str | Path | JsonReporter | None = None,
     csv: str | Path | CsvReporter | None = None,
     dir: str | Path | DirReporter | None = None,
@@ -436,9 +434,6 @@ def default_reporter(
     sinks: list[Reporter] = []
     if is_params and params.progress:
         sinks.append(ProgressReporter())
-
-    if summary is not None:
-        sinks.append(summary)
 
     # A reporter instance is authoritative: the app took control of that sink
     # (e.g. a DirReporter shared with `perf` via `output_dir`, or a JsonReporter
