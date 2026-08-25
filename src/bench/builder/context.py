@@ -82,7 +82,7 @@ class ParamsMeta(type):
         if namespace.get("_params_dataclass_applied"):
             return cls
         setattr(cls, "_params_dataclass_applied", True)
-        return dataclass(frozen=True, slots=True, kw_only=True)(cls)
+        return dataclass(frozen=True, kw_only=True)(cls)
 
 
 class Params(metaclass=ParamsMeta):
@@ -119,13 +119,7 @@ class SharedSelectionParams(Params):
     )
 
 
-class SharedBenchParams(SharedSelectionParams):
-    """The bench runtime + selection flags. A user's params dataclass inherits
-    this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...
-    plus `--include`/`--exclude`) and have the default runner/reporter/filter
-    honor them. When a user declares no params, this is the effective params
-    type, so the builtin flags are always available out of the box."""
-
+class SharedRunnerParams(Params):
     jobs: int = field(
         default=1,
         metadata={
@@ -134,10 +128,7 @@ class SharedBenchParams(SharedSelectionParams):
             "help": "Run up to N benchmarks in parallel (default: 1, sequential).",
         },
     )
-    progress: bool = field(
-        default=True,
-        metadata={"help": "Suppress the progress bar with --no-progress."},
-    )
+
     dry: bool = field(
         default=False,
         metadata={
@@ -145,10 +136,25 @@ class SharedBenchParams(SharedSelectionParams):
             "help": "Show what shall happen but without running anything.",
         },
     )
+
     verbose: bool = field(
         default=False,
         metadata={"flags": ("-v",), "action": "store_true", "help": "Verbose output."},
     )
+
+
+class SharedReporterParams(Params):
+    """The bench runtime + selection flags. A user's params dataclass inherits
+    this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...
+    plus `--include`/`--exclude`) and have the default runner/reporter/filter
+    honor them. When a user declares no params, this is the effective params
+    type, so the builtin flags are always available out of the box."""
+
+    progress: bool = field(
+        default=True,
+        metadata={"help": "Suppress the progress bar with --no-progress."},
+    )
+
     json: str | None = field(
         default=None,
         metadata={
@@ -156,6 +162,7 @@ class SharedBenchParams(SharedSelectionParams):
             "help": "Write a JSON report of every sample to FILE.",
         },
     )
+
     csv: str | None = field(
         default=None,
         metadata={
@@ -163,6 +170,7 @@ class SharedBenchParams(SharedSelectionParams):
             "help": "Write a CSV report of every sample to FILE.",
         },
     )
+
     dir: str | None = field(
         default=None,
         metadata={
@@ -171,6 +179,10 @@ class SharedBenchParams(SharedSelectionParams):
             "(stdout/stderr/exitcode/seq) under DIR.",
         },
     )
+
+
+class SharedBenchParams(SharedSelectionParams, SharedRunnerParams, SharedReporterParams):
+    pass
 
 
 @dataclass(frozen=True, slots=True)

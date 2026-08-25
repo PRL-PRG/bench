@@ -29,6 +29,8 @@ from bench.builder.benchmark import Benchmark
 from bench.builder.context import (
     Params,
     SharedBenchParams,
+    SharedReporterParams,
+    SharedRunnerParams,
     SharedSelectionParams,
     add_dataclass_args,
     build_dataclass,
@@ -227,7 +229,7 @@ class BenchAppBuilder(BuilderBase):
             reporter = default_reporter(build_params)
             if reporter is None:
                 raise ValueError(
-                    "Cannot instantiate default reporters without SharedBenchParams parameters"
+                    "Cannot instantiate default reporters without SharedReporterParams parameters"
                 )
 
             if self.summary is not None:
@@ -270,7 +272,7 @@ class BenchAppBuilder(BuilderBase):
             runner = default_runner(build_params)
             if runner is None:
                 raise ValueError(
-                    "Cannot instantiate default runner without SharedBenchParams parameters"
+                    "Cannot instantiate default runner without SharedRunnerParams parameters"
                 )
         else:
             raise ValueError("No runner is defined")
@@ -430,12 +432,12 @@ def default_reporter(
     `with_reporter(lambda p: default_reporter(p, dir=...))`; a non-builtin sink is
     added by composition, e.g. `CompositeReporter(default_reporter(p), MyReporter())`.
     """
-    if not isinstance(params, SharedBenchParams):
-        return None
+    is_params = isinstance(params, SharedReporterParams)
 
     sinks: list[Reporter] = []
-    if params.progress:
+    if is_params and params.progress:
         sinks.append(ProgressReporter())
+
     if summary is not None:
         sinks.append(summary)
 
@@ -445,22 +447,29 @@ def default_reporter(
     # Otherwise the flag wins over a path default.
     if isinstance(json, JsonReporter):
         sinks.append(json)
-    elif j := (params.json or json):
+    elif j := ((is_params and params.json) or json):
         sinks.append(JsonReporter(Path(j)))
+
     if isinstance(csv, CsvReporter):
         sinks.append(csv)
-    elif c := (params.csv or csv):
+    elif c := ((is_params and params.csv) or csv):
         sinks.append(CsvReporter(Path(c)))
+
     if isinstance(dir, DirReporter):
         sinks.append(dir)
-    elif d := (params.dir or dir):
+    elif d := ((is_params and params.dir) or dir):
         sinks.append(DirReporter(Path(d)))
 
-    return sinks[0] if len(sinks) == 1 else CompositeReporter(*sinks)
+    if len(sinks) == 0:
+        return None
+    elif len(sinks) == 1:
+        return sinks[0]
+    else:
+        return CompositeReporter(*sinks)
 
 
 def default_runner(params: Params) -> Runner | None:
-    if not isinstance(params, SharedBenchParams):
+    if not isinstance(params, SharedRunnerParams):
         return None
 
     if params.dry:
