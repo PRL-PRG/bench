@@ -181,7 +181,9 @@ class SharedReporterParams(Params):
     )
 
 
-class SharedBenchParams(SharedSelectionParams, SharedRunnerParams, SharedReporterParams):
+class SharedBenchParams(
+    SharedSelectionParams, SharedRunnerParams, SharedReporterParams
+):
     pass
 
 
@@ -264,13 +266,9 @@ def add_dataclass_args(
 
 def build_dataclass[T: Params](dc: type[T], namespace: argparse.Namespace) -> T:
     """Instantiate the user dataclass from an argparse Namespace."""
-    kwargs: dict[str, Any] = {}
-    for f in fields(dc):
-        if f.name not in namespace:
-            continue
-        val = getattr(namespace, f.name)
-        kwargs[f.name] = val
-    return dc(**kwargs)
+    names = set(f.name for f in fields(dc))
+    args = {k: v for k, v in vars(namespace).items() if k in names}
+    return dc(**args)
 
 
 # ---------------------------------------------------------------------------
