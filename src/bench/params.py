@@ -196,8 +196,6 @@ def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
     dc: type,
-    *,
-    skip: set[str] = set(),
 ) -> None:
     """Generate `--<name>` arguments from a dataclass's fields.
 
@@ -221,9 +219,6 @@ def add_dataclass_args(
     grouped: dict[ParamsGroup | None, list[_Arg]] = dict()
 
     for f in fields(dc):
-        if f.name in skip:
-            continue
-
         kwargs = cast(_Kwargs, dict(f.metadata))
         positional = kwargs.pop("positional", False)
         if positional:
