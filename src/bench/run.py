@@ -204,18 +204,17 @@ class BenchAppBuilder(BuilderBase):
         *,
         use_defaults: bool = False,
     ):
+        overlay = self
+        if use_defaults:
+            overlay = self.with_filter(default_filter(build_params))
+
         suites = [
-            s.inherit_from(self)
-            for generator in self.suites
+            s.inherit_from(overlay)
+            for generator in overlay.suites
             for s in generator(build_params)
         ]
 
-        planned = plan(suites, build_params)
-        if use_defaults:
-            pred = default_filter(build_params)
-            planned = [b for b in planned if pred(b)]
-
-        return planned
+        return plan(suites, build_params)
 
     # ----- instantiate reporter -----------
     def get_reporter(
