@@ -163,6 +163,23 @@ def test_show_subcommand(tmp_path: Path):
     assert "elapsed" in r.stdout
 
 
+def test_run_list_prints_the_plan_and_runs_nothing():
+    # `bench run` takes the app-level default actions too, so the ad-hoc
+    # benchmark can be inspected before it is measured.
+    r = _run("run", "--runs", "2", "--list", "sleep 0.01", "sleep 0.02")
+    assert r.returncode == 0, r.stderr
+    assert "sleep 0.01" in r.stdout and "sleep 0.02" in r.stdout
+    assert "elapsed" not in r.stdout  # nothing was measured
+
+
+def test_run_show_replays_a_saved_report(tmp_path: Path):
+    out = tmp_path / "out.json"
+    _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
+    r = _run("run", "--show", str(out), "sleep 0.01")
+    assert r.returncode == 0, r.stderr
+    assert "elapsed" in r.stdout
+
+
 def test_show_missing_file_errors(tmp_path: Path):
     r = _run("show", str(tmp_path / "nope.json"))
     assert r.returncode == 1

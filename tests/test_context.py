@@ -1,6 +1,7 @@
 """Dataclass -> argparse glue, and the Context value object."""
 
 import argparse
+from dataclasses import field
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import pytest
 from bench.builder import Context, Data
 from bench.params import (
     Params,
+    ParamsGroup,
     SharedBenchParams,
     SharedReporterParams,
     SharedRunnerParams,
@@ -141,12 +143,43 @@ def test_metadata_help_and_metavar_surface_in_help():
     assert "REGEX" in help_text  # include/exclude metavar
 
 
-def test_skip_omits_fields():
+def test_positional_metadata_makes_an_argument_positional():
+    class DC(Params):
+        file: str = field(metadata={"positional": True, "help": "a report"})
+        metric: str | None = None
+
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, SharedBenchParams, skip={"include", "exclude"})
-    assert "--include" not in p.format_help()
-    # A non-skipped flag is still present.
-    assert "--jobs" in p.format_help()
+    add_dataclass_args(p, DC)
+    assert build_dataclass(DC, p.parse_args(["r.json"])).file == "r.json"
+    # A positional with no default is required, and never gets a `--` flag.
+    assert "--file" not in p.format_help()
+    with pytest.raises(SystemExit):
+        p.parse_args([])
+
+
+def test_list_positional_takes_every_remaining_value():
+    class DC(Params):
+        commands: list[str] = field(metadata={"positional": True, "metavar": "CMD"})
+
+    p = argparse.ArgumentParser()
+    add_dataclass_args(p, DC)
+    # nargs="+", not the repeatable `append` a `list[T]` option would get.
+    assert build_dataclass(DC, p.parse_args(["a", "b"])).commands == ["a", "b"]
+    with pytest.raises(SystemExit):
+        p.parse_args([])
+
+
+def test_group_metadata_files_the_argument_under_its_group():
+    class DC(Params):
+        runs: int = field(default=1, metadata={"group": ParamsGroup("control")})
+        loose: int = 0
+
+    help_text = _params_parser(DC).format_help()
+    assert "control:" in help_text
+    group_section = help_text.split("control:", 1)[1]
+    assert "--runs" in group_section
+    # An ungrouped field stays in the parser's own section.
+    assert "--loose" not in group_section
 
 
 def test_shared_bench_params_defaults_and_progress():
