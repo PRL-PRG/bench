@@ -1,5 +1,9 @@
 # bench
 
+[![CI](https://github.com/PRL-PRG/bench/actions/workflows/ci.yml/badge.svg)](https://github.com/PRL-PRG/bench/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A lightweight Python benchmarking framework and command-line tool.
 
 Two ways to use it:

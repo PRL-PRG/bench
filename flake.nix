@@ -33,6 +33,9 @@
               # Dev packages
               ruff
               pyright
+
+              # CI packages
+              act
             ];
 
             PYTHON_NO_NATIVE = "1";
