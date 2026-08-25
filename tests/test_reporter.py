@@ -24,15 +24,15 @@ from bench import (
     report_from_json,
     suite,
 )
-from bench.builder.context import Params, SharedReporterParams, SharedRunnerParams
-from bench.core.invocation import Variant
+from bench.builder import default_reporter
+from bench.builder.suite import plan
+from bench.console.theme import BENCHR_THEME
 from bench.core.metric import StdoutMetricSource
-from bench.core.results import Execution, Iteration, Report, Sample
-from bench.report.reporter import _TUI
-from bench.report.reporter import DirReporter as _DirReporter
-from bench.report.theme import BENCHR_THEME
-from bench.run import default_reporter
-from bench.runner.base import plan
+from bench.model.benchmark import Variant
+from bench.model.results import Execution, Iteration, Report, Sample
+from bench.params import Params, SharedReporterParams, SharedRunnerParams
+from bench.report import DirReporter as _DirReporter
+from bench.report.progress import _TUI
 
 
 def test_dirreporter_writes_on_execution_done(tmp_path):

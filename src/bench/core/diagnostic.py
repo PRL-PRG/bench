@@ -11,7 +11,25 @@ References:
 
 from __future__ import annotations
 
-from bench.core.fingerprint import Diagnostic, Fingerprint
+from dataclasses import dataclass
+from typing import Literal
+
+from rich.markup import escape as markup_escape
+
+from bench.console.theme import console
+from bench.core.fingerprint import Fingerprint
+
+type Severity = Literal["warn", "high"]
+
+
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """One actionable finding. `fix` is a command/setting that resolves it."""
+
+    severity: Severity
+    message: str
+    fix: str | None = None
+
 
 # Warn when the 1-minute load exceeds this fraction of the logical CPUs.
 LOAD_FRACTION = 0.5
@@ -103,3 +121,14 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
             )
         )
     return out
+
+
+def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
+    if not diagnostics:
+        return
+    console.print(f"\n[bench.label]{title}:[/]")
+    for d in diagnostics:
+        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]!![/]"
+        console.print(f"  {tag} {markup_escape(d.message)}")
+        if d.fix:
+            console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")

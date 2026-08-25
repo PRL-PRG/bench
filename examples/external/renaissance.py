@@ -45,7 +45,7 @@ from bench import (
     max_rss,
     suite,
 )
-from bench.builder.suite import SuiteContext
+from bench.builder import SuiteContext
 from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 

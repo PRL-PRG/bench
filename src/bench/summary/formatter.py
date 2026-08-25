@@ -1,6 +1,6 @@
 """Formatters: composable callables that turn a `list[Stat]` into a string.
 
-Each formatter selects a view from `bench.report.summary` and renders it - the
+Each formatter selects a view from `bench.report and renders it - the
 on-terminal ones with the rich `Renderer`, `Compact` with the plain one. The
 views own all layout and the better/worse vocabulary. These classes only hold
 configuration (which metric(s), which axis). Formatters compose with `&`:
@@ -13,8 +13,8 @@ from __future__ import annotations
 import abc
 from collections.abc import Sequence
 
-from bench.report.render import PLAIN, RICH
-from bench.report.summary import (
+from bench.console.render import PLAIN, RICH
+from bench.summary.summary import (
     Stat,
     by_axis,
     compact,

@@ -3,137 +3,13 @@
 from __future__ import annotations
 
 import abc
-import shlex
-import subprocess
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-from bench.builder.context import Params
-from bench.core.fingerprint import Diagnostic, Fingerprint
-from bench.core.invocation import (
-    Invocation,
-    default_success,
-    format_identifier,
-)
-from bench.core.policy import StoppingPolicy
+from bench.core.diagnostic import Diagnostic
+from bench.core.fingerprint import Fingerprint
 from bench.core.process import install_sigint_handler, interrupted
-from bench.core.results import Report
-from bench.report.reporter import Reporter
-from bench.utils import BenchError
-
-if TYPE_CHECKING:
-    from bench.builder.benchmark import Benchmark
-    from bench.builder.suite import SuiteBuilder
-
-
-class _NoopReporter(Reporter):
-    pass
-
-
-# ---------------------------------------------------------------------------
-# Plan builder (SuiteBuilder list -> flat Benchmark list)
-# ---------------------------------------------------------------------------
-
-
-class SuiteMaterializationError(BenchError):
-    """A suite's factory failed while building its benchmarks."""
-
-    def __init__(self, suite: str, cause: BaseException) -> None:
-        self.suite = suite
-        self.cause = cause
-        super().__init__(self._format())
-
-    def _format(self) -> str:
-        lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
-
-        # TODO: the idea is that only subprocess failures carry capturable output worth surfacing to user
-        if isinstance(self.cause, subprocess.CalledProcessError):
-            out = self.cause.output or self.cause.stderr
-            if out:
-                text = (
-                    out.decode(errors="replace") if isinstance(out, bytes) else str(out)
-                )
-                lines += ["", text.rstrip()]
-        return "\n".join(lines)
-
-
-def plan(
-    suites: list[SuiteBuilder],
-    params: Params,
-) -> list[Benchmark]:
-    """Flatten suites + their deferred factories into resolved benchmarks."""
-    out: list[Benchmark] = []
-    for s in suites:
-        try:
-            out.extend(s.materialize(params))
-        except Exception as cause:
-            raise SuiteMaterializationError(s.name, cause) from cause
-    return out
-
-
-def format_command(e: Invocation) -> str:
-    """A copy-pasteable shell command for one execution: `cd DIR && KEY='v' cmd
-    args`. The `cd` prefix appears only when the cwd differs from the current
-    directory, env assignments only when present. Every part is shell-quoted."""
-    parts: list[str] = []
-    if e.cwd != Path.cwd():
-        parts.append(f"cd {shlex.quote(str(e.cwd))} &&")
-    if e.env:
-        parts.append(" ".join(f"{k}={shlex.quote(v)}" for k, v in e.env.items()))
-    parts.append(shlex.join(e.command))
-    return " ".join(parts)
-
-
-def format_policy(p: StoppingPolicy) -> str:
-    """A stopping policy's run bound as a string ("unbounded" when open-ended)."""
-    n = p.max_runs()
-    return str(n) if n is not None else "unbounded"
-
-
-def _metric_name(m: Any) -> str:
-    """A metric's display name: its `metric` field if it has one, else the
-    class name (e.g. Time, Rebench)."""
-    return getattr(m, "metric", type(m).__name__)
-
-
-def format_benchmark_verbose(b: Benchmark, run: int) -> str:
-    e = b.invocation
-    env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
-    stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
-    timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
-    metric_str = ", ".join(_metric_name(m) for m in b.metrics)
-    success_str = (
-        "<default>"
-        if b.success is default_success
-        else getattr(b.success, "__name__", repr(b.success))
-    )
-    variant_str = str(b.variant.as_dict())
-    label_str = b.variant_label or "<none>"
-
-    return "\n".join(
-        [
-            format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
-            f"  suite:      {b.suite}",
-            f"  benchmark:  {b.name}",
-            f"  run:        {run}",
-            f"  warmup:     {format_policy(b.warmup)}",
-            f"  runs:       {format_policy(b.runs)}",
-            f"  command:    {' '.join(e.command)}",
-            f"  cwd:        {e.cwd}",
-            f"  env:        {{{env_str}}}",
-            f"  timeout:    {timeout_str}",
-            f"  stdin:      {stdin_str}",
-            f"  metrics:    {metric_str}",
-            f"  success:    {success_str}",
-            f"  variant:    {variant_str}",
-            f"  label:      {label_str}",
-        ]
-    )
-
-
-# ---------------------------------------------------------------------------
-# Runner base
-# ---------------------------------------------------------------------------
+from bench.model.benchmark import Benchmark
+from bench.model.results import Report
+from bench.report import Reporter
 
 
 class Runner(abc.ABC):
@@ -149,7 +25,7 @@ class Runner(abc.ABC):
     def run(
         self,
         planned: list[Benchmark],
-        reporter: Reporter = _NoopReporter(),
+        reporter: Reporter = Reporter(),
         fingerprint: Fingerprint | None = None,
         diagnostics: list[Diagnostic] = [],
     ) -> Report:

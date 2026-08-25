@@ -13,9 +13,9 @@ from bench import (
     from_files,
     suite,
 )
-from bench.builder.context import Params
-from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
+from bench.model.benchmark import Variant
+from bench.params import Params
 
 
 def _b(name: str):

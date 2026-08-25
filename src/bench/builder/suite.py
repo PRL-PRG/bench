@@ -11,15 +11,21 @@ from __future__ import annotations
 
 import itertools
 import random
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Sequence
 
 from bench.builder.base import BuilderBase, const, merge_sequence
-from bench.builder.benchmark import Benchmark, BenchmarkBuilder
-from bench.builder.context import Params
+from bench.builder.benchmark import BenchmarkBuilder
+from bench.error import BenchError
+from bench.model.benchmark import Benchmark
+from bench.params import Params
 
 
+# ---------------------------------------------------------------------------
+# Base types
+# ---------------------------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class SuiteContext[T: Params]:
     params: T
@@ -30,6 +36,10 @@ class SuiteContext[T: Params]:
 # we have for now
 type BenchmarkGenerator = Callable[[SuiteContext[Any]], list[BenchmarkBuilder]]
 type SubsuiteGenerator = Callable[[SuiteContext[Any]], list[SuiteBuilder]]
+
+# ---------------------------------------------------------------------------
+# The builder
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,3 +181,44 @@ def suite(name: str, *children: BenchmarkBuilder | SuiteBuilder) -> SuiteBuilder
         .add(*(ch for ch in children if isinstance(ch, BenchmarkBuilder)))
         .add_suites(*(ch for ch in children if isinstance(ch, SuiteBuilder)))
     )
+
+
+# ---------------------------------------------------------------------------
+# Plan builder
+# ---------------------------------------------------------------------------
+
+
+class SuiteMaterializationError(BenchError):
+    """A suite's factory failed while building its benchmarks."""
+
+    def __init__(self, suite: str, cause: BaseException) -> None:
+        self.suite = suite
+        self.cause = cause
+        super().__init__(self._format())
+
+    def _format(self) -> str:
+        lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
+
+        # TODO: the idea is that only subprocess failures carry capturable output worth surfacing to user
+        if isinstance(self.cause, subprocess.CalledProcessError):
+            out = self.cause.output or self.cause.stderr
+            if out:
+                text = (
+                    out.decode(errors="replace") if isinstance(out, bytes) else str(out)
+                )
+                lines += ["", text.rstrip()]
+        return "\n".join(lines)
+
+
+def plan(
+    suites: list[SuiteBuilder],
+    params: Params,
+) -> list[Benchmark]:
+    """Flatten suites + their deferred factories into resolved benchmarks."""
+    out: list[Benchmark] = []
+    for s in suites:
+        try:
+            out.extend(s.materialize(params))
+        except Exception as cause:
+            raise SuiteMaterializationError(s.name, cause) from cause
+    return out

@@ -6,15 +6,15 @@ import dataclasses
 import time
 from typing import TYPE_CHECKING
 
-from bench.core.invocation import InvocationResult
 from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
-from bench.core.results import Execution, Iteration, Report, Sample, diagnostic_excerpt
-from bench.report.reporter import Reporter
-from bench.runner.base import format_benchmark_verbose
+from bench.model.benchmark import format_benchmark_verbose
+from bench.model.invocation import InvocationResult
+from bench.model.results import Execution, Iteration, Report, Sample, diagnostic_excerpt
+from bench.report import Reporter
 
 if TYPE_CHECKING:
-    from bench.builder.benchmark import Benchmark
+    from bench.model.benchmark import Benchmark
 
 
 def _make_execution(

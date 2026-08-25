@@ -26,14 +26,14 @@ from bench import (
     report_from_json,
     suite,
 )
-from bench.builder.context import (
+from bench.builder import default_runner
+from bench.builder.suite import plan
+from bench.core.metric import StdoutMetricSource
+from bench.params import (
     Params,
     SharedReporterParams,
     SharedRunnerParams,
 )
-from bench.core.metric import StdoutMetricSource
-from bench.run import default_runner
-from bench.runner.base import plan
 
 
 def _run_samples(r):

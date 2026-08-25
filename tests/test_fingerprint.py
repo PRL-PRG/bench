@@ -11,9 +11,9 @@ from bench.core.fingerprint import (
     Fingerprint,
     NoProbe,
     SystemProbe,
-    collect_linux,
-    collect_macos,
 )
+from bench.core.fingerprint.system.linux import collect_linux
+from bench.core.fingerprint.system.macos import collect_macos
 
 
 def _write(path: Path, text: str) -> None:

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from bench.builder.benchmark import Benchmark
 from bench.core.process import interrupted
-from bench.core.results import Report
-from bench.report.reporter import Reporter
+from bench.model.benchmark import Benchmark
+from bench.model.results import Report
+from bench.report import Reporter
 from bench.runner.base import Runner
 
 

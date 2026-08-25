@@ -19,37 +19,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from bench.builder.context import Context
-from bench.core.invocation import SuccessFn, Timeout
 from bench.core.metric import (
     Metric,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
+from bench.model.benchmark import Benchmark, BenchmarkPred, LabelFn
+from bench.model.invocation import Env, SuccessFn, Timeout
+from bench.runner import Controller
 
 if TYPE_CHECKING:
     from _typeshed import StrOrBytesPath
 
-    from bench.builder.benchmark import Benchmark
-    from bench.runner.controller import Controller
-
 # ---------------------------------------------------------------------------
 # Base types
 # ---------------------------------------------------------------------------
-# TODO: Move to model
 type UnresolvedCommand = Sequence[StrOrBytesPath]
-type Env = Mapping[str, str]
-
-# A label function turns a resolved benchmark into the human-readable variant
-# identifier shown in reports Benchmark (not a Context) because labels reflect
-# the resolved execution.
-type LabelFn = Callable[[Benchmark], str]
-
-# A skip predicate on a resolved `Benchmark`. Returning truthy drops the variant.
-type BenchmarkPred = Callable[[Benchmark], bool]
-
-# ---------------------------------------------------------------------------
-# Builder types
-# ---------------------------------------------------------------------------
 
 # A field builder: a `(ctx) -> value` resolved once per variant at create time
 # A bit of a hack using Any here - allows for callers to use more concrete types of "Params"

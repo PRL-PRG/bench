@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-import bench.denoise as denoise_mod
-from bench.denoise import denoise_session, minimize, restore, status
-from bench.utils import read_bracketed
+import bench.core.denoise as denoise_mod
+from bench.core.denoise import denoise_session, minimize, restore, status
+from bench.io import read_bracketed
 
 
 def _write(path: Path, text: str) -> None:

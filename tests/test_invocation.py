@@ -4,8 +4,8 @@ import time
 from pathlib import Path
 
 from bench import Invocation
-from bench.core.invocation import Variant, format_identifier
 from bench.core.process import spawn_streaming
+from bench.model.benchmark import Variant, format_identifier
 
 
 def test_format_identifier():

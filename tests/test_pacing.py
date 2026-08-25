@@ -3,7 +3,7 @@
 import pytest
 
 from bench import NoProbe, bench, bench_app, suite
-from bench.builder.context import Params
+from bench.params import Params
 
 
 def test_cooldown_defaults_zero():

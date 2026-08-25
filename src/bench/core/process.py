@@ -24,11 +24,11 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 from types import FrameType
-from typing import Sequence
 
-from bench.core.invocation import (
+from bench.model.invocation import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
+    Command,
     Invocation,
     InvocationResult,
 )
@@ -110,9 +110,6 @@ def _wait4_eintr(pid: int) -> tuple[int, int, resource.struct_rusage]:
             if e.errno == errno.EINTR:
                 continue
             raise
-
-
-type Command = Sequence[str]
 
 
 def _resolve_command(command: Command) -> Command:

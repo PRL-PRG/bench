@@ -1,94 +1,54 @@
-"""Invocation: the pure atom of a benchmark run.
-
-An Invocation is a description of how to start one subprocess: command,
-working directory, environment, optional timeout, optional stdin payload.
-"""
-
 from __future__ import annotations
 
-import dataclasses
-import os
-import resource
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Sequence, cast
+from typing import TYPE_CHECKING, Any, cast
+
+from bench.core.policy import format_policy
+from bench.model.invocation import (
+    Invocation,
+    SuccessFn,
+)
 
 if TYPE_CHECKING:
-    from bench.core.process import Command
+    from bench.core.metric import Metric
+    from bench.core.outlier import OutlierDetection
+    from bench.core.policy import StoppingPolicy
+    from bench.runner import Controller
 
-
-def to_argv(command: Any) -> tuple[Any, ...]:
-    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
-    if isinstance(command, (str, bytes, os.PathLike)):
-        return (cast(Any, command),)
-    return tuple(command)
-
-
-type Timeout = float | None
-
-
-@dataclass(frozen=True, slots=True)
-class Invocation:
-    """Pure description of one subprocess invocation."""
-
-    command: Command
-    cwd: Path
-    env: Mapping[str, str] = dataclasses.field(default_factory=dict[str, str])
-    inherit_env: bool = False
-    timeout: Timeout = None
-    stdin: bytes | None = None
-    capture_output: bool = True
+# A label function turns a resolved benchmark into the human-readable variant
+# identifier shown in reports Benchmark (not a Context) because labels reflect
+# the resolved execution.
+type LabelFn = Callable[[Benchmark], str]
 
 
 @dataclass(frozen=True, slots=True)
-class InvocationResult:
-    """Outcome of running one Invocation.
+class Benchmark:
+    """One fully-resolved benchmark variant."""
 
-       `failure` is the human-readable reason a run is treated as failed, or
-       `None` for a success.
-
-    `returncode` conventions:
-      0 ............. clean exit
-      124 .......... timed out (coreutils `timeout(1)` convention)
-      any other > 0  process crash / non-zero exit
-      -1 ........... pre-execution failure (spawn errored before the process ran,
-                     no real exit code, `failure` set by `execute`)
-    """
-
+    suite: str
+    name: str
     invocation: Invocation
-    returncode: int
-    runtime: float
-    stdout: str = ""
-    stderr: str = ""
-    rusage: resource.struct_rusage | None = None
-    failure: str | None = None
+    variant: Variant
+    metrics: Sequence[Metric]
+    success: SuccessFn
+    warmup: StoppingPolicy
+    runs: StoppingPolicy
+    outlier_detection: OutlierDetection
+    cooldown: float
+    controller: Controller
+    data: Mapping[str, Any]
+    label_fn: LabelFn
 
-    def is_failure(self) -> bool:
-        return self.failure is not None
-
-
-type Verdict = str | None  # None = success, str = failure reason
-type SuccessFn = Callable[[InvocationResult], Verdict]
-
-
-# Conventional returncode sentinels (see InvocationResult docstring above).
-TIMEOUT_RC = 124
-SPAWN_FAIL_RC = -1
+    @property
+    def variant_label(self) -> str:
+        return self.label_fn(self)
 
 
-def default_success(result: InvocationResult) -> Verdict:
-    """Default success policy: clean exit passes, anything else fails."""
-    if result.failure is not None:  # spawn failure already judged by execute()
-        return result.failure
-    if result.returncode == TIMEOUT_RC:
-        return "timeout"
-    if result.returncode != 0:
-        return f"exit code {result.returncode}"
-    return None
+# A skip predicate on a resolved `Benchmark`. Returning falsy drops the variant.
+type BenchmarkPred = Callable[[Benchmark], bool]
 
 
-# TODO: Move to model
 @dataclass(frozen=True, slots=True)
 class Variant:
     """Representation of a variant"""
@@ -146,6 +106,11 @@ class Variant:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Format
+# ---------------------------------------------------------------------------
+
+
 def format_variant_pairs(pairs: Iterable[tuple[str, str]]) -> str:
     """`k=v, ...` naming a variant on its own. `""` if empty. Unlike
     `format_variant` this carries no surrounding ` (...)`, so it also serves where
@@ -185,3 +150,37 @@ def format_identifier(
 ) -> str:
     """Canonical run label: the benchmark name followed by `#run`."""
     return f"{format_benchmark(suite, benchmark, variant, variant_label)} #{run}"
+
+
+def format_benchmark_verbose(b: Benchmark, run: int) -> str:
+    def _metric_name(m: Any) -> str:
+        """A metric's display name: its `metric` field if it has one, else the
+        class name (e.g. Time, Rebench)."""
+        return getattr(m, "metric", type(m).__name__)
+
+    e = b.invocation
+    env_str = ", ".join(f"{k}={v}" for k, v in e.env.items()) if e.env else ""
+    stdin_str = f"{len(e.stdin)} bytes" if e.stdin is not None else "<none>"
+    timeout_str = f"{e.timeout}s" if e.timeout is not None else "<none>"
+    metric_str = ", ".join(_metric_name(m) for m in b.metrics)
+    variant_str = str(b.variant.as_dict())
+    label_str = b.variant_label or "<none>"
+
+    return "\n".join(
+        [
+            format_identifier(b.suite, b.name, b.variant, run, b.variant_label),
+            f"  suite:      {b.suite}",
+            f"  benchmark:  {b.name}",
+            f"  run:        {run}",
+            f"  warmup:     {format_policy(b.warmup)}",
+            f"  runs:       {format_policy(b.runs)}",
+            f"  command:    {' '.join(e.command)}",
+            f"  cwd:        {e.cwd}",
+            f"  env:        {{{env_str}}}",
+            f"  timeout:    {timeout_str}",
+            f"  stdin:      {stdin_str}",
+            f"  metrics:    {metric_str}",
+            f"  variant:    {variant_str}",
+            f"  label:      {label_str}",
+        ]
+    )

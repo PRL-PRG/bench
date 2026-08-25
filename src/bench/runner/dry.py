@@ -11,14 +11,12 @@ with an `[unbounded]` marker.
 
 from __future__ import annotations
 
-from bench.builder.benchmark import Benchmark
-from bench.core.invocation import format_identifier
-from bench.core.results import Report
-from bench.report.reporter import Reporter
+from bench.model.benchmark import Benchmark, format_benchmark_verbose, format_identifier
+from bench.model.invocation import format_command
+from bench.model.results import Report
+from bench.report import Reporter
 from bench.runner.base import (
     Runner,
-    format_benchmark_verbose,
-    format_command,
 )
 
 

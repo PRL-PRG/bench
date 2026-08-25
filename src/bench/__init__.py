@@ -1,35 +1,32 @@
 """bench - a benchmarking framework."""
 
-# Atoms
-# Benchmark / SuiteBuilder
-from bench.builder.benchmark import (
-    Benchmark,
-    BenchmarkBuilder,
-    bench,
-    default_label,
-    from_files,
-)
-from bench.builder.context import Context, SharedBenchParams, SharedSelectionParams
-from bench.builder.suite import SuiteBuilder, suite
-
 # CLI
-from bench.cli import main
-from bench.core.checks import run_checks
+from bench.__main__ import main
+
+# Builder
+from bench.builder import (
+    BenchAppBuilder,
+    BenchmarkBuilder,
+    Context,
+    NoBenchmarksMatchedError,
+    SuiteBuilder,
+    SuiteMaterializationError,
+    bench,
+    bench_app,
+    default_label,
+    default_success,
+    from_files,
+    run,
+    suite,
+)
+from bench.core.diagnostic import Diagnostic, run_checks
 
 # Fingerprint + diagnostics
 from bench.core.fingerprint import (
-    Diagnostic,
     Fingerprint,
     NoProbe,
     Probe,
     SystemProbe,
-)
-from bench.core.invocation import (
-    Invocation,
-    InvocationResult,
-    Variant,
-    Verdict,
-    default_success,
 )
 
 # Metrics
@@ -59,7 +56,19 @@ from bench.core.policy import (
     PolicyState,
     StoppingPolicy,
 )
-from bench.core.results import (
+
+# Errors
+from bench.error import BenchError
+from bench.model.benchmark import (
+    Benchmark,
+    Variant,
+)
+from bench.model.invocation import (
+    Invocation,
+    InvocationResult,
+    Verdict,
+)
+from bench.model.results import (
     Execution,
     Iteration,
     Report,
@@ -67,20 +76,11 @@ from bench.core.results import (
     report_from_json,
     report_to_json,
 )
+from bench.params import SharedBenchParams, SharedSelectionParams
 from bench.perf import PerfStat
 
-# Formatters
-from bench.report.formatter import (
-    Compact,
-    DefaultSummary,
-    Formatter,
-    GeomeanSummary,
-    Results,
-    Summary,
-)
-
 # Reporters
-from bench.report.reporter import (
+from bench.report import (
     CompositeReporter,
     CsvReporter,
     DirReporter,
@@ -92,20 +92,23 @@ from bench.report.reporter import (
     variant_path,
 )
 
-# BenchAppBuilder abstraction + run pipeline
-from bench.run import BenchAppBuilder, NoBenchmarksMatchedError, bench_app, run
-
 # Runners
-from bench.runner.base import (
+from bench.runner import (
+    DryRunner,
+    Parallel,
     Runner,
-    SuiteMaterializationError,
+    SequentialRunner,
 )
-from bench.runner.dry import DryRunner
-from bench.runner.parallel import Parallel
-from bench.runner.sequential import SequentialRunner
 
-# Errors
-from bench.utils import BenchError
+# Formatters
+from bench.summary.formatter import (
+    Compact,
+    DefaultSummary,
+    Formatter,
+    GeomeanSummary,
+    Results,
+    Summary,
+)
 
 __all__ = [
     # Atoms

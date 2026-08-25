@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from bench import FixedRuns, FloatPerLine, bench, suite
-from bench.builder.context import Params
 from bench.core.metric import StderrMetricSource, StdoutMetricSource
+from bench.params import Params
 
 
 def _mat(b):

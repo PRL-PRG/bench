@@ -6,9 +6,8 @@ from typing import Any
 
 import pytest
 
-from bench.builder.context import (
-    Context,
-    Data,
+from bench.builder import Context, Data
+from bench.params import (
     Params,
     SharedBenchParams,
     SharedReporterParams,

@@ -25,11 +25,20 @@ event.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
+from typing import Any, cast
 
-from bench.core.invocation import InvocationResult, to_argv
-from bench.core.metric import BuildableMetric, Direction
-from bench.core.results import Sample
+from bench.core.metric import BuildableMetric
+from bench.model.invocation import InvocationResult
+from bench.model.results import Direction, Sample
+
+
+def to_argv(command: Any) -> tuple[Any, ...]:
+    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
+    if isinstance(command, (str, bytes, os.PathLike)):
+        return (cast(Any, command),)
+    return tuple(command)
 
 
 class PerfStat(BuildableMetric):

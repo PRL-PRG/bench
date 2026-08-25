@@ -21,10 +21,10 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from bench.builder.benchmark import Benchmark
 from bench.core.process import interrupted
-from bench.core.results import Execution, Report
-from bench.report.reporter import Reporter
+from bench.model.benchmark import Benchmark
+from bench.model.results import Execution, Report
+from bench.report import Reporter
 from bench.runner.base import Runner
 
 

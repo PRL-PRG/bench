@@ -5,11 +5,10 @@ symbol on the package, keeping `from bench import run` pointing at the
 function rather than at this submodule.
 """
 
-from __future__ import annotations, generators
+from __future__ import annotations
 
 import argparse
 import dataclasses
-import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -19,59 +18,51 @@ from rich.text import Text
 from rich.tree import Tree
 
 from bench.builder.base import (
-    BenchmarkPred,
     BuilderBase,
     as_build,
     const,
     merge_sequence,
 )
-from bench.builder.benchmark import Benchmark
-from bench.builder.context import (
-    Params,
-    SharedBenchParams,
-    SharedReporterParams,
-    SharedRunnerParams,
-    SharedSelectionParams,
-    add_dataclass_args,
-    build_dataclass,
-)
-from bench.builder.suite import SuiteBuilder
-from bench.core.checks import run_checks
-from bench.core.fingerprint import (
-    NoProbe,
-    Probe,
-)
-from bench.core.invocation import format_benchmark, format_variant
-from bench.core.results import Report, report_from_json
-from bench.denoise import (
+from bench.builder.default import default_filter, default_reporter, default_runner
+from bench.builder.suite import SuiteBuilder, plan
+from bench.console.theme import console, error_console
+from bench.core.denoise import (
     STATE_PATH,
     denoise_session,
     is_root,
 )
-from bench.report.formatter import DefaultSummary
-from bench.report.reporter import (
-    CompositeReporter,
-    CsvReporter,
-    DirReporter,
-    JsonReporter,
-    ProgressReporter,
-    Reporter,
-    SummaryReporter,
-    console,
-)
-from bench.report.reporter import (
+from bench.core.diagnostic import (
     print_diagnostics as do_print_diagnostics,
 )
-from bench.report.summary import summarize
-from bench.report.theme import error_console
-from bench.runner.base import (
-    Runner,
-    plan,
+from bench.core.diagnostic import run_checks
+from bench.core.fingerprint import (
+    NoProbe,
+    Probe,
 )
-from bench.runner.dry import DryRunner
-from bench.runner.parallel import Parallel
-from bench.runner.sequential import SequentialRunner
-from bench.utils import BenchError, print_exception
+from bench.error import BenchError, print_exception
+from bench.model.benchmark import Benchmark, format_benchmark, format_variant
+from bench.model.results import Report, report_from_json
+from bench.params import (
+    Params,
+    SharedBenchParams,
+    SharedSelectionParams,
+    add_dataclass_args,
+    build_dataclass,
+)
+from bench.report import (
+    CompositeReporter,
+    Reporter,
+    SummaryReporter,
+)
+from bench.runner import (
+    Runner,
+)
+from bench.summary.formatter import DefaultSummary
+from bench.summary.summary import summarize
+
+# ---------------------------------------------------------------------------
+# Base types
+# ---------------------------------------------------------------------------
 
 # HACK: The argument should be "Params or its child" but this is the best
 # we have for now
@@ -85,10 +76,20 @@ class NoBenchmarksMatchedError(BenchError):
     """No benchmark matched the --include/--exclude selection."""
 
 
+# ---------------------------------------------------------------------------
+# Builder helpers
+# ---------------------------------------------------------------------------
+
+
 def as_param_build[T](value: T | ParamFactory[T]) -> ParamFactory[T]:
     if callable(value):
         return cast(ParamFactory[T], value)
     return const(value)
+
+
+# ---------------------------------------------------------------------------
+# The builder
+# ---------------------------------------------------------------------------
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -176,9 +177,7 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
-    def with_probe(
-        self, probe: Probe, override: bool = True
-    ) -> BenchAppBuilder:
+    def with_probe(self, probe: Probe, override: bool = True) -> BenchAppBuilder:
         """Set the probe that snapshots the machine (fingerprint + diagnostics)."""
         return self.replace(
             "probe",
@@ -409,93 +408,6 @@ def bench_app[P: Params](
 
 
 # ---------------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------------
-
-
-def default_reporter(
-    params: Params,
-    *,
-    json: str | Path | JsonReporter | None = None,
-    csv: str | Path | CsvReporter | None = None,
-    dir: str | Path | DirReporter | None = None,
-) -> Reporter | None:
-    """Assemble the builtin reporter bundle: a progress bar and the json, csv and
-    dir output sinks, plus `summary` if one is given.
-
-    Each of `summary`/`json`/`csv`/`dir` is the value to use when the matching CLI
-    flag is unset: the flag wins, else this default, else the sink stays off. An
-    app that always wants a sink supplies its default here, e.g.
-    `with_reporter(lambda p: default_reporter(p, dir=...))`; a non-builtin sink is
-    added by composition, e.g. `CompositeReporter(default_reporter(p), MyReporter())`.
-    """
-    is_params = isinstance(params, SharedReporterParams)
-
-    sinks: list[Reporter] = []
-    if is_params and params.progress:
-        sinks.append(ProgressReporter())
-
-    # A reporter instance is authoritative: the app took control of that sink
-    # (e.g. a DirReporter shared with `perf` via `output_dir`, or a JsonReporter
-    # built with `include_output=True`), so it already folded in the flag.
-    # Otherwise the flag wins over a path default.
-    if isinstance(json, JsonReporter):
-        sinks.append(json)
-    elif j := ((is_params and params.json) or json):
-        sinks.append(JsonReporter(Path(j)))
-
-    if isinstance(csv, CsvReporter):
-        sinks.append(csv)
-    elif c := ((is_params and params.csv) or csv):
-        sinks.append(CsvReporter(Path(c)))
-
-    if isinstance(dir, DirReporter):
-        sinks.append(dir)
-    elif d := ((is_params and params.dir) or dir):
-        sinks.append(DirReporter(Path(d)))
-
-    if len(sinks) == 0:
-        return None
-    elif len(sinks) == 1:
-        return sinks[0]
-    else:
-        return CompositeReporter(*sinks)
-
-
-def default_runner(params: Params) -> Runner | None:
-    if not isinstance(params, SharedRunnerParams):
-        return None
-
-    if params.dry:
-        return DryRunner(verbose=params.verbose)
-    if params.jobs > 1:
-        return Parallel(workers=params.jobs, verbose=params.verbose)
-    return SequentialRunner(verbose=params.verbose)
-
-
-def default_filter(params: Params) -> BenchmarkPred:
-    if not isinstance(params, SharedSelectionParams):
-        return lambda _: True
-
-    inc = [re.compile(pat) for pat in (params.include or [])]
-    exc = [re.compile(pat) for pat in (params.exclude or [])]
-
-    def keep(b: Benchmark) -> bool:
-        # Both spellings of the same variant: the canonical `(k=v, ...)` key and,
-        # when the app sets one, the label the reports show. A pattern written
-        # against what the terminal prints then selects what the user expects,
-        # without the `k=v` form ceasing to work.
-        keys = [format_benchmark(b.suite, b.name, b.variant)]
-        if b.variant_label:
-            keys.append(format_benchmark(b.suite, b.name, b.variant, b.variant_label))
-        if inc and not any(r.search(k) for k in keys for r in inc):
-            return False
-        return not any(r.search(k) for k in keys for r in exc)
-
-    return keep
-
-
-# ---------------------------------------------------------------------------
 # Argparse builders
 # ---------------------------------------------------------------------------
 
@@ -551,6 +463,7 @@ def _make_run_parser(params: type, description: str = "") -> argparse.ArgumentPa
 # ---------------------------------------------------------------------------
 
 
+# TODO: This should live somewhere else
 def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
     """Group planned benchmarks into a `suite -> benchmark -> variant` tree.
 

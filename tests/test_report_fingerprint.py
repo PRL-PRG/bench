@@ -3,8 +3,9 @@
 import json
 from pathlib import Path
 
-from bench.core.fingerprint import Diagnostic, Fingerprint
-from bench.core.results import (
+from bench.core.diagnostic import Diagnostic
+from bench.core.fingerprint import Fingerprint
+from bench.model.results import (
     Execution,
     Iteration,
     Report,
@@ -12,7 +13,7 @@ from bench.core.results import (
     report_from_json,
     report_to_json,
 )
-from bench.report.reporter import CsvReporter, DirReporter, JsonReporter
+from bench.report import CsvReporter, DirReporter, JsonReporter
 
 
 def _run() -> Execution:

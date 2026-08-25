@@ -19,10 +19,10 @@ from bench import (
     Summary,
     SummaryReporter,
 )
-from bench.core.invocation import Variant
-from bench.core.results import Direction
-from bench.report.summary import Stat, summarize
-from bench.report.theme import BENCHR_THEME
+from bench.console.theme import BENCHR_THEME
+from bench.model.benchmark import Variant
+from bench.model.results import Direction
+from bench.summary.summary import Stat, summarize
 
 
 def _smp(

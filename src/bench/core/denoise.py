@@ -17,7 +17,7 @@ import os
 from collections.abc import Callable, Generator
 from pathlib import Path
 
-from bench.core.fingerprint import (
+from bench.core.fingerprint.system.linux import (
     ASLR,
     CPU_DIR,
     CPUFREQ_BOOST,
@@ -27,7 +27,7 @@ from bench.core.fingerprint import (
     SWAPPINESS,
     THP_ENABLED,
 )
-from bench.utils import read_bracketed, read_text, write_text
+from bench.io import read_bracketed, read_text, write_text
 
 # How to read a knob's current value (for save/status). Most are read verbatim.
 # THP-style files (`a [b] c`) need the bracketed token extracted.

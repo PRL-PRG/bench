@@ -22,35 +22,27 @@ import dataclasses
 import itertools
 import os
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from bench.builder.base import (
     BuilderBase,
-    LabelFn,
     merge_mapping,
 )
-from bench.builder.context import Context, Data, Params
-from bench.core.invocation import (
-    Invocation,
-    SuccessFn,
-    Variant,
-    default_success,
-    format_variant,
-)
-from bench.core.metric import (
-    Metric,
-)
-from bench.core.outlier import ModifiedZScore, OutlierDetection
-from bench.core.policy import FixedRuns, StoppingPolicy
-from bench.runner.controller import Controller
+from bench.builder.context import Context, Data
+from bench.builder.default import default_label, default_success
+from bench.core.outlier import ModifiedZScore
+from bench.core.policy import FixedRuns
+from bench.model.benchmark import Benchmark, Variant
+from bench.model.invocation import Invocation
+from bench.params import Params
+from bench.runner import Controller
 
-
-def default_label(b: Benchmark) -> str:
-    """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
-    return format_variant(b.variant).strip(" ()")
+# ---------------------------------------------------------------------------
+# The builder
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,30 +209,6 @@ class BenchmarkBuilder(BuilderBase):
             data=self.data,
             label_fn=label_fn,
         )
-
-
-# TODO: Move to model
-@dataclass(frozen=True, slots=True)
-class Benchmark:
-    """One fully-resolved benchmark variant."""
-
-    suite: str
-    name: str
-    invocation: Invocation
-    variant: Variant
-    metrics: Sequence[Metric]
-    success: SuccessFn
-    warmup: StoppingPolicy
-    runs: StoppingPolicy
-    outlier_detection: OutlierDetection
-    cooldown: float
-    controller: Controller
-    data: Mapping[str, Any]
-    label_fn: LabelFn
-
-    @property
-    def variant_label(self) -> str:
-        return self.label_fn(self)
 
 
 # ---------------------------------------------------------------------------

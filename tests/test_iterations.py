@@ -32,9 +32,9 @@ from bench import (
     report_from_json,
     suite,
 )
-from bench.builder.context import Params
+from bench.builder.suite import plan
 from bench.core.metric import StdoutMetricSource
-from bench.runner.base import plan
+from bench.params import Params
 
 
 def _echo_lines(*values) -> list[str]:

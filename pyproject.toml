@@ -14,7 +14,7 @@ dependencies = [
 # Build
 # ----------
 [project.scripts]
-bench = "bench.__main__:cli"
+bench = "bench.__main__:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -3,8 +3,8 @@
 from typing import Any
 
 from bench import Execution, Iteration, Report, Sample, report_from_json, report_to_json
-from bench.core.invocation import Variant
-from bench.core.results import Direction
+from bench.model.benchmark import Variant
+from bench.model.results import Direction
 
 
 def _smp(

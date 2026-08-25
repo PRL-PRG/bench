@@ -33,8 +33,8 @@ from bench import (
     from_files,
     suite,
 )
-from bench.core.results import Report
-from bench.report.reporter import console
+from bench.console.theme import console
+from bench.model.results import Report
 
 HERE = Path(__file__).resolve().parent
 

@@ -54,7 +54,7 @@ from bench import (
     bench_app,
     suite,
 )
-from bench.run import default_reporter
+from bench.builder import default_reporter
 
 
 class CpythonParams(SharedBenchParams):

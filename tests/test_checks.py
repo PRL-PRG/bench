@@ -4,7 +4,7 @@
 skipping itself when its field is `None`.
 """
 
-from bench.core.checks import run_checks
+from bench.core.diagnostic import run_checks
 from bench.core.fingerprint import Fingerprint
 
 

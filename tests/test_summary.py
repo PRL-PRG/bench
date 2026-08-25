@@ -6,10 +6,10 @@ import math
 import re
 
 from bench import Execution, Iteration, Report, Sample
-from bench.core.invocation import Variant
-from bench.core.results import Direction
-from bench.report.render import RICH
-from bench.report.summary import (
+from bench.console.render import RICH
+from bench.model.benchmark import Variant
+from bench.model.results import Direction
+from bench.summary.summary import (
     by_axis,
     compact,
     geomean,
@@ -443,8 +443,8 @@ def test_compact_no_baseline_has_geomean_and_unit():
 
 
 def test_stat_line_matches_summary_format():
-    from bench.report.render import PLAIN
-    from bench.report.summary import stat_line
+    from bench.console.render import PLAIN
+    from bench.summary.summary import stat_line
 
     r = Report(
         executions=[

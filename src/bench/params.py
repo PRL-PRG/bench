@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import types
+import typing
+from dataclasses import dataclass, field, fields, is_dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, dataclass_transform
+
+
+@dataclass_transform(
+    frozen_default=True,
+    kw_only_default=True,
+    field_specifiers=(field,),
+)
+class ParamsMeta(type):
+    """Makes every `Params` subclass a frozen, slotted, keyword-only dataclass.
+
+    A user declaring params writes a plain class body of annotated fields; the
+    `@dataclass(...)` call and its options live here, so every params class is
+    uniform. `dataclass_transform` tells type checkers the same thing, so the
+    synthesized `__init__` and the field types are checked as usual.
+    """
+
+    def __new__(
+        mcls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        /,
+        **kwargs: Any,
+    ):
+        cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+        if namespace.get("_params_dataclass_applied"):
+            return cls
+        setattr(cls, "_params_dataclass_applied", True)
+        return dataclass(frozen=True, kw_only=True)(cls)
+
+
+class Params(metaclass=ParamsMeta):
+    """Base for a user's params class: subclass it and declare annotated fields.
+
+    Needs no `@dataclass` decorator - `ParamsMeta` applies it, frozen, slotted
+    and keyword-only."""
+
+    if TYPE_CHECKING:
+        # Any attribute access is "ok" from the view of typechecker
+        def __getattr__(self, name: str) -> Any: ...
+
+
+class SharedSelectionParams(Params):
+    """The bench selection flags (`--include`/`--exclude`). A user's params
+    dataclass inherits this to opt into `--include`/`--exclude` on the CLI and
+    have the default `with_filter(...)` honor them."""
+
+    include: list[str] | None = field(
+        default=None,
+        metadata={
+            "metavar": "REGEX",
+            "help": "Keep only benchmarks whose full name matches REGEX. "
+            "Repeatable (OR semantics).",
+        },
+    )
+    exclude: list[str] | None = field(
+        default=None,
+        metadata={
+            "metavar": "REGEX",
+            "help": "Drop benchmarks whose full name matches REGEX. "
+            "Repeatable. Wins over --include.",
+        },
+    )
+
+
+class SharedRunnerParams(Params):
+    jobs: int = field(
+        default=1,
+        metadata={
+            "flags": ("-j",),
+            "metavar": "N",
+            "help": "Run up to N benchmarks in parallel (default: 1, sequential).",
+        },
+    )
+
+    dry: bool = field(
+        default=False,
+        metadata={
+            "action": "store_true",
+            "help": "Show what shall happen but without running anything.",
+        },
+    )
+
+    verbose: bool = field(
+        default=False,
+        metadata={"flags": ("-v",), "action": "store_true", "help": "Verbose output."},
+    )
+
+
+class SharedReporterParams(Params):
+    """The bench runtime + selection flags. A user's params dataclass inherits
+    this to opt into the full builtin flag set (`-j`/`--progress`/`--json`/...
+    plus `--include`/`--exclude`) and have the default runner/reporter/filter
+    honor them. When a user declares no params, this is the effective params
+    type, so the builtin flags are always available out of the box."""
+
+    progress: bool = field(
+        default=True,
+        metadata={"help": "Suppress the progress bar with --no-progress."},
+    )
+
+    json: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "FILE",
+            "help": "Write a JSON report of every sample to FILE.",
+        },
+    )
+
+    csv: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "FILE",
+            "help": "Write a CSV report of every sample to FILE.",
+        },
+    )
+
+    dir: str | None = field(
+        default=None,
+        metadata={
+            "metavar": "DIR",
+            "help": "Write a per-execution tree "
+            "(stdout/stderr/exitcode/seq) under DIR.",
+        },
+    )
+
+
+class SharedBenchParams(
+    SharedSelectionParams, SharedRunnerParams, SharedReporterParams
+):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Argparse adaptor
+# ---------------------------------------------------------------------------
+
+
+def add_dataclass_args(
+    # argparse exposes no public name for the add_argument_group() return type.
+    parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
+    dc: type,
+    *,
+    skip: set[str] | None = None,
+) -> None:
+    """Generate `--<name>` arguments from a dataclass's fields.
+
+    Per-field `field(metadata=...)` keys refine the generated argument:
+      - `flags`: extra option strings, e.g. `("-j",)`.
+      - `help`, `metavar`: verbatim overrides.
+      - `action`: an argparse action override, e.g. `"store_true"`.
+    A `list[T]` field becomes a repeatable `action="append"` argument. `skip`
+    omits fields by name (used to split inherited fields across argument groups).
+    """
+    if not is_dataclass(dc):
+        raise TypeError(f"{dc!r} must be a @dataclass")
+    try:
+        hints = typing.get_type_hints(dc)
+    except Exception:
+        hints = {}
+    for f in fields(dc):
+        if skip and f.name in skip:
+            continue
+        flags = ["--" + f.name.replace("_", "-"), *f.metadata.get("flags", ())]
+        kwargs: dict[str, Any] = {"dest": f.name}
+        bare_type, optional = _unwrap_optional(hints.get(f.name, f.type))
+        action = f.metadata.get("action")
+        if action:
+            kwargs["action"] = action
+        elif bare_type is bool:
+            kwargs["action"] = argparse.BooleanOptionalAction
+        elif typing.get_origin(bare_type) is list:
+            elem = typing.get_args(bare_type)[0]
+            kwargs["action"] = "append"
+            kwargs["type"] = _coerce_type(elem)
+            kwargs["metavar"] = f.metadata.get("metavar", _metavar(elem))
+        else:
+            kwargs["type"] = _coerce_type(bare_type)
+            kwargs["metavar"] = f.metadata.get("metavar", _metavar(bare_type))
+
+        factory = f.default_factory
+        has_default = (
+            f.default is not dataclasses.MISSING or factory is not dataclasses.MISSING
+        )
+        if has_default:
+            default: Any = f.default if factory is dataclasses.MISSING else factory()
+            kwargs["default"] = default
+            kwargs["help"] = f.metadata.get("help", f"(default: {default})")
+        elif optional:
+            kwargs["default"] = None
+            kwargs["help"] = f.metadata.get("help", "(optional)")
+        else:
+            kwargs["required"] = True
+            if "help" in f.metadata:
+                kwargs["help"] = f.metadata["help"]
+
+        parser.add_argument(*flags, **kwargs)
+
+
+def build_dataclass[T: Params](dc: type[T], namespace: argparse.Namespace) -> T:
+    """Instantiate the user dataclass from an argparse Namespace."""
+    names = set(f.name for f in fields(dc))
+    args = {k: v for k, v in vars(namespace).items() if k in names}
+    return dc(**args)
+
+
+# ---------------------------------------------------------------------------
+# Type plumbing
+# ---------------------------------------------------------------------------
+
+
+def _unwrap_optional(t: Any) -> tuple[Any, bool]:
+    # Resolve string annotations if needed (from __future__ import annotations).
+    if isinstance(t, str):
+        return t, False  # ambiguous, argparse will treat as str
+
+    origin = typing.get_origin(t)
+    if origin in (typing.Union, types.UnionType):
+        args = [a for a in typing.get_args(t) if a is not type(None)]
+        if len(args) == 1:
+            return args[0], True
+    return t, False
+
+
+def _coerce_type(t: Any) -> Any:
+    # Path is the only one not directly a callable that yields the right value
+    # from a string, but Path(str) does, so it's fine.
+    if t is Path:
+        return Path
+    if t in (int, float, str):
+        return t
+    # Fallback: treat as a callable already
+    return t if callable(t) else str
+
+
+def _metavar(t: Any) -> str:
+    if t is Path:
+        return "PATH"
+    if t is int:
+        return "INT"
+    if t is float:
+        return "FLOAT"
+    if t is bool:
+        return ""
+    return "STR"

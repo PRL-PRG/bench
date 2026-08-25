@@ -10,11 +10,11 @@ from typing import Any, Literal, Mapping
 
 from cattrs import structure, unstructure
 
-from bench.core.fingerprint import Diagnostic, Fingerprint
-from bench.core.invocation import Variant, format_identifier
-from bench.core.process import Command
+from bench.core.diagnostic import Diagnostic
+from bench.core.fingerprint import Fingerprint
+from bench.model.benchmark import Variant, format_identifier
+from bench.model.invocation import Command
 
-# TODO: Move to model
 type Direction = Literal["lower better", "higher better", "uncomparable"]
 
 
@@ -80,18 +80,6 @@ class Execution:
         )
 
 
-def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
-    """Last non-empty line of stderr (then stdout), truncated, for failures."""
-    for text in (stderr, stdout):
-        if not text:
-            continue
-        for line in reversed(text.splitlines()):
-            stripped = line.strip()
-            if stripped:
-                return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
-    return "(no output)"
-
-
 @dataclass(slots=True)
 class Report:
     """All Executions from a benchmarking session, plus the machine fingerprint
@@ -141,6 +129,28 @@ class Report:
 
     def add(self, execution: Execution) -> None:
         self.executions.append(execution)
+
+
+# ---------------------------------------------------------------------------
+# Format
+# ---------------------------------------------------------------------------
+
+
+def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
+    """Last non-empty line of stderr (then stdout), truncated, for failures."""
+    for text in (stderr, stdout):
+        if not text:
+            continue
+        for line in reversed(text.splitlines()):
+            stripped = line.strip()
+            if stripped:
+                return stripped[:max_len] + ("…" if len(stripped) > max_len else "")
+    return "(no output)"
+
+
+# ---------------------------------------------------------------------------
+# Serialize
+# ---------------------------------------------------------------------------
 
 
 _OUTPUT_FIELDS = ("stdout", "stderr", "env")
