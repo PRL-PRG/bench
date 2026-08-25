@@ -204,6 +204,8 @@ def add_dataclass_args(
     Per-field `field(metadata=...)` keys refine the generated argument:
       - `flags`: extra option strings, e.g. `("-j",)`.
       - `group`: a group to group this under
+      - `positional`: make it a positional argument instead of an option; a
+        `list[T]` positional becomes `nargs="+"` rather than repeatable
       - any other keyword: other arguments to argparse `add_argument`
     A `list[T]` field becomes a repeatable `action="append"` argument. `skip`
     omits fields by name (used to split inherited fields across argument groups).
@@ -223,7 +225,11 @@ def add_dataclass_args(
             continue
 
         kwargs = cast(_Kwargs, dict(f.metadata))
-        flags = ["--" + f.name.replace("_", "-"), *kwargs.pop("flags", ())]
+        positional = kwargs.pop("positional", False)
+        if positional:
+            flags = [f.name]
+        else:
+            flags = ["--" + f.name.replace("_", "-"), *kwargs.pop("flags", ())]
 
         typ = hints.get(f.name, f.type)
         bare_type, optional = _unwrap_optional(typ)
@@ -233,7 +239,10 @@ def add_dataclass_args(
             kwargs.setdefault("action", argparse.BooleanOptionalAction)
         elif typing.get_origin(bare_type) is list:
             elem = typing.get_args(bare_type)[0]
-            kwargs.setdefault("action", "append")
+            if positional:
+                kwargs.setdefault("nargs", "+")
+            else:
+                kwargs.setdefault("action", "append")
             kwargs.setdefault("type", _coerce_type(elem))
             kwargs.setdefault("metavar", _metavar(elem))
         else:
@@ -262,7 +271,8 @@ def add_dataclass_args(
         elif optional:
             kwargs["default"] = None
             kwargs["help"] += " (optional)"
-        else:
+        elif not positional:
+            # argparse rejects `required` on a positional - it already is.
             kwargs.setdefault("required", True)
 
         group = kwargs.pop("group", None)
