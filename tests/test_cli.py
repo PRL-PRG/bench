@@ -245,6 +245,25 @@ def test_bench_no_progress_omits_progress_lines():
     assert "sleep 0.01" in r.stdout
 
 
+def test_app_no_progress_still_runs_and_summarizes(capsys):
+    # --no-progress with no output file leaves the builtin bundle with zero
+    # sinks. That is not an error state: get_reporter always appends a summary,
+    # so it falls through to that alone rather than refusing to build a reporter.
+    s = suite(
+        "S",
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    report = bench_app().add(s).run_cli(["--no-progress"])
+    assert len(report.executions) == 1
+    out = capsys.readouterr().out
+    assert "S/x #1 ok" not in out  # no progress lines
+    assert "elapsed" in out  # the default summary still prints
+
+
 def test_bench_non_tty_shows_plain_progress():
     r = _run("run", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
@@ -496,6 +515,53 @@ def test_include_selects_single_variant():
         .run_cli(["--include", "jdk=17", "--no-progress"])
     )
     assert [r.variant.get("jdk") for r in report.executions] == ["17"]
+
+
+def test_selection_composes_with_an_app_filter():
+    # --include/--exclude reach the plan as an app-level filter, which the
+    # builder accumulates rather than replaces: the app's own predicate and the
+    # CLI selection both have to pass.
+    s = suite(
+        "S",
+        bench("keep").with_cwd(Path("/tmp")).with_metric(Time()),
+        bench("keep-not-really").with_cwd(Path("/tmp")).with_metric(Time()),
+        bench("drop").with_cwd(Path("/tmp")).with_metric(Time()),
+    )
+    app = (
+        bench_app()
+        .add(s)
+        .with_command(["true"])
+        .with_runs(1)
+        .with_filter(lambda b: not b.name.endswith("really"))
+    )
+    planned = app.plan_benchmarks(
+        SharedBenchParams(include=["keep"]), use_defaults=True
+    )
+    assert {b.name for b in planned} == {"keep"}
+    # Without a selection the app's own filter still applies on its own.
+    planned = app.plan_benchmarks(SharedBenchParams(), use_defaults=True)
+    assert {b.name for b in planned} == {"keep", "drop"}
+
+
+def test_selection_reaches_a_benchmarks_own_filter():
+    # The selection is inherited down the tree, so it composes with a filter set
+    # on the benchmark itself rather than being applied after the fact.
+    s = suite(
+        "S",
+        bench("a")
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_filter(lambda b: False),
+        bench("b").with_cwd(Path("/tmp")).with_metric(Time()),
+    )
+    planned = (
+        bench_app()
+        .add(s)
+        .with_command(["true"])
+        .with_runs(1)
+        .plan_benchmarks(SharedBenchParams(include=["."]), use_defaults=True)
+    )
+    assert {b.name for b in planned} == {"b"}
 
 
 def test_bad_regex_raises():

@@ -26,8 +26,13 @@ from bench import (
     report_from_json,
     suite,
 )
-from bench.builder.context import Params
+from bench.builder.context import (
+    Params,
+    SharedReporterParams,
+    SharedRunnerParams,
+)
 from bench.core.metric import StdoutMetricSource
+from bench.run import default_runner
 from bench.runner.base import plan
 
 
@@ -532,3 +537,24 @@ def test_bare_reporter_takes_full_control(tmp_path: Path):
     )
     assert direct.exists()  # bare reporter ran, used as-is
     assert not flag.exists()  # --json sink dropped under full control
+
+
+# ----- default_runner: driven by the runner half of the shared params ------
+
+
+def test_default_runner_reads_the_runner_flags():
+    assert isinstance(default_runner(SharedRunnerParams()), SequentialRunner)
+    assert isinstance(default_runner(SharedRunnerParams(jobs=4)), Parallel)
+    assert isinstance(default_runner(SharedRunnerParams(dry=True)), DryRunner)
+    # --dry outranks -j: nothing is spawned, so there is nothing to parallelize.
+    assert isinstance(default_runner(SharedRunnerParams(jobs=4, dry=True)), DryRunner)
+
+
+def test_default_runner_declines_params_without_the_runner_half():
+    # The runner flags live on SharedRunnerParams alone; the reporter half does
+    # not imply them, so there is nothing to build a default runner from.
+    class NoRunnerFlags(SharedReporterParams):
+        pass
+
+    assert default_runner(NoRunnerFlags()) is None
+    assert default_runner(Params()) is None

@@ -14,47 +14,55 @@ defect. **No `src/` files were modified by the test migration.**
 > the failure list and this file stay in step.
 
 **Current state:** `pyright` reports **0 errors** across `src/`, `tests/` and
-`examples/`. `pytest` reports **1 failure**, BUG-1, the only entry open. The
-aggregate failure set equals the union of the isolated per-file runs:
-387 passed / 1 failed / 2 skipped either way.
+`examples/`. `pytest` is **fully green**: 421 passed / 0 failed / 2 skipped, and
+the aggregate matches the union of the isolated per-file runs. **No defect is
+open**, so there is no red test and no `RED ON PURPOSE` marker anywhere in
+`tests/`.
 
-This file was reset: every defect closed in an earlier pass — fixed or ruled
-intended — has been dropped rather than kept as history, and the numbering
-restarts from 1. Only what is still actionable remains.
+BUG-2 of the previous pass (`--no-progress` alone made a `bench_app`
+unrunnable) is **fixed** by `0e07929 Fix default reporter after port` and has
+been dropped. Its 30-test blast radius is green, the markers are gone, and the
+focused pin survives as a green regression test,
+`test_cli.py::test_app_no_progress_still_runs_and_summarizes`.
 
 ---
 
 ## ❗ Open defects
 
-### BUG-1 — an unnamed sub-suite leaves a dangling separator in the path (Low)
-`SuiteBuilder.materialize` joins a nested suite's name onto its parent's with
-`actual_name = self.name if parent_suite == "" else f"{parent_suite}/{self.name}"`
-(`builder/suite.py:114`). The guard collapses an empty *parent* name but not an
-empty *child* one, so an unnamed grouping suite — a supported state:
-`SuiteBuilder()` defaults `name=""` and `with_name("")` is special-cased to
-allow it — contributes an empty path component:
-```python
-suite("P", suite("", bench("x").with_command(["true"]))).materialize(Params())[0].suite
-# 'P/'      want 'P'
-suite("", suite("C", bench("x").with_command(["true"]))).materialize(Params())[0].suite
-# 'C'       the parent side already collapses
-```
-It is not only cosmetic: `suite` is what `format_benchmark` builds the selection
-key from, so the benchmark above is addressed as `P//x` by `--include` /
-`--exclude` and printed that way by `--list` and every reporter.
-Fix: skip the empty component on either side rather than only the parent's.
-Test: `test_suite.py::test_unnamed_subsuite_does_not_add_a_path_component`
-(the parent-side half is green next to it, in
-`test_unnamed_parent_suite_does_not_prefix_its_subsuites`).
+None.
 
 ---
 
 ## 🔍 Low-severity observations (no red test)
 
+- **`default_reporter`'s docstring still documents a parameter it no longer
+  has.** The `summary=` keyword moved out of `default_reporter` into
+  `get_reporter` in `0e07929`, but the docstring (`run.py:423-425`) still opens
+  with "plus `summary` if one is given" and lists "Each of
+  `summary`/`json`/`csv`/`dir`". Only the three sink keywords remain. Purely
+  documentation, so nothing asserts it; the behaviour it describes is covered by
+  `test_reporter.py::test_summary_channel_keeps_progress_and_swaps_summary` and
+  `::test_summary_channel_survives_an_empty_sink_bundle`.
+- **`SharedRunnerParams` and `SharedReporterParams` are not exported.**
+  `SharedBenchParams` split into three independent opt-ins
+  (`builder/context.py:122`, `:146`), and `SharedSelectionParams` and
+  `SharedBenchParams` are both in `bench.__all__` — the runner and reporter
+  halves are not. A user who wants only `-j` has to reach into
+  `bench.builder.context`, and `default_runner`'s own error message names a
+  class they cannot import from the package. Whether the halves are public is a
+  design call, so no test pins it; if they are, they belong in `__all__`
+  alongside the other two. Covered behaviourally by
+  `test_context.py::test_each_shared_half_contributes_only_its_own_flags`.
+- **The split left the shared-params docstring on the wrong class.**
+  `SharedReporterParams` (`builder/context.py:146`) carries the text describing
+  the *whole* flag set ("the full builtin flag set (`-j`/`--progress`/`--json`/…
+  plus `--include`/`--exclude`)"), which is now `SharedBenchParams` — and
+  `SharedBenchParams` (`builder/context.py:184`) has no docstring at all. Purely
+  documentation, so nothing asserts it.
 - **No way to discard leading iterations inside one execution.**
   `Iteration.warmup` still exists, the Controller still stamps it, and
   `summarize` still excludes flagged iterations from the stats while counting
-  them (`report/summary.py:115`) — but nothing can ever set it for a *subset* of
+  them (`report/summary.py:119`) — but nothing can ever set it for a *subset* of
   one execution's iterations. `run_benchmark` (`runner/controller.py:192`) flags
   **every** iteration of an execution while the warmup policy is unsatisfied,
   and observes the policy once per execution, so `with_warmup(2)` means "two
@@ -71,9 +79,10 @@ Test: `test_suite.py::test_unnamed_subsuite_does_not_add_a_path_component`
   `-r`), so bench never sees it. Fix, if it is ever wanted: let the warmup policy
   observe iterations, or add a "first N iterations of each execution are warmup"
   setting. The test that pinned it is kept but **skipped**, not red —
-  `test_iterations.py::test_leading_iterations_can_be_marked_warmup`.
+  `test_iterations.py::test_leading_iterations_can_be_marked_warmup`. There is a
+  `# TODO: Move warmup to execution (?)` at the site, so this is known.
 - **`--list` renders nested suites flat.** `_list_planned_benchmarks`
-  (`run.py:467`) groups by the `suite` string, so a sub-suite shows up as one
+  (`run.py:554`) groups by the `suite` string, so a sub-suite shows up as one
   `Parent/Child` node beside its parent rather than nested under it. The tree it
   builds is `suite -> benchmark -> variant`, which is what its docstring
   promises; whether the new hierarchy should be reflected is a design call, not

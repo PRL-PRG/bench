@@ -58,6 +58,8 @@ def test_example_imports(path: Path):
 def test_example_runs(path: Path):
     if path.name == PERF_EXAMPLE and not _perf_available():
         pytest.skip("perf example requires Linux with perf available")
+    # --no-progress keeps this layer's output readable, and an example that
+    # configures no output sink of its own must still run under it.
     proc = subprocess.run(
         [sys.executable, str(path), "--no-progress"],
         capture_output=True,

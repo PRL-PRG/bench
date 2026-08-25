@@ -595,8 +595,7 @@ def test_unnamed_parent_suite_does_not_prefix_its_subsuites():
 
 
 def test_unnamed_subsuite_does_not_add_a_path_component():
-    # RED ON PURPOSE: BUG-1 - an empty *parent* name collapses (the test above)
-    # but an empty *sub-suite* name does not, so an unnamed grouping suite leaves
-    # a dangling separator in the suite path and in every selection key.
+    # An unnamed grouping suite must not leave a dangling separator in the suite
+    # path, which is also the selection key `--include`/`--exclude` match on.
     s = suite("P", suite("", _b("x"))).with_command(["true"])
     assert [b.suite for b in _mat(s)] == ["P"]

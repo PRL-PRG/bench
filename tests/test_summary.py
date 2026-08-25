@@ -269,6 +269,18 @@ def test_scale_unit_kb_to_mb():
     assert unit == "MB" and abs(sc - 1 / 1024) < 1e-12
 
 
+def test_scale_unit_bytes_step_up_by_1024():
+    # A raw-byte counter climbs kB -> MB -> GB; below 1 kiB it stays in "B".
+    assert scale_unit(512.0, "B") == (1.0, "B")
+    for value, exponent, unit in [
+        (4096.0, 1, "kB"),
+        (5 * 1024**2, 2, "MB"),
+        (3 * 1024**3, 3, "GB"),
+    ]:
+        sc, u = scale_unit(value, "B")
+        assert u == unit and abs(sc - 1 / 1024**exponent) < 1e-18
+
+
 # ----- views -----------------------------------------------------------------
 
 

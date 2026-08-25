@@ -11,6 +11,9 @@ from bench.builder.context import (
     Data,
     Params,
     SharedBenchParams,
+    SharedReporterParams,
+    SharedRunnerParams,
+    SharedSelectionParams,
     add_dataclass_args,
     build_dataclass,
 )
@@ -163,3 +166,57 @@ def _shared_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     add_dataclass_args(p, SharedBenchParams)
     return p
+
+
+# ----- the shared params halves -------------------------------------------
+
+
+def _params_parser(params: type[Params]) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser()
+    add_dataclass_args(p, params)
+    return p
+
+
+def _flags(params: type[Params]) -> set[str]:
+    return {
+        opt
+        for action in _params_parser(params)._actions
+        for opt in action.option_strings
+        if opt.startswith("--")
+    } - {"--help"}
+
+
+def test_each_shared_half_contributes_only_its_own_flags():
+    # The three halves are independent opt-ins: a params class that only wants
+    # `-j` must not also acquire `--json` or `--include`.
+    assert _flags(SharedRunnerParams) == {"--jobs", "--dry", "--verbose"}
+    assert _flags(SharedReporterParams) == {
+        "--progress",
+        "--no-progress",
+        "--json",
+        "--csv",
+        "--dir",
+    }
+    assert _flags(SharedSelectionParams) == {"--include", "--exclude"}
+
+
+def test_shared_bench_params_is_the_union_of_the_halves():
+    # SharedBenchParams composes all three by multiple inheritance, which only
+    # works because Params is not slotted (slotted bases collide in layout).
+    halves = SharedRunnerParams, SharedReporterParams, SharedSelectionParams
+    assert all(issubclass(SharedBenchParams, h) for h in halves)
+    assert set(SharedBenchParams.__dataclass_fields__) == {
+        f for h in halves for f in h.__dataclass_fields__
+    }
+    assert _flags(SharedBenchParams) == {f for h in halves for f in _flags(h)}
+
+
+def test_a_user_params_class_can_pick_one_half():
+    class RunnerOnly(SharedRunnerParams):
+        label: str = "x"
+
+    p = build_dataclass(
+        RunnerOnly, _params_parser(RunnerOnly).parse_args(["--jobs", "4"])
+    )
+    assert p.jobs == 4 and p.label == "x"
+    assert not hasattr(p, "progress")

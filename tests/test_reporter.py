@@ -24,13 +24,14 @@ from bench import (
     report_from_json,
     suite,
 )
-from bench.builder.context import Params
+from bench.builder.context import Params, SharedReporterParams, SharedRunnerParams
 from bench.core.invocation import Variant
 from bench.core.metric import StdoutMetricSource
 from bench.core.results import Execution, Iteration, Report, Sample
 from bench.report.reporter import _TUI
 from bench.report.reporter import DirReporter as _DirReporter
 from bench.report.theme import BENCHR_THEME
+from bench.run import default_reporter
 from bench.runner.base import plan
 
 
@@ -434,7 +435,7 @@ def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
     # bench_app(summary=...) must keep the progress bar (and the CLI sinks)
     # while replacing only the default summary. The composition used to happen
     # inside default_reporter(params, summary); it now happens in
-    # BenchAppBuilder.run, so assert the behaviour rather than the plumbing.
+    # get_reporter, so assert the behaviour rather than the plumbing.
     buf = io.StringIO()
     marker = SummaryReporter(
         target_console=Console(file=buf, force_terminal=False, width=200)
@@ -453,6 +454,30 @@ def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
     assert "S/x #1 ok" in capsys.readouterr().out
     # ...while the summary went to the swapped-in reporter alone.
     assert "elapsed" in buf.getvalue()
+
+
+def test_summary_channel_survives_an_empty_sink_bundle(capsys):
+    # With --no-progress and no output file the flag-driven bundle is empty, so
+    # the swapped-in summary becomes the whole reporter - it must not be dropped
+    # along with the sinks, nor joined by the default summary it replaced.
+    buf = io.StringIO()
+    marker = SummaryReporter(
+        target_console=Console(file=buf, force_terminal=False, width=200)
+    )
+    s = suite(
+        "S",
+        bench("x")
+        .with_command(["true"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    bench_app(summary=marker).add(s).run_cli(["--no-progress"])
+
+    assert "elapsed" in buf.getvalue()  # the app's summary ran
+    out = capsys.readouterr().out
+    assert "S/x #1 ok" not in out  # no progress lines
+    assert "elapsed" not in out  # and no second, default summary
 
 
 def test_app_reporter_replaces_the_whole_reporter(capsys):
@@ -516,3 +541,37 @@ def test_task_bar_carries_eta_column():
     assert any(
         isinstance(col, _TUI._EtaColumn) for col in rep._tui.task_progress.columns
     )
+
+
+# ----- default_reporter: flags from the reporter half, plus app defaults ---
+
+
+def _sinks(reporter) -> list[type]:
+    if reporter is None:
+        return []
+    if isinstance(reporter, CompositeReporter):
+        return [type(r) for r in reporter.reporters]
+    return [type(reporter)]
+
+
+def test_default_reporter_reads_the_reporter_flags(tmp_path: Path):
+    p = SharedReporterParams(json=str(tmp_path / "r.json"), csv=str(tmp_path / "r.csv"))
+    assert _sinks(default_reporter(p)) == [ProgressReporter, JsonReporter, CsvReporter]
+
+
+def test_default_reporter_ignores_the_flags_it_cannot_see(tmp_path: Path):
+    # A params class that skips the reporter half has no --json/--progress to
+    # read, but the app's own sink defaults still apply - the flags are an
+    # opt-in, not a precondition for using the builtin bundle.
+    class NoReporterFlags(SharedRunnerParams):
+        pass
+
+    reporter = default_reporter(NoReporterFlags(), dir=tmp_path / "out")
+    assert _sinks(reporter) == [DirReporter]
+
+
+def test_default_reporter_is_none_when_every_sink_is_off():
+    # `--no-progress` with no output file leaves nothing to report to. The
+    # bundle says so by returning None rather than an empty composite.
+    assert default_reporter(SharedReporterParams(progress=False)) is None
+    assert default_reporter(Params()) is None
