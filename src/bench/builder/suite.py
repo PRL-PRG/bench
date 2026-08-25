@@ -46,6 +46,13 @@ class SuiteBuilder(BuilderBase):
     shuffle: bool = False
     shuffle_seed: int | None = None
 
+    # ----- modify multiple parameters at once -------------------------
+
+    def implace_modify(
+        self, fun: Callable[[SuiteBuilder, SuiteContext[Any]], SuiteBuilder]
+    ) -> SuiteBuilder:
+        return suite("").add_suite_generator(lambda ctx: [fun(self, ctx)])
+
     # ----- name -----------
 
     def with_name(self, name: str, override: bool = False) -> SuiteBuilder:
