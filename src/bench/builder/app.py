@@ -436,9 +436,12 @@ def _make_run_parser(params: type, description: str = "") -> argparse.ArgumentPa
         ("bench flags", runtime_names),
         ("selection", selection_names),
     ):
+        # TODO: fix
+        _ = title
         if names:
             add_dataclass_args(
-                p.add_argument_group(title), params, skip=all_names - names
+                # p.add_argument_group(title), params, skip=all_names - names
+                p, params, skip=all_names - names
             )
 
     p.add_argument(
