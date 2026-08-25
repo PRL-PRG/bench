@@ -5,16 +5,16 @@ import itertools
 from pathlib import Path
 from typing import Any
 
-from bench.core.fingerprint import Fingerprint
+from bench.core.fingerprint import Fingerprint, display_items
 from bench.model.results import Report
 from bench.report.base import Reporter
 
 
 def _fingerprint_comments(fingerprint: Fingerprint | None) -> list[str]:
-    """`# key: value` lines for each known field, for a CSV preamble."""
+    """`# key: value` lines for each recorded fact, for a CSV preamble."""
     if fingerprint is None:
         return []
-    return [f"# {k}: {v}\n" for k, v in fingerprint.display_items()]
+    return [f"# {k}: {v}\n" for k, v in display_items(fingerprint)]
 
 
 class CsvReporter(Reporter):

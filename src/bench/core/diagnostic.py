@@ -36,19 +36,26 @@ LOAD_FRACTION = 0.5
 
 
 def run_checks(fp: Fingerprint) -> list[Diagnostic]:
-    """Fingerprint-based warnings. Checks for `None` fields are skipped."""
+    """Fingerprint-based warnings. A check whose fact the probe did not record
+    skips itself."""
     out: list[Diagnostic] = []
 
-    if fp.governors is not None and any(g != "performance" for g in fp.governors):
+    governors: list[str] | None = fp.get("governors")
+    aslr: int | None = fp.get("aslr")
+    thp: str | None = fp.get("transparent_hugepage")
+    load_avg: list[float] | None = fp.get("load_avg")
+    logical_cpus: int | None = fp.get("logical_cpus")
+
+    if governors is not None and any(g != "performance" for g in governors):
         out.append(
             Diagnostic(
                 "high",
-                f"CPU frequency scaling enabled (governor: {', '.join(fp.governors)}); "
+                f"CPU frequency scaling enabled (governor: {', '.join(governors)}); "
                 "real-time measurements will be noisy.",
                 "sudo cpupower frequency-set -g performance",
             )
         )
-    if fp.turbo_enabled:
+    if fp.get("turbo_enabled"):
         out.append(
             Diagnostic(
                 "warn",
@@ -57,7 +64,7 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
                 "(or echo 0 > .../cpufreq/boost)",
             )
         )
-    if fp.aslr is not None and fp.aslr != 0:
+    if aslr is not None and aslr != 0:
         out.append(
             Diagnostic(
                 "warn",
@@ -66,16 +73,16 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
                 "or sudo sysctl -w kernel.randomize_va_space=0",
             )
         )
-    if fp.transparent_hugepage is not None and fp.transparent_hugepage != "never":
+    if thp is not None and thp != "never":
         out.append(
             Diagnostic(
                 "warn",
-                f"Transparent huge pages are '{fp.transparent_hugepage}'; "
+                f"Transparent huge pages are '{thp}'; "
                 "background compaction adds latency spikes.",
                 "echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
             )
         )
-    if fp.smt_enabled:
+    if fp.get("smt_enabled"):
         out.append(
             Diagnostic(
                 "warn",
@@ -83,7 +90,7 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
                 "echo off | sudo tee /sys/devices/system/cpu/smt/control",
             )
         )
-    if fp.swap_in_use:
+    if fp.get("swap_in_use"):
         out.append(
             Diagnostic(
                 "warn",
@@ -91,7 +98,7 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
                 "sudo swapoff -a (or sudo sysctl -w vm.swappiness=0)",
             )
         )
-    if fp.on_battery:
+    if fp.get("on_battery"):
         out.append(
             Diagnostic(
                 "high",
@@ -99,7 +106,7 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
                 "connect AC power",
             )
         )
-    if fp.low_power_mode:
+    if fp.get("low_power_mode"):
         out.append(
             Diagnostic(
                 "high",
@@ -108,15 +115,15 @@ def run_checks(fp: Fingerprint) -> list[Diagnostic]:
             )
         )
     if (
-        fp.load_avg is not None
-        and fp.logical_cpus
-        and fp.load_avg[0] > LOAD_FRACTION * fp.logical_cpus
+        load_avg is not None
+        and logical_cpus
+        and load_avg[0] > LOAD_FRACTION * logical_cpus
     ):
         out.append(
             Diagnostic(
                 "warn",
-                f"System under load (1-min load {fp.load_avg[0]:.1f} "
-                f"over {fp.logical_cpus} CPUs).",
+                f"System under load (1-min load {load_avg[0]:.1f} "
+                f"over {logical_cpus} CPUs).",
                 "close background processes before benchmarking",
             )
         )

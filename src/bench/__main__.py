@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import sys
 from collections.abc import Callable
@@ -22,7 +21,7 @@ from bench.core.denoise import (
     status,
 )
 from bench.core.diagnostic import print_diagnostics, run_checks
-from bench.core.fingerprint import NoProbe, SystemProbe
+from bench.core.fingerprint import NoProbe, SystemProbe, display_items
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.error import BenchError, print_exception
@@ -416,11 +415,11 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
     exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
 
     if params.json:
-        print(json.dumps(dataclasses.asdict(fingerprint), indent=2))
+        print(json.dumps(fingerprint, indent=2))
         return exit_code
 
     console.print("[bench.label]Fingerprint:[/]")
-    for name, value in fingerprint.display_items():
+    for name, value in display_items(fingerprint):
         console.print(f"  {name}: {value}")
     if diagnostics:
         print_diagnostics(diagnostics, "Checks")

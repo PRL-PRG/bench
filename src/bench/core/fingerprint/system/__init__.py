@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import platform
+from typing import Any
 
 from bench.core.fingerprint.base import Fingerprint, Probe
 from bench.core.fingerprint.system.common import base
@@ -15,7 +16,7 @@ class SystemProbe(Probe):
 
     def __init__(self) -> None:
         super().__init__()
-        self._cache: Fingerprint | None = None
+        self._cache: dict[str, Any] | None = None
 
     def collect(self) -> Fingerprint | None:
         if self._cache is None:

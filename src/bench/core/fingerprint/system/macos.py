@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import dataclasses
 import re
 import subprocess
 from collections.abc import Callable
+from typing import Any
 
-from bench.core.fingerprint.base import Fingerprint
+from bench.core.fingerprint.base import known
 from bench.core.fingerprint.system.common import base
 from bench.io import to_int
 
@@ -18,7 +18,9 @@ def _sysctl_run(cmd: list[str]) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
-def collect_macos(run: Callable[[list[str]], str | None] = _sysctl_run) -> Fingerprint:
+def collect_macos(
+    run: Callable[[list[str]], str | None] = _sysctl_run,
+) -> dict[str, Any]:
     def sysctl(key: str) -> str | None:
         return run(["sysctl", "-n", key])
 
@@ -26,11 +28,9 @@ def collect_macos(run: Callable[[list[str]], str | None] = _sysctl_run) -> Finge
     logical = to_int(sysctl("hw.logicalcpu"))
     smt = logical > physical if logical is not None and physical is not None else None
     batt = run(["pmset", "-g", "batt"])
-    base_f = base()
-    return dataclasses.replace(
-        base_f,
+    return base() | known(
         cpu_model=sysctl("machdep.cpu.brand_string"),
-        logical_cpus=logical if logical is not None else base_f.logical_cpus,
+        logical_cpus=logical,
         physical_cpus=physical,
         smt_enabled=smt,
         swap_in_use=_macos_swap(sysctl("vm.swapusage")),
