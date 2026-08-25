@@ -9,7 +9,6 @@ order never matters.
 
 from __future__ import annotations
 
-import dataclasses
 import itertools
 import random
 from collections.abc import Callable
@@ -108,10 +107,13 @@ class SuiteBuilder(BuilderBase):
 
     # ----- shuffle -----------
 
-    def with_shuffle(self, seed: int | None = None) -> SuiteBuilder:
+    def with_shuffle(
+        self, seed: int | None = None, override: bool = False
+    ) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
-        # TODO: !!!
-        return dataclasses.replace(self, shuffle=True, shuffle_seed=seed)
+        return self.replace("shuffle", True, override=True).replace(
+            "shuffle_seed", seed, override=override
+        )
 
     # ----- creation ----------------------------------------------------
 
