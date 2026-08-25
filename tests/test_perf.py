@@ -18,11 +18,10 @@ from bench import (
     PerfStat,
     Sample,
     bench,
-    iter_perf_frames,
     suite,
-    write_perf_frames,
 )
 from bench.builder.suite import plan
+from bench.perf import iter_perf_frames, write_perf_frames
 
 # ----- construction ---------------------------------------------------------
 

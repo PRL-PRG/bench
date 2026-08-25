@@ -33,8 +33,7 @@ Real-world harnesses fit the same shape: Renaissance (`-r N` plus a Regex on its
 import sys
 from pathlib import Path
 
-from bench import FloatPerLine, bench, run, suite
-from bench.core.metric import StdoutMetricSource
+from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
 
 FAKEVM = Path(__file__).parent / "workloads" / "fakevm.py"
 

@@ -21,8 +21,7 @@ roughly 2x slower than VM2 and bigger `size` slightly slower.
 
 import os
 
-from bench import FloatPerLine, bench, run, suite
-from bench.core.metric import StdoutMetricSource
+from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
 
 
 def cmd(ctx):

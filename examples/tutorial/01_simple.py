@@ -7,9 +7,17 @@
 # ///
 from __future__ import annotations
 
-from bench import GeomeanSummary, Results, Summary, Time, bench, bench_app, suite
-from bench.core.metric import max_rss
-from bench.report import SummaryReporter
+from bench import (
+    GeomeanSummary,
+    Results,
+    Summary,
+    SummaryReporter,
+    Time,
+    bench,
+    bench_app,
+    max_rss,
+    suite,
+)
 
 s = (
     suite("simple")

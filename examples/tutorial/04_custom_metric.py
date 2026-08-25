@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from bench import (
     FloatPerLine,
+    StdoutMetricSource,
     bench,
     bench_app,
     suite,
 )
-from bench.core.metric import StdoutMetricSource
 
 s1 = suite("example").add(bench("fib")).add(bench("hanoi"))
 

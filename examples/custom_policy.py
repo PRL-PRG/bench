@@ -18,8 +18,15 @@ config that returns a fresh `PolicyState` from `start()`) and
 import os
 from dataclasses import dataclass
 
-from bench import PolicyState, RegexMetric, StoppingPolicy, bench, run, suite
-from bench.core.metric import StdoutMetricSource
+from bench import (
+    PolicyState,
+    RegexMetric,
+    StdoutMetricSource,
+    StoppingPolicy,
+    bench,
+    run,
+    suite,
+)
 
 
 class _ConsecutiveReadyState(PolicyState):

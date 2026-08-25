@@ -16,8 +16,7 @@ does, and its second argument how many leading ones it discards as warmup
 
 from __future__ import annotations
 
-from bench import FloatPerLine, bench, run, suite
-from bench.core.metric import StdoutMetricSource
+from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
 
 WARMUP, RUNS = 5, 10
 

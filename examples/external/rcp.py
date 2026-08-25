@@ -15,12 +15,12 @@ from bench import (
     Context,
     RebenchMetric,
     SharedBenchParams,
+    StdoutMetricSource,
     bench_app,
     from_files,
     max_rss,
     suite,
 )
-from bench.core.metric import StdoutMetricSource
 
 
 class RcpParams(SharedBenchParams):

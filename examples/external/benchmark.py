@@ -10,9 +10,14 @@
 
 from pathlib import Path
 
-from bench import RebenchMetric, SharedBenchParams, bench_app, suite
+from bench import (
+    RebenchMetric,
+    SharedBenchParams,
+    StdoutMetricSource,
+    bench_app,
+    suite,
+)
 from bench import bench as B
-from bench.core.metric import StdoutMetricSource
 
 HERE = Path(__file__).resolve().parent
 INPUTS = HERE / "inputs"

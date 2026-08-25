@@ -52,9 +52,9 @@ from bench import (
     SharedBenchParams,
     bench,
     bench_app,
+    default_reporter,
     suite,
 )
-from bench.builder import default_reporter
 
 
 class CpythonParams(SharedBenchParams):

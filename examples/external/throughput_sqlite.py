@@ -11,8 +11,7 @@
 import sys
 from pathlib import Path
 
-from bench import RegexMetric, bench, run, suite
-from bench.core.metric import StdoutMetricSource
+from bench import RegexMetric, StdoutMetricSource, bench, run, suite
 
 SQLITE_BENCH = Path(__file__).resolve().parent / "sqlite_bench.py"
 

@@ -21,6 +21,7 @@ from bench import (
     Context,
     FloatPerLine,
     SharedBenchParams,
+    StdoutMetricSource,
     bench_app,
     max_rss,
     suite,
@@ -28,7 +29,6 @@ from bench import (
 from bench import (
     bench as B,
 )
-from bench.core.metric import StdoutMetricSource
 
 _HARNESS_R = r"""
 # Auto-sourced via R_PROFILE_USER before the benchmark file runs.

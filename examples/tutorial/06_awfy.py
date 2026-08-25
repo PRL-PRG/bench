@@ -32,6 +32,7 @@ from bench import (
     RegexMetric,
     Results,
     SharedBenchParams,
+    StdoutMetricSource,
     Summary,
     SummaryReporter,
     bench,
@@ -39,7 +40,6 @@ from bench import (
     max_rss,
     suite,
 )
-from bench.core.metric import StdoutMetricSource
 
 
 class Params(SharedBenchParams):

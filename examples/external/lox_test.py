@@ -26,6 +26,7 @@ from bench import (
     Context,
     Execution,
     InvocationResult,
+    Report,
     Reporter,
     SharedBenchParams,
     Time,
@@ -34,7 +35,6 @@ from bench import (
     suite,
 )
 from bench.console.theme import console
-from bench.model.results import Report
 
 HERE = Path(__file__).resolve().parent
 

@@ -17,14 +17,16 @@ from bench import (
     Context,
     FloatPerLine,
     SharedBenchParams,
+    StdoutMetricSource,
     SummaryReporter,
+    SystemTime,
+    UserTime,
     bench,
     bench_app,
     from_files,
     max_rss,
     suite,
 )
-from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 HERE = Path(__file__).resolve().parent
 

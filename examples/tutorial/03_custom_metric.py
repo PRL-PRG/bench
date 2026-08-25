@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from bench import (
     FloatPerLine,
+    StdoutMetricSource,
     Time,
     bench,
     run,
     suite,
 )
-from bench.core.metric import StdoutMetricSource
 
 s = (
     suite("custom_metric")

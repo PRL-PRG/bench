@@ -39,14 +39,16 @@ from bench import (
     BenchmarkBuilder,
     RegexMetric,
     SharedBenchParams,
+    StdoutMetricSource,
+    SuiteContext,
+    SystemTime,
     Time,
+    UserTime,
     bench,
     bench_app,
     max_rss,
     suite,
 )
-from bench.builder import SuiteContext
-from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 
 class RenaissanceParams(SharedBenchParams):

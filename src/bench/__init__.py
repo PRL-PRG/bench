@@ -1,54 +1,85 @@
-"""bench - a benchmarking framework."""
+"""bench - a benchmarking framework.
 
-# CLI
+Every public symbol of the package is re-exported here, so user code (and the
+examples) can stay on `from bench import ...` instead of reaching into
+submodules. `__all__` is grouped by the module each symbol is defined in.
+"""
+
 from bench.__main__ import main
-
-# Builder
 from bench.builder import (
     BenchAppBuilder,
     BenchmarkBuilder,
+    BenchmarkGenerator,
+    BuilderBase,
     Context,
+    Data,
+    Factory,
+    MatrixAxis,
     NoBenchmarksMatchedError,
+    ParamFactory,
+    SubsuiteGenerator,
     SuiteBuilder,
+    SuiteContext,
+    SuiteGenerator,
     SuiteMaterializationError,
+    UnresolvedCommand,
     bench,
     bench_app,
+    default_filter,
     default_label,
+    default_reporter,
+    default_runner,
     default_success,
     from_files,
+    plan,
     run,
     suite,
 )
-from bench.core.diagnostic import Diagnostic, run_checks
-
-# Fingerprint + diagnostics
+from bench.core.denoise import (
+    STATE_PATH,
+    denoise_session,
+    is_root,
+    minimize,
+    restore,
+    status,
+)
+from bench.core.diagnostic import (
+    Diagnostic,
+    Severity,
+    print_diagnostics,
+    run_checks,
+)
 from bench.core.fingerprint import (
+    BenchVersionProbe,
+    CompositeProbe,
     Fingerprint,
+    GitProbe,
     NoProbe,
     Probe,
     SystemProbe,
 )
-
-# Metrics
 from bench.core.metric import (
+    BuildableMetric,
     FloatPerLine,
     IterationMetric,
     Metric,
+    MetricSource,
     RebenchMetric,
     RegexMetric,
     RUsage,
+    StderrMetricSource,
+    StdoutMetricSource,
+    SystemTime,
     Time,
+    UserTime,
+    as_metric_source,
     max_rss,
 )
-
-# Outlier detection
 from bench.core.outlier import (
     ModifiedZScore,
     NoDetection,
     OutlierDetection,
 )
-
-# Stopping policies
 from bench.core.policy import (
     CoefficientOfVariation,
     FixedRuns,
@@ -56,30 +87,52 @@ from bench.core.policy import (
     PolicyState,
     StoppingPolicy,
 )
-
-# Errors
-from bench.error import BenchError
+from bench.core.process import (
+    execute,
+)
+from bench.error import BenchError, print_exception
 from bench.model.benchmark import (
     Benchmark,
+    BenchmarkPred,
+    LabelFn,
     Variant,
 )
 from bench.model.invocation import (
+    Command,
+    Env,
     Invocation,
     InvocationResult,
+    SuccessFn,
+    Timeout,
     Verdict,
 )
 from bench.model.results import (
+    Direction,
     Execution,
     Iteration,
     Report,
     Sample,
+    diagnostic_excerpt,
     report_from_json,
     report_to_json,
 )
-from bench.params import SharedBenchParams, SharedSelectionParams
-from bench.perf import PerfStat
-
-# Reporters
+from bench.params import (
+    REPORTER_GROUP,
+    RUNNER_GROUP,
+    SELECTION_GROUP,
+    Params,
+    ParamsGroup,
+    SharedBenchParams,
+    SharedReporterParams,
+    SharedRunnerParams,
+    SharedSelectionParams,
+    add_dataclass_args,
+    build_dataclass,
+)
+from bench.perf import (
+    PerfRecord,
+    PerfStat,
+)
 from bench.report import (
     CompositeReporter,
     CsvReporter,
@@ -91,16 +144,13 @@ from bench.report import (
     execution_dir,
     variant_path,
 )
-
-# Runners
 from bench.runner import (
+    Controller,
     DryRunner,
     Parallel,
     Runner,
     SequentialRunner,
 )
-
-# Formatters
 from bench.summary.formatter import (
     Compact,
     DefaultSummary,
@@ -109,88 +159,186 @@ from bench.summary.formatter import (
     Results,
     Summary,
 )
+from bench.summary.summary import (
+    AxisKey,
+    BenchKey,
+    MetricKey,
+    Stat,
+    bench_label,
+    by_axis,
+    compact,
+    geomean,
+    geomean_ratio,
+    group_by,
+    merge_reports,
+    orient,
+    ranking,
+    ratio,
+    results,
+    scale_unit,
+    stat_line,
+    summarize,
+)
 
 __all__ = [
-    # Atoms
-    "Invocation",
-    "InvocationResult",
-    "Variant",
-    "Verdict",
+    # bench.__main__
+    "main",
+    # bench.builder
+    "ParamFactory",
+    "SuiteGenerator",
+    "NoBenchmarksMatchedError",
+    "BenchAppBuilder",
+    "run",
+    "bench_app",
+    "UnresolvedCommand",
+    "Factory",
+    "MatrixAxis",
+    "BuilderBase",
+    "BenchmarkBuilder",
+    "bench",
+    "from_files",
+    "Data",
+    "Context",
+    "default_filter",
+    "default_label",
+    "default_runner",
     "default_success",
-    "Sample",
-    "Iteration",
-    "Execution",
-    "Report",
-    "report_from_json",
-    "report_to_json",
-    # Metrics
-    "IterationMetric",
-    "Metric",
+    "default_reporter",
+    "SuiteContext",
+    "BenchmarkGenerator",
+    "SubsuiteGenerator",
+    "SuiteBuilder",
+    "suite",
+    "SuiteMaterializationError",
+    "plan",
+    # bench.core.denoise
+    "STATE_PATH",
+    "minimize",
+    "restore",
+    "status",
+    "denoise_session",
+    "is_root",
+    # bench.core.diagnostic
+    "Severity",
+    "Diagnostic",
+    "run_checks",
+    "print_diagnostics",
+    # bench.core.fingerprint
+    "Fingerprint",
+    "Probe",
+    "NoProbe",
+    "CompositeProbe",
+    "SystemProbe",
+    "GitProbe",
+    "BenchVersionProbe",
+    # bench.core.metric
     "Time",
-    "RegexMetric",
-    "FloatPerLine",
-    "RebenchMetric",
+    "UserTime",
+    "SystemTime",
     "RUsage",
     "max_rss",
-    "PerfStat",
-    # Policies
+    "RebenchMetric",
+    "RegexMetric",
+    "FloatPerLine",
+    "Metric",
+    "BuildableMetric",
+    "MetricSource",
+    "StdoutMetricSource",
+    "StderrMetricSource",
+    "as_metric_source",
+    "IterationMetric",
+    # bench.core.outlier
+    "OutlierDetection",
+    "NoDetection",
+    "ModifiedZScore",
+    # bench.core.policy
     "StoppingPolicy",
     "PolicyState",
     "FixedRuns",
     "CoefficientOfVariation",
     "MaxDuration",
-    # Outlier detection
-    "OutlierDetection",
-    "NoDetection",
-    "ModifiedZScore",
-    # Fingerprint + diagnostics
-    "Fingerprint",
-    "Probe",
-    "SystemProbe",
-    "NoProbe",
-    "Diagnostic",
-    "run_checks",
-    # Benchmark / SuiteBuilder
-    "Benchmark",
-    "BenchmarkBuilder",
-    "bench",
-    "default_label",
-    "from_files",
-    "SuiteBuilder",
-    "suite",
-    "Context",
-    "SharedBenchParams",
-    "SharedSelectionParams",
-    # Runners
-    "Runner",
-    "SequentialRunner",
-    "Parallel",
-    "DryRunner",
-    # Errors
+    # bench.core.process
+    "execute",
+    # bench.error
     "BenchError",
-    "SuiteMaterializationError",
-    # Reporters
+    "print_exception",
+    # bench.model.benchmark
+    "LabelFn",
+    "Benchmark",
+    "BenchmarkPred",
+    "Variant",
+    # bench.model.invocation
+    "Timeout",
+    "Env",
+    "Command",
+    "Invocation",
+    "InvocationResult",
+    "Verdict",
+    "SuccessFn",
+    # bench.model.results
+    "Direction",
+    "Sample",
+    "Iteration",
+    "Execution",
+    "Report",
+    "diagnostic_excerpt",
+    "report_to_json",
+    "report_from_json",
+    # bench.params
+    "Params",
+    "ParamsGroup",
+    "SELECTION_GROUP",
+    "SharedSelectionParams",
+    "RUNNER_GROUP",
+    "SharedRunnerParams",
+    "REPORTER_GROUP",
+    "SharedReporterParams",
+    "SharedBenchParams",
+    "add_dataclass_args",
+    "build_dataclass",
+    # bench.perf
+    "PerfStat",
+    "PerfRecord",
+    # bench.report
     "Reporter",
     "CompositeReporter",
     "CsvReporter",
-    "JsonReporter",
-    "DirReporter",
-    "SummaryReporter",
-    "ProgressReporter",
     "execution_dir",
     "variant_path",
-    # Formatters
+    "DirReporter",
+    "JsonReporter",
+    "ProgressReporter",
+    "SummaryReporter",
+    # bench.runner
+    "Runner",
+    "Controller",
+    "DryRunner",
+    "Parallel",
+    "SequentialRunner",
+    # bench.summary.formatter
     "Formatter",
     "Results",
     "Summary",
     "GeomeanSummary",
     "DefaultSummary",
     "Compact",
-    # BenchAppBuilder + run pipeline
-    "BenchAppBuilder",
-    "NoBenchmarksMatchedError",
-    "bench_app",
-    "run",
-    # CLI
-    "main",
+    # bench.summary.summary
+    "MetricKey",
+    "BenchKey",
+    "AxisKey",
+    "Stat",
+    "summarize",
+    "ratio",
+    "orient",
+    "geomean",
+    "geomean_ratio",
+    "scale_unit",
+    "group_by",
+    "merge_reports",
+    "bench_label",
+    "stat_line",
+    "results",
+    "ranking",
+    "by_axis",
+    "compact",
 ]

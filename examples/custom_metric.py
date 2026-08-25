@@ -14,12 +14,13 @@ from collections.abc import Iterable
 from bench import (
     InvocationResult,
     IterationMetric,
+    MetricSource,
     Sample,
+    StderrMetricSource,
     bench,
     run,
     suite,
 )
-from bench.core.metric import MetricSource, StderrMetricSource
 
 
 class TaggedFloat(IterationMetric):

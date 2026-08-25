@@ -20,12 +20,14 @@ from bench import (
     BenchmarkBuilder,
     RegexMetric,
     SharedBenchParams,
+    StdoutMetricSource,
+    SystemTime,
+    UserTime,
     bench,
     bench_app,
     max_rss,
     suite,
 )
-from bench.core.metric import StdoutMetricSource, SystemTime, UserTime
 
 
 class LevelDBParams(SharedBenchParams):
