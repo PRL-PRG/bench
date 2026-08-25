@@ -12,7 +12,7 @@ from bench.builder.benchmark import Benchmark, bench
 from bench.builder.context import Context, Params, SharedBenchParams, add_dataclass_args
 from bench.builder.suite import suite
 from bench.core.checks import run_checks
-from bench.core.environment import NoEnvironment, SystemEnvironment
+from bench.core.fingerprint import NoProbe, SystemProbe
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.core.results import Report, report_from_json
@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             "doctor",
             help="Inspect the machine for benchmarking noise sources.",
             description=(
-                "Print the environment snapshot and the noise checks. "
+                "Print the machine fingerprint and the noise checks. "
                 "Exits non-zero if any high-severity issue is found."
             ),
         )
@@ -187,7 +187,7 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--check-environment",
         action="store_true",
-        help="Record the environment snapshot and run the noise checks "
+        help="Record the machine fingerprint and run the noise checks "
         "(off by default).",
     )
     p.add_argument(
@@ -245,7 +245,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     s = suite("run", b)
 
     metrics = {ns.metric} if ns.metric else None
-    environment = SystemEnvironment() if ns.check_environment else NoEnvironment()
+    probe = SystemProbe() if ns.check_environment else NoProbe()
 
     def build_reporter(ctx: Params) -> Reporter:
         summary = SummaryReporter(DefaultSummary(metrics=metrics))
@@ -256,7 +256,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
             return CompositeReporter(reporter, summary)
 
     app = (
-        bench_app("bench", environment=environment, denoise=ns.denoise)
+        bench_app("bench", probe=probe, denoise=ns.denoise)
         .add(s)
         .with_reporter(build_reporter)
     )
@@ -332,25 +332,25 @@ def _doctor_subparser(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--json",
         action="store_true",
-        help="Print the environment snapshot as JSON instead of a report.",
+        help="Print the machine fingerprint as JSON instead of a report.",
     )
     p.set_defaults(_func=_cmd_doctor)
 
 
 def _cmd_doctor(ns: argparse.Namespace) -> int:
-    env = SystemEnvironment().collect()
-    if env is None:
-        console.print("No environment information available.")
+    fingerprint = SystemProbe().collect()
+    if fingerprint is None:
+        console.print("No fingerprint information available.")
         return 0
-    diagnostics = run_checks(env)
+    diagnostics = run_checks(fingerprint)
     exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
 
     if ns.json:
-        print(json.dumps(dataclasses.asdict(env), indent=2))
+        print(json.dumps(dataclasses.asdict(fingerprint), indent=2))
         return exit_code
 
-    console.print("[bench.label]Environment:[/]")
-    for name, value in env.display_items():
+    console.print("[bench.label]Fingerprint:[/]")
+    for name, value in fingerprint.display_items():
         console.print(f"  {name}: {value}")
     if diagnostics:
         print_diagnostics(diagnostics, "Checks")

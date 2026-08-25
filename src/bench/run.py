@@ -37,9 +37,9 @@ from bench.builder.context import (
 )
 from bench.builder.suite import SuiteBuilder
 from bench.core.checks import run_checks
-from bench.core.environment import (
-    EnvironmentCollector,
-    NoEnvironment,
+from bench.core.fingerprint import (
+    NoProbe,
+    Probe,
 )
 from bench.core.invocation import format_benchmark, format_variant
 from bench.core.results import Report, report_from_json
@@ -111,7 +111,7 @@ class BenchAppBuilder(BuilderBase):
     reporter: ParamFactory[Reporter] | None = None
     summary: ParamFactory[Reporter] | None = None
     runner: ParamFactory[Runner] | None = None
-    environment: EnvironmentCollector = NoEnvironment()
+    probe: Probe = NoProbe()
     denoise: bool = False
 
     # ----- producers -------------------------------------------------
@@ -176,13 +176,13 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
-    def with_environment(
-        self, environment: EnvironmentCollector, override: bool = True
+    def with_probe(
+        self, probe: Probe, override: bool = True
     ) -> BenchAppBuilder:
-        """Set the environment collector (snapshot + diagnostics)."""
+        """Set the probe that snapshots the machine (fingerprint + diagnostics)."""
         return self.replace(
-            "environment",
-            environment,
+            "probe",
+            probe,
             override=override,
         )
 
@@ -251,12 +251,12 @@ class BenchAppBuilder(BuilderBase):
         use_defaults: bool = False,
         print_diagnostics: bool = True,
     ) -> Report:
-        # Setup environment
-        env = self.environment.collect()
-        env_diagnostics = run_checks(env) if env is not None else []
+        # Setup probe
+        fingerprint = self.probe.collect()
+        diagnostics = run_checks(fingerprint) if fingerprint is not None else []
 
         if print_diagnostics:
-            do_print_diagnostics(env_diagnostics, "Environment checks")
+            do_print_diagnostics(diagnostics, "Machine checks")
 
         # Setup reporters
         reporter = self.get_reporter(build_params, use_defaults=use_defaults)
@@ -298,9 +298,9 @@ class BenchAppBuilder(BuilderBase):
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                return runner.run(planned, reporter, env, env_diagnostics)
+                return runner.run(planned, reporter, fingerprint, diagnostics)
         else:
-            return runner.run(planned, reporter, env, env_diagnostics)
+            return runner.run(planned, reporter, fingerprint, diagnostics)
 
     # ----- run_cli -----------
 
@@ -385,7 +385,7 @@ def bench_app[P: Params](
     params: type[P] | None = None,
     reporter: Reporter | Callable[[P], Reporter] | None = None,
     summary: Reporter | Callable[[P], Reporter] | None = None,
-    environment: EnvironmentCollector | None = None,
+    probe: Probe | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
     """Top-level builder combining suites with common settings.
@@ -403,7 +403,7 @@ def bench_app[P: Params](
         params=params,
         reporter=as_param_build(reporter) if reporter is not None else None,
         summary=as_param_build(summary) if summary is not None else None,
-        environment=environment or NoEnvironment(),
+        probe=probe or NoProbe(),
         denoise=denoise,
     )
 

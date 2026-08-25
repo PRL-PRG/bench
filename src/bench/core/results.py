@@ -10,7 +10,7 @@ from typing import Any, Literal, Mapping
 
 from cattrs import structure, unstructure
 
-from bench.core.environment import Diagnostic, Environment
+from bench.core.fingerprint import Diagnostic, Fingerprint
 from bench.core.invocation import Variant, format_identifier
 from bench.core.process import Command
 
@@ -94,11 +94,11 @@ def diagnostic_excerpt(stdout: str, stderr: str, *, max_len: int = 80) -> str:
 
 @dataclass(slots=True)
 class Report:
-    """All Executions from a benchmarking session, plus the machine environment
+    """All Executions from a benchmarking session, plus the machine fingerprint
     and diagnostics."""
 
     executions: list[Execution] = field(default_factory=list[Execution])
-    environment: Environment | None = None
+    fingerprint: Fingerprint | None = None
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
 
     @property

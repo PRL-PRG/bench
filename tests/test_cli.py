@@ -13,7 +13,7 @@ from bench import (
     NoBenchmarksMatchedError,
     SharedBenchParams,
     SuiteMaterializationError,
-    SystemEnvironment,
+    SystemProbe,
     Time,
     bench,
     bench_app,
@@ -113,7 +113,7 @@ def test_bench_writes_csv(tmp_path: Path):
     r = _run("run", "--runs", "2", "--csv", str(out), "sleep 0.01")
     assert r.returncode == 0, r.stderr
     lines = out.read_text().splitlines()
-    # An environment comment preamble (# key: value) precedes the header.
+    # A fingerprint comment preamble (# key: value) precedes the header.
     data = [line for line in lines if not line.startswith("#")]
     assert data[0].startswith("suite,benchmark")
     assert len(data) >= 3  # header + 2 samples
@@ -613,9 +613,9 @@ def test_main_translates_materialization_error_to_exit_code(capsys):
 
 
 def test_bench_app_setters_match_the_constructor_keywords():
-    env = SystemEnvironment()
-    kwargs = bench_app("X", params=_Params, environment=env, denoise=True)
-    setters = bench_app("X").with_params(_Params).with_environment(env).with_denoise()
+    probe = SystemProbe()
+    kwargs = bench_app("X", params=_Params, probe=probe, denoise=True)
+    setters = bench_app("X").with_params(_Params).with_probe(probe).with_denoise()
     # `suites` holds closures, which never compare equal - the settings do.
-    for field in ("name", "params", "environment", "denoise"):
+    for field in ("name", "params", "probe", "denoise"):
         assert getattr(kwargs, field) == getattr(setters, field)

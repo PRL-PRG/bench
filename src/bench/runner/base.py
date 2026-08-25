@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bench.builder.context import Params
-from bench.core.environment import Diagnostic, Environment
+from bench.core.fingerprint import Diagnostic, Fingerprint
 from bench.core.invocation import (
     Invocation,
     default_success,
@@ -150,11 +150,11 @@ class Runner(abc.ABC):
         self,
         planned: list[Benchmark],
         reporter: Reporter = _NoopReporter(),
-        environment: Environment | None = None,
+        fingerprint: Fingerprint | None = None,
         diagnostics: list[Diagnostic] = [],
     ) -> Report:
         reporter.start(planned)
-        report = Report(environment=environment, diagnostics=diagnostics)
+        report = Report(fingerprint=fingerprint, diagnostics=diagnostics)
 
         try:
             with install_sigint_handler():

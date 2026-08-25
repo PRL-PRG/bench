@@ -1,4 +1,4 @@
-"""EnvironmentCollector: a snapshot of the machine a benchmark ran on."""
+"""Fingerprint: a snapshot of the machine a benchmark ran on."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Literal, cast
 from bench.utils import read_bracketed, read_int, read_text, to_int
 
 # Runs an external command, returning trimmed stdout or None on any failure.
-type EnvRunner = Callable[[list[str]], str | None]
+type PrintRunner = Callable[[list[str]], str | None]
 
 type Severity = Literal["warn", "high"]
 
@@ -32,7 +32,7 @@ class Diagnostic:
 
 
 @dataclass(frozen=True, slots=True)
-class Environment:
+class Fingerprint:
     """Machine facts at run time. `None` = unknown or not applicable here."""
 
     timestamp: str = ""
@@ -73,35 +73,35 @@ class Environment:
         return out
 
 
-class EnvironmentCollector(abc.ABC):
+class Probe(abc.ABC):
     """Strategy: collect a snapshot of the machine, or nothing."""
 
     __slots__ = ()
 
     @abc.abstractmethod
-    def collect(self) -> Environment | None:
-        """Return a snapshot, or `None` to record no environment."""
+    def collect(self) -> Fingerprint | None:
+        """Return a snapshot, or `None` to record no fingerprint."""
 
 
-class NoEnvironment(EnvironmentCollector):
+class NoProbe(Probe):
     """Collects nothing - the off switch."""
 
     __slots__ = ()
 
-    def collect(self) -> Environment | None:
+    def collect(self) -> Fingerprint | None:
         return None
 
 
-class SystemEnvironment(EnvironmentCollector):
+class SystemProbe(Probe):
     """Probe the host, dispatching on the platform."""
 
     __slots__ = ("_cache",)
 
     def __init__(self) -> None:
         super().__init__()
-        self._cache: Environment | None = None
+        self._cache: Fingerprint | None = None
 
-    def collect(self) -> Environment | None:
+    def collect(self) -> Fingerprint | None:
         if self._cache is None:
             system = platform.system()
             if system == "Linux":
@@ -119,13 +119,13 @@ class SystemEnvironment(EnvironmentCollector):
 # ---------------------------------------------------------------------------
 
 
-def _base() -> Environment:
+def _base() -> Fingerprint:
     """The platform-independent fields, set on every snapshot."""
     try:
         load: list[float] | None = list(os.getloadavg())
     except (OSError, AttributeError):
         load = None
-    return Environment(
+    return Fingerprint(
         timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
         hostname=platform.node(),
         system=platform.system(),
@@ -154,7 +154,7 @@ SWAPPINESS = "sys/vm/swappiness"
 ASLR = "sys/kernel/randomize_va_space"
 
 
-def collect_linux(root: Path = Path("/")) -> Environment:
+def collect_linux(root: Path = Path("/")) -> Fingerprint:
     sys_cpu = root / CPU_DIR
     proc = root / "proc"
     govs = sorted(
@@ -257,7 +257,7 @@ def _sysctl_run(cmd: list[str]) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
-def collect_macos(run: EnvRunner = _sysctl_run) -> Environment:
+def collect_macos(run: PrintRunner = _sysctl_run) -> Fingerprint:
     def sysctl(key: str) -> str | None:
         return run(["sysctl", "-n", key])
 

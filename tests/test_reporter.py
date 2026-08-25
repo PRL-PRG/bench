@@ -17,7 +17,7 @@ from bench import (
     ProgressReporter,
     SequentialRunner,
     SummaryReporter,
-    SystemEnvironment,
+    SystemProbe,
     Time,
     bench,
     bench_app,
@@ -148,21 +148,21 @@ def test_mixed_fans_out(tmp_path: Path):
     assert js.exists() and cs.exists()
 
 
-def test_user_composite_reporter_receives_environment(tmp_path: Path):
+def test_user_composite_reporter_receives_fingerprint(tmp_path: Path):
     # A DirReporter the user supplies via `bench_app(reporter=...)` must get the
-    # collected environment injected (not only CLI-built --dir reporters).
+    # collected fingerprint injected (not only CLI-built --dir reporters).
     root = tmp_path / "tree"
     (
         bench_app(
             reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
-            environment=SystemEnvironment(),
+            probe=SystemProbe(),
         )
         .add(_s())
         .run_cli(["--no-progress"])
     )
-    env_file = root / "environment.json"
-    assert env_file.exists()
-    assert "system" in json.loads(env_file.read_text())["environment"]
+    fingerprint_file = root / "fingerprint.json"
+    assert fingerprint_file.exists()
+    assert "system" in json.loads(fingerprint_file.read_text())["fingerprint"]
 
 
 def _flagged_run() -> Execution:

@@ -30,7 +30,7 @@ from rich.progress import (
 )
 from rich.text import Text
 
-from bench.core.environment import Diagnostic, Environment
+from bench.core.fingerprint import Diagnostic, Fingerprint
 from bench.core.invocation import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
@@ -63,11 +63,11 @@ def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _environment_comments(env: Environment | None) -> list[str]:
+def _fingerprint_comments(fingerprint: Fingerprint | None) -> list[str]:
     """`# key: value` lines for each known field, for a CSV preamble."""
-    if env is None:
+    if fingerprint is None:
         return []
-    return [f"# {k}: {v}\n" for k, v in env.display_items()]
+    return [f"# {k}: {v}\n" for k, v in fingerprint.display_items()]
 
 
 class Reporter(abc.ABC):
@@ -162,7 +162,7 @@ class CsvReporter(Reporter):
         )
 
         with open(self.path, "wt", newline="") as f:
-            for line in _environment_comments(report.environment):
+            for line in _fingerprint_comments(report.fingerprint):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
@@ -281,12 +281,12 @@ class DirReporter(Reporter):
         root: Path,
         *,
         nested: bool = False,
-        environment: Environment | None = None,
+        fingerprint: Fingerprint | None = None,
         diagnostics: list[Diagnostic] | None = None,
     ) -> None:
         self.root = root
         self.nested = nested
-        self.environment = environment
+        self.fingerprint = fingerprint
         self.diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
@@ -311,8 +311,8 @@ class DirReporter(Reporter):
                 self.output_dir(b.suite, b.name, b.variant).mkdir(
                     parents=True, exist_ok=True
                 )
-        if self.environment is not None:
-            self._write_environment(self.environment, self.diagnostics)
+        if self.fingerprint is not None:
+            self._write_fingerprint(self.fingerprint, self.diagnostics)
 
     def execution_done(self, execution: Execution) -> None:
         # A matrix variant gets a stable directory from its variant (so a wrapped
@@ -345,16 +345,16 @@ class DirReporter(Reporter):
         (exec_dir / "exitcode").write_text(f"{execution.returncode}\n")
 
     def finalize(self, report: Report) -> None:
-        if report.environment is not None:
-            self._write_environment(report.environment, report.diagnostics)
+        if report.fingerprint is not None:
+            self._write_fingerprint(report.fingerprint, report.diagnostics)
 
-    def _write_environment(
-        self, environment: Environment, diagnostics: list[Diagnostic]
+    def _write_fingerprint(
+        self, fingerprint: Fingerprint, diagnostics: list[Diagnostic]
     ) -> None:
-        (self.root / "environment.json").write_text(
+        (self.root / "fingerprint.json").write_text(
             json.dumps(
                 {
-                    "environment": unstructure(environment),
+                    "fingerprint": unstructure(fingerprint),
                     "diagnostics": unstructure(diagnostics),
                 },
                 indent=2,

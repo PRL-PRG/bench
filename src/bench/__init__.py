@@ -16,13 +16,13 @@ from bench.builder.suite import SuiteBuilder, suite
 from bench.cli import main
 from bench.core.checks import run_checks
 
-# Environment + diagnostics
-from bench.core.environment import (
+# Fingerprint + diagnostics
+from bench.core.fingerprint import (
     Diagnostic,
-    Environment,
-    EnvironmentCollector,
-    NoEnvironment,
-    SystemEnvironment,
+    Fingerprint,
+    NoProbe,
+    Probe,
+    SystemProbe,
 )
 from bench.core.invocation import (
     Invocation,
@@ -140,11 +140,11 @@ __all__ = [
     "OutlierDetection",
     "NoDetection",
     "ModifiedZScore",
-    # Environment + diagnostics
-    "Environment",
-    "EnvironmentCollector",
-    "SystemEnvironment",
-    "NoEnvironment",
+    # Fingerprint + diagnostics
+    "Fingerprint",
+    "Probe",
+    "SystemProbe",
+    "NoProbe",
     "Diagnostic",
     "run_checks",
     # Benchmark / SuiteBuilder

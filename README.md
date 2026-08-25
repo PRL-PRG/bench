@@ -115,7 +115,7 @@ internally (e.g. for JIT warmup), each reported iteration becoming an
 reports after the fact (the first file is the baseline), and `bench show
 report.json` re-renders a single saved report.
 
-**Environment & noise**: `bench doctor` snapshots the machine and flags noise
+**Fingerprint & noise**: `bench doctor` snapshots the machine and flags noise
 sources (CPU governor, turbo, ASLR, ...), exiting non-zero on a high-severity
 issue so it can gate a session. On Linux as root, `bench denoise
 minimize|restore|status` quiets those knobs and reverts them. Per run,

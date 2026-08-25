@@ -17,7 +17,7 @@ import os
 from collections.abc import Callable, Generator
 from pathlib import Path
 
-from bench.core.environment import (
+from bench.core.fingerprint import (
     ASLR,
     CPU_DIR,
     CPUFREQ_BOOST,

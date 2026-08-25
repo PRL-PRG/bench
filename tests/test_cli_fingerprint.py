@@ -1,4 +1,4 @@
-"""Environment wiring: `bench doctor`, --check-environment, and the `run()` strategy."""
+"""Fingerprint wiring: `bench doctor`, --check-environment, and the `run()` strategy."""
 
 import json
 import os
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from bench import SystemEnvironment, bench, bench_app, suite
+from bench import SystemProbe, bench, bench_app, suite
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -39,7 +39,7 @@ def test_doctor_json_is_valid():
     assert data["system"] != ""
 
 
-def test_run_check_environment_embeds_environment(tmp_path: Path):
+def test_run_check_environment_embeds_fingerprint(tmp_path: Path):
     # `bench run` used to crash before writing the report: a nested composite
     # re-delivered benchmark_done, removing the progress task twice.
     out = tmp_path / "o.json"
@@ -48,15 +48,15 @@ def test_run_check_environment_embeds_environment(tmp_path: Path):
     )
     assert r.returncode == 0, r.stderr
     data = json.loads(out.read_text())
-    assert data.get("environment") is not None
-    assert "system" in data["environment"]
+    assert data.get("fingerprint") is not None
+    assert "system" in data["fingerprint"]
 
 
-def test_run_omits_environment_by_default(tmp_path: Path):
+def test_run_omits_fingerprint_by_default(tmp_path: Path):
     out = tmp_path / "o.json"
     r = _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
     assert r.returncode == 0, r.stderr
-    assert json.loads(out.read_text()).get("environment") is None
+    assert json.loads(out.read_text()).get("fingerprint") is None
 
 
 def test_run_check_environment_csv_has_comments(tmp_path: Path):
@@ -81,18 +81,14 @@ def _suite():
     return suite("s", bench("b").with_command(["true"]).with_runs(1))
 
 
-def test_run_api_omits_environment_by_default():
+def test_run_api_omits_fingerprint_by_default():
     rep = bench_app().add(_suite()).run_cli(["--no-progress"])
-    assert rep.environment is None
+    assert rep.fingerprint is None
 
 
-def test_run_api_collects_with_system_environment():
-    rep = (
-        bench_app(environment=SystemEnvironment())
-        .add(_suite())
-        .run_cli(["--no-progress"])
-    )
-    assert rep.environment is not None
+def test_run_api_collects_with_system_probe():
+    rep = bench_app(probe=SystemProbe()).add(_suite()).run_cli(["--no-progress"])
+    assert rep.fingerprint is not None
 
 
 def test_denoise_status_runs():
