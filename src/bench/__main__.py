@@ -6,10 +6,13 @@ import argparse
 import dataclasses
 import json
 import sys
+from collections.abc import Callable
+from dataclasses import field
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from bench.builder import Context, bench, bench_app, default_reporter, suite
+from bench.builder.app import BenchAppParams
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
     STATE_PATH,
@@ -25,7 +28,14 @@ from bench.core.policy import FixedRuns, MaxDuration
 from bench.error import BenchError, print_exception
 from bench.model.benchmark import Benchmark
 from bench.model.results import Report, report_from_json
-from bench.params import Params, SharedBenchParams, add_dataclass_args
+from bench.params import (
+    Params,
+    ParamsGroup,
+    SharedReporterParams,
+    SharedRunnerParams,
+    add_dataclass_args,
+    build_dataclass,
+)
 from bench.report import CompositeReporter, Reporter, SummaryReporter
 from bench.summary.formatter import (
     DefaultSummary,
@@ -55,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    _run_subparser(
+    _subcommand(
         sub.add_parser(
             "run",
             help="Benchmark one or more shell commands.",
@@ -65,16 +75,20 @@ def main(argv: list[str] | None = None) -> int:
                 "results are thus compared and summarized."
             ),
             formatter_class=argparse.RawDescriptionHelpFormatter,
-        )
+        ),
+        RunAppParams,
+        _cmd_run,
     )
-    _show_subparser(
+    _subcommand(
         sub.add_parser(
             "show",
             help="Summarize a single JSON report from a prior run.",
             description=("Load a saved JSON report and print its default summary."),
-        )
+        ),
+        ShowParams,
+        _cmd_show,
     )
-    _compare_subparser(
+    _subcommand(
         sub.add_parser(
             "compare",
             help="Compare several JSON reports side by side.",
@@ -83,9 +97,11 @@ def main(argv: list[str] | None = None) -> int:
                 "value per file) and summarize it. The first file is the "
                 "baseline reference."
             ),
-        )
+        ),
+        CompareParams,
+        _cmd_compare,
     )
-    _doctor_subparser(
+    _subcommand(
         sub.add_parser(
             "doctor",
             help="Inspect the machine for benchmarking noise sources.",
@@ -93,9 +109,11 @@ def main(argv: list[str] | None = None) -> int:
                 "Print the machine fingerprint and the noise checks. "
                 "Exits non-zero if any high-severity issue is found."
             ),
-        )
+        ),
+        DoctorParams,
+        _cmd_doctor,
     )
-    _denoise_subparser(
+    _subcommand(
         sub.add_parser(
             "denoise",
             help="Minimize/restore system noise knobs (requres linux with root access).",
@@ -105,7 +123,9 @@ def main(argv: list[str] | None = None) -> int:
                 "them (even after a crash). `status` only reports current values. "
                 "minimize/restore require root."
             ),
-        )
+        ),
+        DenoiseParams,
+        _cmd_denoise,
     )
 
     ns = parser.parse_args(argv)
@@ -119,89 +139,131 @@ def main(argv: list[str] | None = None) -> int:
         return 130
 
 
+def _subcommand(
+    p: argparse.ArgumentParser,
+    params: type[Params],
+    func: Callable[[argparse.Namespace], int],
+) -> None:
+    """Wire a subparser to its params class and its `_cmd_*` implementation."""
+    add_dataclass_args(p, params)
+    p.set_defaults(_func=func)
+
+
 # ----- run ----------------------------------------------------------------
 
+EXECUTION_GROUP = ParamsGroup("control execution")
+MATRIX_GROUP = ParamsGroup("matrix")
+INSTRUMENT_GROUP = ParamsGroup("instrument")
 
-def _run_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "commands",
-        nargs="+",
-        metavar="CMD",
-        help="One or more shell commands to benchmark.",
+
+class RunParams(SharedRunnerParams, SharedReporterParams):
+    """`bench run` params: the shared runtime and reporter flags plus the
+    ad-hoc benchmark description. No selection flags - `bench run` benchmarks
+    exactly the commands it is handed."""
+
+    commands: list[str] = field(
+        metadata={
+            "positional": True,
+            "metavar": "CMD",
+            "help": "One or more shell commands to benchmark.",
+        }
     )
-    # Shared runtime flags (jobs/progress/dry/verbose/json/csv/dir); `bench run`
-    # has no selection flags of its own, so skip include/exclude.
-    add_dataclass_args(p, SharedBenchParams, skip={"include", "exclude"})
-    p.add_argument(
-        "--runs",
-        type=int,
+
+    runs: int = field(
         default=10,
-        metavar="N",
-        help="Max measured runs per command (default: %(default)s).",
+        metadata={
+            "group": EXECUTION_GROUP,
+            "metavar": "N",
+            "help": "Max measured runs per command.",
+        },
     )
-    p.add_argument(
-        "--time",
-        type=float,
+
+    time: float = field(
         default=0.0,
-        metavar="SECONDS",
-        help="Also stop after SECONDS of cumulative command runtime (whichever comes first with --runs). 0 disables, the default (default: %(default)s).",
+        metadata={
+            "group": EXECUTION_GROUP,
+            "metavar": "SECONDS",
+            "help": "Also stop after SECONDS of cumulative command runtime "
+            "(whichever comes first with --runs). 0 disables.",
+        },
     )
-    p.add_argument(
-        "--warmup",
-        type=int,
+
+    warmup: int = field(
         default=0,
-        metavar="N",
-        help="Warmup runs executed but excluded from stats (default: %(default)s).",
+        metadata={
+            "group": EXECUTION_GROUP,
+            "metavar": "N",
+            "help": "Warmup runs executed but excluded from stats.",
+        },
     )
-    p.add_argument(
-        "--timeout",
-        type=float,
+
+    timeout: float | None = field(
         default=None,
-        metavar="SECONDS",
-        help="Kill a run that takes longer than SECONDS (default: %(default)s).",
+        metadata={
+            "group": EXECUTION_GROUP,
+            "metavar": "SECONDS",
+            "help": "Kill a run that takes longer than SECONDS.",
+        },
     )
-    p.add_argument(
-        "--metric",
-        type=str,
+
+    metric: str = field(
         default="elapsed",
-        metavar="NAME",
-        help="Metric to highlight in the comparison summary (default: %(default)s).",
+        metadata={
+            "group": EXECUTION_GROUP,
+            "metavar": "NAME",
+            "help": "Metric to highlight in the comparison summary.",
+        },
     )
-    p.add_argument(
-        "-M",
-        metavar=("NAME", "VALUES"),
-        nargs=2,
-        action="append",
-        dest="matrix",
+
+    matrix: list[list[str]] | None = field(
         default=None,
-        help="Add a matrix dimension NAME with comma-separated VALUES; "
-        "reference values as {NAME} in the command. "
-        "Repeatable. Place before the command.",
+        metadata={
+            "group": MATRIX_GROUP,
+            "flags": ("-M",),
+            "action": "append",
+            "nargs": 2,
+            "type": str,
+            "metavar": ("NAME", "VALUES"),
+            "help": "Add a matrix dimension NAME with comma-separated VALUES; "
+            "reference values as {NAME} in the command. "
+            "Repeatable. Place before the command.",
+        },
     )
-    p.add_argument(
-        "--check-environment",
-        action="store_true",
-        help="Record the machine fingerprint and run the noise checks "
-        "(off by default).",
+
+    check_environment: bool = field(
+        default=False,
+        metadata={
+            "group": INSTRUMENT_GROUP,
+            "action": "store_true",
+            "help": "Record the machine fingerprint and run the noise checks.",
+        },
     )
-    p.add_argument(
-        "--denoise",
-        action="store_true",
-        help="Minimize system noise (governor, turbo, ...) for the run, then "
-        "restore it. Linux + root.",
+
+    denoise: bool = field(
+        default=False,
+        metadata={
+            "group": INSTRUMENT_GROUP,
+            "action": "store_true",
+            "help": "Minimize system noise (governor, turbo, ...) for the run, "
+            "then restore it. Linux + root.",
+        },
     )
-    p.set_defaults(_func=_cmd_run)
+
+
+RunAppParams = BenchAppParams(RunParams)
 
 
 def _cmd_run(ns: argparse.Namespace) -> int:
     import shlex
 
-    argvs = [tuple(shlex.split(cmd)) for cmd in ns.commands]
-    runs_policy = FixedRuns(ns.runs)
-    if ns.time and ns.time > 0:
-        runs_policy |= MaxDuration(ns.time)
+    params = build_dataclass(RunAppParams, ns)
 
-    matrix_args: list[list[str]] = ns.matrix or []
+    argvs = [tuple(shlex.split(cmd)) for cmd in params.commands]
+    runs_policy = FixedRuns(params.runs)
+    if params.time > 0:
+        runs_policy |= MaxDuration(params.time)
+
+    matrix_args: list[list[str]] = params.matrix or []
     matrix_dims = {name: tuple(values.split(",")) for name, values in matrix_args}
     names = list(matrix_dims)
 
@@ -229,17 +291,17 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         .with_runs(runs_policy)
     )
 
-    if ns.timeout is not None:
-        b = b.with_timeout(ns.timeout)
-    if ns.warmup > 0:
-        b = b.with_warmup(ns.warmup)
+    if params.timeout is not None:
+        b = b.with_timeout(params.timeout)
+    if params.warmup > 0:
+        b = b.with_warmup(params.warmup)
     if matrix_dims:
         b = b.with_matrix(**matrix_dims)
 
     s = suite("run", b)
 
-    metrics = {ns.metric} if ns.metric else None
-    probe = SystemProbe() if ns.check_environment else NoProbe()
+    metrics = {params.metric} if params.metric else None
+    probe = SystemProbe() if params.check_environment else NoProbe()
 
     def build_reporter(ctx: Params) -> Reporter:
         summary = SummaryReporter(DefaultSummary(metrics=metrics))
@@ -250,7 +312,7 @@ def _cmd_run(ns: argparse.Namespace) -> int:
             return CompositeReporter(reporter, summary)
 
     app = (
-        bench_app("bench", probe=probe, denoise=ns.denoise)
+        bench_app("bench", params=RunParams, probe=probe, denoise=params.denoise)
         .add(s)
         .with_reporter(build_reporter)
     )
@@ -261,22 +323,27 @@ def _cmd_run(ns: argparse.Namespace) -> int:
 # ----- show ----------------------------------------------------------------
 
 
-def _show_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument("file", help="A JSON report to summarize.")
-    p.add_argument(
-        "--metric",
-        type=str,
-        default=None,
-        help="Comma-separated metric filter (e.g. elapsed,max_rss).",
+class ShowParams(Params):
+    file: str = field(
+        metadata={
+            "positional": True,
+            "help": "A JSON report to summarize.",
+        }
     )
-    p.set_defaults(_func=_cmd_show)
+
+    metric: str | None = field(
+        default=None,
+        metadata={"help": "Comma-separated metric filter (e.g. elapsed,max_rss)."},
+    )
 
 
 def _cmd_show(ns: argparse.Namespace) -> int:
-    path = Path(ns.file)
+    params = build_dataclass(ShowParams, ns)
+
+    path = Path(params.file)
     if not path.exists():
         raise BenchError(f"file not found: {path}")
-    metrics = set(ns.metric.split(",")) if ns.metric else None
+    metrics = set(params.metric.split(",")) if params.metric else None
     stats = summarize(report_from_json(path.read_text()))
     out = DefaultSummary(metrics)(stats)
     if out:
@@ -287,24 +354,30 @@ def _cmd_show(ns: argparse.Namespace) -> int:
 # ----- compare ------------------------------------------------------------
 
 
-def _compare_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument("files", nargs="+")
-    p.add_argument(
-        "--metric",
-        type=str,
-        default=None,
-        help="Comma-separated metric filter (e.g. elapsed,max_rss).",
+class CompareParams(Params):
+    files: list[str] = field(
+        metadata={
+            "positional": True,
+            "metavar": "FILE",
+            "help": "The JSON reports to compare; the first one is the baseline.",
+        }
     )
-    p.set_defaults(_func=_cmd_compare)
+
+    metric: str | None = field(
+        default=None,
+        metadata={"help": "Comma-separated metric filter (e.g. elapsed,max_rss)."},
+    )
 
 
 def _cmd_compare(ns: argparse.Namespace) -> int:
-    metrics = set(ns.metric.split(",")) if ns.metric else None
+    params = build_dataclass(CompareParams, ns)
+
+    metrics = set(params.metric.split(",")) if params.metric else None
     # Name each report by the path as given (e.g. `a.json`) and fold them into
     # one report tagged by a synthetic `compare` axis, then reuse the ordinary
     # views over it - the first file is the baseline.
     named: list[tuple[str, Report]] = []
-    for arg in ns.files:
+    for arg in params.files:
         path = Path(arg)
         if not path.exists():
             raise BenchError(f"file not found: {path}")
@@ -322,16 +395,19 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
 # ----- doctor --------------------------------------------------------------
 
 
-def _doctor_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "--json",
-        action="store_true",
-        help="Print the machine fingerprint as JSON instead of a report.",
+class DoctorParams(Params):
+    json: bool = field(
+        default=False,
+        metadata={
+            "action": "store_true",
+            "help": "Print the machine fingerprint as JSON instead of a report.",
+        },
     )
-    p.set_defaults(_func=_cmd_doctor)
 
 
 def _cmd_doctor(ns: argparse.Namespace) -> int:
+    params = build_dataclass(DoctorParams, ns)
+
     fingerprint = SystemProbe().collect()
     if fingerprint is None:
         console.print("No fingerprint information available.")
@@ -339,7 +415,7 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
     diagnostics = run_checks(fingerprint)
     exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
 
-    if ns.json:
+    if params.json:
         print(json.dumps(dataclasses.asdict(fingerprint), indent=2))
         return exit_code
 
@@ -356,27 +432,31 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
 # ----- denoise -------------------------------------------------------------
 
 
-def _denoise_subparser(p: argparse.ArgumentParser) -> None:
-    p.add_argument(
-        "action",
-        choices=("minimize", "restore", "status"),
-        help="minimize: quiet the knobs; restore: revert; status: show current.",
+class DenoiseParams(Params):
+    action: str = field(
+        metadata={
+            "positional": True,
+            "choices": ("minimize", "restore", "status"),
+            "help": "minimize: quiet the knobs; restore: revert; status: show current.",
+        }
     )
-    p.set_defaults(_func=_cmd_denoise)
 
 
 def _cmd_denoise(ns: argparse.Namespace) -> int:
-    if ns.action in ("minimize", "restore") and not is_root():
+    params = build_dataclass(DenoiseParams, ns)
+
+    if params.action in ("minimize", "restore") and not is_root():
         raise BenchError(
-            f"denoise {ns.action} requires root (try: sudo bench denoise {ns.action})",
+            f"denoise {params.action} requires root "
+            f"(try: sudo bench denoise {params.action})",
             exit_code=2,
         )
-    if ns.action == "minimize":
+    if params.action == "minimize":
         applied = minimize()
         console.print(
             f"Minimized {len(applied)} setting(s); state saved to {STATE_PATH}."
         )
-    elif ns.action == "restore":
+    elif params.action == "restore":
         restored = restore()
         console.print(f"Restored {len(restored)} setting(s) from {STATE_PATH}.")
     else:
