@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from bench.core.fingerprint.base import known
+from bench.core.fingerprint.base import Fingerprint
 from bench.core.fingerprint.system.common import base
 from bench.io import read_bracketed, read_int, read_text, to_int
 
@@ -20,14 +19,15 @@ SWAPPINESS = "sys/vm/swappiness"
 ASLR = "sys/kernel/randomize_va_space"
 
 
-def collect_linux(root: Path = Path("/")) -> dict[str, Any]:
+def collect_linux(root: Path = Path("/")) -> Fingerprint:
     sys_cpu = root / CPU_DIR
     proc = root / "proc"
     govs = sorted(
         {g for p in sys_cpu.glob(GOVERNOR_GLOB) if (g := read_text(p)) is not None}
     )
     cpu_model, physical = _parse_cpuinfo(read_text(proc / "cpuinfo"))
-    return base() | known(
+
+    return base() | Fingerprint.from_optional(
         cpu_model=cpu_model,
         physical_cpus=physical,
         governors=govs or None,

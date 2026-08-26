@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import itertools
@@ -11,6 +9,7 @@ from bench.core.policy.base import PolicyState, StoppingPolicy
 
 if TYPE_CHECKING:
     from bench.model.results import Execution
+
 
 class CoefficientOfVariation(StoppingPolicy):
     __slots__ = ("metric", "threshold", "window", "min_runs")
@@ -81,4 +80,3 @@ class CoVState(PolicyState):
         # Var = (E[X^2] - E[X]^2) * n / (n-1)   (Bessel correction)
         var = max((self.sumsq / n) - mean * mean, 0.0) * n / (n - 1)
         return math.sqrt(var) / abs(mean) <= cfg.threshold
-

@@ -402,9 +402,7 @@ def bench_app[P: Params](
 
 
 def BenchAppParams[T: Params](t: type[T]) -> type[T]:
-    default_actions_group = ParamsGroup(
-        "default actions"
-    )
+    default_actions_group = ParamsGroup("default actions")
 
     class Ps(t):
         list: bool = dataclasses.field(

@@ -26,11 +26,13 @@ def _run() -> Execution:
 
 
 def test_report_fingerprint_roundtrips():
-    fp: Fingerprint = {
-        "system": "Linux",
-        "governors": ["performance"],
-        "load_avg": [0.1, 0.2, 0.3],
-    }
+    fp: Fingerprint = Fingerprint(
+        {
+            "system": "Linux",
+            "governors": ["performance"],
+            "load_avg": [0.1, 0.2, 0.3],
+        }
+    )
     rep = Report(
         executions=[], fingerprint=fp, diagnostics=[Diagnostic("high", "m", "f")]
     )
@@ -46,7 +48,7 @@ def test_old_json_without_fingerprint_loads():
 
 
 def test_json_reporter_embeds_fingerprint(tmp_path: Path):
-    fp: Fingerprint = {"system": "Linux", "cpu_model": "X"}
+    fp: Fingerprint = Fingerprint({"system": "Linux", "cpu_model": "X"})
     r = JsonReporter(tmp_path / "o.json")
     r.finalize(
         Report(
@@ -61,7 +63,7 @@ def test_json_reporter_embeds_fingerprint(tmp_path: Path):
 
 
 def test_csv_reporter_writes_fingerprint_comments(tmp_path: Path):
-    fp: Fingerprint = {"system": "Linux", "cpu_model": "X"}
+    fp: Fingerprint = Fingerprint({"system": "Linux", "cpu_model": "X"})
     r = CsvReporter(tmp_path / "o.csv")
     r.finalize(Report(executions=[_run()], fingerprint=fp))
     text = (tmp_path / "o.csv").read_text()
@@ -71,7 +73,7 @@ def test_csv_reporter_writes_fingerprint_comments(tmp_path: Path):
 
 
 def test_dir_reporter_writes_fingerprint_json(tmp_path: Path):
-    fp: Fingerprint = {"system": "Linux", "cpu_model": "X"}
+    fp: Fingerprint = Fingerprint({"system": "Linux", "cpu_model": "X"})
     r = DirReporter(tmp_path)
     r.start([])
     r.execution_done(_run())

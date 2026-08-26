@@ -3,18 +3,17 @@ from __future__ import annotations
 import os
 import platform
 from datetime import datetime
-from typing import Any
 
-from bench.core.fingerprint.base import known
+from bench.core.fingerprint.base import Fingerprint
 
 
-def base() -> dict[str, Any]:
+def base() -> Fingerprint:
     """The platform-independent facts, probed on every machine."""
     try:
         load: list[float] | None = list(os.getloadavg())
     except (OSError, AttributeError):
         load = None
-    return known(
+    return Fingerprint.from_optional(
         timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
         hostname=platform.node(),
         system=platform.system(),

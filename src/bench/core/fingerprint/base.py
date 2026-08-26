@@ -3,30 +3,36 @@
 from __future__ import annotations
 
 import abc
+import dataclasses
 from collections.abc import Mapping
-from typing import Any, cast
-
-type Fingerprint = Mapping[str, Any]
-"""Machine facts at run time, as `key -> value`. A missing key means unknown or
-not applicable here. Values have to survive a JSON round trip, since a
-`Report` carries its fingerprint into the JSON and dir reports."""
+from dataclasses import dataclass
+from typing import Any
 
 
-def known(**items: Any) -> dict[str, Any]:
-    """The facts that could actually be read: a `None` value is dropped rather
-    than recorded as an unknown."""
-    return {k: v for k, v in items.items() if v is not None}
+@dataclass(frozen=True, slots=True)
+class Fingerprint(Mapping[str, Any]):
+    """Machine facts at run time, as `key -> value`. A missing key means unknown or
+    not applicable here."""
 
+    data: Mapping[str, Any] = dataclasses.field(default_factory=dict[str, Any])
 
-def display_items(fingerprint: Fingerprint) -> list[tuple[str, str]]:
-    """`(key, rendered value)` for each fact, lists comma-joined. The single
-    human-readable renderer (CSV preamble, doctor)."""
-    out: list[tuple[str, str]] = []
-    for key, value in fingerprint.items():
-        if isinstance(value, (list, tuple)):
-            value = ", ".join(str(x) for x in cast("list[object]", value))
-        out.append((key, str(value)))
-    return out
+    def __or__(self, other: Fingerprint) -> Fingerprint:
+        return Fingerprint({**self.data, **other.data})
+
+    @staticmethod
+    def from_optional(**kwargs: Any | None) -> Fingerprint:
+        """The facts that could actually be read: a `None` value is dropped rather
+        than recorded as an unknown."""
+        return Fingerprint({k: v for k, v in kwargs.items() if v is not None})
+
+    def __getitem__(self, key: str, /):
+        return self.data.__getitem__(key)
+
+    def __iter__(self):
+        return self.data.__iter__()
+
+    def __len__(self) -> int:
+        return self.data.__len__()
 
 
 class Probe(abc.ABC):
@@ -37,6 +43,9 @@ class Probe(abc.ABC):
     @abc.abstractmethod
     def collect(self) -> Fingerprint | None:
         """Return a snapshot, or `None` to record no fingerprint."""
+
+    def __and__(self, other: Probe) -> Probe:
+        return CompositeProbe(self, other)
 
 
 class NoProbe(Probe):
@@ -59,10 +68,14 @@ class CompositeProbe(Probe):
         self.probes = probes
 
     def collect(self) -> Fingerprint | None:
-        collected = [fp for p in self.probes if (fp := p.collect()) is not None]
-        if not collected:
-            return None
-        merged: dict[str, Any] = {}
-        for fp in collected:
-            merged |= fp
-        return merged
+        res = None
+
+        for p in self.probes:
+            c = p.collect()
+
+            if res is None:
+                res = c
+            elif c is not None:
+                res |= c
+
+        return res

@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+import shutil
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
 
 from bench.core.fingerprint.base import Fingerprint, Probe
-from bench.core.fingerprint.git import GitProbe, find_git
+from bench.core.fingerprint.git import GitProbe
 
 
 class BenchVersionProbe(Probe):
     """The installed bench version, plus the commit bench itself is checked out
     at when running from a source tree."""
 
-    __slots__ = ()
+    __slots__ = ("git_probe",)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        git_binary = shutil.which("git")
+        if git_binary is not None:
+            self.git_probe = GitProbe(
+                Path(__file__).parent,
+                key="bench commit",
+                git_binary=git_binary,
+            )
+        else:
+            self.git_probe = None
 
     def collect(self) -> Fingerprint | None:
         try:
@@ -22,16 +35,11 @@ class BenchVersionProbe(Probe):
         except PackageNotFoundError:
             v = "<dev>"
 
-        out: dict[str, Any] = {"bench version": v}
+        out = Fingerprint({"bench version": v})
 
-        git_binary = find_git()
-        if git_binary is not None:
-            probe = GitProbe(
-                Path(__file__).parent,
-                key="bench commit",
-                git_binary=git_binary,
-            )
-            if probe.is_repository() and (commit := probe.collect()) is not None:
-                out |= commit
+        if self.git_probe is not None:
+            git = self.git_probe.collect()
+            if git is not None:
+                out |= git
 
         return out

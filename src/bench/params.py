@@ -269,9 +269,7 @@ def add_dataclass_args(
             kwargs.setdefault("required", True)
 
         group = kwargs.pop("group", None)
-        grouped.setdefault(group, list()).append(
-            (flags, kwargs)
-        )
+        grouped.setdefault(group, list()).append((flags, kwargs))
 
     for group, args in grouped.items():
         if group is None:

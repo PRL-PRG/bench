@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import platform
-from typing import Any
 
 from bench.core.fingerprint.base import Fingerprint, Probe
 from bench.core.fingerprint.system.common import base
@@ -12,20 +11,14 @@ from bench.core.fingerprint.system.macos import collect_macos
 class SystemProbe(Probe):
     """Probe the host, dispatching on the platform."""
 
-    __slots__ = ("_cache",)
-
     def __init__(self) -> None:
         super().__init__()
-        self._cache: dict[str, Any] | None = None
 
     def collect(self) -> Fingerprint | None:
-        if self._cache is None:
-            system = platform.system()
-            if system == "Linux":
-                self._cache = collect_linux()
-            elif system == "Darwin":
-                self._cache = collect_macos()
-            else:
-                self._cache = base()
-
-        return self._cache
+        system = platform.system()
+        if system == "Linux":
+            return collect_linux()
+        elif system == "Darwin":
+            return collect_macos()
+        else:
+            return base()

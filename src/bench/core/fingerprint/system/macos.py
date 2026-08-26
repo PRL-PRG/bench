@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 import subprocess
 from collections.abc import Callable
-from typing import Any
 
-from bench.core.fingerprint.base import known
+from bench.core.fingerprint.base import Fingerprint
 from bench.core.fingerprint.system.common import base
 from bench.io import to_int
 
@@ -20,7 +19,7 @@ def _sysctl_run(cmd: list[str]) -> str | None:
 
 def collect_macos(
     run: Callable[[list[str]], str | None] = _sysctl_run,
-) -> dict[str, Any]:
+) -> Fingerprint:
     def sysctl(key: str) -> str | None:
         return run(["sysctl", "-n", key])
 
@@ -28,7 +27,8 @@ def collect_macos(
     logical = to_int(sysctl("hw.logicalcpu"))
     smt = logical > physical if logical is not None and physical is not None else None
     batt = run(["pmset", "-g", "batt"])
-    return base() | known(
+
+    return base() | Fingerprint.from_optional(
         cpu_model=sysctl("machdep.cpu.brand_string"),
         logical_cpus=logical,
         physical_cpus=physical,

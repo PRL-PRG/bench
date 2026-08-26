@@ -21,7 +21,7 @@ from bench.core.denoise import (
     status,
 )
 from bench.core.diagnostic import print_diagnostics, run_checks
-from bench.core.fingerprint import NoProbe, SystemProbe, display_items
+from bench.core.fingerprint import NoProbe, SystemProbe
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.error import BenchError, print_exception
@@ -415,11 +415,11 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
     exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
 
     if params.json:
-        print(json.dumps(fingerprint, indent=2))
+        json.dump(fingerprint.data, sys.stdout, indent=2)
         return exit_code
 
     console.print("[bench.label]Fingerprint:[/]")
-    for name, value in display_items(fingerprint):
+    for name, value in fingerprint.items():
         console.print(f"  {name}: {value}")
     if diagnostics:
         print_diagnostics(diagnostics, "Checks")

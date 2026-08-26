@@ -22,8 +22,6 @@ from bench.core.fingerprint import (
     NoProbe,
     Probe,
     SystemProbe,
-    display_items,
-    known,
 )
 from bench.core.fingerprint.system.linux import collect_linux
 from bench.core.fingerprint.system.macos import collect_macos
@@ -98,25 +96,19 @@ def test_no_probe_collects_nothing():
     assert NoProbe().collect() is None
 
 
-def test_known_drops_the_facts_that_could_not_be_read():
-    fp = known(system="Linux", cpu_model=None, logical_cpus=0)
-    assert fp == {"system": "Linux", "logical_cpus": 0}  # 0 is a fact, None is not
-
-
-def test_display_items_joins_lists():
-    items = dict(
-        display_items({"system": "Linux", "governors": ["performance", "powersave"]})
-    )
-    assert items["governors"] == "performance, powersave"
-    assert items["system"] == "Linux"
+def test_from_optional_drops_the_facts_that_could_not_be_read():
+    fp = Fingerprint.from_optional(system="Linux", cpu_model=None, logical_cpus=0)
+    assert fp == Fingerprint(
+        {"system": "Linux", "logical_cpus": 0}
+    )  # 0 is a fact, None is not
 
 
 def test_composite_probe_merges_snapshots_later_probe_winning():
     fp = CompositeProbe(
-        _Canned({"system": "Linux", "hostname": "a"}),
-        _Canned({"hostname": "b", "git commit": "abc"}),
+        _Canned(Fingerprint({"system": "Linux", "hostname": "a"})),
+        _Canned(Fingerprint({"hostname": "b", "git commit": "abc"})),
     ).collect()
-    assert fp == {"system": "Linux", "hostname": "b", "git commit": "abc"}
+    assert fp == Fingerprint({"system": "Linux", "hostname": "b", "git commit": "abc"})
 
 
 def test_composite_probe_collects_nothing_when_every_member_does():

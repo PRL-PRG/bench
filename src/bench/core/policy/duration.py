@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -8,6 +6,7 @@ from bench.core.policy.base import PolicyState, StoppingPolicy
 
 if TYPE_CHECKING:
     from bench.model.results import Execution
+
 
 class MaxDuration(StoppingPolicy):
     """Stop once `seconds` of cumulative command runtime have been observed.
