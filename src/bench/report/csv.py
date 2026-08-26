@@ -48,7 +48,7 @@ class CsvReporter(Reporter):
             + samples_extra
         )
 
-        with open(self.path, "wt", newline="") as f:
+        with open(self.path, "w", newline="") as f:
             for line in _fingerprint_comments(report.fingerprint):
                 f.write(line)
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)

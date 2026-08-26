@@ -9,10 +9,9 @@ from __future__ import annotations
 import dataclasses
 import resource
 import shlex
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 type Timeout = float | None
 type Env = Mapping[str, str]

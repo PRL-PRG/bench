@@ -10,9 +10,9 @@ from __future__ import annotations
 import itertools
 import random
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any
 
 from bench.builder.base import BuilderBase, const, merge_sequence
 from bench.builder.benchmark import BenchmarkBuilder

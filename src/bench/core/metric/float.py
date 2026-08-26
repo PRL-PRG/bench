@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from bench.core.metric.base import BuildableMetric, IterationMetric, MetricSource
 from bench.model.results import Direction, Sample

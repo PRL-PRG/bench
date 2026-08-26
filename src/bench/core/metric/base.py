@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import abc
 import copy
-from collections.abc import Callable, Iterable
-from typing import Any, Literal, Mapping, Self
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, Literal, Self
 
 from bench.model.invocation import InvocationResult
 from bench.model.results import Direction, Sample

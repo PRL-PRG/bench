@@ -6,9 +6,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Sequence, cast
+from typing import Any, cast
 
 from rich.text import Text
 from rich.tree import Tree
