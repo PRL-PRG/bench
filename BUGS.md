@@ -14,18 +14,18 @@ defect. **No `src/` files were modified by the test migration.**
 > the failure list and this file stay in step.
 
 **Current state:** `pyright` reports **0 errors** across `src/`, `tests/` and
-`examples/`. `pytest` is **fully green**: 441 passed / 0 failed / 2 skipped, and
-the aggregate matches the union of the isolated per-file runs. **No defect is
-open**, so there is no red test and no `RED ON PURPOSE` marker anywhere in
-`tests/`.
+`examples/`. `pytest` is **fully green**. **No defect is open**, so there is no
+red test and no `RED ON PURPOSE` marker anywhere in `tests/`.
 
-This pass followed the `Fingerprint`-is-a-mapping change, the `__main__`
-params rewrite, and the `PerfRecord` port. All 23 failures were stale tests
-(the old `Fingerprint` dataclass, and `add_dataclass_args(skip=...)`), not
-defects. Three observations of the previous pass are **fixed** and have been
-dropped: `SharedRunnerParams`/`SharedReporterParams` are exported now,
-`default_reporter`'s docstring no longer advertises the removed `summary=`
-keyword, and the shared-params docstrings sit on the classes they describe.
+This pass followed the `PerfStat`-is-a-Controller change: the metric half is now
+`PerfStatMetric`, an `IterationMetric` reading stderr, and `wrap` /
+`lower_is_better` / `PerfRecord.output_dir` / `PerfRecord.call_graph_arg` are
+gone. The tests that pinned the removed methods were dropped; the parsing tests
+now go through `PerfStat(...).metric`, and `direction` is asserted as the
+constructor keyword it became. The one defect this pass found — `PerfStat`
+registering its metric on the `Invocation` rather than the `Benchmark`, which
+made the controller unrunnable — was **fixed in `src/` by the author** and has
+been dropped.
 
 ---
 

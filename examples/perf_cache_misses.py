@@ -22,17 +22,14 @@ import os
 
 from bench import PerfStat, bench, run, suite
 
-counters = PerfStat(("cache-misses", "cache-references")).lower_is_better()
+counters = PerfStat("cache-misses", "cache-references", direction="lower better")
 
 # A workload that walks a large array, so the cache counters are non-trivial.
 WORKLOAD = ["sh", "-c", "awk 'BEGIN{for (i = 0; i < 3000000; i++) a[i] = i}'"]
 
 s = suite(
     "perf",
-    bench("memwalk")
-    .with_command(counters.wrap(WORKLOAD))
-    .with_metric(counters)
-    .with_runs(5),
+    bench("memwalk").with_controller(counters).with_command(WORKLOAD).with_runs(5),
     # A benchmark runs with exactly the environment it is given, so the `sh -c`
     # workload needs PATH handed to it to find `awk`.
 ).with_env({"PATH": os.environ["PATH"]})

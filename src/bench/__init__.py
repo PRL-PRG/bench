@@ -132,6 +132,7 @@ from bench.params import (
 from bench.perf import (
     PerfRecord,
     PerfStat,
+    PerfStatMetric,
 )
 from bench.report import (
     CompositeReporter,
@@ -297,6 +298,7 @@ __all__ = [
     "add_dataclass_args",
     "build_dataclass",
     # bench.perf
+    "PerfStatMetric",
     "PerfStat",
     "PerfRecord",
     # bench.report

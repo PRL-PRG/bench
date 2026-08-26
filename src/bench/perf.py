@@ -22,29 +22,24 @@ from __future__ import annotations
 
 import csv
 import dataclasses
-import os
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, cast
 
-from bench.core.metric import BuildableMetric
+from bench.core.metric.base import IterationMetric, StderrMetricSource
 from bench.core.process import execute
 from bench.model.benchmark import Benchmark
-from bench.model.invocation import Invocation, InvocationResult
+from bench.model.invocation import Invocation
 from bench.model.results import Direction, Execution, Sample
 from bench.report.dir import execution_dir, variant_path
 from bench.runner import Controller
 
-
-def to_argv(command: Any) -> tuple[Any, ...]:
-    """A bare str/bytes/PathLike is a one-element argv, a Sequence is full argv."""
-    if isinstance(command, (str, bytes, os.PathLike)):
-        return (cast(Any, command),)
-    return tuple(command)
+# ---------------------------------------------------------------------------
+# perf stat
+# ---------------------------------------------------------------------------
 
 
-class PerfStat(BuildableMetric):
+class PerfStatMetric(IterationMetric):
     """Run a command under `perf stat` and read its counters from stderr.
 
     `events` are symbolic perf event names - raw `cpu/event=.../` names embed
@@ -53,33 +48,20 @@ class PerfStat(BuildableMetric):
 
     events: tuple[str, ...]
 
-    def __init__(
-        self, events: tuple[str, ...] = (), direction: Direction = "uncomparable"
-    ) -> None:
-        super().__init__("", "", direction)
+    def __init__(self, events: tuple[str, ...], direction: Direction) -> None:
+        super().__init__(StderrMetricSource, "", "", direction)
 
         if len(events) == 0:
             raise ValueError("PerfStat needs at least one event")
 
         self.events = events
 
-    def _prefix(self) -> list[str]:
+    def prefix(self) -> list[str]:
         return ["perf", "stat", "-x", ",", "-e", ",".join(self.events), "--"]
 
-    def wrap(self, command: object) -> list[str]:
-        """Prepend the `perf stat` invocation to `command`.
-
-        Idempotent, so wrapping at both suite and benchmark level never
-        double-prefixes."""
-        argv = list(to_argv(command))
-        prefix = self._prefix()
-        if argv[: len(prefix)] == prefix:
-            return [str(a) for a in argv]
-        return [*prefix, *(str(a) for a in argv)]
-
-    def process(self, data: InvocationResult) -> Iterable[Sample]:
+    def process_text(self, text: str) -> Iterable[Sample]:
         counts: dict[str, str] = {}
-        for line in (data.stderr or "").splitlines():
+        for line in text.splitlines():
             parts = line.split(",")
             if len(parts) < 3:
                 continue
@@ -102,6 +84,29 @@ class PerfStat(BuildableMetric):
             yield self.get_sample(metric=event, value=value)
 
 
+class PerfStat(Controller):
+    __slots__ = ("metric",)
+
+    def __init__(
+        self,
+        *events: str,
+        direction: Direction = "uncomparable",
+    ) -> None:
+        super().__init__()
+        self.metric = PerfStatMetric(events, direction)
+
+    def execute_benchmark(self, b: Benchmark, run: int, verbose: bool) -> Execution:
+        b = dataclasses.replace(
+            b,
+            metrics=[*b.metrics, self.metric],
+            invocation=dataclasses.replace(
+                b.invocation,
+                command=[*self.metric.prefix(), *b.invocation.command],
+            ),
+        )
+        return super().execute_benchmark(b, run, verbose)
+
+
 # ---------------------------------------------------------------------------
 # perf record
 # ---------------------------------------------------------------------------
@@ -120,6 +125,16 @@ class PerfRecord(Controller):
     the most and truncates deeper stacks); `"fp"` needs frame pointers; `"lbr"`
     uses the CPU's branch stack.
     """
+
+    __slots__ = (
+        "root",
+        "freq",
+        "call_graph",
+        "stack_size",
+        "event",
+        "frames",
+        "nested",
+    )
 
     def __init__(
         self,
@@ -141,17 +156,11 @@ class PerfRecord(Controller):
         self.frames = frames
         self.nested = nested
 
-    def output_dir(self, b: Benchmark, run: int) -> Path:
-        leaf = variant_path(b.variant, nested=self.nested) if b.variant else run
-        return execution_dir(self.root, b.suite, b.name, leaf)
-
-    def call_graph_arg(self) -> str:
-        """The `--call-graph` value; only dwarf takes a stack-dump size."""
-        if self.call_graph == "dwarf":
-            return f"dwarf,{self.stack_size}"
-        return self.call_graph
-
     def record_prefix(self, data_file: Path) -> list[str]:
+        call_graph = self.call_graph
+        if call_graph == "dwarf":
+            call_graph += f",{self.stack_size}"
+
         return [
             "perf",
             "record",
@@ -159,7 +168,7 @@ class PerfRecord(Controller):
             str(self.freq),
             "-g",
             "--call-graph",
-            self.call_graph_arg(),
+            call_graph,
             "-k1",
             "-e",
             self.event,
@@ -169,7 +178,9 @@ class PerfRecord(Controller):
         ]
 
     def execute_benchmark(self, b: Benchmark, run: int, verbose: bool) -> Execution:
-        folder = self.output_dir(b, run)
+        folder = execution_dir(
+            self.root, b.suite, b.name, variant_path(b.variant, nested=self.nested)
+        )
         folder.mkdir(parents=True, exist_ok=True)
         data_file = folder / "perf.data"
 
@@ -196,6 +207,7 @@ class PerfRecord(Controller):
         `frames_file`. Nothing at all when perf wrote no recording."""
         if not data_file.exists():
             return
+
         yield Sample(
             metric="perf_data_size", value=float(data_file.stat().st_size), unit="B"
         )
@@ -209,7 +221,7 @@ class PerfRecord(Controller):
                 inherit_env=True,
             )
         )
-        if script.returncode != 0:
+        if script.is_failure():
             return
 
         n_samples, n_frames = write_perf_frames(script.stdout, frames_file)

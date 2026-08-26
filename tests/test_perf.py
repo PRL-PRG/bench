@@ -1,8 +1,8 @@
-"""Opt-in perf integration: a self-contained Metric and a profiling Controller.
+"""Opt-in perf integration: two profiling Controllers.
 
-`PerfStat` both builds the `perf stat` command prefix (via `wrap`) and parses
-perf's `-x,` CSV from the process stderr. It never touches argv on its own.
-`PerfRecord` is a `Controller`: it wraps the invocation it is about to run in
+`PerfStat` is a `Controller` owning a `PerfStatMetric`: the controller prepends
+the `perf stat` invocation and registers the metric, the metric parses perf's
+`-x,` CSV out of the process stderr. `PerfRecord` wraps the invocation in
 `perf record` and reads the recording back afterwards. Neither needs a `perf`
 binary to be tested - the recording itself is the only part that does.
 """
@@ -21,7 +21,12 @@ from bench import (
     suite,
 )
 from bench.builder.suite import plan
-from bench.perf import iter_perf_frames, write_perf_frames
+from bench.perf import PerfStatMetric, iter_perf_frames, write_perf_frames
+from bench.runner import Controller
+
+TWO_EVENTS = (
+    "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
+)
 
 # ----- construction ---------------------------------------------------------
 
@@ -31,12 +36,9 @@ def test_no_events_rejected():
         PerfStat()
 
 
-# ----- wrap (the one place perf enters argv) --------------------------------
-
-
-def test_wrap_string_command():
-    c = PerfStat(("cache-misses", "cache-references"))
-    assert c.wrap("./workload") == [
+def test_prefix_carries_every_event_as_one_list():
+    metric = PerfStat("cache-misses", "cache-references").metric
+    assert metric.prefix() == [
         "perf",
         "stat",
         "-x",
@@ -44,84 +46,89 @@ def test_wrap_string_command():
         "-e",
         "cache-misses,cache-references",
         "--",
-        "./workload",
     ]
 
 
-def test_wrap_list_command_keeps_args():
-    c = PerfStat(("cache-misses",))
-    assert c.wrap(["./workload", "-n", "5"]) == [
-        "perf",
-        "stat",
-        "-x",
-        ",",
-        "-e",
-        "cache-misses",
-        "--",
-        "./workload",
-        "-n",
-        "5",
-    ]
+# ----- the metric (parse perf -x, CSV from stderr) --------------------------
 
 
-def test_wrap_is_idempotent():
-    c = PerfStat(("cache-misses", "cache-references"))
-    once = c.wrap("./workload")
-    assert c.wrap(once) == once
-
-
-# ----- extract (parse perf -x, CSV from stderr) -----------------------------
-
-
-def test_extract_emits_one_sample_per_event():
-    stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
-    samples = list(
-        PerfStat(("cache-misses", "cache-references")).process(
-            make_success(stderr=stderr)
-        )
-    )
-    assert samples == [
+def test_metric_emits_one_sample_per_event():
+    metric = PerfStat("cache-misses", "cache-references").metric
+    assert list(metric.process(make_success(stderr=TWO_EVENTS))) == [
         Sample(metric="cache-misses", value=12345.0, unit=""),
         Sample(metric="cache-references", value=67890.0, unit=""),
     ]
 
 
-def test_extract_skips_not_counted_and_not_supported():
+def test_metric_reads_stderr_not_stdout():
+    # perf writes its counters to stderr; the same CSV on stdout is the
+    # workload's own output and must not be mistaken for counters.
+    metric = PerfStat("cache-misses", "cache-references").metric
+    assert list(metric.process(make_success(stdout=TWO_EVENTS))) == []
+
+
+def test_metric_skips_not_counted_and_not_supported():
     stderr = "<not counted>,,cache-misses,,,,\n<not supported>,,cache-references,,,,\n"
-    assert (
-        list(
-            PerfStat(("cache-misses", "cache-references")).process(
-                make_success(stderr=stderr)
-            )
-        )
-        == []
-    )
+    metric = PerfStat("cache-misses", "cache-references").metric
+    assert list(metric.process(make_success(stderr=stderr))) == []
 
 
-def test_extract_no_perf_output_emits_nothing():
-    assert (
-        list(
-            PerfStat(("cache-misses",)).process(
-                make_success(stderr="just program noise\n")
-            )
-        )
-        == []
-    )
-    assert list(PerfStat(("cache-misses",)).process(make_success(stderr=""))) == []
+def test_metric_no_perf_output_emits_nothing():
+    metric = PerfStat("cache-misses").metric
+    assert list(metric.process(make_success(stderr="just program noise\n"))) == []
+    assert list(metric.process(make_success(stderr=""))) == []
 
 
-def test_extract_matches_modifier_suffix():
+def test_metric_matches_modifier_suffix():
     stderr = "999,,cache-misses:u,1000000,100.00,,\n"
-    samples = list(PerfStat(("cache-misses",)).process(make_success(stderr=stderr)))
-    assert samples == [Sample(metric="cache-misses", value=999.0, unit="")]
+    metric = PerfStat("cache-misses").metric
+    assert list(metric.process(make_success(stderr=stderr))) == [
+        Sample(metric="cache-misses", value=999.0, unit="")
+    ]
 
 
-def test_lower_is_better_preserves_events_and_marks_samples():
-    c = PerfStat(("cache-misses", "cache-references")).lower_is_better()
-    assert c.events == ("cache-misses", "cache-references")
-    stderr = "12345,,cache-misses,1000000,100.00,,\n67890,,cache-references,1000000,100.00,,\n"
-    samples = list(c.process(make_success(stderr=stderr)))
+def test_direction_is_set_once_and_applies_to_every_event():
+    counters = PerfStat("cache-misses", "cache-references", direction="lower better")
+    samples = list(counters.metric.process(make_success(stderr=TWO_EVENTS)))
+    assert len(samples) == 2
     assert all(s.direction == "lower better" for s in samples)
+
+
+def test_metric_is_usable_on_its_own():
+    # The metric is the reusable half: given the text, it parses it, whether or
+    # not the controller put `perf stat` on the argv.
+    metric = PerfStatMetric(("cache-misses",), "lower better")
+    assert list(metric.process_text("999,,cache-misses,1000000,100.00,,\n")) == [
+        Sample(metric="cache-misses", value=999.0, unit="", direction="lower better")
+    ]
+
+
+# ----- perf stat: the wrapping Controller -----------------------------------
+
+
+def _planned(controller: Controller):
+    s = suite("S", bench("b").with_command(["true"]).with_controller(controller))
+    return plan([s.with_cwd(Path("/tmp"))], Params())[0]
+
+
+def test_perf_stat_controller_wraps_the_command_and_adds_its_metric(monkeypatch):
+    handed_down = []
+    monkeypatch.setattr(
+        Controller,
+        "execute_benchmark",
+        lambda self, b, run, verbose: handed_down.append(b),
+    )
+
+    controller = PerfStat("cache-misses")
+    b = _planned(controller)
+    controller.execute_benchmark(b, 1, False)
+
+    (wrapped,) = handed_down
+    assert list(wrapped.invocation.command) == [
+        *controller.metric.prefix(),
+        "true",
+    ]
+    assert controller.metric in wrapped.metrics
 
 
 # ----- perf record: the profiling Controller --------------------------------
@@ -136,13 +143,6 @@ SCRIPT_OUT = (
 )
 
 
-def _planned(**matrix: list[str]):
-    b = bench("b").with_command(["true"])
-    if matrix:
-        b = b.with_matrix(**matrix)
-    return plan([suite("S", b).with_cwd(Path("/tmp"))], Params())
-
-
 def test_record_prefix_carries_the_recording_settings(tmp_path: Path):
     prefix = PerfRecord(tmp_path, freq=999, event="instructions:u").record_prefix(
         tmp_path / "perf.data"
@@ -153,27 +153,14 @@ def test_record_prefix_carries_the_recording_settings(tmp_path: Path):
     assert str(tmp_path / "perf.data") in prefix
 
 
-def test_call_graph_arg_only_dwarf_takes_a_stack_size(tmp_path: Path):
-    assert PerfRecord(tmp_path, stack_size=4096).call_graph_arg() == "dwarf,4096"
-    assert PerfRecord(tmp_path, call_graph="fp").call_graph_arg() == "fp"
-    assert PerfRecord(tmp_path, call_graph="lbr").call_graph_arg() == "lbr"
+def test_record_prefix_only_dwarf_takes_a_stack_size(tmp_path: Path):
+    def call_graph(recorder: PerfRecord) -> str:
+        prefix = recorder.record_prefix(tmp_path / "perf.data")
+        return prefix[prefix.index("--call-graph") + 1]
 
-
-def test_output_dir_follows_the_dir_reporter_layout(tmp_path: Path):
-    # A variant is keyed by its `dim=val` sub-path, a plain benchmark by its run
-    # number - the same leaves DirReporter writes, so the recording lands next
-    # to that run's stdout/stderr.
-    (plain,) = _planned()
-    assert PerfRecord(tmp_path).output_dir(plain, 2) == tmp_path / "S/b/2"
-
-    variants = _planned(size=["small", "big"])
-    assert (
-        PerfRecord(tmp_path).output_dir(variants[0], 1) == tmp_path / "S/b/size=small"
-    )
-    assert (
-        PerfRecord(tmp_path, nested=True).output_dir(variants[1], 1)
-        == tmp_path / "S/b/size/big"
-    )
+    assert call_graph(PerfRecord(tmp_path, stack_size=4096)) == "dwarf,4096"
+    assert call_graph(PerfRecord(tmp_path, call_graph="fp")) == "fp"
+    assert call_graph(PerfRecord(tmp_path, call_graph="lbr")) == "lbr"
 
 
 def test_read_recording_emits_nothing_without_a_recording(tmp_path: Path):
