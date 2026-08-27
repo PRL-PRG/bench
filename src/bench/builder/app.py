@@ -32,7 +32,6 @@ from bench.core.diagnostic import (
 )
 from bench.core.diagnostic import run_checks
 from bench.core.fingerprint import (
-    NoProbe,
     Probe,
 )
 from bench.error import BenchError, print_exception
@@ -105,7 +104,7 @@ class BenchAppBuilder(BuilderBase):
     reporter: ParamFactory[Reporter] | None = None
     summary: ParamFactory[Reporter] | None = None
     runner: ParamFactory[Runner] | None = None
-    probe: Probe = NoProbe()
+    probe: ParamFactory[Probe] | None = None
     denoise: bool = False
 
     # ----- producers -------------------------------------------------
@@ -167,11 +166,13 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
-    def with_probe(self, probe: Probe, override: bool = True) -> BenchAppBuilder:
+    def with_probe(
+        self, probe: Probe | ParamFactory[Probe], override: bool = False
+    ) -> BenchAppBuilder:
         """Set the probe that snapshots the machine (fingerprint + diagnostics)."""
         return self.replace(
             "probe",
-            probe,
+            as_build(probe),
             override=override,
         )
 
@@ -241,7 +242,9 @@ class BenchAppBuilder(BuilderBase):
         print_diagnostics: bool = True,
     ) -> Report:
         # Setup probe
-        fingerprint = self.probe.collect()
+        fingerprint = (
+            self.probe(build_params).collect() if self.probe is not None else None
+        )
         diagnostics = run_checks(fingerprint) if fingerprint is not None else []
 
         if print_diagnostics:
@@ -373,7 +376,7 @@ def bench_app[P: Params](
     params: type[P] | None = None,
     reporter: Reporter | Callable[[P], Reporter] | None = None,
     summary: Reporter | Callable[[P], Reporter] | None = None,
-    probe: Probe | None = None,
+    probe: Probe | Callable[[P], Probe] | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
     """Top-level builder combining suites with common settings.
@@ -391,7 +394,7 @@ def bench_app[P: Params](
         params=params,
         reporter=as_param_build(reporter) if reporter is not None else None,
         summary=as_param_build(summary) if summary is not None else None,
-        probe=probe or NoProbe(),
+        probe=as_param_build(probe) if probe is not None else None,
         denoise=denoise,
     )
 

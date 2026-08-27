@@ -13,7 +13,6 @@ from bench import (
     NoBenchmarksMatchedError,
     SharedBenchParams,
     SuiteMaterializationError,
-    SystemProbe,
     Time,
     bench,
     bench_app,
@@ -630,9 +629,8 @@ def test_main_translates_materialization_error_to_exit_code(capsys):
 
 
 def test_bench_app_setters_match_the_constructor_keywords():
-    probe = SystemProbe()
-    kwargs = bench_app("X", params=_Params, probe=probe, denoise=True)
-    setters = bench_app("X").with_params(_Params).with_probe(probe).with_denoise()
+    kwargs = bench_app("X", params=_Params, denoise=True)
+    setters = bench_app("X").with_params(_Params).with_denoise()
     # `suites` holds closures, which never compare equal - the settings do.
-    for field in ("name", "params", "probe", "denoise"):
+    for field in ("name", "params", "denoise"):
         assert getattr(kwargs, field) == getattr(setters, field)
