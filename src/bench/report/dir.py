@@ -7,8 +7,6 @@ from pathlib import Path
 
 from cattrs import unstructure
 
-from bench.core.diagnostic import Diagnostic
-from bench.core.fingerprint import Fingerprint
 from bench.model.benchmark import (
     Benchmark,
     Variant,
@@ -61,13 +59,9 @@ class DirReporter(Reporter):
         root: Path,
         *,
         nested: bool = False,
-        fingerprint: Fingerprint | None = None,
-        diagnostics: list[Diagnostic] | None = None,
     ) -> None:
         self.root = root
         self.nested = nested
-        self.fingerprint = fingerprint
-        self.diagnostics = diagnostics or []
         self._counters: dict[tuple[str, str], int] = {}
         self._lock = threading.Lock()
 
@@ -91,8 +85,6 @@ class DirReporter(Reporter):
                 self.output_dir(b.suite, b.name, b.variant).mkdir(
                     parents=True, exist_ok=True
                 )
-        if self.fingerprint is not None:
-            self._write_fingerprint(self.fingerprint, self.diagnostics)
 
     def execution_done(self, execution: Execution) -> None:
         # Stable path per variant, lazy per-run numbering otherwise (see start).
@@ -124,17 +116,12 @@ class DirReporter(Reporter):
 
     def finalize(self, report: Report) -> None:
         if report.fingerprint is not None:
-            self._write_fingerprint(report.fingerprint, report.diagnostics)
-
-    def _write_fingerprint(
-        self, fingerprint: Fingerprint, diagnostics: list[Diagnostic]
-    ) -> None:
-        (self.root / "fingerprint.json").write_text(
-            json.dumps(
-                {
-                    "fingerprint": unstructure(fingerprint),
-                    "diagnostics": unstructure(diagnostics),
-                },
-                indent=2,
+            (self.root / "fingerprint.json").write_text(
+                json.dumps(
+                    {
+                        "fingerprint": unstructure(report.fingerprint),
+                        "diagnostics": unstructure(report.diagnostics),
+                    },
+                    indent=2,
+                )
             )
-        )
