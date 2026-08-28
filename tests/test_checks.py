@@ -77,3 +77,18 @@ def test_low_power_mode_is_high_with_pmset_fix():
 def test_high_load_warns():
     diags = run_checks(Environment(load_avg=[7.0, 6.0, 5.0], logical_cpus=8))
     assert [d.severity for d in diags] == ["warn"]
+
+
+def test_clean_machine_has_quiet_perf_event_paranoid():
+    # `_clean()` leaves the field None (unknown), so add it explicitly: the
+    # values that let `perf record` work must not be reported.
+    for value in (-1, 0, 1, 2):
+        assert run_checks(Environment(perf_event_paranoid=value)) == []
+
+
+def test_perf_event_paranoid_above_two_warns():
+    # 3 is the Ubuntu default and the value at which every profiling run dies.
+    diags = run_checks(Environment(perf_event_paranoid=3))
+    assert len(diags) == 1
+    assert diags[0].severity == "warn"
+    assert "perf_event_paranoid" in (diags[0].fix or "")

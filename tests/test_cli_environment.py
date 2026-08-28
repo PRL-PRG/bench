@@ -111,3 +111,37 @@ def test_run_denoise_requires_root():
     r = _run("run", "--denoise", "--runs", "1", "sleep 0.01")
     assert r.returncode == 2
     assert "root" in (r.stdout + r.stderr).lower()
+
+
+# --- doctor --fail-on -------------------------------------------------------
+# The exit policy is what makes `doctor` usable as a gate in front of a
+# measurement run, so it is tested on the function rather than through a machine
+# whose actual state the test cannot control.
+
+from bench.cli import _doctor_exit_code
+from bench.core.environment import Diagnostic
+
+_HIGH = Diagnostic("high", "boom", "fix it")
+_WARN = Diagnostic("warn", "meh", "maybe fix it")
+
+
+def test_fail_on_high_is_the_default_behaviour():
+    assert _doctor_exit_code([], "high") == 0
+    assert _doctor_exit_code([_WARN], "high") == 0
+    assert _doctor_exit_code([_HIGH], "high") == 1
+
+
+def test_fail_on_any_also_fails_on_warnings():
+    assert _doctor_exit_code([], "any") == 0
+    assert _doctor_exit_code([_WARN], "any") == 1
+    assert _doctor_exit_code([_HIGH], "any") == 1
+
+
+def test_fail_on_none_never_fails():
+    assert _doctor_exit_code([], "none") == 0
+    assert _doctor_exit_code([_WARN], "none") == 0
+    assert _doctor_exit_code([_HIGH], "none") == 0
+
+
+def test_doctor_accepts_fail_on_flag():
+    assert _run("doctor", "--fail-on", "none").returncode == 0
