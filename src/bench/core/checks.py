@@ -65,6 +65,19 @@ def run_checks(env: Environment) -> list[Diagnostic]:
                 "echo off | sudo tee /sys/devices/system/cpu/smt/control",
             )
         )
+    # Collected but, until now, never checked -- and it is the one knob whose
+    # wrong value makes a whole class of runs fail outright rather than merely
+    # measure badly: at >2 the kernel refuses to let `perf record` sample this
+    # user's own processes, so every profiling run dies at once.
+    if env.perf_event_paranoid is not None and env.perf_event_paranoid > 2:
+        out.append(
+            Diagnostic(
+                "warn",
+                f"perf_event_paranoid is {env.perf_event_paranoid}; "
+                "`perf record` cannot sample this user's processes.",
+                "sudo sysctl -w kernel.perf_event_paranoid=1",
+            )
+        )
     if env.swap_in_use:
         out.append(
             Diagnostic(

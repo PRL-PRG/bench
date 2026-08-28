@@ -13,7 +13,7 @@ from bench.run import bench_app, default_reporter
 from bench.builder.benchmark import Benchmark, bench
 from bench.builder.context import Context, SharedBenchParams, add_dataclass_args
 from bench.core.checks import run_checks
-from bench.core.environment import NoEnvironment, SystemEnvironment
+from bench.core.environment import Diagnostic, NoEnvironment, SystemEnvironment
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
 from bench.denoise import (
@@ -93,7 +93,9 @@ def main(argv: list[str] | None = None) -> int:
             help="Inspect the machine for benchmarking noise sources.",
             description=(
                 "Print the environment snapshot and the noise checks. "
-                "Exits non-zero if any high-severity issue is found."
+                "Exits non-zero on a high-severity issue; --fail-on any also "
+                "fails on warnings, which is what makes it usable as a gate in "
+                "front of a measurement run."
             ),
         )
     )
@@ -325,7 +327,28 @@ def _doctor_subparser(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Print the environment snapshot as JSON instead of a report.",
     )
+    p.add_argument(
+        "--fail-on",
+        choices=("none", "high", "any"),
+        default="high",
+        help=(
+            "Which findings make the exit status non-zero. `high` (the default) "
+            "fails only on issues that invalidate a measurement outright; `any` "
+            "also fails on the warnings, which is what you want when using "
+            "doctor as a gate in front of a measurement run; `none` reports "
+            "without ever failing."
+        ),
+    )
     p.set_defaults(_func=_cmd_doctor)
+
+
+def _doctor_exit_code(diagnostics: list[Diagnostic], fail_on: str) -> int:
+    """Exit status for a set of findings, under one of the three policies."""
+    if fail_on == "none":
+        return 0
+    if fail_on == "any":
+        return 1 if diagnostics else 0
+    return 1 if any(d.severity == "high" for d in diagnostics) else 0
 
 
 def _cmd_doctor(ns: argparse.Namespace) -> int:
@@ -334,7 +357,7 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
         console.print("No environment information available.")
         return 0
     diagnostics = run_checks(env)
-    exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
+    exit_code = _doctor_exit_code(diagnostics, getattr(ns, "fail_on", "high"))
 
     if ns.json:
         print(json.dumps(dataclasses.asdict(env), indent=2))
