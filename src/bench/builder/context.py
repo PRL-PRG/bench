@@ -117,6 +117,17 @@ class SharedBenchParams(SharedSelectionParams):
             "help": "Write a CSV report of every sample to FILE.",
         },
     )
+    csv_merge: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Keep the rows of benchmarks this run did not measure, instead "
+                "of replacing the whole file. Lets a run restricted to a subset "
+                "update those benchmarks in an existing CSV and leave the "
+                "others alone."
+            ),
+        },
+    )
     dir: str | None = field(
         default=None,
         metadata={

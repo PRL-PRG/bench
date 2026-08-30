@@ -311,7 +311,7 @@ def default_reporter(
     if isinstance(csv, CsvReporter):
         sinks.append(csv)
     elif c := (p.csv or csv):
-        sinks.append(CsvReporter(Path(c)))
+        sinks.append(CsvReporter(Path(c), merge=p.csv_merge))
     if isinstance(dir, DirReporter):
         sinks.append(dir)
     elif d := (p.dir or dir):

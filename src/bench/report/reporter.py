@@ -206,6 +206,18 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
     All runs appear, warmup included: `warmup` says which, so a consumer can
     reproduce the stats (which exclude them) rather than having to guess from
     row order.
+
+    `merge` keeps the rows of benchmarks this run did not measure. Without it a
+    run restricted to a subset (`--include`) writes a CSV holding only that
+    subset, silently discarding every other benchmark's rows -- so re-measuring
+    one benchmark meant re-measuring all of them. With it, the rows of the
+    (suite, benchmark) pairs this run produced replace their old counterparts and
+    the rest are carried over unchanged.
+
+    The merged file is by construction not one measurement session, so the
+    environment block records both: the current run's, and a note naming the
+    benchmarks carried over. A reader who needs a single coherent session should
+    not merge.
     """
 
     def __init__(
@@ -214,12 +226,41 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
         *,
         delimiter: str = ",",
         environment: Environment | None = None,
+        merge: bool = False,
     ) -> None:
         super().__init__()
         self.path = path
         self.delimiter = delimiter
         self._environment = environment
         self._diagnostics = []
+        self.merge = merge
+
+    def _existing_rows(self, cols: list[str]) -> tuple[list[dict[str, Any]], set[str]]:
+        """Rows of the current file whose benchmark this run did not measure.
+
+        Returns the rows to carry over and the set of benchmark names they cover,
+        so `finalize` can say what it kept. A file whose columns do not match the
+        ones about to be written is not merged: the two runs disagree about the
+        schema, and interleaving them would produce a file that is neither.
+        """
+        if not self.path.exists():
+            return [], set()
+        measured = {(r.suite, r.benchmark) for r in self._report.executions}
+        with open(self.path, newline="") as f:
+            lines = [ln for ln in f if not ln.startswith("#")]
+        if not lines:
+            return [], set()
+        rdr = csv.DictReader(lines, delimiter=self.delimiter)
+        if rdr.fieldnames != cols:
+            return [], set()
+        kept, names = [], set()
+        for row in rdr:
+            key = (row["suite"], row["benchmark"])
+            if key in measured:
+                continue
+            kept.append(row)
+            names.add(f"{key[0]}/{key[1]}")
+        return kept, names
 
     def finalize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -230,11 +271,20 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
             + ["iteration", "warmup"]
             + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
         )
+        carried, carried_names = self._existing_rows(cols) if self.merge else ([], set())
         with open(self.path, "wt", newline="") as f:
             for line in _environment_comments(self._environment):
                 f.write(line)
+            if carried:
+                f.write(
+                    f"# merged: {len(carried_names)} benchmark(s) carried over from the "
+                    "previous contents of this file; the environment above describes "
+                    "this run only\n"
+                )
             w = csv.DictWriter(f, fieldnames=cols, delimiter=self.delimiter)
             w.writeheader()
+            for row in carried:
+                w.writerow(row)
             for r in self._report.executions:
                 variant_map = dict(r.variant)
                 base: dict[str, Any] = {
