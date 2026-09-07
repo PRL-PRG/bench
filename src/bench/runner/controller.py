@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -104,6 +105,7 @@ def _mark_outliers(
         )
     return out
 
+_VERBOSE_LOCK = threading.Lock()
 
 class Controller:
     """Run one benchmark variant until its warmup and runs policies are both
@@ -157,7 +159,8 @@ class Controller:
             time.sleep(b.cooldown)
 
         if verbose:
-            print(format_benchmark_verbose(b, run))
+            with _VERBOSE_LOCK:
+                print(format_benchmark_verbose(b, run))
 
         # The execution
         result = self.evaluate_invocation(b, execute(b.invocation))
