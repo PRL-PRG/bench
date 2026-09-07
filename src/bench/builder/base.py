@@ -115,7 +115,7 @@ def merge_matrix(
     then `outer`. A dimension declared on both sides is an error."""
     dup = inner.keys() & outer.keys()
     if dup:
-        raise ValueError(f"Duplicate matrix axis '{next(iter(dup))!r}'")
+        raise ValueError(f"Duplicate matrix axes: {','.join(dup)}")
     return merge_mapping(outer, inner)
 
 
