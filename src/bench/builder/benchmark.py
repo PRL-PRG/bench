@@ -34,6 +34,7 @@ from bench.core.invocation import (
     SuccessFn,
     Variant,
     format_variant,
+    to_argv,
 )
 from bench.core.metric import (
     IterationMetric,
@@ -45,6 +46,7 @@ from bench.core.policy import StoppingPolicy
 from bench.builder.base import (
     Factory,
     BuilderBase,
+    UNSET,
     as_build,
     const,
 )
@@ -157,6 +159,11 @@ class BenchmarkBuilder(BuilderBase, _DataAttrs):
         # command whose process it measures.
         process_metrics = self.process_metrics(ctx)
         command: Any = self.command(ctx)
+        # Prefix first, then the metric wrappers: `perf record -- numactl R`
+        # measures the process that becomes R; the other order would have perf
+        # measure `numactl` and lose the exec.
+        if self.command_prefix is not UNSET:
+            command = [*to_argv(self.command_prefix(ctx) or ()), *to_argv(command)]
         for m in process_metrics:
             command = m.wrap_command(command)
         invocation = Invocation(

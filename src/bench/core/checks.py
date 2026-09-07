@@ -44,8 +44,8 @@ def run_checks(env: Environment) -> list[Diagnostic]:
             Diagnostic(
                 "warn",
                 "ASLR enabled; layout-dependent noise is unreproducible.",
-                "run under `setarch $(uname -m) -R <cmd>` "
-                "or sudo sysctl -w kernel.randomize_va_space=0",
+                "sudo bench denoise minimize "
+                "(or sudo sysctl -w kernel.randomize_va_space=0)",
             )
         )
     if env.transparent_hugepage is not None and env.transparent_hugepage != "never":

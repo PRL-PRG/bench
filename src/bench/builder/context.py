@@ -136,6 +136,16 @@ class SharedBenchParams(SharedSelectionParams):
             "(stdout/stderr/exitcode/seq) under DIR.",
         },
     )
+    numa: int | None = field(
+        default=None,
+        metadata={
+            "metavar": "NODE",
+            "help": "Bind CPUs and memory to this NUMA node (`numactl`). "
+            "Unset (the default) leaves placement to the kernel, which on a "
+            "multi-socket machine can put a process's memory on a different "
+            "socket than its core.",
+        },
+    )
 
 
 @dataclass(frozen=True, slots=True)

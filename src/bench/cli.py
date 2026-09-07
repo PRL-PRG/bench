@@ -133,8 +133,8 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         metavar="CMD",
         help="One or more shell commands to benchmark.",
     )
-    # Shared runtime flags (jobs/progress/dry/verbose/json/csv/dir); `bench run`
-    # has no selection flags of its own, so skip include/exclude.
+    # Shared runtime flags (jobs/progress/dry/verbose/json/csv/dir/numa);
+    # `bench run` has no selection flags of its own, so skip include/exclude.
     add_dataclass_args(p, SharedBenchParams, skip={"include", "exclude"})
     p.add_argument(
         "--runs",
@@ -187,12 +187,6 @@ def _run_subparser(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Record the environment snapshot and run the noise checks "
         "(off by default).",
-    )
-    p.add_argument(
-        "--denoise",
-        action="store_true",
-        help="Minimize system noise (governor, turbo, ...) for the run, then "
-        "restore it. Linux + root.",
     )
     p.set_defaults(_func=_cmd_run)
 
@@ -250,7 +244,6 @@ def _cmd_run(ns: argparse.Namespace) -> int:
         bench_app("bench")
         .add(s)
         .with_environment(environment)
-        .with_denoise(ns.denoise)
         .with_reporter(lambda ctx: default_reporter(ctx, summary=reporter))
     )
     app.run(ns)
@@ -388,8 +381,7 @@ def _denoise_subparser(p: argparse.ArgumentParser) -> None:
 def _cmd_denoise(ns: argparse.Namespace) -> int:
     if ns.action in ("minimize", "restore") and not is_root():
         raise BenchError(
-            f"denoise {ns.action} requires root "
-            f"(try: sudo bench denoise {ns.action})",
+            f"denoise {ns.action} requires root (try: sudo bench denoise {ns.action})",
             exit_code=2,
         )
     if ns.action == "minimize":

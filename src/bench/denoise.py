@@ -7,6 +7,11 @@ file (so it is crash-safe and runnable standalone). Each knob is skipped unless
 its file exists and is writable, so a missing knob or lack of privilege is
 reported, never fatal, and the whole thing no-ops where the files are absent
 (e.g. macOS).
+
+These are machine-wide and outlive the process that sets them, so they are a
+separate step run once around a session rather than around a run -- a
+privileged run would own every file it writes. `prefix()` is what a run itself
+can do: unprivileged, per process, nothing to restore.
 """
 
 from __future__ import annotations
@@ -116,3 +121,15 @@ def denoise_session(
 
 def is_root() -> bool:
     return hasattr(os, "geteuid") and os.geteuid() == 0
+
+
+def prefix(numa: int | None = None) -> list[str]:
+    """The unprivileged half of denoise, as a command prefix.
+
+    `numactl` keeps a process's CPUs and memory on one node instead of letting
+    the kernel split them across sockets, and it needs no privileges. It `exec`s
+    into the next program, so it adds no process to the tree a profiler records.
+    """
+    if numa is None:
+        return []
+    return ["numactl", f"--cpunodebind={numa}", f"--membind={numa}"]

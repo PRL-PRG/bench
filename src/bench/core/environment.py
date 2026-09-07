@@ -19,7 +19,8 @@ from bench.utils import read_bracketed, read_int, read_text, to_int
 # Runs an external command, returning trimmed stdout or None on any failure.
 type EnvRunner = Callable[[list[str]], str | None]
 
-type Severity = Literal["warn", "high"]
+# "info" states something about the run rather than a problem to fix.
+type Severity = Literal["info", "warn", "high"]
 
 
 @dataclass(frozen=True, slots=True)

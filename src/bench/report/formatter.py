@@ -65,7 +65,7 @@ class Summary(_MetricFilter):
     """Rank the variants within each benchmark, best first. With `axis`, fold the
     other (residual) variants within each benchmark and compare the values of that
     axis instead (e.g. `Summary(axis="vm")`). Several axis names are one composite
-    axis, whose values are their combinations (e.g., `axis=["version", "mode"]`. 
+    axis, whose values are their combinations (e.g., `axis=["version", "mode"]`.
     `ref` pins one value as baseline."""
 
     def __init__(
@@ -88,8 +88,8 @@ class Summary(_MetricFilter):
 class GeomeanSummary(Formatter):
     """Rank the values of a matrix `axis` by the geometric mean over benchmarks.
     Several axis names are one composite axis, whose values are their combinations
-    (e.g., `axis=["version", "mode"]`. `ref` pins one axis value as the baseline - 
-    a bare value for a single axis, a `name=value` list for a composite one - 
+    (e.g., `axis=["version", "mode"]`. `ref` pins one axis value as the baseline -
+    a bare value for a single axis, a `name=value` list for a composite one -
     and otherwise the best performer is used."""
 
     def __init__(

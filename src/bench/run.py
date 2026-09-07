@@ -30,15 +30,12 @@ from bench.builder.context import (
 )
 from bench.core.checks import run_checks
 from bench.core.environment import (
+    Diagnostic,
     EnvironmentCollector,
     NoEnvironment,
 )
 from bench.core.invocation import format_benchmark, format_variant
-from bench.denoise import (
-    STATE_PATH,
-    denoise_session,
-    is_root,
-)
+from bench.denoise import prefix as denoise_prefix
 from bench.builder.suite import SuiteBuilder
 from bench.report.formatter import DefaultSummary
 from bench.report.reporter import (
@@ -69,6 +66,8 @@ type ReporterFactory = Factory[Reporter]
 type RunnerFactory = Factory[Runner]
 type Filter = Callable[[Benchmark], bool]
 type FilterFactory = Factory[Filter]
+# Takes the parsed params rather than a Context: decided once for the whole run.
+type DiagnosticsFactory = Callable[[Any], list[Diagnostic]]
 
 
 class NoBenchmarksMatchedError(BenchError):
@@ -95,7 +94,7 @@ class BenchAppBuilder(BuilderBase):
     runner: RunnerFactory | None = None
     filter: FilterFactory | None = None
     environment: EnvironmentCollector = NoEnvironment()
-    denoise: bool = False
+    diagnostics: DiagnosticsFactory | None = None
 
     def add(self, s: SuiteBuilder) -> BenchAppBuilder:
         """Register a suite."""
@@ -137,9 +136,13 @@ class BenchAppBuilder(BuilderBase):
         """Set the environment collector (snapshot + diagnostics)."""
         return dataclasses.replace(self, environment=environment)
 
-    def with_denoise(self, value: bool = True) -> BenchAppBuilder:
-        """Minimize system noise knobs around the run (requires root)."""
-        return dataclasses.replace(self, denoise=value)
+    def with_diagnostics(self, fn: DiagnosticsFactory) -> BenchAppBuilder:
+        """Report findings of the app's own alongside the environment checks.
+
+        `fn(params) -> list[Diagnostic]`. `run_checks` only sees the machine, so
+        this is how an app says something about its own configuration.
+        """
+        return dataclasses.replace(self, diagnostics=fn)
 
     def run(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve factories, apply app defaults, and run every suite."""
@@ -169,6 +172,8 @@ class BenchAppBuilder(BuilderBase):
 
         env = self.environment.collect()
         env_diagnostics = run_checks(env) if env is not None else []
+        if self.diagnostics is not None:
+            env_diagnostics = [*env_diagnostics, *self.diagnostics(build_params)]
 
         reporter = (self.reporter or default_reporter)(ctx)
         reporter.set_environment(env, env_diagnostics)
@@ -199,20 +204,10 @@ class BenchAppBuilder(BuilderBase):
         runner = (self.runner or default_runner)(ctx)
         runner.reporter = reporter
 
-        if self.denoise:
-            if not is_root():
-                raise BenchError(
-                    "--denoise requires root (try: sudo bench run --denoise ...)",
-                    exit_code=2,
-                )
-            with denoise_session() as applied:
-                console.print(
-                    f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
-                    f"state saved to {STATE_PATH}"
-                )
-                report = runner.run(planned, build_params)
-        else:
-            report = runner.run(planned, build_params)
+        # Never privileged: quieting the machine around a run would make every
+        # file it writes root-owned. `bench denoise minimize` does it once and
+        # separately, and `run_checks` above says so when nobody did.
+        report = runner.run(planned, build_params)
 
         report.environment = env
         report.diagnostics = env_diagnostics
@@ -264,13 +259,18 @@ def bench_app(name: str = "") -> BenchAppBuilder:
     """Top-level builder; `name` is shown as the description in `--help`.
 
     All configuration is applied through the builder's `with_*`/`add*` methods
-    (e.g. `with_params`, `with_reporter`, `with_environment`, `with_denoise`), so
-    the constructor carries only the name. To swap just the summary while keeping
+    (e.g. `with_params`, `with_reporter`, `with_environment`), so the
+    constructor carries only the name. To swap just the summary while keeping
     the progress bar and the `--json`/`--csv`/`--dir` sinks, set a reporter built
     from `default_reporter`:
     `bench_app().with_reporter(lambda ctx: default_reporter(ctx, summary=...))`.
+
+    `--numa` pins each child to one node with `numactl`; override the prefix
+    with `with_command_prefix`.
     """
-    return BenchAppBuilder(name=name)
+    return BenchAppBuilder(name=name).with_command_prefix(
+        lambda ctx: denoise_prefix(ctx.params.numa)
+    )
 
 
 def default_reporter(

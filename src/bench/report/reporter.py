@@ -52,7 +52,10 @@ def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
         return
     console.print(f"\n[bench.label]{title}:[/]")
     for d in diagnostics:
-        tag = "[bench.failure]✗[/]" if d.severity == "high" else "[bench.warning]!![/]"
+        tag = {
+            "high": "[bench.failure]✗[/]",
+            "warn": "[bench.warning]!![/]",
+        }.get(d.severity, "[bench.label]i[/]")
         console.print(f"  {tag} {markup_escape(d.message)}")
         if d.fix:
             console.print(f"      [dim]fix:[/] {markup_escape(d.fix)}")
@@ -271,7 +274,9 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
             + ["iteration", "warmup"]
             + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
         )
-        carried, carried_names = self._existing_rows(cols) if self.merge else ([], set())
+        carried, carried_names = (
+            self._existing_rows(cols) if self.merge else ([], set())
+        )
         with open(self.path, "wt", newline="") as f:
             for line in _environment_comments(self._environment):
                 f.write(line)

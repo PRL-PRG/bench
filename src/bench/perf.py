@@ -143,9 +143,7 @@ class PerfRecord(ProcessMetric):
 
     def _dir(self) -> Path:
         if self.out_dir is None:
-            raise ValueError(
-                "PerfRecord.out_dir is unset."
-            )
+            raise ValueError("PerfRecord.out_dir is unset.")
         return self.out_dir
 
     def data_file(self) -> Path:

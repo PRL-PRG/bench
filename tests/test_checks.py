@@ -44,10 +44,10 @@ def test_turbo_enabled_warns():
     assert [d.severity for d in diags] == ["warn"]
 
 
-def test_aslr_enabled_warns_with_setarch_fix():
+def test_aslr_enabled_warns():
     diags = run_checks(Environment(aslr=2))
     assert len(diags) == 1
-    assert "setarch" in (diags[0].fix or "")
+    assert "denoise" in (diags[0].fix or "")
 
 
 def test_smt_enabled_warns():

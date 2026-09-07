@@ -173,6 +173,7 @@ class BuilderBase:
     the `overlay` merge works uniformly across all three builders."""
 
     command: CommandFactory = UNSET
+    command_prefix: CommandFactory = UNSET
     cwd: PathFactory = UNSET
     env: EnvFactory = UNSET
     timeout: Factory[float | None] = UNSET
@@ -194,6 +195,14 @@ class BuilderBase:
 
     def with_command(self, command: Command) -> Self:
         return dataclasses.replace(self, command=as_build(command, to_argv))
+
+    def with_command_prefix(self, prefix: Command) -> Self:
+        """Words to put in front of every command, e.g. `numactl --membind=0`.
+
+        Separate from `with_command` so a driver composing its own command does
+        not have to remember the prefix.
+        """
+        return dataclasses.replace(self, command_prefix=as_build(prefix, to_argv))
 
     def with_cwd(self, cwd: str | Path | PathFactory) -> Self:
         return dataclasses.replace(self, cwd=as_build(cwd, Path))

@@ -111,12 +111,15 @@ internally (e.g. for JIT warmup), each reported iteration becoming an
 reports after the fact (the first file is the baseline), and `bench show
 report.json` re-renders a single saved report.
 
-**Environment & noise**: `bench doctor` snapshots the machine and flags noise
-sources (CPU governor, turbo, ASLR, ...), exiting non-zero on a high-severity
-issue so it can gate a session. On Linux as root, `bench denoise
-minimize|restore|status` quiets those knobs and reverts them. Per run,
-`--check-environment` records the snapshot and runs the checks (off by default)
-and `--denoise` minimizes the knobs for the run and restores them after.
+**Environment & noise**, split by privilege. The noisy kernel knobs (CPU
+governor, turbo, ASLR, THP, ...) need root and outlive any one run, so quieting
+them is a separate step: on Linux as root, `bench denoise minimize|restore|status`
+sets them and reverts them, run once around a session. A run itself is never
+privileged -- quieting the machine around it would make every file it writes
+root-owned -- and only pins each child to a NUMA node when `--numa` names one.
+`bench doctor` snapshots the machine and flags what nobody quieted, exiting
+non-zero on a high-severity issue so it can gate a session; per run,
+`--check-environment` records the same snapshot and checks (off by default).
 
 ## Development
 

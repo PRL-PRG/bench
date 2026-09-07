@@ -106,11 +106,12 @@ def test_denoise_minimize_requires_root():
     assert "root" in (r.stdout + r.stderr).lower()
 
 
-@pytest.mark.skipif(not _NOT_ROOT, reason="running as root")
-def test_run_denoise_requires_root():
+def test_run_rejects_denoise():
+    """`bench run` is unprivileged by construction; quieting the machine is
+    `bench denoise minimize`, run once and separately."""
     r = _run("run", "--denoise", "--runs", "1", "sleep 0.01")
-    assert r.returncode == 2
-    assert "root" in (r.stdout + r.stderr).lower()
+    assert r.returncode != 0
+    assert "unrecognized arguments" in (r.stdout + r.stderr).lower()
 
 
 # --- doctor --fail-on -------------------------------------------------------
