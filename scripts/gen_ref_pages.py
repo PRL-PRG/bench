@@ -8,6 +8,15 @@ SRC = Path(__file__).parent.parent / "src"
 
 nav = mkdocs_gen_files.Nav()
 
+
+def identifier(parts: tuple[str, ...]) -> str:
+    """Dotted name mkdocstrings can actually collect for a module."""
+    for depth in range(1, len(parts)):
+        if not (SRC.joinpath(*parts[:depth]) / "__init__.py").exists():
+            return ".".join(parts[depth - 1 :])
+    return ".".join(parts)
+
+
 for path in sorted(SRC.rglob("*.py")):
     module_path = path.relative_to(SRC).with_suffix("")
     doc_path = path.relative_to(SRC).with_suffix(".md")
@@ -21,8 +30,14 @@ for path in sorted(SRC.rglob("*.py")):
 
     nav[parts] = doc_path.as_posix()
 
+    full_name = ".".join(parts)
+    collected_name = identifier(parts)
+
     with mkdocs_gen_files.open(Path("api", doc_path), "w") as fd:
-        fd.write(f"::: {'.'.join(parts)}\n")
+        fd.write(f"::: {collected_name}\n")
+        if collected_name != full_name:
+            fd.write("    options:\n")
+            fd.write(f"      heading: {full_name}\n")
 
     mkdocs_gen_files.set_edit_path(Path("api", doc_path), path)
 

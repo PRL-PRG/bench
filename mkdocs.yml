@@ -24,7 +24,9 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [src]
+          # `src/bench` lets the namespace subpackages (bench.core, bench.console,
+          # bench.model) resolve as top-level names - see scripts/gen_ref_pages.py.
+          paths: [src, src/bench]
 
 markdown_extensions:
   - pymdownx.snippets:
