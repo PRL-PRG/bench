@@ -14,7 +14,7 @@ class GitProbe(Probe):
     """The HEAD commit of `folder`, suffixed `(dirty)` when the tree has
     uncommitted changes. `None` when `folder` is not a git repository."""
 
-    __slots__ = ("folder", "key", "git_binary")
+    __slots__ = ("folder", "key", "git_binary", "allow_failure")
 
     def __init__(
         self,
@@ -22,11 +22,13 @@ class GitProbe(Probe):
         *,
         key: str = "git commit",
         git_binary: str | Path | None = None,
+        allow_failure: bool = False,
     ) -> None:
         super().__init__()
 
         self.folder = folder.resolve()
         self.key = key
+        self.allow_failure = allow_failure
 
         if git_binary is None:
             git_binary = shutil.which("git")
@@ -38,7 +40,10 @@ class GitProbe(Probe):
     def collect(self) -> Fingerprint | None:
         commit = self.run_git("rev-parse", "HEAD")
         if commit is None:
-            return None
+            if self.allow_failure:
+                return None
+            else:
+                raise ValueError("Git failed to run")
 
         # --no-optional-locks so probing never writes to someone else's index.
         dirty = self.run_git("--no-optional-locks", "status", "--porcelain")
