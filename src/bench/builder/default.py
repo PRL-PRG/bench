@@ -26,7 +26,7 @@ from bench.report import (
 )
 from bench.runner import (
     DryRunner,
-    Parallel,
+    ParallelRunner,
     Runner,
     SequentialRunner,
 )
@@ -102,7 +102,7 @@ def default_runner(params: Params) -> Runner | None:
     if params.dry:
         return DryRunner(verbose=params.verbose)
     if params.jobs > 1:
-        return Parallel(workers=params.jobs, verbose=params.verbose)
+        return ParallelRunner(workers=params.jobs, verbose=params.verbose)
     return SequentialRunner(verbose=params.verbose)
 
 

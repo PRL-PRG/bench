@@ -148,7 +148,7 @@ from bench.report import (
 from bench.runner import (
     Controller,
     DryRunner,
-    Parallel,
+    ParallelRunner,
     Runner,
     SequentialRunner,
 )
@@ -315,7 +315,7 @@ __all__ = [
     "Runner",
     "Controller",
     "DryRunner",
-    "Parallel",
+    "ParallelRunner",
     "SequentialRunner",
     # bench.summary.formatter
     "Formatter",

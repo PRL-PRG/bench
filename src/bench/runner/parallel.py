@@ -50,7 +50,7 @@ class _LockedReporter(Reporter):
             self._reporter.benchmark_done(b, executions)
 
 
-class Parallel(Runner):
+class ParallelRunner(Runner):
     """Run up to N benchmark `Controller`s concurrently on a thread pool."""
 
     def __init__(

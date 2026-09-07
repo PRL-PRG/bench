@@ -24,7 +24,7 @@ from bench import (
     DryRunner,
     FloatPerLine,
     JsonReporter,
-    Parallel,
+    ParallelRunner,
     RegexMetric,
     SequentialRunner,
     Time,
@@ -212,7 +212,7 @@ def test_parallel_runs_iteration_benchmarks():
         .with_metric(_runtime_metric())
         .with_runs(1)
     )
-    report = Parallel(workers=2).run(plan([s], Params()))
+    report = ParallelRunner(workers=2).run(plan([s], Params()))
     by_bench = {r.benchmark: _values(r) for r in report.executions}
     assert by_bench == {"a": [1.0, 2.0], "b": [3.0, 4.0]}
 

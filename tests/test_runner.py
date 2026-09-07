@@ -16,7 +16,7 @@ from bench import (
     DryRunner,
     FloatPerLine,
     JsonReporter,
-    Parallel,
+    ParallelRunner,
     Reporter,
     SequentialRunner,
     SuiteMaterializationError,
@@ -112,7 +112,7 @@ def test_parallel_runs_faster_than_sequential():
     SequentialRunner().run(plan([s], Params()))
     seq_t = time.monotonic() - t0
     t0 = time.monotonic()
-    Parallel(workers=4).run(plan([s], Params()))
+    ParallelRunner(workers=4).run(plan([s], Params()))
     par_t = time.monotonic() - t0
     # Two benchmarks across 4 workers should overlap, so parallel is clearly
     # faster than sequential. The threshold is loose (vs. an ideal ~0.5) to
@@ -123,7 +123,7 @@ def test_parallel_runs_faster_than_sequential():
 
 def test_parallel_records_every_run():
     s = _sleep_suite(duration=0.01, runs=3)  # 2 benchmarks x 3 runs
-    report = Parallel(workers=4).run(plan([s], Params()))
+    report = ParallelRunner(workers=4).run(plan([s], Params()))
     assert len(_all_samples(report)) == 6
 
 
@@ -146,7 +146,7 @@ def test_parallel_runs_convergence_benchmarks():
             for i in range(2)
         ],
     )
-    report = Parallel(workers=2).run(plan([s], Params()))
+    report = ParallelRunner(workers=2).run(plan([s], Params()))
     by_bench = {}
     for r in report.executions:
         by_bench.setdefault(r.benchmark, []).append(r)
@@ -173,7 +173,7 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
             for i in range(n_bench)
         ],
     )
-    report = Parallel(workers=4).run(plan([s], Params()))
+    report = ParallelRunner(workers=4).run(plan([s], Params()))
     assert len(report.executions) == n_bench * n_runs
     by_bench = {}
     for r in report.executions:
@@ -347,7 +347,7 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        Parallel(workers=4).run(plan([s], Params()), reporter=JsonReporter(json_path))
+        ParallelRunner(workers=4).run(plan([s], Params()), reporter=JsonReporter(json_path))
     elapsed = time.monotonic() - t0
     t.cancel()
 
@@ -544,7 +544,7 @@ def test_bare_reporter_takes_full_control(tmp_path: Path):
 
 def test_default_runner_reads_the_runner_flags():
     assert isinstance(default_runner(SharedRunnerParams()), SequentialRunner)
-    assert isinstance(default_runner(SharedRunnerParams(jobs=4)), Parallel)
+    assert isinstance(default_runner(SharedRunnerParams(jobs=4)), ParallelRunner)
     assert isinstance(default_runner(SharedRunnerParams(dry=True)), DryRunner)
     # --dry outranks -j: nothing is spawned, so there is nothing to parallelize.
     assert isinstance(default_runner(SharedRunnerParams(jobs=4, dry=True)), DryRunner)
