@@ -11,7 +11,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from bench.builder import Context, bench, bench_app, default_reporter, suite
-from bench.builder.app import BenchAppParams
+from bench.builder.app import bench_app_params_type
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
     STATE_PATH,
@@ -249,7 +249,7 @@ class RunParams(SharedRunnerParams, SharedReporterParams):
     )
 
 
-RunAppParams = BenchAppParams(RunParams)
+RunAppParams = bench_app_params_type(RunParams)
 
 
 def _cmd_run(ns: argparse.Namespace) -> int:

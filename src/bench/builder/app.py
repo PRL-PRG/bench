@@ -300,7 +300,7 @@ class BenchAppBuilder(BuilderBase):
         """Resolve generators, apply app defaults, and run every suite."""
 
         params = (
-            BenchAppParams(self.params)
+            bench_app_params_type(self.params)
             if self.params is not None
             else SharedBenchAppParams
         )
@@ -404,10 +404,10 @@ def bench_app[P: Params](
 # ---------------------------------------------------------------------------
 
 
-def BenchAppParams[T: Params](t: type[T]) -> type[T]:
+def bench_app_params_type[T: Params](t: type[T]) -> type[T]:
     default_actions_group = ParamsGroup("default actions")
 
-    class Ps(t):
+    class BenchAppPArams(t):
         list: bool = dataclasses.field(
             default=False,
             metadata={
@@ -426,10 +426,10 @@ def BenchAppParams[T: Params](t: type[T]) -> type[T]:
             },
         )
 
-    return cast(type[T], Ps)
+    return cast(type[T], BenchAppPArams)
 
 
-SharedBenchAppParams = BenchAppParams(SharedBenchParams)
+SharedBenchAppParams = bench_app_params_type(SharedBenchParams)
 
 # ---------------------------------------------------------------------------
 # Pretty-printing helpers
