@@ -25,4 +25,5 @@ class SequentialRunner(Runner):
         for p in planned:
             if interrupted():
                 break
-            p.controller.run_benchmark(p, report, reporter, self.verbose)
+            exs = p.controller.run_benchmark(p, reporter, self.verbose)
+            report.add_all(exs)

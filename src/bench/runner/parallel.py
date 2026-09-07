@@ -21,17 +21,6 @@ from bench.report import Reporter
 from bench.runner.base import Runner
 
 
-class _LockedReport(Report):
-    def __init__(self, report: Report, lock: threading.Lock) -> None:
-        super().__init__()
-        self._report = report
-        self._lock = lock
-
-    def add(self, execution: Execution) -> None:
-        with self._lock:
-            self._report.add(execution)
-
-
 class _LockedReporter(Reporter):
     def __init__(self, reporter: Reporter, lock: threading.Lock) -> None:
         self._reporter = reporter
@@ -66,7 +55,6 @@ class ParallelRunner(Runner):
         self, planned: list[Benchmark], reporter: Reporter, report: Report
     ) -> None:
         lock = threading.Lock()
-        locked_report = _LockedReport(report, lock)
         locked_reporter = _LockedReporter(reporter, lock)
 
         def _one(p: Benchmark) -> None:
@@ -75,7 +63,9 @@ class ParallelRunner(Runner):
             if interrupted():
                 return
 
-            p.controller.run_benchmark(p, locked_report, locked_reporter, self.verbose)
+            exs = p.controller.run_benchmark(p, locked_reporter, self.verbose)
+            with lock:
+                report.add_all(exs)
 
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             list(pool.map(_one, planned))

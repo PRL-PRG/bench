@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import itertools
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -130,6 +130,9 @@ class Report:
 
     def add(self, execution: Execution) -> None:
         self.executions.append(execution)
+
+    def add_all(self, executions: Iterable[Execution]) -> None:
+        self.executions.extend(executions)
 
 
 # ---------------------------------------------------------------------------

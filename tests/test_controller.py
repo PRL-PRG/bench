@@ -11,7 +11,6 @@ from pathlib import Path
 
 from bench import Execution, FixedRuns, Iteration, NoDetection, Sample, bench, suite
 from bench.builder.suite import plan
-from bench.model.results import Report
 from bench.params import Params
 from bench.report import Reporter
 from bench.runner import Controller
@@ -64,12 +63,11 @@ def _planned(runs, *, warmup=0, outlier_detection=None):
 
 def test_records_run_per_slot(monkeypatch):
     rep = _Collect()
-    report = Report()
     ctrl = _FakeController([1, 2, 3])
-    ctrl.run_benchmark(_planned(FixedRuns(3)), report, rep)
+    executions = ctrl.run_benchmark(_planned(FixedRuns(3)), rep)
 
-    assert [r.run for r in report.executions] == [1, 2, 3]
-    assert [r.iterations[0].samples[0].value for r in report.executions] == [
+    assert [r.run for r in executions] == [1, 2, 3]
+    assert [r.iterations[0].samples[0].value for r in executions] == [
         1.0,
         2.0,
         3.0,
@@ -81,11 +79,10 @@ def test_records_run_per_slot(monkeypatch):
 
 def test_stops_when_policy_converges():
     # 10 values available but FixedRuns(2) must stop after 2 runs.
-    report = Report()
     ctrl = _FakeController([1.0] * 10)
-    ctrl.run_benchmark(_planned(FixedRuns(2)), report, _Collect())
+    executions = ctrl.run_benchmark(_planned(FixedRuns(2)), _Collect())
 
-    assert len(report.executions) == 2
+    assert len(executions) == 2
     assert ctrl.calls == 2
 
 
@@ -93,26 +90,22 @@ def test_outliers_marked_across_runs():
     # Spread cluster (MAD > 0) plus a lone 100: detection (on by default) pools
     # the values across all runs and flags only the 100.
     values = [10.0, 11.0, 12.0, 10.0, 11.0, 12.0, 10.0, 100.0]
-    report = Report()
-    _FakeController(values).run_benchmark(_planned(FixedRuns(8)), report, _Collect())
+    executions = _FakeController(values).run_benchmark(
+        _planned(FixedRuns(8)), _Collect()
+    )
 
-    flags = [
-        r.iterations[0].samples[0].extra.get("outlier", False)
-        for r in report.executions
-    ]
+    flags = [r.iterations[0].samples[0].extra.get("outlier", False) for r in executions]
     assert flags == [False] * 7 + [True]
 
 
 def test_no_detection_leaves_samples_unmarked():
     values = [1.0] * 7 + [100.0]
-    report = Report()
-    _FakeController(values).run_benchmark(
-        _planned(FixedRuns(8), outlier_detection=NoDetection()), report, _Collect()
+    executions = _FakeController(values).run_benchmark(
+        _planned(FixedRuns(8), outlier_detection=NoDetection()), _Collect()
     )
 
     assert all(
-        not r.iterations[0].samples[0].extra.get("outlier", False)
-        for r in report.executions
+        not r.iterations[0].samples[0].extra.get("outlier", False) for r in executions
     )
 
 
@@ -120,14 +113,12 @@ def test_warmup_iterations_excluded_from_detection():
     # The big value is in warmup. The measured tail is flat, so nothing is an
     # outlier and the warmup sample itself is never flagged.
     values = [100.0] + [1.0] * 7
-    report = Report()
-    _FakeController(values).run_benchmark(
-        _planned(FixedRuns(7), warmup=1), report, _Collect()
+    executions = _FakeController(values).run_benchmark(
+        _planned(FixedRuns(7), warmup=1), _Collect()
     )
 
     assert all(
-        not r.iterations[0].samples[0].extra.get("outlier", False)
-        for r in report.executions
+        not r.iterations[0].samples[0].extra.get("outlier", False) for r in executions
     )
 
 
@@ -135,11 +126,12 @@ def test_warmup_boundary_marked_on_iterations():
     # warmup=2, runs=3 -> 5 iterations. The first 2 are flagged warmup.
     values = [1.0, 2.0, 3.0, 4.0, 5.0]
     rep = _Collect()
-    report = Report()
-    _FakeController(values).run_benchmark(_planned(FixedRuns(3), warmup=2), report, rep)
+    executions = _FakeController(values).run_benchmark(
+        _planned(FixedRuns(3), warmup=2), rep
+    )
 
-    assert len(report.executions) == 5
-    assert [r.iterations[0].warmup for r in report.executions] == [
+    assert len(executions) == 5
+    assert [r.iterations[0].warmup for r in executions] == [
         True,
         True,
         False,

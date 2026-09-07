@@ -11,7 +11,7 @@ from bench.core.outlier import NoDetection, OutlierDetection
 from bench.core.process import execute, interrupted
 from bench.model.benchmark import format_benchmark_verbose
 from bench.model.invocation import InvocationResult
-from bench.model.results import Execution, Iteration, Report, Sample, diagnostic_excerpt
+from bench.model.results import Execution, Iteration, Sample, diagnostic_excerpt
 from bench.report import Reporter
 
 if TYPE_CHECKING:
@@ -105,7 +105,9 @@ def _mark_outliers(
         )
     return out
 
+
 _VERBOSE_LOCK = threading.Lock()
+
 
 class Controller:
     """Run one benchmark variant until its warmup and runs policies are both
@@ -167,14 +169,15 @@ class Controller:
         return self.extract_execution(b, result, run)
 
     def run_benchmark(
-        self, b: Benchmark, report: Report, reporter: Reporter, verbose: bool = False
-    ) -> None:
+        self, b: Benchmark, reporter: Reporter, verbose: bool = False
+    ) -> list[Execution]:
         if interrupted():
-            return
+            return []
 
         reporter.benchmark_start(b)
 
         run = 0
+        executions = list[Execution]()
 
         warmup_policy_state = b.warmup.start()
         runs_policy_state = b.runs.start()
@@ -202,8 +205,9 @@ class Controller:
                 runs_policy_state.observe(execution)
 
             reporter.execution_done(execution)
-            report.add(execution)
+            executions.append(execution)
 
-        report.executions = _mark_outliers(report.executions, b.outlier_detection)
+        executions = _mark_outliers(executions, b.outlier_detection)
 
-        reporter.benchmark_done(b, report.executions)
+        reporter.benchmark_done(b, executions)
+        return executions
