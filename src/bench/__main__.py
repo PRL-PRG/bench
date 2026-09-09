@@ -24,6 +24,7 @@ from bench.core.diagnostic import print_diagnostics, run_checks
 from bench.core.fingerprint import NoProbe, SystemProbe
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
+from bench.core.stats import merge_reports, summarize
 from bench.error import BenchError, print_exception
 from bench.model.benchmark import Benchmark
 from bench.model.results import Report, report_from_json
@@ -36,12 +37,11 @@ from bench.params import (
     build_dataclass,
 )
 from bench.report import CompositeReporter, Reporter, SummaryReporter
-from bench.summary.formatter import (
+from bench.summary import (
+    ByBenchmarkMetricSummary,
+    ComparisonSummary,
     DefaultSummary,
-    Results,
-    Summary,
 )
-from bench.summary.summary import merge_reports, summarize
 
 # ---------------------------------------------------------------------------
 # `bench` CLI: run / compare
@@ -345,7 +345,7 @@ def _cmd_show(ns: argparse.Namespace) -> int:
     metrics = set(params.metric.split(",")) if params.metric else None
     stats = summarize(report_from_json(path.read_text()))
     out = DefaultSummary(metrics)(stats)
-    if out:
+    if out.renderables:
         console.print(out)
     return 0
 
@@ -384,9 +384,11 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     stats = summarize(merge_reports(named))
     # Per-benchmark a-vs-b: fold each benchmark's inner matrix and compare the
     # files. The first file is the baseline reference.
-    formatter = Results(metrics) & Summary(metrics, axis="compare", ref=named[0][0])
+    formatter = ByBenchmarkMetricSummary(metrics) & ComparisonSummary(
+        metrics, axis="compare", ref=named[0][0]
+    )
     out = formatter(stats)
-    if out:
+    if out.renderables:
         console.print(out)
     return 0
 

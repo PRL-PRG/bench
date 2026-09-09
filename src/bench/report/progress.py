@@ -211,14 +211,15 @@ class ProgressReporter(Reporter):
 
     @staticmethod
     def _summary_line(name: str, executions: list[Execution]) -> str:
-        from bench.summary.summary import stat_line, summarize
+        from bench.core.stats import summarize
+        from bench.summary import stat_line
 
         stats = summarize(Report(executions=list(executions)))
-        elapsed = next((s for s in stats if s.metric == "elapsed"), None)
+        elapsed = [s for s in stats if s.metric_key.metric == "elapsed"]
         head = f"[bench.label]Finished:[/] {markup_escape(name)}"
-        if elapsed is None:
+        if not elapsed:
             return f"{head}"
-        return f"{head}: {stat_line(elapsed)}"
+        return f"{head}: {stat_line(stats, elapsed[0])}"
 
     def _print_plain(self, ex: Execution) -> None:
         total_str = str(self._local.total) if self._local.total is not None else "?"

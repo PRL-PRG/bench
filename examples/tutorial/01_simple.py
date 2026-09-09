@@ -8,9 +8,9 @@
 from __future__ import annotations
 
 from bench import (
-    GeomeanSummary,
-    Results,
-    Summary,
+    ByBenchmarkMetricSummary,
+    ComparisonSummary,
+    GeomeanComparisonSummary,
     SummaryReporter,
     Time,
     bench,
@@ -34,7 +34,9 @@ s = (
 
 bench_app(
     summary=SummaryReporter(
-        Results() & Summary() & GeomeanSummary(axis="vm", metrics="elapsed"),
+        ByBenchmarkMetricSummary()
+        & ComparisonSummary()
+        & GeomeanComparisonSummary(axis="vm", metrics="elapsed"),
     )
 ).add(s).run_cli()
 

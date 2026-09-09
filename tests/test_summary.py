@@ -1,53 +1,48 @@
-"""summary.py core: summarize (the Report->Stat reduction) + analysis math."""
+"""Summary output: the rendered tables for each view."""
 
-from __future__ import annotations
+from io import StringIO
 
-import math
-import re
+import pytest
+from rich.console import Console, RenderableType
 
-from bench import Execution, Iteration, Report, Sample
-from bench.console.render import RICH
+from bench import (
+    BenchError,
+    ByBenchmarkMetricSummary,
+    ByMetricSummary,
+    ComparisonSummary,
+    DefaultSummary,
+    Execution,
+    GeomeanComparisonSummary,
+    Iteration,
+    Report,
+    Sample,
+    SummaryReporter,
+)
+from bench.console.theme import BENCHR_THEME
+from bench.core.stats import Statistics, summarize
 from bench.model.benchmark import Variant
 from bench.model.results import Direction
-from bench.summary.summary import (
-    by_axis,
-    compact,
-    geomean,
-    geomean_ratio,
-    merge_reports,
-    orient,
-    ranking,
-    ratio,
-    results,
-    scale_unit,
-    summarize,
-)
-
-
-def _strip(lines: list[str]) -> str:
-    """Render like console.print: drop bench tags, turn `\\[` back into `[`."""
-    text = re.sub(r"\[bench\.[a-z]+\]|\[/\]", "", "\n".join(lines))
-    return text.replace("\\[", "[")
 
 
 def _smp(
-    metric: str, value: float, *, unit: str = "s", direction: Direction = "lower better"
+    metric: str = "runtime",
+    value: float = 0.5,
+    unit: str = "s",
+    direction: Direction = "lower better",
 ) -> Sample:
     return Sample(metric=metric, value=value, unit=unit, direction=direction)
 
 
-def _run(
+def _ok(
     run: int = 1,
     *,
-    failure: str | None = None,
     bench: str = "b",
     suite: str = "S",
-    variant: tuple[tuple[str, str], ...] = (),
+    variant=(),
+    variant_label: str = "",
     samples: list[Sample] | None = None,
     warmup: bool = False,
-    process_samples: list[Sample] | None = None,
 ) -> Execution:
-    it = Iteration(samples=list(samples) if samples else [], warmup=warmup)
     return Execution(
         suite=suite,
         benchmark=bench,
@@ -55,123 +50,101 @@ def _run(
         run=run,
         runtime=0.5,
         command=("x",),
-        failure=failure,
-        iterations=[it],
-        process_samples=list(process_samples) if process_samples else [],
+        variant_label=variant_label,
+        iterations=[Iteration(samples=list(samples) if samples else [], warmup=warmup)],
     )
 
 
-def _fail(run: int, *, warmup: bool = False) -> Execution:
-    # `Iteration` no longer carries a failure - the Execution does, and a failed
-    # run yields no iterations at all.
-    return Execution(
-        suite="S",
-        benchmark="b",
-        run=run,
-        runtime=0.0,
-        command=("x",),
-        returncode=7,
-        failure="boom",
-        iterations=[Iteration(warmup=True)] if warmup else [],
+def _vrun(
+    value: float,
+    *,
+    run: int,
+    label: str,
+    bench: str = "b",
+    suite: str = "S",
+    metric: str = "elapsed",
+    unit: str = "s",
+    direction: Direction = "lower better",
+) -> Execution:
+    return _ok(
+        run,
+        bench=bench,
+        suite=suite,
+        variant=(("k", label),),
+        variant_label=label,
+        samples=[_smp(metric, value, unit=unit, direction=direction)],
     )
 
 
-def _only(stats: list, metric: str = "runtime"):
-    found = [s for s in stats if s.metric == metric]
-    assert len(found) == 1, f"expected one {metric} stat, got {len(found)}"
-    return found[0]
-
-
-# ----- summarize: warmup / process / failures --------------------------------
-
-
-def test_summarize_excludes_warmup():
-    r = Report(
-        executions=[
-            _run(1, samples=[_smp("runtime", 1.0)], warmup=True),
-            _run(2, samples=[_smp("runtime", 0.5)]),
-        ]
-    )
-    s = _only(summarize(r))
-    assert s.n == 1 and s.mean == 0.5 and s.runs == 1 and s.warmups == 1
-
-
-def test_summarize_process_samples_not_counted_as_runs():
-    r = Report(
-        executions=[
-            Execution(
-                suite="S",
-                benchmark="b",
-                run=1,
-                runtime=0.5,
-                command=("x",),
-                iterations=[
-                    Iteration(samples=[_smp("runtime", 1.0)]),
-                    Iteration(samples=[_smp("runtime", 2.0)]),
-                ],
-                process_samples=[_smp("max_rss", 2048.0, unit="kB")],
+def _axis_report(values: dict[str, dict[str, float]]) -> Report:
+    """values[axis_value][benchmark] = elapsed, one run each."""
+    runs = []
+    for value, benches in values.items():
+        for b, elapsed in benches.items():
+            runs.append(
+                _ok(
+                    1,
+                    bench=b,
+                    variant=(("interp", value),),
+                    samples=[_smp("elapsed", elapsed)],
+                )
             )
-        ]
-    )
-    stats = summarize(r)
-    rt = _only(stats, "runtime")
-    rss = _only(stats, "max_rss")
-    assert rt.runs == 2 and rt.n == 2  # process sample is not an extra run
-    assert rss.runs == 2 and rss.n == 1
+    return Report(executions=runs)
 
 
-def test_summarize_process_only_counts_once():
-    r = Report(
+def _matrix_report(values: dict[tuple[str, str], dict[str, float]]) -> Report:
+    """values[(interp, mode)][benchmark] = elapsed, one run each."""
+    return Report(
         executions=[
-            Execution(
-                suite="S",
-                benchmark="b",
-                run=1,
-                runtime=0.5,
-                command=("x",),
-                iterations=[],
-                process_samples=[_smp("max_rss", 1024.0, unit="kB")],
+            _ok(
+                1,
+                bench=b,
+                variant=(("interp", interp), ("mode", mode)),
+                samples=[_smp("elapsed", elapsed)],
             )
+            for (interp, mode), benches in values.items()
+            for b, elapsed in benches.items()
         ]
     )
-    rss = _only(summarize(r), "max_rss")
-    assert rss.runs == 1 and rss.n == 1
 
 
-def test_summarize_warmup_process_samples_excluded():
-    r = Report(
-        executions=[
-            _run(1, warmup=True, process_samples=[_smp("elapsed", 100.0)]),
-            _run(2, process_samples=[_smp("elapsed", 10.0)]),
-            _run(3, process_samples=[_smp("elapsed", 12.0)]),
-        ]
+def _matrix_data() -> Statistics:
+    return _data(
+        _matrix_report(
+            {
+                ("a", "on"): {"b1": 1.0, "b2": 1.0},
+                ("a", "off"): {"b1": 2.0, "b2": 8.0},  # geomean 4x a/on
+                ("b", "on"): {"b1": 2.0, "b2": 2.0},  # geomean 2x a/on
+                ("b", "off"): {"b1": 6.0, "b2": 6.0},  # geomean 6x a/on
+            }
+        )
     )
-    s = _only(summarize(r), "elapsed")
-    assert s.runs == 2 and sorted([s.min, s.max]) == [10.0, 12.0]
 
 
-def test_summarize_failures_count_into_stat():
-    r = Report(executions=[_run(2, samples=[_smp("runtime", 1.0)]), _fail(1)])
-    s = _only(summarize(r))
-    assert s.runs == 1 and s.failures == 1
+def _data(report: Report) -> Statistics:
+    """The `Statistics` a summary consumes (mirrors SummaryReporter)."""
+    return summarize(report)
 
 
-def test_summarize_all_failed_yields_no_rows():
-    # Behavior change from the old `group`: a fully-failed variant produces no
-    # Stat rows (it surfaces in the reporter's Failures block instead).
-    assert summarize(Report(executions=[_fail(1), _fail(2)])) == []
+def _render(renderable: RenderableType) -> str:
+    """The text a real console would print. The summaries return renderables, so
+    the table layout (and any markup the theme swallows) only shows up here."""
+    buf = StringIO()
+    Console(file=buf, force_terminal=False, width=200, theme=BENCHR_THEME).print(
+        renderable
+    )
+    return buf.getvalue()
 
 
-def test_summarize_warmup_failure_excluded():
-    assert summarize(Report(executions=[_fail(1, warmup=True)])) == []
+# ----- ByBenchmarkMetricSummary ----------------------------------------------------
 
 
-def test_summarize_outliers_stay_in_stats_but_are_counted():
+def test_by_benchmark_metric_warns_on_outliers():
     r = Report(
         executions=[
-            _run(1, samples=[_smp("runtime", 1.0)]),
-            _run(2, samples=[_smp("runtime", 1.0)]),
-            _run(
+            _ok(1, samples=[_smp("runtime", 1.0)]),
+            _ok(2, samples=[_smp("runtime", 1.0)]),
+            _ok(
                 3,
                 samples=[
                     Sample(
@@ -185,278 +158,313 @@ def test_summarize_outliers_stay_in_stats_but_are_counted():
             ),
         ]
     )
-    s = _only(summarize(r))
-    assert s.n == 3 and s.max == 100.0 and s.outliers == 1
+    # Rendering with the real theme also proves every style name exists.
+    out = _render(ByBenchmarkMetricSummary()(_data(r)))
+    assert "outlier" in out.lower() and "runtime" in out
 
 
-# ----- stat values -----------------------------------------------------------
+def test_by_benchmark_metric_names_the_metric_and_its_unit():
+    r = Report(executions=[_ok(i, samples=[_smp("runtime", 0.5)]) for i in range(1, 4)])
+    out = _render(ByBenchmarkMetricSummary()(_data(r)))
+    assert "(runtime)" in out  # block header
+    assert "ms" in out  # scaled unit column
 
 
-def test_stat_basic():
-    s = _only(
-        summarize(
-            Report(
-                executions=[
-                    _run(i, samples=[_smp("runtime", float(i))]) for i in (1, 2, 3)
-                ]
+def test_by_benchmark_metric_counts_runs_not_samples():
+    # One execution can yield several samples in one go (e.g. a regex matching
+    # multiple lines of output). Only the run count is reported, so a
+    # multi-sample range sits next to the single run that produced it.
+    r = Report(
+        executions=[
+            _ok(
+                1,
+                samples=[
+                    _smp("runtime", 0.5),
+                    _smp("runtime", 0.52),
+                    _smp("runtime", 0.48),
+                ],
+            )
+        ]
+    )
+    out = _render(ByBenchmarkMetricSummary()(_data(r)))
+    assert "(1 runs)" in out
+    assert "samples" not in out
+    assert "480.00 … 520.00" in out  # the range still spans all three
+
+
+def test_by_benchmark_metric_shows_warmup_count_when_bench_discarded_runs():
+    # bench's own warmup policy discards whole runs (not just values within
+    # one run, unlike e.g. cpython.py's old pyperformance-level warmup) - the
+    # discarded count is shown alongside the runs, with no singular form. The
+    # run count includes it: 3 runs of which 1 contributed nothing.
+    r = Report(
+        executions=[
+            _ok(1, samples=[_smp("runtime", 9.9)], warmup=True),
+            _ok(2, samples=[_smp("runtime", 0.5), _smp("runtime", 0.52)]),
+            _ok(3, samples=[_smp("runtime", 0.48)]),
+        ]
+    )
+    out = _render(ByBenchmarkMetricSummary()(_data(r)))
+    assert "(1 warmup, 3 runs)" in out
+
+
+def test_by_benchmark_metric_shows_variant_in_rows():
+    r = Report(
+        executions=[
+            _ok(
+                i,
+                variant=(("vm", "python3.14"),),
+                variant_label="vm=python3.14",
+                samples=[_smp("elapsed", 0.5)],
+            )
+            for i in range(1, 4)
+        ]
+    )
+    out = _render(ByBenchmarkMetricSummary()(_data(r)))
+    assert "S/b" in out and "vm=python3.14" in out
+
+
+# ----- ComparisonSummary (within-benchmark ranking) --------------------------
+
+
+def test_ranking_uses_better_worse_for_higher_is_better():
+    runs = []
+    for i in range(1, 4):
+        runs.append(
+            _vrun(
+                200.0,
+                run=i,
+                label="fast",
+                metric="throughput",
+                unit="iter/s",
+                direction="higher better",
+            )
+        )
+        runs.append(
+            _vrun(
+                100.0,
+                run=i,
+                label="slow",
+                metric="throughput",
+                unit="iter/s",
+                direction="higher better",
+            )
+        )
+    out = _render(ComparisonSummary()(_data(Report(executions=runs))))
+    assert "fast was" in out and "2.00" in out and "× better than" in out
+    assert "higher" not in out and "lower" not in out and "worse" not in out
+
+
+def test_ranking_empty_for_single_variant():
+    r = Report(
+        executions=[_ok(i, samples=[_smp("elapsed", 0.10)]) for i in range(1, 4)]
+    )
+    assert ComparisonSummary()(_data(r)).renderables == []
+
+
+def test_ranking_empty_across_distinct_benchmarks():
+    runs = []
+    for i in range(1, 4):
+        runs.append(_ok(i, bench="a", samples=[_smp("elapsed", 0.10)]))
+        runs.append(_ok(i, bench="b", samples=[_smp("elapsed", 0.20)]))
+    stats = _data(Report(executions=runs))
+    assert ComparisonSummary()(stats).renderables == []
+
+
+# ----- GeomeanComparisonSummary (within-run axis ranking) --------------------
+
+
+def test_grouped_summary_about_the_same():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 1.0}})
+    out = _render(GeomeanComparisonSummary(axis="interp", metrics="elapsed")(_data(r)))
+    assert "about the same as b" in out
+    assert "1.00×" not in out
+
+
+# ----- GeomeanComparisonSummary over a composite axis ------------------------
+
+
+def test_grouped_summary_ranks_the_cells_of_a_composite_axis():
+    out = _render(
+        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(
+            _matrix_data()
+        )
+    )
+    assert "Comparison - interp, mode - S" in out
+    assert "interp=a, mode=on was" in out
+    assert "2.00× better than interp=b, mode=on" in out
+    assert "4.00× better than interp=a, mode=off" in out
+    assert "6.00× better than interp=b, mode=off" in out
+
+
+def test_grouped_summary_composite_axis_folds_nothing_into_the_geomean():
+    """One axis of the same matrix averages the other one in; both axes don't."""
+    out = _render(
+        GeomeanComparisonSummary(axis="interp", metrics="elapsed")(_matrix_data())
+    )
+    assert "a was" in out
+    # geomean of the four pairwise ratios, both modes mixed in: 2, 2, 3, 0.75.
+    assert "1.73× better than b" in out
+
+
+def test_grouped_summary_composite_axis_ref_pins_one_cell():
+    out = _render(
+        GeomeanComparisonSummary(
+            axis=["interp", "mode"], metrics="elapsed", ref="interp=b, mode=off"
+        )(_matrix_data())
+    )
+    assert "interp=b, mode=off was" in out
+    assert "6.00× worse than interp=a, mode=on" in out
+
+
+def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
+    out = _render(
+        GeomeanComparisonSummary(
+            axis=["interp", "mode"], metrics="elapsed", ref="mode=off,interp=b"
+        )(_matrix_data())
+    )
+    assert "is not a value of axis" not in out
+    assert "interp=b, mode=off was" in out
+
+
+def test_grouped_summary_single_axis_ref_takes_either_form():
+    for ref in ("b", "interp=b"):
+        out = _render(
+            GeomeanComparisonSummary(axis="interp", metrics="elapsed", ref=ref)(
+                _matrix_data()
+            )
+        )
+        assert "is not a value of axis" not in out
+        assert "b was" in out
+
+
+def test_grouped_summary_composite_axis_keeps_empty_values_distinct():
+    """`interp=x, mode=` and `interp=, mode=x` are two cells, not one."""
+    r = _matrix_report({("x", ""): {"b1": 1.0}, ("", "x"): {"b1": 100.0}})
+    out = _render(
+        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+    )
+    assert "interp=x, mode= was" in out
+    assert "100.00× better than interp=, mode=x" in out
+
+
+def test_grouped_summary_missing_part_of_a_composite_axis_warns():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
+    out = _render(
+        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+    )
+    assert "axis interp,mode incomplete: 'mode' not present" in out
+
+
+def test_grouped_summary_missing_axis_of_a_composite_warns():
+    r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
+    out = _render(
+        GeomeanComparisonSummary(axis=["vm", "mode"], metrics="elapsed")(_data(r))
+    )
+    assert "axis vm,mode not present in any benchmark" in out
+
+
+def test_grouped_summary_composite_axis_never_combined_warns():
+    r = Report(
+        executions=[
+            _ok(1, variant=(("interp", "a"),), samples=[_smp("elapsed", 1.0)]),
+            _ok(1, variant=(("mode", "on"),), samples=[_smp("elapsed", 2.0)]),
+        ]
+    )
+    out = _render(
+        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+    )
+    assert "axis interp,mode never combined in one benchmark" in out
+
+
+def test_grouped_summary_unknown_ref_warns_and_falls_back():
+    out = _render(
+        GeomeanComparisonSummary(
+            axis=["interp", "mode"], metrics="elapsed", ref="interp=nope"
+        )(_matrix_data())
+    )
+    assert "reference axis interp=nope is not a value of axis 'interp,mode'" in out
+    assert "interp=a, mode=on was" in out
+
+
+def test_grouped_summary_bare_ref_on_a_composite_axis_warns():
+    """A bare value cannot say which cell it means once the axis is composite."""
+    out = _render(
+        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed", ref="b")(
+            _matrix_data()
+        )
+    )
+    assert "reference axis b is not a value of axis 'interp,mode'" in out
+
+
+def test_grouped_summary_ref_absent_from_one_group_is_silent():
+    """The ref may legitimately be missing from a suite; only an unknown one warns."""
+    out = _render(
+        GeomeanComparisonSummary(axis="interp", metrics="elapsed", ref="b")(
+            _data(
+                Report(
+                    executions=[
+                        *_axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}}).executions,
+                        *[
+                            _ok(
+                                1,
+                                suite="T",
+                                bench="b2",
+                                variant=(("interp", v),),
+                                samples=[_smp("elapsed", e)],
+                            )
+                            for v, e in (("a", 1.0), ("c", 3.0))
+                        ],
+                    ]
+                )
             )
         )
     )
-    assert s.n == 3 and s.mean == 2.0 and s.median == 2.0
-    assert s.min == 1.0 and s.max == 3.0
+    assert "is not a value of axis" not in out
+    assert "b was" in out  # suite S, pinned
+    assert "a was" in out  # suite T, best performer
 
 
-def test_stat_single_value_zero_stdev():
-    s = _only(summarize(Report(executions=[_run(1, samples=[_smp("runtime", 5.0)])])))
-    assert s.stdev == 0.0
+def test_grouped_summary_empty_axis_is_an_error():
+    with pytest.raises(BenchError, match="at least one matrix dimension"):
+        GeomeanComparisonSummary(axis=[], metrics="elapsed")(_matrix_data())
 
 
-# ----- math ------------------------------------------------------------------
+# ----- DefaultSummary + composition ------------------------------------------
 
 
-def _stat(values: list[float], *, direction: Direction = "lower better"):
-    r = Report(
-        executions=[
-            _run(i + 1, samples=[_smp("rt", v, direction=direction)])
-            for i, v in enumerate(values)
-        ]
-    )
-    return _only(summarize(r), "rt")
-
-
-def test_ratio_lower_is_better_speedup():
-    out = ratio(_stat([1.0, 1.0, 1.0]), _stat([0.5, 0.5, 0.5]))
-    assert out is not None and abs(out[0] - 2.0) < 1e-9
-
-
-def test_ratio_higher_is_better():
-    out = ratio(
-        _stat([100.0], direction="higher better"),
-        _stat([200.0], direction="higher better"),
-    )
-    assert out is not None and abs(out[0] - 2.0) < 1e-9
-
-
-def test_ratio_zero_returns_none():
-    assert ratio(_stat([0.0]), _stat([1.0])) is None
-
-
-def test_orient_keeps_better_for_ge_one():
-    assert orient(2.0, 0.1) == (2.0, 0.1, "better")
-
-
-def test_orient_flips_sub_one_to_worse():
-    mag, sig, word = orient(0.5, 0.1)
-    assert abs(mag - 2.0) < 1e-9 and word == "worse" and abs(sig - 0.4) < 1e-9
-
-
-def test_geomean():
-    assert abs(geomean([2.0, 8.0]) - 4.0) < 1e-9
-
-
-def test_geomean_ratio_propagates_error():
-    geo, sigma = geomean_ratio([(2.0, 0.2), (8.0, 1.6)])
-    assert abs(geo - 4.0) < 1e-9
-    assert abs(sigma - math.sqrt(0.1**2 + 0.2**2) / 2 * geo) < 1e-9
-
-
-def test_scale_unit_seconds_to_ms():
-    assert scale_unit(0.5, "s") == (1e3, "ms")
-
-
-def test_scale_unit_kb_to_mb():
-    sc, unit = scale_unit(2048.0, "kB")
-    assert unit == "MB" and abs(sc - 1 / 1024) < 1e-12
-
-
-def test_scale_unit_bytes_step_up_by_1024():
-    # A raw-byte counter climbs kB -> MB -> GB; below 1 kiB it stays in "B".
-    assert scale_unit(512.0, "B") == (1.0, "B")
-    for value, exponent, unit in [
-        (4096.0, 1, "kB"),
-        (5 * 1024**2, 2, "MB"),
-        (3 * 1024**3, 3, "GB"),
-    ]:
-        sc, u = scale_unit(value, "B")
-        assert u == unit and abs(sc - 1 / 1024**exponent) < 1e-18
-
-
-# ----- views -----------------------------------------------------------------
-
-
-def _matrix() -> Report:
-    """vm x {fib, hanoi}: python3.14 is uniformly 2x faster."""
+def test_default_summary_composes_by_benchmark_metric_and_ranking():
     runs = []
-    for vm, fib, hanoi in [("python3.9", 2.0, 4.0), ("python3.14", 1.0, 2.0)]:
-        for i in (1, 2, 3):
-            runs.append(
-                _run(
-                    i,
-                    bench="fib",
-                    variant=(("vm", vm),),
-                    samples=[_smp("elapsed", fib)],
-                )
-            )
-            runs.append(
-                _run(
-                    i,
-                    bench="hanoi",
-                    variant=(("vm", vm),),
-                    samples=[_smp("elapsed", hanoi)],
-                )
-            )
-    return Report(executions=runs)
+    for i in range(1, 4):
+        runs.append(_vrun(0.10, run=i, label="fast"))
+        runs.append(_vrun(0.20, run=i, label="slow"))
+    out = _render(DefaultSummary()(_data(Report(executions=runs))))
+    assert "S/b" in out  # by-benchmark block
+    assert "Comparison - S/b" in out  # ranking block
 
 
-def test_results_groups_by_benchmark_and_metric():
-    out = _strip(results(summarize(_matrix()), RICH))
-    assert "S/fib" in out
-    assert "elapsed [s]" in out  # literal bracket survives rendering
-    assert (
-        "matrix" in out and "mean ± σ" in out and "min … max" in out
-    )  # column headers
-    assert "(3 runs, 0 failed)" in out  # per-row run count
-    assert "vm=python3.9" in out
-
-
-def test_results_single_sample_header_is_value_not_mean_sigma():
-    # One run per variant -> no spread: the mean cell is a bare value and the
-    # range cell is just the count, so the headers must be "value" (not
-    # "mean ± σ") and the "min … max" header must be gone entirely.
-    report = Report(
-        executions=[
-            _run(0, bench="b", variant=(("vm", "x"),), samples=[_smp("elapsed", 520.0)])
-        ]
+def test_summary_reporter_renders_composed_summary():
+    buf = StringIO()
+    rep = SummaryReporter(
+        ByBenchmarkMetricSummary()
+        & GeomeanComparisonSummary(axis="interp", metrics="elapsed"),
+        target_console=Console(file=buf, force_terminal=False, width=200),
     )
-    out = _strip(results(summarize(report), RICH))
-    assert "value" in out
-    assert "mean ± σ" not in out
-    assert "min … max" not in out
-    assert "(1 runs, 0 failed)" in out
+    rep.finalize(_axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}))
+    out = buf.getvalue()
+    assert "S/x" in out  # ByBenchmarkMetricSummary
+    assert "Comparison - interp" in out  # GeomeanComparisonSummary
 
 
-def test_ranking_uses_better_worse_not_lower_higher():
-    out = _strip(ranking(summarize(_matrix()), RICH))
-    assert "Summary - S/fib" in out
-    assert "was" in out and "× better than" in out
-    assert "worse" not in out and "lower" not in out and "higher" not in out
-    # the run/failed count shares its rendering with the Results line
-    assert "runs, 0 failed)" in out
+# ----- ByMetricSummary -------------------------------------------------------
 
 
-def test_ranking_best_first():
-    out = _strip(ranking(summarize(_matrix()), RICH))
-    assert out.index("vm=python3.14") < out.index("vm=python3.9")
-    assert "2.00" in out  # 2x worse
-
-
-def test_ranking_skips_single_variant():
+def test_by_metric_filters_by_metric():
     r = Report(
         executions=[
-            _run(i, bench="solo", samples=[_smp("elapsed", 1.0)]) for i in (1, 2, 3)
+            _ok(i, samples=[_smp("runtime", 0.5), _smp("max_rss", 1024.0, unit="kB")])
+            for i in range(1, 4)
         ]
     )
-    assert ranking(summarize(r), RICH) == []
-
-
-def test_ranking_axis_folds_residual_within_each_benchmark():
-    # bench b, matrix vm x a. "fast" is 2x quicker at every a. ranking(axis="vm")
-    # folds a (geomean) and compares the vm values within the benchmark.
-    runs = []
-    for vm, base in [("fast", 1.0), ("slow", 2.0)]:
-        for a in ("1", "2"):
-            for i in (1, 2, 3):
-                runs.append(
-                    _run(
-                        i,
-                        variant=(("vm", vm), ("a", a)),
-                        samples=[_smp("elapsed", base)],
-                    )
-                )
-    out = _strip(ranking(summarize(Report(executions=runs)), RICH, axis="vm"))
-    assert "Summary (geomean) - vm - S/b" in out  # per-benchmark header
-    assert "fast was" in out and "2.00" in out and "× better than" in out
-    assert "a=1" not in out and "a=2" not in out  # the a axis is folded away
-
-
-def test_by_axis_ranks_values_best_first():
-    out = _strip(by_axis(summarize(_matrix()), "vm", RICH, metrics={"elapsed"}))
-    assert "Summary (geomean) - vm - S" in out
-    assert out.index("python3.14") < out.index("python3.9")
-    assert "2.00" in out and "× better than" in out
-
-
-def test_by_axis_missing_is_explicit():
-    out = _strip(by_axis(summarize(_matrix()), "nope", RICH))
-    assert "not present" in out and "nope" in out
-
-
-def test_by_axis_ref_pins_reference():
-    # Without ref, python3.14 (fastest) is the subject. ref pins python3.9 as the
-    # baseline so it becomes the subject and reads as the worse one.
-    out = _strip(
-        by_axis(summarize(_matrix()), "vm", RICH, metrics={"elapsed"}, ref="python3.9")
-    )
-    assert "python3.9 was" in out
-    assert "× worse than" in out and "2.00" in out
-
-
-# ----- merge_reports: files become a `compare` axis --------------------------
-
-
-def test_merge_reports_tags_each_run_with_compare_axis():
-    a = Report(executions=[_run(1, bench="fib", samples=[_smp("elapsed", 2.0)])])
-    b = Report(executions=[_run(1, bench="fib", samples=[_smp("elapsed", 1.0)])])
-    merged = merge_reports([("a", a), ("b", b)])
-    assert len(merged.executions) == 2
-    assert {run.variant.as_dict()["compare"] for run in merged.executions} == {"a", "b"}
-    # Summarized over the compare axis, the two files rank against each other.
-    out = _strip(by_axis(summarize(merged), "compare", RICH, metrics={"elapsed"}))
-    assert "Summary (geomean) - compare - S" in out
-    assert "× better than" in out and "2.00" in out
-
-
-def test_merge_reports_keeps_files_distinguishable_in_labels():
-    a = Report(executions=[_run(1, samples=[_smp("elapsed", 1.0)])])
-    b = Report(executions=[_run(1, samples=[_smp("elapsed", 1.0)])])
-    merged = merge_reports([("a", a), ("b", b)])
-    out = _strip(results(summarize(merged), RICH))
-    assert "compare=a" in out and "compare=b" in out
-
-
-def test_compact_no_baseline_has_geomean_and_unit():
-    r = Report(
-        executions=[
-            *[
-                _run(i, bench="fib", samples=[_smp("elapsed", v)])
-                for i, v in enumerate((0.22, 0.23, 0.24), 1)
-            ],
-            *[
-                _run(i, bench="hanoi", samples=[_smp("elapsed", v)])
-                for i, v in enumerate((0.39, 0.40, 0.41), 1)
-            ],
-        ]
-    )
-    out = _strip(compact(summarize(r), RICH))
-    assert "fib:" in out and "hanoi:" in out
-    assert "geomean:" in out and "ms" in out
-
-
-def test_stat_line_matches_summary_format():
-    from bench.console.render import PLAIN
-    from bench.summary.summary import stat_line
-
-    r = Report(
-        executions=[
-            Execution(
-                suite="S",
-                benchmark="b",
-                run=i,
-                runtime=float(i),
-                iterations=[Iteration(samples=[Sample("elapsed", float(i), unit="s")])],
-            )
-            for i in (1, 2, 3)
-        ]
-    )
-    (s,) = summarize(r)
-    assert stat_line(s, PLAIN) == "2.00 ± 1.00 s (1.00 … 3.00) (3 runs, 0 failed)"
+    out = _render(ByMetricSummary("runtime")(_data(r)))
+    assert "runtime" in out and "max_rss" not in out

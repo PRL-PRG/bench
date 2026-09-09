@@ -14,34 +14,34 @@ from bench.model.results import Execution, Report
 from bench.report.base import Reporter
 
 if TYPE_CHECKING:
-    from bench.summary.formatter import Formatter
+    from bench.summary import Summary
 
 
 class SummaryReporter(Reporter):
     """Summarize the report and render it on `finalize()`.
 
-    Takes a single `Formatter` (compose several with `&`), defaulting to
-    `DefaultSummary`. After the formatter output, appends a `Failures:` block
+    Takes a single `Summary` (compose several with `&`), defaulting to
+    `DefaultSummary`. After the summary output, appends a `Failures:` block
     listing every failed run.
     """
 
     def __init__(
         self,
-        formatter: Formatter | None = None,
+        formatter: Summary | None = None,
         *,
         target_console: Console | None = None,
     ) -> None:
-        from bench.summary.formatter import DefaultSummary
+        from bench.summary import DefaultSummary
 
         super().__init__()
-        self._formatter: Formatter = formatter or DefaultSummary()
+        self._formatter: Summary = formatter or DefaultSummary()
         self._console = target_console or console
 
     def finalize(self, report: Report) -> None:
-        from bench.summary.summary import summarize
+        from bench.core.stats import summarize
 
         out = self._formatter(summarize(report))
-        if out:
+        if out.renderables:
             self._console.print(out)
         if report.failures:
             self._console.print()

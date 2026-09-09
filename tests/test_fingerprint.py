@@ -136,7 +136,16 @@ def test_git_probe_marks_a_dirty_tree(tmp_path: Path):
 
 @needs_git
 def test_git_probe_collects_nothing_outside_a_repository(tmp_path: Path):
-    assert GitProbe(tmp_path, key="k").collect() is None
+    probe = GitProbe(tmp_path, key="k", allow_failure=True)
+    assert probe.collect() is None
+
+
+@needs_git
+def test_git_probe_raises_outside_a_repository_by_default(tmp_path: Path):
+    # A probe that silently records nothing hides a mis-pointed folder, so the
+    # failure is opt-in via allow_failure.
+    with pytest.raises(ValueError, match="Git failed to run"):
+        GitProbe(tmp_path, key="k").collect()
 
 
 def test_git_probe_key_is_configurable(tmp_path: Path):

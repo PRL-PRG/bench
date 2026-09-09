@@ -27,13 +27,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from bench import (
+    ByBenchmarkMetricSummary,
+    ComparisonSummary,
     Context,
-    GeomeanSummary,
+    GeomeanComparisonSummary,
     RegexMetric,
-    Results,
     SharedBenchParams,
     StdoutMetricSource,
-    Summary,
     SummaryReporter,
     bench,
     bench_app,
@@ -90,8 +90,8 @@ awfy = (
 )
 
 
-grouped = GeomeanSummary(axis="vm", metrics={"runtime", "max_rss"})
-summary = SummaryReporter(Results() & Summary() & grouped)
+grouped = GeomeanComparisonSummary(axis="vm", metrics={"runtime", "max_rss"})
+summary = SummaryReporter(ByBenchmarkMetricSummary() & ComparisonSummary() & grouped)
 
 bench_app("AWFY", params=Params, summary=summary).add(awfy).run_cli()
 

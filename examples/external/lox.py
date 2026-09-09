@@ -7,12 +7,12 @@
 # bench = { path = "../..", editable = true }
 # ///
 """Lox: two file-discovered suites, each with its own metrics and a per-suite
-Compact summary (via `CompositeReporter`)."""
+`ByMetricSummary` (via `CompositeReporter`)."""
 
 from pathlib import Path
 
 from bench import (
-    Compact,
+    ByMetricSummary,
     CompositeReporter,
     Context,
     FloatPerLine,
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     bench_app(
         params=LoxParams,
         reporter=CompositeReporter(
-            SummaryReporter(Compact("runtime", suite="LoxSuite")),
-            SummaryReporter(Compact("throughput", suite="ZooBatch")),
+            SummaryReporter(ByMetricSummary("runtime", suite="LoxSuite")),
+            SummaryReporter(ByMetricSummary("throughput", suite="ZooBatch")),
         ),
     ).add(lox_suite, zoo_suite).run_cli()

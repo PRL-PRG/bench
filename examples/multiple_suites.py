@@ -6,16 +6,16 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Two suites with different metrics, a per-suite Compact summary each.
+"""Two suites with different metrics, a per-suite `ByMetricSummary` each.
 
-Each suite gets its own `SummaryReporter` whose `Compact` formatter is
+Each suite gets its own `SummaryReporter` whose `ByMetricSummary` is
 scoped with `suite=...`. A `CompositeReporter` fans the run out to both.
 """
 
 import os
 
 from bench import (
-    Compact,
+    ByMetricSummary,
     CompositeReporter,
     SummaryReporter,
     Time,
@@ -48,7 +48,7 @@ slow = (
 if __name__ == "__main__":
     bench_app(
         reporter=CompositeReporter(
-            SummaryReporter(Compact("elapsed", suite="fast")),
-            SummaryReporter(Compact("elapsed", suite="slow")),
+            SummaryReporter(ByMetricSummary("elapsed", suite="fast")),
+            SummaryReporter(ByMetricSummary("elapsed", suite="slow")),
         )
     ).add(fast, slow).run_cli()

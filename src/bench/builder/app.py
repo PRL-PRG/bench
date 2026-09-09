@@ -34,6 +34,7 @@ from bench.core.diagnostic import run_checks
 from bench.core.fingerprint import (
     Probe,
 )
+from bench.core.stats import summarize
 from bench.error import BenchError, print_exception
 from bench.model.benchmark import Benchmark, format_benchmark, format_variant
 from bench.model.results import Report, report_from_json
@@ -52,8 +53,7 @@ from bench.report import (
 from bench.runner import (
     Runner,
 )
-from bench.summary.formatter import DefaultSummary
-from bench.summary.summary import summarize
+from bench.summary import DefaultSummary
 
 # ---------------------------------------------------------------------------
 # Base types
@@ -407,7 +407,7 @@ def bench_app[P: Params](
 def bench_app_params_type[T: Params](t: type[T]) -> type[T]:
     default_actions_group = ParamsGroup("default actions")
 
-    class BenchAppPArams(t):
+    class BenchAppParams(t):
         list: bool = dataclasses.field(
             default=False,
             metadata={
@@ -426,7 +426,7 @@ def bench_app_params_type[T: Params](t: type[T]) -> type[T]:
             },
         )
 
-    return cast(type[T], BenchAppPArams)
+    return cast(type[T], BenchAppParams)
 
 
 SharedBenchAppParams = bench_app_params_type(SharedBenchParams)

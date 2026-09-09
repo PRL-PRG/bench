@@ -7,19 +7,24 @@ from rich.theme import Theme
 
 BENCHR_THEME = Theme(
     {
+        # Success
         "bench.success": "green",
+        "bench.warning": "yellow",
         "bench.failure": "red",
-        "bench.metric": "cyan",
-        "bench.value": "green bold",
-        "bench.min": "cyan",
-        "bench.max": "magenta",
+        # Label
         "bench.name": "magenta",
         "bench.label": "bold",
+        "bench.metric": "cyan",
+        # Values
+        "bench.value": "green bold",
+        "bench.adjustment": "green",
+        "bench.min": "cyan",
+        "bench.max": "magenta",
+        # Comparison
         "bench.better": "green bold",
         "bench.worse": "red bold",
-        "bench.warning": "yellow",
+        # Progress
         "bench.progress": "blue bold",
-        "bench.in_process": "magenta bold",
     }
 )
 

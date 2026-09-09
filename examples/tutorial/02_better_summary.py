@@ -23,11 +23,18 @@ s = (
 run(s)
 
 # a better comparison across experiments
-# from bench import GeomeanSummary, Results, Summary, SummaryReporter
+# from bench import (
+#     ByBenchmarkMetricSummary,
+#     ComparisonSummary,
+#     GeomeanComparisonSummary,
+#     SummaryReporter,
+# )
 # run(
 #     s,
 #     reporter=SummaryReporter(
-#         Results() & Summary() & GeomeanSummary(axis="vm", metrics="elapsed"),
+#         ByBenchmarkMetricSummary()
+#         & ComparisonSummary()
+#         & GeomeanComparisonSummary(axis="vm", metrics="elapsed"),
 #     ),
 # )
 

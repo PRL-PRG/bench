@@ -341,7 +341,7 @@ def test_suite_dimension_collision_with_benchmark_dimension_raises():
     s = suite("M", _b("a").with_command(["true"]).with_matrix(vm=["a"])).with_matrix(
         vm=["b"]
     )
-    with pytest.raises(ValueError, match="Duplicate matrix axis"):
+    with pytest.raises(ValueError, match="Duplicate matrix axes: vm"):
         s.materialize(Params())
 
 

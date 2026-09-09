@@ -196,7 +196,7 @@ def test_compare_subcommand(tmp_path: Path):
     assert r.returncode == 0, r.stderr
     # rows carry the filename as given as the leading `compare=` dimension
     assert "compare=a.json" in r.stdout and "compare=b.json" in r.stdout
-    assert "Summary (geomean) - compare" in r.stdout  # the head-to-head block
+    assert "Comparison - compare" in r.stdout  # the head-to-head block
     assert "a.json was" in r.stdout  # the first file is the baseline subject
 
 
@@ -210,14 +210,19 @@ def test_compare_missing_file_errors(tmp_path: Path):
 
 def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     # `./my-bench --show r.json` renders a saved report with the script's own
-    # configured formatter (here a GeomeanSummary), running nothing. The path
-    # used to substitute the default reporter for the configured one, then crash
-    # inside it.
+    # configured summary (here a GeomeanComparisonSummary), running nothing. The
+    # path used to substitute the default reporter for the configured one, then
+    # crash inside it.
     from io import StringIO
 
     from rich.console import Console
 
-    from bench import GeomeanSummary, Results, SummaryReporter, Time
+    from bench import (
+        ByBenchmarkMetricSummary,
+        GeomeanComparisonSummary,
+        SummaryReporter,
+        Time,
+    )
 
     s = (
         suite("s")
@@ -233,12 +238,14 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
 
     buf = StringIO()
     reporter = SummaryReporter(
-        Results() & GeomeanSummary(axis="sleep", metrics="elapsed"),
+        ByBenchmarkMetricSummary()
+        & GeomeanComparisonSummary(axis="sleep", metrics="elapsed"),
         target_console=Console(file=buf, force_terminal=False, width=200),
     )
     bench_app(reporter=reporter).add(s).run_cli(["--show", str(out)])
     text = buf.getvalue()
-    assert "Summary (geomean) - sleep" in text  # the configured GeomeanSummary ran
+    # the configured GeomeanComparisonSummary ran
+    assert "Comparison - sleep" in text
 
 
 def test_bench_help_describes_subcommand():
@@ -301,10 +308,10 @@ def test_bench_surfaces_failure_diagnostics():
 def test_bench_two_commands_prints_summary_ranking():
     r = _run("run", "--no-progress", "--runs", "3", "sleep 0.01", "sleep 0.05")
     assert r.returncode == 0, r.stderr
-    assert "Summary - run" in r.stdout
+    assert "Comparison - run" in r.stdout
     assert "× better than" in r.stdout
     # The fastest (sleep 0.01) is the subject, listed before sleep 0.05.
-    ranking = r.stdout.split("Summary - run")[1]
+    ranking = r.stdout.split("Comparison - run")[1]
     assert ranking.index("sleep 0.01") < ranking.index("sleep 0.05")
 
 

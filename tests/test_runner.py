@@ -347,7 +347,9 @@ def test_sigint_kills_subprocesses_parallel(tmp_path: Path):
     t.start()
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        ParallelRunner(workers=4).run(plan([s], Params()), reporter=JsonReporter(json_path))
+        ParallelRunner(workers=4).run(
+            plan([s], Params()), reporter=JsonReporter(json_path)
+        )
     elapsed = time.monotonic() - t0
     t.cancel()
 

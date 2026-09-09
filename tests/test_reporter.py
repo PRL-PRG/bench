@@ -529,7 +529,7 @@ def test_progress_prints_completed_summary_scrollback():
     )
     out = re.sub(r"\x1b\[[0-9;?]*[a-zA-Z]", "", buf.getvalue())
     assert "Finished: S/a" in out
-    assert "(3 runs, 0 failed)" in out
+    assert "(3 runs)" in out
 
 
 def test_task_bar_carries_eta_column():
