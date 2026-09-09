@@ -39,11 +39,9 @@ class CompositeReporter(Reporter):
         # Flatten the reporters
         def iterate(r: Reporter) -> Iterator[Reporter]:
             if isinstance(r, CompositeReporter):
-                for subr in r.reporters:
-                    yield from iterate(subr)
-                return
-
-            yield r
+                yield from r.reporters
+            else:
+                yield r
 
         self.reporters = list(flat_r for r in reporters for flat_r in iterate(r))
 
