@@ -203,7 +203,10 @@ class ProgressReporter(Reporter):
                 )
                 self._tui.overall_progress.advance(self._tui.overall_task)
 
-            self._console.print(self._summary_line(name, executions))
+            timestr = self._console.get_datetime().strftime("%X")
+            self._console.print(
+                f"[bench.success][{timestr}][/]", self._summary_line(name, executions)
+            )
 
     def finalize(self, report: Report) -> None:
         if self._tui is not None:
