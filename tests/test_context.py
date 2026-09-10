@@ -15,8 +15,8 @@ from bench.params import (
     SharedReporterParams,
     SharedRunnerParams,
     SharedSelectionParams,
-    add_dataclass_args,
-    build_dataclass,
+    add_params,
+    build_params,
 )
 
 
@@ -30,7 +30,7 @@ class _Params(Params):
 
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, _Params)
+    add_params(p, _Params)
     return p
 
 
@@ -40,7 +40,7 @@ def test_required_field_missing():
 
 
 def test_required_field_only():
-    ctx = build_dataclass(_Params, _parser().parse_args(["--name", "/x"]))
+    ctx = build_params(_parser().parse_args(["--name", "/x"]), _Params)
     assert ctx.name == Path("/x")
     assert ctx.iterations == 15
     assert ctx.cwd == Path("/tmp")
@@ -62,7 +62,7 @@ def test_overrides():
             "tag",
         ]
     )
-    ctx = build_dataclass(_Params, ns)
+    ctx = build_params(ns, _Params)
     assert ctx.iterations == 30
     assert ctx.cwd == Path("/y")
     assert ctx.verbose is True
@@ -71,7 +71,7 @@ def test_overrides():
 
 def test_bool_uses_boolean_optional_action():
     ns = _parser().parse_args(["--name", "/x", "--no-verbose"])
-    ctx = build_dataclass(_Params, ns)
+    ctx = build_params(ns, _Params)
     assert ctx.verbose is False
 
 
@@ -80,9 +80,9 @@ def test_dash_to_underscore():
         my_long_name: str = "x"
 
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, Multi)
+    add_params(p, Multi)
     ns = p.parse_args(["--my-long-name", "y"])
-    ctx = build_dataclass(Multi, ns)
+    ctx = build_params(ns, Multi)
     assert ctx.my_long_name == "y"
 
 
@@ -116,7 +116,7 @@ def test_context_suite_level_has_no_benchmark_or_data():
         _ = ctx.data.vm
 
 
-# ----- add_dataclass_args extensions --------------------------------------
+# ----- add_params extensions --------------------------------------
 
 
 def test_list_field_is_repeatable_append():
@@ -124,17 +124,17 @@ def test_list_field_is_repeatable_append():
         tags: list[str] | None = None
 
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, DC)
+    add_params(p, DC)
     # Repeatable, and a value is kept whole (not char-split).
     ns = p.parse_args(["--tags", "^a$", "--tags", "b"])
-    assert build_dataclass(DC, ns).tags == ["^a$", "b"]
+    assert build_params(ns, DC).tags == ["^a$", "b"]
     # Omitted -> None.
-    assert build_dataclass(DC, p.parse_args([])).tags is None
+    assert build_params(p.parse_args([]), DC).tags is None
 
 
 def test_metadata_short_flag_alias():
     ns = _shared_parser().parse_args(["-j", "4"])
-    assert build_dataclass(SharedBenchParams, ns).jobs == 4
+    assert build_params(ns, SharedBenchParams).jobs == 4
 
 
 def test_metadata_help_and_metavar_surface_in_help():
@@ -149,8 +149,8 @@ def test_positional_metadata_makes_an_argument_positional():
         metric: str | None = None
 
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, DC)
-    assert build_dataclass(DC, p.parse_args(["r.json"])).file == "r.json"
+    add_params(p, DC)
+    assert build_params(p.parse_args(["r.json"]), DC).file == "r.json"
     # A positional with no default is required, and never gets a `--` flag.
     assert "--file" not in p.format_help()
     with pytest.raises(SystemExit):
@@ -162,9 +162,9 @@ def test_list_positional_takes_every_remaining_value():
         commands: list[str] = field(metadata={"positional": True, "metavar": "CMD"})
 
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, DC)
+    add_params(p, DC)
     # nargs="+", not the repeatable `append` a `list[T]` option would get.
-    assert build_dataclass(DC, p.parse_args(["a", "b"])).commands == ["a", "b"]
+    assert build_params(p.parse_args(["a", "b"]), DC).commands == ["a", "b"]
     with pytest.raises(SystemExit):
         p.parse_args([])
 
@@ -184,19 +184,19 @@ def test_group_metadata_files_the_argument_under_its_group():
 
 def test_shared_bench_params_defaults_and_progress():
     ns = _shared_parser().parse_args([])
-    cli = build_dataclass(SharedBenchParams, ns)
+    cli = build_params(ns, SharedBenchParams)
     assert cli.jobs == 1 and cli.dry is False and cli.verbose is False
     assert cli.progress is True and cli.include is None
     # --no-progress flips the progress default off.
-    off = build_dataclass(
-        SharedBenchParams, _shared_parser().parse_args(["--no-progress"])
+    off = build_params(
+        _shared_parser().parse_args(["--no-progress"]), SharedBenchParams
     )
     assert off.progress is False
 
 
 def _shared_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, SharedBenchParams)
+    add_params(p, SharedBenchParams)
     return p
 
 
@@ -205,7 +205,7 @@ def _shared_parser() -> argparse.ArgumentParser:
 
 def _params_parser(params: type[Params]) -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
-    add_dataclass_args(p, params)
+    add_params(p, params)
     return p
 
 
@@ -247,8 +247,6 @@ def test_a_user_params_class_can_pick_one_half():
     class RunnerOnly(SharedRunnerParams):
         label: str = "x"
 
-    p = build_dataclass(
-        RunnerOnly, _params_parser(RunnerOnly).parse_args(["--jobs", "4"])
-    )
+    p = build_params(_params_parser(RunnerOnly).parse_args(["--jobs", "4"]), RunnerOnly)
     assert p.jobs == 4 and p.label == "x"
     assert not hasattr(p, "progress")

@@ -191,7 +191,7 @@ type _Kwargs = dict[str, Any]
 type _Arg = tuple[_Flags, _Kwargs]
 
 
-def add_dataclass_args(
+def add_params(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
     dc: type[Params],
@@ -281,7 +281,7 @@ def add_dataclass_args(
             p.add_argument(*flags, **kwargs)
 
 
-def build_dataclass[T: Params](dc: type[T], namespace: argparse.Namespace) -> T:
+def build_params[T: Params](namespace: argparse.Namespace, dc: type[T]) -> T:
     """Instantiate the user dataclass from an argparse Namespace."""
     names = set(f.name for f in fields(dc))
     args = {k: v for k, v in vars(namespace).items() if k in names}

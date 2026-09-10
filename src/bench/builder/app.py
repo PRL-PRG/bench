@@ -43,8 +43,8 @@ from bench.params import (
     Params,
     ParamsGroup,
     SharedBenchParams,
-    add_dataclass_args,
-    build_dataclass,
+    add_params,
+    build_params,
 )
 from bench.report import (
     Reporter,
@@ -196,39 +196,35 @@ class BenchAppBuilder(BuilderBase):
 
     def plan_benchmarks(
         self,
-        build_params: Params,
+        params: Params,
         *,
         use_defaults: bool = False,
     ):
         overlay = self
         if use_defaults:
-            overlay = self.with_filter(default_filter(build_params))
+            overlay = self.with_filter(default_filter(params))
 
         suites = [
             s.inherit_from(overlay)
             for generator in overlay.suites
-            for s in generator(build_params)
+            for s in generator(params)
         ]
 
-        return plan(suites, build_params)
+        return plan(suites, params)
 
     # ----- instantiate reporter -----------
-    def get_reporter(
-        self, build_params: Params, *, use_defaults: bool
-    ) -> Reporter | None:
+    def get_reporter(self, params: Params, *, use_defaults: bool) -> Reporter | None:
         if self.reporter is not None:
-            return self.reporter(build_params)
+            return self.reporter(params)
         elif use_defaults:
-            return default_reporter(build_params)
+            return default_reporter(params)
 
         return None
 
     # ----- instantiate summary -----------
-    def get_summary(
-        self, build_params: Params, *, use_defaults: bool
-    ) -> Summary | None:
+    def get_summary(self, params: Params, *, use_defaults: bool) -> Summary | None:
         if self.summary is not None:
-            return self.summary(build_params)
+            return self.summary(params)
         elif use_defaults:
             return DefaultSummary()
 
@@ -238,33 +234,31 @@ class BenchAppBuilder(BuilderBase):
 
     def run(
         self,
-        build_params: Params,
+        params: Params,
         planned: list[Benchmark] | None = None,
         *,
         use_defaults: bool = False,
         print_diagnostics: bool = True,
     ) -> Report:
         # Setup probe
-        fingerprint = (
-            self.probe(build_params).collect() if self.probe is not None else None
-        )
+        fingerprint = self.probe(params).collect() if self.probe is not None else None
         diagnostics = run_checks(fingerprint) if fingerprint is not None else []
 
         if print_diagnostics:
             do_print_diagnostics(diagnostics, "Machine checks")
 
         # Setup report
-        reporter = self.get_reporter(build_params, use_defaults=use_defaults)
-        summary = self.get_summary(build_params, use_defaults=use_defaults)
+        reporter = self.get_reporter(params, use_defaults=use_defaults)
+        summary = self.get_summary(params, use_defaults=use_defaults)
 
         if reporter is None and summary is None:
             raise ValueError("No reporter nor summary is defined")
 
         # Get runner
         if self.runner is not None:
-            runner = self.runner(build_params)
+            runner = self.runner(params)
         elif use_defaults:
-            runner = default_runner(build_params)
+            runner = default_runner(params)
             if runner is None:
                 raise ValueError(
                     "Cannot instantiate default runner without SharedRunnerParams parameters"
@@ -275,7 +269,7 @@ class BenchAppBuilder(BuilderBase):
         # Get benchmarks
         if planned is None:
             planned = self.plan_benchmarks(
-                build_params,
+                params,
                 use_defaults=use_defaults,
             )
 
@@ -317,7 +311,7 @@ class BenchAppBuilder(BuilderBase):
     def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
         """Resolve generators, apply app defaults, and run every suite."""
 
-        params = (
+        param_type = (
             bench_app_params_type(self.params)
             if self.params is not None
             else SharedBenchAppParams
@@ -327,25 +321,23 @@ class BenchAppBuilder(BuilderBase):
             cli_args = args
         else:
             parser = argparse.ArgumentParser(description=self.name)
-            add_dataclass_args(parser, params)
+            add_params(parser, param_type)
             cli_args = parser.parse_args(args)
 
-        build_params = build_dataclass(params, cli_args)
+        params = build_params(cli_args, param_type)
 
         # --show
-        if build_params.show is not None:
-            return self.do_show_report(build_params, build_params.show)
+        if params.show is not None:
+            return self.do_show_report(params, params.show)
 
-        planned = self.plan_benchmarks(build_params, use_defaults=True)
+        planned = self.plan_benchmarks(params, use_defaults=True)
 
         # --list
-        if build_params.list:
+        if params.list:
             console.print(_list_planned_benchmarks(planned))
             return Report()
 
-        return self.run(
-            build_params, planned, use_defaults=True, print_diagnostics=True
-        )
+        return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
     def main(self, args: list[str] | argparse.Namespace | None = None) -> int:
         """`run_cli` as a process exit code: user-facing errors become a clean
@@ -360,17 +352,17 @@ class BenchAppBuilder(BuilderBase):
             error_console.print("[bench.failure]Interrupted[/]")
             return 130
 
-    def do_show_report(self, build_params: Params, path: str):
+    def do_show_report(self, params: Params, path: str):
         report = report_from_json(Path(path).read_text())
 
-        reporter = self.get_reporter(build_params, use_defaults=True)
+        reporter = self.get_reporter(params, use_defaults=True)
 
         if reporter is not None:
             for r in report.executions:
                 reporter.execution_done(r)
             reporter.finalize(report)
 
-        summary = self.get_summary(build_params, use_defaults=True)
+        summary = self.get_summary(params, use_defaults=True)
         if summary is not None:
             console.print(summary(summarize(report)))
 

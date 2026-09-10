@@ -128,8 +128,8 @@ from bench.params import (
     SharedReporterParams,
     SharedRunnerParams,
     SharedSelectionParams,
-    add_dataclass_args,
-    build_dataclass,
+    add_params,
+    build_params,
 )
 from bench.perf import (
     PerfRecord,
@@ -291,8 +291,8 @@ __all__ = [
     "REPORTER_GROUP",
     "SharedReporterParams",
     "SharedBenchParams",
-    "add_dataclass_args",
-    "build_dataclass",
+    "add_params",
+    "build_params",
     # bench.perf
     "PerfStatMetric",
     "PerfStat",

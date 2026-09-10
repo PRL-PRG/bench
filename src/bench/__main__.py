@@ -33,8 +33,8 @@ from bench.params import (
     ParamsGroup,
     SharedReporterParams,
     SharedRunnerParams,
-    add_dataclass_args,
-    build_dataclass,
+    add_params,
+    build_params,
 )
 from bench.summary import (
     ByBenchmarkMetricSummary,
@@ -143,7 +143,7 @@ def _subcommand(
     func: Callable[[argparse.Namespace], int],
 ) -> None:
     """Wire a subparser to its params class and its `_cmd_*` implementation."""
-    add_dataclass_args(p, params)
+    add_params(p, params)
     p.set_defaults(_func=func)
 
 
@@ -254,7 +254,7 @@ RunAppParams = bench_app_params_type(RunParams)
 def _cmd_run(ns: argparse.Namespace) -> int:
     import shlex
 
-    params = build_dataclass(RunAppParams, ns)
+    params = build_params(ns, RunAppParams)
 
     argvs = [tuple(shlex.split(cmd)) for cmd in params.commands]
     runs_policy = FixedRuns(params.runs)
@@ -328,7 +328,7 @@ class ShowParams(Params):
 
 
 def _cmd_show(ns: argparse.Namespace) -> int:
-    params = build_dataclass(ShowParams, ns)
+    params = build_params(ns, ShowParams)
 
     path = Path(params.file)
     if not path.exists():
@@ -360,7 +360,7 @@ class CompareParams(Params):
 
 
 def _cmd_compare(ns: argparse.Namespace) -> int:
-    params = build_dataclass(CompareParams, ns)
+    params = build_params(ns, CompareParams)
 
     metrics = set(params.metric.split(",")) if params.metric else None
     # Name each report by the path as given (e.g. `a.json`) and fold them into
@@ -398,7 +398,7 @@ class DoctorParams(Params):
 
 
 def _cmd_doctor(ns: argparse.Namespace) -> int:
-    params = build_dataclass(DoctorParams, ns)
+    params = build_params(ns, DoctorParams)
 
     fingerprint = SystemProbe().collect()
     if fingerprint is None:
@@ -435,7 +435,7 @@ class DenoiseParams(Params):
 
 
 def _cmd_denoise(ns: argparse.Namespace) -> int:
-    params = build_dataclass(DenoiseParams, ns)
+    params = build_params(ns, DenoiseParams)
 
     if params.action in ("minimize", "restore") and not is_root():
         raise BenchError(
