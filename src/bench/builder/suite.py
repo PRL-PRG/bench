@@ -119,9 +119,10 @@ class SuiteBuilder(BuilderBase):
         self, seed: int | None = None, override: bool = False
     ) -> SuiteBuilder:
         """Randomize the order benchmarks materialize in (seedable)."""
-        return self.replace("shuffle", True, override=True).replace(
-            "shuffle_seed", seed, override=override
-        )
+        res = self.replace("shuffle", True, override=True)
+        if seed is not None:
+            res = res.replace("shuffle_seed", seed, override=override)
+        return res
 
     # ----- creation ----------------------------------------------------
 
