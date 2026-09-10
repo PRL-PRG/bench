@@ -9,6 +9,7 @@ from pathlib import Path
 from rich.console import Console
 
 from bench import (
+    ByMetricSummary,
     CompositeReporter,
     CsvReporter,
     DirReporter,
@@ -16,11 +17,11 @@ from bench import (
     JsonReporter,
     ProgressReporter,
     SequentialRunner,
-    SummaryReporter,
     SystemProbe,
     Time,
     bench,
     bench_app,
+    format_failures,
     report_from_json,
     suite,
 )
@@ -154,7 +155,7 @@ def test_user_composite_reporter_receives_fingerprint(tmp_path: Path):
     root = tmp_path / "tree"
     (
         bench_app(
-            reporter=CompositeReporter(SummaryReporter(), DirReporter(root)),
+            reporter=CompositeReporter(DirReporter(root)),
             probe=SystemProbe(),
         )
         .add(_s())
@@ -258,7 +259,7 @@ def _string_console() -> tuple[Console, io.StringIO]:
     return c, buf
 
 
-def test_summary_appends_failures_block_with_diagnostic():
+def test_failures_block_reports_the_run_with_its_diagnostic():
     c, buf = _string_console()
     s = suite(
         "F",
@@ -268,16 +269,16 @@ def test_summary_appends_failures_block_with_diagnostic():
         .with_metric(Time())
         .with_runs(1),
     )
-    rep = SummaryReporter(target_console=c)
-    SequentialRunner().run(plan([s], Params()), reporter=rep)
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
     text = buf.getvalue()
-    assert "Failures:" in text
+    assert "Failures" in text
     assert "F/bad" in text
     assert "exit 7" in text
     assert "trouble" in text  # last-line stderr excerpt
 
 
-def test_summary_failures_block_handles_spawn_failure():
+def test_failures_block_handles_spawn_failure():
     c, buf = _string_console()
     s = suite(
         "F",
@@ -287,14 +288,14 @@ def test_summary_failures_block_handles_spawn_failure():
         .with_metric(Time())
         .with_runs(1),
     )
-    rep = SummaryReporter(target_console=c)
-    SequentialRunner().run(plan([s], Params()), reporter=rep)
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
     text = buf.getvalue()
     assert "spawn failed" in text
     assert "Command not found" in text
 
 
-def test_summary_no_failures_block_when_all_succeed():
+def test_no_failures_block_when_all_succeed():
     c, buf = _string_console()
     s = suite(
         "S",
@@ -304,9 +305,9 @@ def test_summary_no_failures_block_when_all_succeed():
         .with_metric(Time())
         .with_runs(1),
     )
-    rep = SummaryReporter(target_console=c)
-    SequentialRunner().run(plan([s], Params()), reporter=rep)
-    assert "Failures:" not in buf.getvalue()
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
+    assert "Failures" not in buf.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +369,7 @@ def test_progress_plain_escapes_identifier_markup():
     assert "[v1]" in buf.getvalue()
 
 
-def test_summary_failure_line_escapes_identifier_markup():
+def test_failure_line_escapes_identifier_markup():
     c, buf = _string_console()
     s = suite(
         "F",
@@ -378,9 +379,8 @@ def test_summary_failure_line_escapes_identifier_markup():
         .with_label(lambda b: "[v1]")
         .with_runs(1),
     )
-    SequentialRunner().run(
-        plan([s], Params()), reporter=SummaryReporter(target_console=c)
-    )
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
     assert "[v1]" in buf.getvalue()
 
 
@@ -432,14 +432,6 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
 
 
 def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
-    # bench_app(summary=...) must keep the progress bar (and the CLI sinks)
-    # while replacing only the default summary. The composition used to happen
-    # inside default_reporter(params, summary); it now happens in
-    # get_reporter, so assert the behaviour rather than the plumbing.
-    buf = io.StringIO()
-    marker = SummaryReporter(
-        target_console=Console(file=buf, force_terminal=False, width=200)
-    )
     s = suite(
         "S",
         bench("x")
@@ -448,22 +440,14 @@ def test_summary_channel_keeps_progress_and_swaps_summary(capsys):
         .with_metric(Time())
         .with_runs(1),
     )
-    bench_app(summary=marker).add(s).run_cli([])
+    bench_app(summary=ByMetricSummary("elapsed")).add(s).run_cli([])
 
-    # Progress still reports to the real console (plain lines, capsys is no TTY)...
-    assert "S/x #1 ok" in capsys.readouterr().out
-    # ...while the summary went to the swapped-in reporter alone.
-    assert "elapsed" in buf.getvalue()
+    out = capsys.readouterr().out
+    assert "S/x #1 ok" in out  # progress still reports...
+    assert "elapsed" in out  # ...and the swapped-in summary ran
 
 
 def test_summary_channel_survives_an_empty_sink_bundle(capsys):
-    # With --no-progress and no output file the flag-driven bundle is empty, so
-    # the swapped-in summary becomes the whole reporter - it must not be dropped
-    # along with the sinks, nor joined by the default summary it replaced.
-    buf = io.StringIO()
-    marker = SummaryReporter(
-        target_console=Console(file=buf, force_terminal=False, width=200)
-    )
     s = suite(
         "S",
         bench("x")
@@ -472,18 +456,17 @@ def test_summary_channel_survives_an_empty_sink_bundle(capsys):
         .with_metric(Time())
         .with_runs(1),
     )
-    bench_app(summary=marker).add(s).run_cli(["--no-progress"])
+    bench_app(summary=ByMetricSummary("elapsed")).add(s).run_cli(["--no-progress"])
 
-    assert "elapsed" in buf.getvalue()  # the app's summary ran
     out = capsys.readouterr().out
-    assert "S/x #1 ok" not in out  # no progress lines
-    assert "elapsed" not in out  # and no second, default summary
+    assert "elapsed" in out  # the app's summary ran
+    assert "S/x #1 ok" not in out  # and no progress lines
 
 
 def test_app_reporter_replaces_the_whole_reporter(capsys):
-    # `bench_app(reporter=...)` replaces the whole reporter, progress and summary
-    # included. run() used to append a default SummaryReporter on top of it, so
-    # the app's chosen output gained a summary it never asked for.
+    # `bench_app(reporter=...)` replaces the reporter bundle, progress included,
+    # so the app's chosen sink is the only thing the run reports through. The
+    # summary is a separate channel now and no longer rides on the reporter.
     from bench import Reporter
 
     class Silent(Reporter):
@@ -498,7 +481,7 @@ def test_app_reporter_replaces_the_whole_reporter(capsys):
         .with_runs(1),
     )
     bench_app(reporter=Silent()).add(s).run_cli(["--no-progress"])
-    assert capsys.readouterr().out == ""
+    assert "S/x #1 ok" not in capsys.readouterr().out
 
 
 def test_eta_column_blank_for_single_or_unknown_total():

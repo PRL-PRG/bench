@@ -11,7 +11,6 @@ from bench import (
     ByBenchmarkMetricSummary,
     ComparisonSummary,
     GeomeanComparisonSummary,
-    SummaryReporter,
     Time,
     bench,
     bench_app,
@@ -33,10 +32,10 @@ s = (
 # run(s)
 
 bench_app(
-    summary=SummaryReporter(
+    summary=(
         ByBenchmarkMetricSummary()
         & ComparisonSummary()
-        & GeomeanComparisonSummary(axis="vm", metrics="elapsed"),
+        & GeomeanComparisonSummary(axis="vm", metrics="elapsed")
     )
 ).add(s).run_cli()
 

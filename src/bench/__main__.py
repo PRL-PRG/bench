@@ -10,7 +10,7 @@ from dataclasses import field
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
-from bench.builder import Context, bench, bench_app, default_reporter, suite
+from bench.builder import Context, bench, bench_app, suite
 from bench.builder.app import bench_app_params_type
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
@@ -36,7 +36,6 @@ from bench.params import (
     add_dataclass_args,
     build_dataclass,
 )
-from bench.report import CompositeReporter, Reporter, SummaryReporter
 from bench.summary import (
     ByBenchmarkMetricSummary,
     ComparisonSummary,
@@ -302,18 +301,10 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     metrics = {params.metric} if params.metric else None
     probe = SystemProbe() if params.check_environment else NoProbe()
 
-    def build_reporter(ctx: Params) -> Reporter:
-        summary = SummaryReporter(DefaultSummary(metrics=metrics))
-        reporter = default_reporter(ctx)
-        if reporter is None:
-            return summary
-        else:
-            return CompositeReporter(reporter, summary)
-
     app = (
         bench_app("bench", params=RunParams, probe=probe, denoise=params.denoise)
         .add(s)
-        .with_reporter(build_reporter)
+        .with_summary(DefaultSummary(metrics=metrics))
     )
     app.run_cli(ns)
     return 0

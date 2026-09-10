@@ -7,6 +7,7 @@ import argparse
 import dataclasses
 import sys
 from collections.abc import Callable, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, cast
 
@@ -46,14 +47,12 @@ from bench.params import (
     build_dataclass,
 )
 from bench.report import (
-    CompositeReporter,
     Reporter,
-    SummaryReporter,
 )
 from bench.runner import (
     Runner,
 )
-from bench.summary import DefaultSummary
+from bench.summary import DefaultSummary, Summary, format_failures
 
 # ---------------------------------------------------------------------------
 # Base types
@@ -102,7 +101,7 @@ class BenchAppBuilder(BuilderBase):
     params: type[Params] | None = None
 
     reporter: ParamFactory[Reporter] | None = None
-    summary: ParamFactory[Reporter] | None = None
+    summary: ParamFactory[Summary] | None = None
     runner: ParamFactory[Runner] | None = None
     probe: ParamFactory[Probe] | None = None
     denoise: bool = False
@@ -145,14 +144,21 @@ class BenchAppBuilder(BuilderBase):
             override=override,
         )
 
-    def with_summary(
-        self, summary: Reporter | ParamFactory[Reporter], override: bool = False
-    ) -> BenchAppBuilder:
-        """Swap the summary while keeping the default progress bar and the
-        --json/--csv/--dir sinks. Ignored when a full reporter is set."""
+    def with_summary(self, summary: Summary, override: bool = False) -> BenchAppBuilder:
+        """Set the summary."""
         return self.replace(
             "summary",
-            as_build(summary),
+            const(summary),
+            override=override,
+        )
+
+    def with_summary_factory(
+        self, summary: ParamFactory[Summary], override: bool = False
+    ) -> BenchAppBuilder:
+        """Set the summary."""
+        return self.replace(
+            "summary",
+            summary,
             override=override,
         )
 
@@ -211,25 +217,22 @@ class BenchAppBuilder(BuilderBase):
         self, build_params: Params, *, use_defaults: bool
     ) -> Reporter | None:
         if self.reporter is not None:
-            reporter = self.reporter(build_params)
-            if self.summary is not None:
-                reporter = CompositeReporter(reporter, self.summary(build_params))
+            return self.reporter(build_params)
         elif use_defaults:
-            reporter = default_reporter(build_params)
+            return default_reporter(build_params)
 
-            if self.summary is not None:
-                summary = self.summary(build_params)
-            else:
-                summary = SummaryReporter(DefaultSummary())
+        return None
 
-            if reporter is None:
-                reporter = summary
-            else:
-                reporter = CompositeReporter(reporter, summary)
-        else:
-            return None
+    # ----- instantiate summary -----------
+    def get_summary(
+        self, build_params: Params, *, use_defaults: bool
+    ) -> Summary | None:
+        if self.summary is not None:
+            return self.summary(build_params)
+        elif use_defaults:
+            return DefaultSummary()
 
-        return reporter
+        return None
 
     # ----- run -----------
 
@@ -250,10 +253,12 @@ class BenchAppBuilder(BuilderBase):
         if print_diagnostics:
             do_print_diagnostics(diagnostics, "Machine checks")
 
-        # Setup reporters
+        # Setup report
         reporter = self.get_reporter(build_params, use_defaults=use_defaults)
-        if reporter is None:
-            raise ValueError("No reporter is defined")
+        summary = self.get_summary(build_params, use_defaults=use_defaults)
+
+        if reporter is None and summary is None:
+            raise ValueError("No reporter nor summary is defined")
 
         # Get runner
         if self.runner is not None:
@@ -278,21 +283,34 @@ class BenchAppBuilder(BuilderBase):
             raise NoBenchmarksMatchedError("No benchmark planned")
 
         # Run
-        if self.denoise:
-            if not is_root():
-                raise BenchError(
-                    "Denoise requires root "
-                    "(try running with `sudo` ONLY IF YOU TRUST THE SUITE)",
-                    exit_code=2,
-                )
-            with denoise_session() as applied:
+        with ExitStack() as stack:
+            if self.denoise:
+                if not is_root():
+                    raise BenchError(
+                        "Denoise requires root "
+                        "(try running with `sudo` ONLY IF YOU TRUST THE SUITE)",
+                        exit_code=2,
+                    )
+                applied = stack.enter_context(denoise_session())
                 console.print(
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
                     f"state saved to {STATE_PATH}"
                 )
-                return runner.run(planned, reporter, fingerprint, diagnostics)
-        else:
-            return runner.run(planned, reporter, fingerprint, diagnostics)
+
+            report = runner.run(
+                planned,
+                reporter or Reporter(),
+                fingerprint,
+                diagnostics,
+            )
+
+        if summary is not None:
+            console.print()
+            console.print(summary(summarize(report)))
+
+        # Report failed runs
+        error_console.print(format_failures(report.failures))
+        return report
 
     # ----- run_cli -----------
 
@@ -352,7 +370,10 @@ class BenchAppBuilder(BuilderBase):
                 reporter.execution_done(r)
             reporter.finalize(report)
 
-        DefaultSummary()(summarize(report))
+        summary = self.get_summary(build_params, use_defaults=True)
+        if summary is not None:
+            console.print(summary(summarize(report)))
+
         return report
 
 
@@ -375,7 +396,7 @@ def bench_app[P: Params](
     *,
     params: type[P] | None = None,
     reporter: Reporter | Callable[[P], Reporter] | None = None,
-    summary: Reporter | Callable[[P], Reporter] | None = None,
+    summary: Summary | None = None,
     probe: Probe | Callable[[P], Probe] | None = None,
     denoise: bool = False,
 ) -> BenchAppBuilder:
@@ -387,13 +408,12 @@ def bench_app[P: Params](
     """
 
     reporter = cast(ParamFactory[Reporter], reporter)
-    summary = cast(ParamFactory[Reporter], summary)
 
     return BenchAppBuilder(
         name=name,
         params=params,
         reporter=as_param_build(reporter) if reporter is not None else None,
-        summary=as_param_build(summary) if summary is not None else None,
+        summary=const(summary) if summary is not None else None,
         probe=as_param_build(probe) if probe is not None else None,
         denoise=denoise,
     )

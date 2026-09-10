@@ -30,6 +30,7 @@ from bench.summary.comparison import (
 from bench.summary.default import (
     DefaultSummary,
 )
+from bench.summary.failures import format_failures
 
 __all__ = [
     # bench.summary.base
@@ -57,4 +58,6 @@ __all__ = [
     "format_by_metric",
     # bench.summary.default
     "DefaultSummary",
+    # bench.summary.failures
+    "format_failures",
 ]

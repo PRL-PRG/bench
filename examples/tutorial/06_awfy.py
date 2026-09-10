@@ -34,7 +34,6 @@ from bench import (
     RegexMetric,
     SharedBenchParams,
     StdoutMetricSource,
-    SummaryReporter,
     bench,
     bench_app,
     max_rss,
@@ -90,8 +89,11 @@ awfy = (
 )
 
 
-grouped = GeomeanComparisonSummary(axis="vm", metrics={"runtime", "max_rss"})
-summary = SummaryReporter(ByBenchmarkMetricSummary() & ComparisonSummary() & grouped)
+summary = (
+    ByBenchmarkMetricSummary()
+    & ComparisonSummary()
+    & GeomeanComparisonSummary(axis="vm", metrics={"runtime", "max_rss"})
+)
 
 bench_app("AWFY", params=Params, summary=summary).add(awfy).run_cli()
 

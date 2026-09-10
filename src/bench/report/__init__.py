@@ -5,7 +5,6 @@ from bench.report.csv import CsvReporter
 from bench.report.dir import DirReporter, execution_dir, variant_path
 from bench.report.json import JsonReporter
 from bench.report.progress import ProgressReporter
-from bench.report.summary import SummaryReporter
 
 __all__ = [
     "Reporter",
@@ -16,5 +15,4 @@ __all__ = [
     "DirReporter",
     "JsonReporter",
     "ProgressReporter",
-    "SummaryReporter",
 ]

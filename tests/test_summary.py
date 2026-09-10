@@ -16,11 +16,12 @@ from bench import (
     Iteration,
     Report,
     Sample,
-    SummaryReporter,
+    format_failures,
 )
 from bench.console.theme import BENCHR_THEME
 from bench.core.stats import Statistics, summarize
 from bench.model.benchmark import Variant
+from bench.model.invocation import SPAWN_FAIL_RC, TIMEOUT_RC
 from bench.model.results import Direction
 
 
@@ -122,7 +123,7 @@ def _matrix_data() -> Statistics:
 
 
 def _data(report: Report) -> Statistics:
-    """The `Statistics` a summary consumes (mirrors SummaryReporter)."""
+    """The `Statistics` a summary consumes (mirrors what the app hands it)."""
     return summarize(report)
 
 
@@ -353,7 +354,7 @@ def test_grouped_summary_missing_part_of_a_composite_axis_warns():
     out = _render(
         GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
     )
-    assert "axis interp,mode incomplete: 'mode' not present" in out
+    assert "axis 'interp, mode' incomplete: 'mode' not present" in out
 
 
 def test_grouped_summary_missing_axis_of_a_composite_warns():
@@ -361,7 +362,7 @@ def test_grouped_summary_missing_axis_of_a_composite_warns():
     out = _render(
         GeomeanComparisonSummary(axis=["vm", "mode"], metrics="elapsed")(_data(r))
     )
-    assert "axis vm,mode not present in any benchmark" in out
+    assert "axis 'vm, mode' not present in any benchmark" in out
 
 
 def test_grouped_summary_composite_axis_never_combined_warns():
@@ -374,7 +375,7 @@ def test_grouped_summary_composite_axis_never_combined_warns():
     out = _render(
         GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
     )
-    assert "axis interp,mode never combined in one benchmark" in out
+    assert "axis 'interp, mode' never combined in one benchmark" in out
 
 
 def test_grouped_summary_unknown_ref_warns_and_falls_back():
@@ -383,7 +384,7 @@ def test_grouped_summary_unknown_ref_warns_and_falls_back():
             axis=["interp", "mode"], metrics="elapsed", ref="interp=nope"
         )(_matrix_data())
     )
-    assert "reference axis interp=nope is not a value of axis 'interp,mode'" in out
+    assert "reference axis 'interp=nope' is not a value of axis 'interp, mode'" in out
     assert "interp=a, mode=on was" in out
 
 
@@ -394,7 +395,7 @@ def test_grouped_summary_bare_ref_on_a_composite_axis_warns():
             _matrix_data()
         )
     )
-    assert "reference axis b is not a value of axis 'interp,mode'" in out
+    assert "reference axis 'b' is not a value of axis 'interp, mode'" in out
 
 
 def test_grouped_summary_ref_absent_from_one_group_is_silent():
@@ -443,17 +444,58 @@ def test_default_summary_composes_by_benchmark_metric_and_ranking():
     assert "Comparison - S/b" in out  # ranking block
 
 
-def test_summary_reporter_renders_composed_summary():
-    buf = StringIO()
-    rep = SummaryReporter(
-        ByBenchmarkMetricSummary()
-        & GeomeanComparisonSummary(axis="interp", metrics="elapsed"),
-        target_console=Console(file=buf, force_terminal=False, width=200),
+def test_composed_summary_renders_every_part():
+    summary = ByBenchmarkMetricSummary() & GeomeanComparisonSummary(
+        axis="interp", metrics="elapsed"
     )
-    rep.finalize(_axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}))
-    out = buf.getvalue()
+    out = _render(summary(_data(_axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}))))
     assert "S/x" in out  # ByBenchmarkMetricSummary
     assert "Comparison - interp" in out  # GeomeanComparisonSummary
+
+
+# ----- format_failures -------------------------------------------------------
+
+
+def _failed(
+    benchmark: str, *, returncode: int, failure: str, message: str = ""
+) -> Execution:
+    return Execution(
+        suite="S",
+        benchmark=benchmark,
+        runtime=0.0,
+        returncode=returncode,
+        failure=failure,
+        message=message,
+    )
+
+
+def test_format_failures_names_every_failed_run_and_its_verdict():
+    out = _render(
+        format_failures(
+            [
+                _failed("bad", returncode=7, failure="exit 7", message="trouble"),
+                _failed(
+                    "hangs", returncode=TIMEOUT_RC, failure="timeout", message="killed"
+                ),
+                _failed(
+                    "missing",
+                    returncode=SPAWN_FAIL_RC,
+                    failure="No such file or directory",
+                ),
+            ]
+        )
+    )
+    assert "Failures" in out
+    assert "S/bad" in out and "exit 7" in out and "trouble" in out
+    assert "timeout (exit 124)" in out and "killed" in out
+    assert "spawn failed" in out and "No such file or directory" in out
+    assert "(no output)" in out  # the spawn failure carried no message
+    # one line per failure, not one run-together line
+    assert len([ln for ln in out.splitlines() if "✗" in ln]) == 3
+
+
+def test_format_failures_is_empty_without_failures():
+    assert _render(format_failures([])).strip() == ""
 
 
 # ----- ByMetricSummary -------------------------------------------------------

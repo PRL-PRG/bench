@@ -16,8 +16,6 @@ import os
 
 from bench import (
     ByMetricSummary,
-    CompositeReporter,
-    SummaryReporter,
     Time,
     bench,
     bench_app,
@@ -47,8 +45,8 @@ slow = (
 
 if __name__ == "__main__":
     bench_app(
-        reporter=CompositeReporter(
-            SummaryReporter(ByMetricSummary("elapsed", suite="fast")),
-            SummaryReporter(ByMetricSummary("elapsed", suite="slow")),
+        summary=(
+            ByMetricSummary("elapsed", suite="fast")
+            & ByMetricSummary("elapsed", suite="slow")
         )
     ).add(fast, slow).run_cli()

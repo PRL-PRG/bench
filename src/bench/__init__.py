@@ -143,7 +143,6 @@ from bench.report import (
     JsonReporter,
     ProgressReporter,
     Reporter,
-    SummaryReporter,
     execution_dir,
     variant_path,
 )
@@ -171,6 +170,7 @@ from bench.summary import (
     format_by_benchmark_metric,
     format_by_metric,
     format_comparison,
+    format_failures,
     mean_cells,
     mean_cells_raw,
     range_runs_cells,
@@ -306,7 +306,6 @@ __all__ = [
     "DirReporter",
     "JsonReporter",
     "ProgressReporter",
-    "SummaryReporter",
     # bench.runner
     "Runner",
     "Controller",
@@ -338,4 +337,5 @@ __all__ = [
     "format_by_benchmark_metric",
     "format_comparison",
     "format_by_metric",
+    "format_failures",
 ]

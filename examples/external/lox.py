@@ -13,12 +13,10 @@ from pathlib import Path
 
 from bench import (
     ByMetricSummary,
-    CompositeReporter,
     Context,
     FloatPerLine,
     SharedBenchParams,
     StdoutMetricSource,
-    SummaryReporter,
     SystemTime,
     UserTime,
     bench,
@@ -88,8 +86,8 @@ zoo_suite = (
 if __name__ == "__main__":
     bench_app(
         params=LoxParams,
-        reporter=CompositeReporter(
-            SummaryReporter(ByMetricSummary("runtime", suite="LoxSuite")),
-            SummaryReporter(ByMetricSummary("throughput", suite="ZooBatch")),
+        summary=(
+            ByMetricSummary("runtime", suite="LoxSuite")
+            & ByMetricSummary("throughput", suite="ZooBatch")
         ),
     ).add(lox_suite, zoo_suite).run_cli()

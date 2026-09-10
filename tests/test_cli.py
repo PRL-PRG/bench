@@ -208,19 +208,16 @@ def test_compare_missing_file_errors(tmp_path: Path):
     assert "not found" in r.stderr
 
 
-def test_script_show_replays_through_configured_reporter(tmp_path: Path):
+def test_script_show_replays_through_configured_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
     # `./my-bench --show r.json` renders a saved report with the script's own
     # configured summary (here a GeomeanComparisonSummary), running nothing. The
-    # path used to substitute the default reporter for the configured one, then
-    # crash inside it.
-    from io import StringIO
-
-    from rich.console import Console
-
+    # summary has no console of its own any more - the app prints it - so this
+    # reads the real one.
     from bench import (
         ByBenchmarkMetricSummary,
         GeomeanComparisonSummary,
-        SummaryReporter,
         Time,
     )
 
@@ -235,17 +232,15 @@ def test_script_show_replays_through_configured_reporter(tmp_path: Path):
     out = tmp_path / "r.json"
     # Default reporter honors --json (a bare reporter would take full control).
     bench_app().add(s).run_cli(["--no-progress", "--json", str(out)])
+    capsys.readouterr()  # drop the measured run's output
 
-    buf = StringIO()
-    reporter = SummaryReporter(
-        ByBenchmarkMetricSummary()
-        & GeomeanComparisonSummary(axis="sleep", metrics="elapsed"),
-        target_console=Console(file=buf, force_terminal=False, width=200),
+    summary = ByBenchmarkMetricSummary() & GeomeanComparisonSummary(
+        axis="sleep", metrics="elapsed"
     )
-    bench_app(reporter=reporter).add(s).run_cli(["--show", str(out)])
-    text = buf.getvalue()
-    # the configured GeomeanComparisonSummary ran
-    assert "Comparison - sleep" in text
+    bench_app(summary=summary).add(s).run_cli(["--show", str(out)])
+    # the configured GeomeanComparisonSummary ran. The saved executions are
+    # replayed through the reporter on the way, so its output is here too.
+    assert "Comparison - sleep" in capsys.readouterr().out
 
 
 def test_bench_help_describes_subcommand():
@@ -299,10 +294,11 @@ def test_bench_non_tty_shows_plain_progress():
 def test_bench_surfaces_failure_diagnostics():
     r = _run("run", "--runs", "1", "false")
     # Returncode is 0 because the runner itself succeeded. The *benchmark*
-    # failed, which is communicated through the report.
+    # failed, which is communicated through the report - on stderr, since the
+    # failures block is the app's own output rather than a reporter's.
     assert r.returncode == 0, r.stderr
-    assert "Failures:" in r.stdout
-    assert "exit 1" in r.stdout
+    assert "Failures" in r.stderr
+    assert "exit 1" in r.stderr
 
 
 def test_bench_two_commands_prints_summary_ranking():
