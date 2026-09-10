@@ -66,6 +66,7 @@ def default_reporter(
     is_params = isinstance(params, SharedReporterParams)
 
     sinks: list[Reporter] = []
+
     if is_params and params.progress:
         sinks.append(ProgressReporter())
 

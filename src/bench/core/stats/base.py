@@ -68,10 +68,12 @@ type StatType = Literal["iteration", "process"]
 
 @dataclass(frozen=True)
 class Stat:
-    """The samples of one (benchmark variant, metric), reduced from a Report.
+    """The samples of one (benchmark variant, metric, source), reduced from a
+    Report. Iteration and whole-process samples of the same metric are separate
+    `Stat`s, told apart by `type`.
 
-    `runs`/`failures` are the variant's successful/failed iteration counts (shared
-    by every metric of that variant). Outliers are counted but kept in `values`.
+    How many runs produced them is the variant's, not this row's - see
+    `Statistics.counts`. Outliers are counted but kept in `values`.
     """
 
     id: BenchmarkId
@@ -109,8 +111,7 @@ class Stat:
 
 @dataclass(frozen=True, slots=True)
 class Counts:
-    """How many iterations a variant contributed. `samples` is the number of
-    values behind one metric, which need not equal the run count."""
+    """How many runs a variant contributed."""
 
     runs: int = 0
     failures: int = 0
@@ -172,13 +173,13 @@ class _Acc:
 
 
 def summarize(report: Report) -> Statistics:
-    """Reduce a Report to per-(variant, metric) `Statistics`.
+    """Reduce a Report to per-(variant, metric, source) `Statistics`.
 
-    Warmup iterations are excluded from the stats but counted (`Stat.warmups`).
-    Iteration and whole-process samples both feed the stats; whole-process
-    samples add to the run count only for a process-only execution (no
-    iterations). A variant that only ever failed yields no rows here - it
-    surfaces in the reporter's Failures block.
+    One run is one execution. Iteration and whole-process samples both feed the
+    stats, as separate rows. A warmup execution - one whose every iteration was
+    flagged - contributes no values at all, and neither does a failed one; both
+    still count towards the variant's runs (`Statistics.counts`), and a variant
+    that only ever failed yields no rows here.
     """
     values: dict[tuple[BenchmarkId, MetricKey, StatType], list[float]] = {}
     outliers: dict[tuple[BenchmarkId, MetricKey, StatType], int] = {}

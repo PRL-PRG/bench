@@ -1,9 +1,7 @@
 """Summaries: composable callables that turn `Statistics` into a renderable.
 
-Each summary only picks a view - a `bench.core.stats` model and the
-`bench.summary` renderer for it - and the config it runs with (which
-metrics, which axis). Composing with `&` joins the parts by a blank line, so
-`SummaryReporter` can take a single `Summary`.
+Each summary renders a view over some `bench.core.stats` model.
+Composing with `&` joins the parts by a blank line.
 """
 
 from __future__ import annotations

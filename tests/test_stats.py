@@ -445,7 +445,9 @@ def test_by_axis_ref_pins_reference():
     # Without ref, python3.14 (fastest) is the subject. ref pins python3.9 as the
     # baseline so it becomes the subject and reads as the worse one.
     elapsed = _metric(summarize(_matrix()), "elapsed")
-    out = _render(format_comparison(compute_by_axis(elapsed, axis="vm", ref="python3.9")))
+    out = _render(
+        format_comparison(compute_by_axis(elapsed, axis="vm", ref="python3.9"))
+    )
     assert "python3.9 was" in out
     assert "× worse than" in out and "2.00" in out
 

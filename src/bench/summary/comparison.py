@@ -93,17 +93,20 @@ def _axis_name(axes: tuple[str, ...]) -> str:
 
 
 def _issue_line(issue: AxisIssue, styling: Styling) -> str:
-    name = ",".join(issue.axes)
+    name = _axis_name(issue.axes)
     match issue.reason:
         case "absent":
-            why = f"axis {name} not present in any benchmark"
+            why = f"axis {name!r} not present in any benchmark"
         case "incomplete":
             missing = ", ".join(map(repr, issue.missing))
-            why = f"axis {name} incomplete: {missing} not present"
+            why = f"axis {name!r} incomplete: {missing} not present"
         case "never_combined":
-            why = f"axis {name} never combined in one benchmark"
+            why = f"axis {name!r} never combined in one benchmark"
         case "bad_ref":
-            why = f"reference axis {issue.ref} is not a value of axis {name!r} - using the best performer"
+            why = (
+                f"reference axis {issue.ref!r} is not a value of axis {name!r}"
+                " - using the best performer"
+            )
 
     return styling.collapse_cell(
         Cell(
