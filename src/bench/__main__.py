@@ -11,14 +11,12 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
 from bench.builder import Context, bench, bench_app, suite
-from bench.builder.app import bench_app_params_type
+from bench.builder.app import bench_app_params_type, show_report
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
-    STATE_PATH,
+    DEFAULT_STATE_PATH,
+    Denoise,
     is_root,
-    minimize,
-    restore,
-    status,
 )
 from bench.core.diagnostic import print_diagnostics, run_checks
 from bench.core.fingerprint import NoProbe, SystemProbe
@@ -29,10 +27,13 @@ from bench.error import BenchError, print_exception
 from bench.model.benchmark import Benchmark
 from bench.model.results import Report, report_from_json
 from bench.params import (
+    SHOW_DESCRIPTION,
+    SHOW_HELP,
     Params,
     ParamsGroup,
     SharedReporterParams,
     SharedRunnerParams,
+    ShowParams,
     add_params,
     build_params,
 )
@@ -80,8 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     _subcommand(
         sub.add_parser(
             "show",
-            help="Summarize a single JSON report from a prior run.",
-            description=("Load a saved JSON report and print its default summary."),
+            help=SHOW_HELP,
+            description=SHOW_DESCRIPTION,
         ),
         ShowParams,
         _cmd_show,
@@ -305,48 +306,25 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     if metrics is not None:
         summary = summary.on_metrics(metrics)
 
-    return bench_app(
-        "bench",
-        params=RunParams,
-        probe=probe,
-        denoise=params.denoise,
-        summary=summary,
-    ).add(s).main(ns)
+    return (
+        bench_app(
+            "bench",
+            params=RunParams,
+            probe=probe,
+            denoise=params.denoise,
+            summary=summary,
+        )
+        .add(s)
+        .main(params)
+    )
 
 
 # ----- show ----------------------------------------------------------------
 
 
-class ShowParams(Params):
-    file: str = field(
-        metadata={
-            "positional": True,
-            "help": "A JSON report to summarize.",
-        }
-    )
-
-    metric: str | None = field(
-        default=None,
-        metadata={"help": "Comma-separated metric filter (e.g. elapsed,max_rss)."},
-    )
-
-
 def _cmd_show(ns: argparse.Namespace) -> int:
     params = build_params(ns, ShowParams)
-
-    path = Path(params.file)
-    if not path.exists():
-        raise BenchError(f"file not found: {path}")
-    metrics = params.metric.split(",") if params.metric else None
-    stats = summarize(report_from_json(path.read_text()))
-
-    summary = DefaultSummary()
-    if metrics is not None:
-        summary = summary.on_metrics(metrics)
-
-    out = summary(stats)
-    if out.renderables:
-        console.print(out)
+    show_report(params, DefaultSummary())
     return 0
 
 
@@ -364,14 +342,16 @@ class CompareParams(Params):
 
     metric: str | None = field(
         default=None,
-        metadata={"help": "Comma-separated metric filter (e.g. elapsed,max_rss)."},
+        metadata={
+            "help": "Comma-separated metric filter (e.g. elapsed,max_rss).",
+        },
     )
 
 
+# TODO: Probably move to app
 def _cmd_compare(ns: argparse.Namespace) -> int:
     params = build_params(ns, CompareParams)
 
-    metrics = params.metric.split(",") if params.metric else None
     # Name each report by the path as given (e.g. `a.json`) and fold them into
     # one report tagged by a synthetic `compare` axis, then reuse the ordinary
     # views over it - the first file is the baseline.
@@ -379,16 +359,18 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     for arg in params.files:
         path = Path(arg)
         if not path.exists():
-            raise BenchError(f"file not found: {path}")
+            raise BenchError(f"File not found: {path}")
         named.append((arg, report_from_json(path.read_text())))
+
     stats = summarize(merge_reports(named))
+
     # Per-benchmark a-vs-b: fold each benchmark's inner matrix and compare the
     # files. The first file is the baseline reference.
     formatter = ByBenchmarkMetricSummary() & ComparisonSummary(
         axis="compare", ref=named[0][0]
     )
-    if metrics is not None:
-        formatter = formatter.on_metrics(metrics)
+    if params.metric:
+        formatter = formatter.on_metrics(params.metric.split(","))
 
     out = formatter(stats)
     if out.renderables:
@@ -445,6 +427,13 @@ class DenoiseParams(Params):
         }
     )
 
+    path: Path = field(
+        default=STATE_PATH,
+        metadata={
+            "help": "Where to save/load the state",
+        },
+    )
+
 
 def _cmd_denoise(ns: argparse.Namespace) -> int:
     params = build_params(ns, DenoiseParams)
@@ -455,14 +444,16 @@ def _cmd_denoise(ns: argparse.Namespace) -> int:
             f"(try: sudo bench denoise {params.action})",
             exit_code=2,
         )
+
+    denoise = Denoise(state_path = params.path)
     if params.action == "minimize":
         applied = minimize()
         console.print(
-            f"Minimized {len(applied)} setting(s); state saved to {STATE_PATH}."
+            f"Minimized {len(applied)} setting(s); state saved to {DEFAULT_STATE_PATH}."
         )
     elif params.action == "restore":
         restored = restore()
-        console.print(f"Restored {len(restored)} setting(s) from {STATE_PATH}.")
+        console.print(f"Restored {len(restored)} setting(s) from {DEFAULT_STATE_PATH}.")
     else:
         snapshot = status()
         if not snapshot:

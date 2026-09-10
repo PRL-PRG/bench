@@ -40,9 +40,12 @@ from bench.error import BenchError, print_exception
 from bench.model.benchmark import Benchmark, format_benchmark, format_variant
 from bench.model.results import Report, report_from_json
 from bench.params import (
+    SHOW_DESCRIPTION,
+    SHOW_HELP,
     Params,
     ParamsGroup,
     SharedBenchParams,
+    ShowParams,
     add_params,
     build_params,
 )
@@ -298,28 +301,46 @@ class BenchAppBuilder(BuilderBase):
 
     # ----- run_cli -----------
 
-    def run_cli(self, args: list[str] | argparse.Namespace | None = None) -> Report:
+    def run_cli(
+        self, args: list[str] | Params | None = None, *, allow_show: bool = True
+    ) -> Report:
         """Resolve generators, apply app defaults, and run every suite."""
 
-        param_type = (
-            bench_app_params_type(self.params)
-            if self.params is not None
-            else SharedBenchAppParams
-        )
-
-        if isinstance(args, argparse.Namespace):
-            cli_args = args
+        if isinstance(args, Params):
+            params = args
         else:
+            # Add Params
+            param_type = (
+                bench_app_params_type(self.params)
+                if self.params is not None
+                else SharedBenchAppParams
+            )
             parser = argparse.ArgumentParser(description=self.name)
             add_params(parser, param_type)
-            cli_args = parser.parse_args(args)
 
-        params = build_params(cli_args, param_type)
+            # Add show subcommand
+            if allow_show:
+                subp = parser.add_subparsers(dest="cmd")
+                add_params(
+                    subp.add_parser(
+                        "show",
+                        help=SHOW_HELP,
+                        description=SHOW_DESCRIPTION,
+                    ),
+                    ShowParams,
+                )
+
+            ns = parser.parse_args(args)
+            if ns.cmd == "show":
+                summary = self.get_summary(use_defaults=True)
+                if summary is None:
+                    raise BenchError("Cannot show without any summary")
+
+                return show_report(build_params(ns, ShowParams), summary)
+
+            params = build_params(ns, param_type)
 
         # --show
-        if params.show is not None:
-            return self.do_show_report(params, params.show)
-
         planned = self.plan_benchmarks(params, use_defaults=True)
 
         # --list
@@ -329,7 +350,7 @@ class BenchAppBuilder(BuilderBase):
 
         return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
-    def main(self, args: list[str] | argparse.Namespace | None = None) -> int:
+    def main(self, args: list[str] | Params | None = None) -> int:
         """`run_cli` as a process exit code: user-facing errors become a clean
         stderr message instead of a traceback. The entry point a `__main__` wants."""
         try:
@@ -341,22 +362,6 @@ class BenchAppBuilder(BuilderBase):
         except KeyboardInterrupt:
             error_console.print("[bench.failure]Interrupted[/]")
             return 130
-
-    def do_show_report(self, params: Params, path: str):
-        report = report_from_json(Path(path).read_text())
-
-        reporter = self.get_reporter(params, use_defaults=True)
-
-        if reporter is not None:
-            for r in report.executions:
-                reporter.execution_done(r)
-            reporter.finalize(report)
-
-        summary = self.get_summary(use_defaults=True)
-        if summary is not None:
-            console.print(summary(summarize(report)))
-
-        return report
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +437,30 @@ def bench_app_params_type[T: Params](t: type[T]) -> type[T]:
 
 
 SharedBenchAppParams = bench_app_params_type(SharedBenchParams)
+
+
+# ---------------------------------------------------------------------------
+# Show command
+# ---------------------------------------------------------------------------
+
+
+def show_report(
+    params: ShowParams,
+    summary: Summary,
+) -> Report:
+    path = Path(params.file)
+    if not path.exists():
+        raise BenchError(f"File not found: {path}")
+
+    report = report_from_json(path.read_text())
+
+    if params.metric:
+        summary = summary.on_metrics(params.metric.split(","))
+
+    stats = summarize(report)
+    console.print(summary(stats))
+    return report
+
 
 # ---------------------------------------------------------------------------
 # Pretty-printing helpers

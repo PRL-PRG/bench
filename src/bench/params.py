@@ -182,6 +182,28 @@ class SharedBenchParams(
 
 
 # ---------------------------------------------------------------------------
+# Reusable params group
+# ---------------------------------------------------------------------------
+
+SHOW_HELP = "Summarize a single JSON report from a prior run."
+SHOW_DESCRIPTION = "Load a saved JSON report and print its default summary."
+
+
+class ShowParams(Params):
+    file: str = field(
+        metadata={
+            "positional": True,
+            "help": "A JSON report to summarize.",
+        }
+    )
+
+    metric: str | None = field(
+        default=None,
+        metadata={"help": "Comma-separated metric filter (e.g. elapsed,max_rss)."},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Argparse adaptor
 # ---------------------------------------------------------------------------
 
