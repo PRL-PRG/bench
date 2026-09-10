@@ -22,6 +22,7 @@ from bench.core.stats.base import BenchKey
 from bench.summary.base import (
     MEAN_HEADER_LONG,
     MetricFilterSummary,
+    Summary,
     bench_label,
     counts_cell,
     mean_cells,
@@ -36,17 +37,18 @@ class ByMetricSummary(MetricFilterSummary):
         self,
         metric: str | list[str],
         *,
-        suite: str | None = None,
         precision: int = 2,
     ) -> None:
-        super().__init__(
-            {metric} if isinstance(metric, str) else set(metric), suite=suite
-        )
+        super().__init__(_ByMetricSummaryInner(precision=precision), metric)
+
+
+class _ByMetricSummaryInner(Summary):
+    def __init__(self, precision: int = 2) -> None:
         self._precision = precision
 
     def __call__(self, stats: Statistics) -> Group:
         return format_by_metric(
-            compute_by_metric(self.scoped(stats)),
+            compute_by_metric(stats),
             Styling.PLAIN,
             precision=self._precision,
         )

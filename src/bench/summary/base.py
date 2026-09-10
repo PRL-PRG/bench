@@ -39,6 +39,17 @@ class Summary(abc.ABC):
     def __and__(self, other: Summary) -> Summary:
         return CompositeSummary(self, other)
 
+    def on_metrics(self, metrics: list[str] | str) -> Summary:
+        return MetricFilterSummary(self, metrics)
+
+    def on_suite(self, suite: str) -> Summary:
+        return SuiteFilterSummary(self, suite)
+
+
+# ---------------------------------------------------------------------------
+# Composite
+# ---------------------------------------------------------------------------
+
 
 class CompositeSummary(Summary):
     """Several summaries joined into one. Their non-empty output is stitched
@@ -54,31 +65,38 @@ class CompositeSummary(Summary):
         return join_blocks([p(stats) for p in self.parts])
 
 
-class MetricFilterSummary(Summary):
-    """Shared `metrics` filter for the stats summaries: the views compute over
-    whatever they are handed, so scoping down to the metrics of interest happens
-    here, before the numbers are derived."""
+# ---------------------------------------------------------------------------
+# Filters
+# ---------------------------------------------------------------------------
 
-    def __init__(
-        self,
-        metrics: set[str] | None = None,
-        *,
-        suite: str | None = None,
-    ) -> None:
-        self.metrics = metrics
+
+class SuiteFilterSummary(Summary):
+    def __init__(self, inner: Summary, suite: str) -> None:
+        super().__init__()
+        self.inner = inner
         self.suite = suite
 
-    def scoped(self, stats: Statistics) -> Statistics:
-        """`stats` narrowed to this summary's metrics; all of them by default. The
-        counters are the variants', so narrowing carries them along untouched."""
-        return Statistics(
-            [
-                s
-                for s in stats
-                if (self.metrics is None or s.metric_key.metric in self.metrics)
-                and (self.suite is None or s.id.suite == self.suite)
-            ],
-            stats.counts,
+    def __call__(self, stats: Statistics) -> Group:
+        return self.inner(
+            Statistics(
+                [s for s in stats if s.id.suite == self.suite],
+                stats.counts,
+            )
+        )
+
+
+class MetricFilterSummary(Summary):
+    def __init__(self, inner: Summary, metrics: list[str] | str) -> None:
+        super().__init__()
+        self.inner = inner
+        self.metrics = metrics
+
+    def __call__(self, stats: Statistics) -> Group:
+        return self.inner(
+            Statistics(
+                [s for s in stats if s.metric_key.metric in self.metrics],
+                stats.counts,
+            )
         )
 
 

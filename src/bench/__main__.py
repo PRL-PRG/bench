@@ -298,14 +298,20 @@ def _cmd_run(ns: argparse.Namespace) -> int:
 
     s = suite("run", b)
 
-    metrics = {params.metric} if params.metric else None
+    metrics = [params.metric] if params.metric else None
     probe = SystemProbe() if params.check_environment else NoProbe()
 
-    app = (
-        bench_app("bench", params=RunParams, probe=probe, denoise=params.denoise)
-        .add(s)
-        .with_summary(DefaultSummary(metrics=metrics))
-    )
+    summary = DefaultSummary()
+    if metrics is not None:
+        summary = summary.on_metrics(metrics)
+
+    app = bench_app(
+        "bench",
+        params=RunParams,
+        probe=probe,
+        denoise=params.denoise,
+        summary=summary,
+    ).add(s)
     app.run_cli(ns)
     return 0
 
@@ -333,9 +339,14 @@ def _cmd_show(ns: argparse.Namespace) -> int:
     path = Path(params.file)
     if not path.exists():
         raise BenchError(f"file not found: {path}")
-    metrics = set(params.metric.split(",")) if params.metric else None
+    metrics = params.metric.split(",") if params.metric else None
     stats = summarize(report_from_json(path.read_text()))
-    out = DefaultSummary(metrics)(stats)
+
+    summary = DefaultSummary()
+    if metrics is not None:
+        summary = summary.on_metrics(metrics)
+
+    out = summary(stats)
     if out.renderables:
         console.print(out)
     return 0
@@ -362,7 +373,7 @@ class CompareParams(Params):
 def _cmd_compare(ns: argparse.Namespace) -> int:
     params = build_params(ns, CompareParams)
 
-    metrics = set(params.metric.split(",")) if params.metric else None
+    metrics = params.metric.split(",") if params.metric else None
     # Name each report by the path as given (e.g. `a.json`) and fold them into
     # one report tagged by a synthetic `compare` axis, then reuse the ordinary
     # views over it - the first file is the baseline.
@@ -375,9 +386,12 @@ def _cmd_compare(ns: argparse.Namespace) -> int:
     stats = summarize(merge_reports(named))
     # Per-benchmark a-vs-b: fold each benchmark's inner matrix and compare the
     # files. The first file is the baseline reference.
-    formatter = ByBenchmarkMetricSummary(metrics) & ComparisonSummary(
-        metrics, axis="compare", ref=named[0][0]
+    formatter = ByBenchmarkMetricSummary() & ComparisonSummary(
+        axis="compare", ref=named[0][0]
     )
+    if metrics is not None:
+        formatter = formatter.on_metrics(metrics)
+
     out = formatter(stats)
     if out.renderables:
         console.print(out)

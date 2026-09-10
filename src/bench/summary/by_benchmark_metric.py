@@ -21,7 +21,7 @@ from bench.summary.base import (
     MEAN_HEADER_LONG,
     MEAN_HEADER_SHORT,
     MIN_MAX_HEADER,
-    MetricFilterSummary,
+    Summary,
     bench_label,
     counts_cell,
     mean_cells,
@@ -29,13 +29,11 @@ from bench.summary.base import (
 )
 
 
-class ByBenchmarkMetricSummary(MetricFilterSummary):
+class ByBenchmarkMetricSummary(Summary):
     """Absolute `mean ± σ (min … max)` per benchmark variant."""
 
     def __call__(self, stats: Statistics) -> Group:
-        return format_by_benchmark_metric(
-            compute_by_benchmark_metric(self.scoped(stats))
-        )
+        return format_by_benchmark_metric(compute_by_benchmark_metric(stats))
 
 
 def format_by_benchmark_metric(

@@ -87,7 +87,7 @@ if __name__ == "__main__":
     bench_app(
         params=LoxParams,
         summary=(
-            ByMetricSummary("runtime", suite="LoxSuite")
-            & ByMetricSummary("throughput", suite="ZooBatch")
+            ByMetricSummary("runtime").on_suite("LoxSuite")
+            & ByMetricSummary("throughput").on_suite("ZooBatch")
         ),
     ).add(lox_suite, zoo_suite).run_cli()

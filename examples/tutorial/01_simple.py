@@ -35,7 +35,7 @@ bench_app(
     summary=(
         ByBenchmarkMetricSummary()
         & ComparisonSummary()
-        & GeomeanComparisonSummary(axis="vm", metrics="elapsed")
+        & GeomeanComparisonSummary(axis="vm").on_metrics("elapsed")
     )
 ).add(s).run_cli()
 

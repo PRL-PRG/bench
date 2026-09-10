@@ -235,8 +235,8 @@ def test_script_show_replays_through_configured_summary(
     capsys.readouterr()  # drop the measured run's output
 
     summary = ByBenchmarkMetricSummary() & GeomeanComparisonSummary(
-        axis="sleep", metrics="elapsed"
-    )
+        axis="sleep"
+    ).on_metrics("elapsed")
     bench_app(summary=summary).add(s).run_cli(["--show", str(out)])
     # the configured GeomeanComparisonSummary ran. The saved executions are
     # replayed through the reporter on the way, so its output is here too.

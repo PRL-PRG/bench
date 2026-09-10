@@ -277,7 +277,9 @@ def test_ranking_empty_across_distinct_benchmarks():
 
 def test_grouped_summary_about_the_same():
     r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 1.0}})
-    out = _render(GeomeanComparisonSummary(axis="interp", metrics="elapsed")(_data(r)))
+    out = _render(
+        GeomeanComparisonSummary(axis="interp").on_metrics("elapsed")(_data(r))
+    )
     assert "about the same as b" in out
     assert "1.00×" not in out
 
@@ -287,7 +289,7 @@ def test_grouped_summary_about_the_same():
 
 def test_grouped_summary_ranks_the_cells_of_a_composite_axis():
     out = _render(
-        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(
+        GeomeanComparisonSummary(axis=["interp", "mode"]).on_metrics("elapsed")(
             _matrix_data()
         )
     )
@@ -301,7 +303,7 @@ def test_grouped_summary_ranks_the_cells_of_a_composite_axis():
 def test_grouped_summary_composite_axis_folds_nothing_into_the_geomean():
     """One axis of the same matrix averages the other one in; both axes don't."""
     out = _render(
-        GeomeanComparisonSummary(axis="interp", metrics="elapsed")(_matrix_data())
+        GeomeanComparisonSummary(axis="interp").on_metrics("elapsed")(_matrix_data())
     )
     assert "a was" in out
     # geomean of the four pairwise ratios, both modes mixed in: 2, 2, 3, 0.75.
@@ -311,8 +313,8 @@ def test_grouped_summary_composite_axis_folds_nothing_into_the_geomean():
 def test_grouped_summary_composite_axis_ref_pins_one_cell():
     out = _render(
         GeomeanComparisonSummary(
-            axis=["interp", "mode"], metrics="elapsed", ref="interp=b, mode=off"
-        )(_matrix_data())
+            axis=["interp", "mode"], ref="interp=b, mode=off"
+        ).on_metrics("elapsed")(_matrix_data())
     )
     assert "interp=b, mode=off was" in out
     assert "6.00× worse than interp=a, mode=on" in out
@@ -321,8 +323,8 @@ def test_grouped_summary_composite_axis_ref_pins_one_cell():
 def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
     out = _render(
         GeomeanComparisonSummary(
-            axis=["interp", "mode"], metrics="elapsed", ref="mode=off,interp=b"
-        )(_matrix_data())
+            axis=["interp", "mode"], ref="mode=off,interp=b"
+        ).on_metrics("elapsed")(_matrix_data())
     )
     assert "is not a value of axis" not in out
     assert "interp=b, mode=off was" in out
@@ -331,7 +333,7 @@ def test_grouped_summary_composite_axis_ref_ignores_the_order_of_the_names():
 def test_grouped_summary_single_axis_ref_takes_either_form():
     for ref in ("b", "interp=b"):
         out = _render(
-            GeomeanComparisonSummary(axis="interp", metrics="elapsed", ref=ref)(
+            GeomeanComparisonSummary(axis="interp", ref=ref).on_metrics("elapsed")(
                 _matrix_data()
             )
         )
@@ -343,7 +345,9 @@ def test_grouped_summary_composite_axis_keeps_empty_values_distinct():
     """`interp=x, mode=` and `interp=, mode=x` are two cells, not one."""
     r = _matrix_report({("x", ""): {"b1": 1.0}, ("", "x"): {"b1": 100.0}})
     out = _render(
-        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+        GeomeanComparisonSummary(axis=["interp", "mode"]).on_metrics("elapsed")(
+            _data(r)
+        )
     )
     assert "interp=x, mode= was" in out
     assert "100.00× better than interp=, mode=x" in out
@@ -352,7 +356,9 @@ def test_grouped_summary_composite_axis_keeps_empty_values_distinct():
 def test_grouped_summary_missing_part_of_a_composite_axis_warns():
     r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
     out = _render(
-        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+        GeomeanComparisonSummary(axis=["interp", "mode"]).on_metrics("elapsed")(
+            _data(r)
+        )
     )
     assert "axis 'interp, mode' incomplete: 'mode' not present" in out
 
@@ -360,7 +366,7 @@ def test_grouped_summary_missing_part_of_a_composite_axis_warns():
 def test_grouped_summary_missing_axis_of_a_composite_warns():
     r = _axis_report({"a": {"b1": 1.0}, "b": {"b1": 2.0}})
     out = _render(
-        GeomeanComparisonSummary(axis=["vm", "mode"], metrics="elapsed")(_data(r))
+        GeomeanComparisonSummary(axis=["vm", "mode"]).on_metrics("elapsed")(_data(r))
     )
     assert "axis 'vm, mode' not present in any benchmark" in out
 
@@ -373,15 +379,17 @@ def test_grouped_summary_composite_axis_never_combined_warns():
         ]
     )
     out = _render(
-        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed")(_data(r))
+        GeomeanComparisonSummary(axis=["interp", "mode"]).on_metrics("elapsed")(
+            _data(r)
+        )
     )
     assert "axis 'interp, mode' never combined in one benchmark" in out
 
 
 def test_grouped_summary_unknown_ref_warns_and_falls_back():
     out = _render(
-        GeomeanComparisonSummary(
-            axis=["interp", "mode"], metrics="elapsed", ref="interp=nope"
+        GeomeanComparisonSummary(axis=["interp", "mode"], ref="interp=nope").on_metrics(
+            "elapsed"
         )(_matrix_data())
     )
     assert "reference axis 'interp=nope' is not a value of axis 'interp, mode'" in out
@@ -391,9 +399,9 @@ def test_grouped_summary_unknown_ref_warns_and_falls_back():
 def test_grouped_summary_bare_ref_on_a_composite_axis_warns():
     """A bare value cannot say which cell it means once the axis is composite."""
     out = _render(
-        GeomeanComparisonSummary(axis=["interp", "mode"], metrics="elapsed", ref="b")(
-            _matrix_data()
-        )
+        GeomeanComparisonSummary(axis=["interp", "mode"], ref="b").on_metrics(
+            "elapsed"
+        )(_matrix_data())
     )
     assert "reference axis 'b' is not a value of axis 'interp, mode'" in out
 
@@ -401,7 +409,7 @@ def test_grouped_summary_bare_ref_on_a_composite_axis_warns():
 def test_grouped_summary_ref_absent_from_one_group_is_silent():
     """The ref may legitimately be missing from a suite; only an unknown one warns."""
     out = _render(
-        GeomeanComparisonSummary(axis="interp", metrics="elapsed", ref="b")(
+        GeomeanComparisonSummary(axis="interp", ref="b").on_metrics("elapsed")(
             _data(
                 Report(
                     executions=[
@@ -428,7 +436,7 @@ def test_grouped_summary_ref_absent_from_one_group_is_silent():
 
 def test_grouped_summary_empty_axis_is_an_error():
     with pytest.raises(BenchError, match="at least one matrix dimension"):
-        GeomeanComparisonSummary(axis=[], metrics="elapsed")(_matrix_data())
+        GeomeanComparisonSummary(axis=[]).on_metrics("elapsed")(_matrix_data())
 
 
 # ----- DefaultSummary + composition ------------------------------------------
@@ -446,8 +454,8 @@ def test_default_summary_composes_by_benchmark_metric_and_ranking():
 
 def test_composed_summary_renders_every_part():
     summary = ByBenchmarkMetricSummary() & GeomeanComparisonSummary(
-        axis="interp", metrics="elapsed"
-    )
+        axis="interp"
+    ).on_metrics("elapsed")
     out = _render(summary(_data(_axis_report({"a": {"x": 4.0}, "b": {"x": 1.0}}))))
     assert "S/x" in out  # ByBenchmarkMetricSummary
     assert "Comparison - interp" in out  # GeomeanComparisonSummary

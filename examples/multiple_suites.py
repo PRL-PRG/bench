@@ -46,7 +46,7 @@ slow = (
 if __name__ == "__main__":
     bench_app(
         summary=(
-            ByMetricSummary("elapsed", suite="fast")
-            & ByMetricSummary("elapsed", suite="slow")
+            ByMetricSummary("elapsed").on_suite("fast")
+            & ByMetricSummary("elapsed").on_suite("slow")
         )
     ).add(fast, slow).run_cli()

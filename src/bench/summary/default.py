@@ -10,5 +10,5 @@ from bench.summary.comparison import ComparisonSummary
 class DefaultSummary(CompositeSummary):
     """The standard report: ByBenchmarkMetricSummary + ComparisonSummary."""
 
-    def __init__(self, metrics: set[str] | None = None) -> None:
-        super().__init__(ByBenchmarkMetricSummary(metrics), ComparisonSummary(metrics))
+    def __init__(self) -> None:
+        super().__init__(ByBenchmarkMetricSummary(), ComparisonSummary())

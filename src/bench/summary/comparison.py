@@ -25,13 +25,13 @@ from bench.core.stats import (
     compute_ranking,
 )
 from bench.summary.base import (
-    MetricFilterSummary,
+    Summary,
     bench_label,
     counts_cell,
 )
 
 
-class ComparisonSummary(MetricFilterSummary):
+class ComparisonSummary(Summary):
     """Rank the variants within each benchmark, best first. With `axis`, fold the
     other (residual) variants within each benchmark and compare the values of that
     axis instead (e.g. `ComparisonSummary(axis="vm")`). Several axis names are one composite
@@ -40,22 +40,19 @@ class ComparisonSummary(MetricFilterSummary):
 
     def __init__(
         self,
-        metrics: set[str] | None = None,
         *,
         axis: str | Sequence[str] | None = None,
         ref: str | None = None,
     ) -> None:
-        super().__init__(metrics)
+        super().__init__()
         self.axis = axis
         self.ref = ref
 
     def __call__(self, stats: Statistics) -> Group:
-        return format_comparison(
-            compute_ranking(self.scoped(stats), axis=self.axis, ref=self.ref)
-        )
+        return format_comparison(compute_ranking(stats, axis=self.axis, ref=self.ref))
 
 
-class GeomeanComparisonSummary(MetricFilterSummary):
+class GeomeanComparisonSummary(Summary):
     """Rank the values of a matrix `axis` by the geometric mean over benchmarks.
     Several axis names are one composite axis, whose values are their
     combinations (e.g. `axis=["version", "mode"]`). `ref` pins one value as the
@@ -65,17 +62,14 @@ class GeomeanComparisonSummary(MetricFilterSummary):
         self,
         *,
         axis: str | Sequence[str],
-        metrics: str | set[str] | None = None,
         ref: str | None = None,
     ) -> None:
-        super().__init__({metrics} if isinstance(metrics, str) else metrics)
+        super().__init__()
         self.axis = axis
         self.ref = ref
 
     def __call__(self, stats: Statistics) -> Group:
-        return format_comparison(
-            compute_by_axis(self.scoped(stats), axis=self.axis, ref=self.ref)
-        )
+        return format_comparison(compute_by_axis(stats, axis=self.axis, ref=self.ref))
 
 
 def format_comparison(model: ComparisonStats, styling: Styling = Styling.RICH) -> Group:

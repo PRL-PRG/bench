@@ -92,7 +92,7 @@ awfy = (
 summary = (
     ByBenchmarkMetricSummary()
     & ComparisonSummary()
-    & GeomeanComparisonSummary(axis="vm", metrics={"runtime", "max_rss"})
+    & GeomeanComparisonSummary(axis="vm").on_metrics(["runtime", "max_rss"])
 )
 
 bench_app("AWFY", params=Params, summary=summary).add(awfy).run_cli()
