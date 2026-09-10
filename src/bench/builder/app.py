@@ -101,7 +101,7 @@ class BenchAppBuilder(BuilderBase):
     params: type[Params] | None = None
 
     reporter: ParamFactory[Reporter] | None = None
-    summary: ParamFactory[Summary] | None = None
+    summary: Summary | None = None
     runner: ParamFactory[Runner] | None = None
     probe: ParamFactory[Probe] | None = None
     denoise: bool = False
@@ -145,16 +145,6 @@ class BenchAppBuilder(BuilderBase):
         )
 
     def with_summary(self, summary: Summary, override: bool = False) -> BenchAppBuilder:
-        """Set the summary."""
-        return self.replace(
-            "summary",
-            const(summary),
-            override=override,
-        )
-
-    def with_summary_factory(
-        self, summary: ParamFactory[Summary], override: bool = False
-    ) -> BenchAppBuilder:
         """Set the summary."""
         return self.replace(
             "summary",
@@ -222,9 +212,9 @@ class BenchAppBuilder(BuilderBase):
         return None
 
     # ----- instantiate summary -----------
-    def get_summary(self, params: Params, *, use_defaults: bool) -> Summary | None:
+    def get_summary(self, *, use_defaults: bool) -> Summary | None:
         if self.summary is not None:
-            return self.summary(params)
+            return self.summary
         elif use_defaults:
             return DefaultSummary()
 
@@ -249,7 +239,7 @@ class BenchAppBuilder(BuilderBase):
 
         # Setup report
         reporter = self.get_reporter(params, use_defaults=use_defaults)
-        summary = self.get_summary(params, use_defaults=use_defaults)
+        summary = self.get_summary(use_defaults=use_defaults)
 
         if reporter is None and summary is None:
             raise ValueError("No reporter nor summary is defined")
@@ -362,7 +352,7 @@ class BenchAppBuilder(BuilderBase):
                 reporter.execution_done(r)
             reporter.finalize(report)
 
-        summary = self.get_summary(params, use_defaults=True)
+        summary = self.get_summary(use_defaults=True)
         if summary is not None:
             console.print(summary(summarize(report)))
 
@@ -405,7 +395,7 @@ def bench_app[P: Params](
         name=name,
         params=params,
         reporter=as_param_build(reporter) if reporter is not None else None,
-        summary=const(summary) if summary is not None else None,
+        summary=summary if summary is not None else None,
         probe=as_param_build(probe) if probe is not None else None,
         denoise=denoise,
     )
