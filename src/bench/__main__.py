@@ -14,7 +14,7 @@ from bench.builder import Context, bench, bench_app, suite
 from bench.builder.app import bench_app_params_type, show_report
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
-    DEFAULT_STATE_PATH,
+    DENOISE_DEFAULT_STATE_PATH,
     Denoise,
     is_root,
 )
@@ -428,7 +428,7 @@ class DenoiseParams(Params):
     )
 
     path: Path = field(
-        default=STATE_PATH,
+        default=DENOISE_DEFAULT_STATE_PATH,
         metadata={
             "help": "Where to save/load the state",
         },
@@ -445,17 +445,17 @@ def _cmd_denoise(ns: argparse.Namespace) -> int:
             exit_code=2,
         )
 
-    denoise = Denoise(state_path = params.path)
+    denoise = Denoise(state_path=params.path)
     if params.action == "minimize":
-        applied = minimize()
+        applied = denoise.minimize()
         console.print(
-            f"Minimized {len(applied)} setting(s); state saved to {DEFAULT_STATE_PATH}."
+            f"Minimized {len(applied)} setting(s); state saved to {denoise.state_path}."
         )
     elif params.action == "restore":
-        restored = restore()
-        console.print(f"Restored {len(restored)} setting(s) from {DEFAULT_STATE_PATH}.")
+        restored = denoise.restore()
+        console.print(f"Restored {len(restored)} setting(s) from {denoise.state_path}.")
     else:
-        snapshot = status()
+        snapshot = denoise.status()
         if not snapshot:
             console.print("No controllable knobs on this platform.")
         for path, value in snapshot.items():

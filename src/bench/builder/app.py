@@ -24,8 +24,8 @@ from bench.builder.default import default_filter, default_reporter, default_runn
 from bench.builder.suite import SuiteBuilder, plan
 from bench.console.theme import console, error_console
 from bench.core.denoise import (
-    STATE_PATH,
-    denoise_session,
+    DENOISE_DEFAULT_STATE_PATH,
+    Denoise,
     is_root,
 )
 from bench.core.diagnostic import (
@@ -108,6 +108,7 @@ class BenchAppBuilder(BuilderBase):
     runner: ParamFactory[Runner] | None = None
     probe: ParamFactory[Probe] | None = None
     denoise: bool = False
+    denoise_path: ParamFactory[Path] | None = None
 
     # ----- producers -------------------------------------------------
 
@@ -176,14 +177,13 @@ class BenchAppBuilder(BuilderBase):
         )
 
     def with_denoise(
-        self, value: bool = True, override: bool = True
+        self, state_path: Path | ParamFactory[Path] | None = None, override: bool = True
     ) -> BenchAppBuilder:
         """Minimize system noise knobs around the run (requires root)."""
-        return self.replace(
-            "denoise",
-            value,
-            override=override,
-        )
+        res = self.replace("denoise", True, override=True)
+        if state_path is not None:
+            res = res.replace("denoise_path", as_build(state_path), override=override)
+        return res
 
     # ----- instantiate benchmarks -----------
 
@@ -278,10 +278,16 @@ class BenchAppBuilder(BuilderBase):
                         "(try running with `sudo` ONLY IF YOU TRUST THE SUITE)",
                         exit_code=2,
                     )
-                applied = stack.enter_context(denoise_session())
+                denoise_path = (
+                    self.denoise_path(params)
+                    if self.denoise_path is not None
+                    else DENOISE_DEFAULT_STATE_PATH
+                )
+                applied = stack.enter_context(Denoise(state_path=denoise_path))
+
                 console.print(
                     f"[bench.label]Denoise:[/] minimized {len(applied)} knob(s); "
-                    f"state saved to {STATE_PATH}"
+                    f"state saved to {denoise_path}"
                 )
 
             report = runner.run(

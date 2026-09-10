@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import bench.core.denoise as denoise_mod
-from bench.core.denoise import denoise_session, minimize, restore, status
+from bench.core.denoise import Denoise
 from bench.io import read_bracketed
 
 
@@ -43,7 +43,9 @@ def test_minimize_then_restore_roundtrip(tmp_path: Path):
 
     thp = tmp_path / "sys/kernel/mm/transparent_hugepage/enabled"
 
-    minimize(root=tmp_path, state_path=state)
+    denoise = Denoise(state_path=state, root=tmp_path)
+
+    denoise.minimize()
     assert _read(cpu / "cpu0/cpufreq/scaling_governor") == "performance"
     assert _read(cpu / "cpu1/cpufreq/scaling_governor") == "performance"
     assert _read(cpu / "intel_pstate/no_turbo") == "1"
@@ -52,7 +54,7 @@ def test_minimize_then_restore_roundtrip(tmp_path: Path):
     assert _read(thp) == "never"
     assert state.exists()
 
-    restore(state_path=state)
+    denoise.restore()
     assert _read(cpu / "cpu0/cpufreq/scaling_governor") == "powersave"
     assert _read(tmp_path / "proc/sys/vm/swappiness") == "60"
     assert _read(tmp_path / "proc/sys/kernel/perf_event_paranoid") == "2"
@@ -62,14 +64,18 @@ def test_minimize_then_restore_roundtrip(tmp_path: Path):
 
 def test_minimize_skips_absent_knobs(tmp_path: Path):
     state = tmp_path / "state.json"
-    applied = minimize(root=tmp_path, state_path=state)  # empty tree
+
+    denoise = Denoise(state_path=state, root=tmp_path)
+    applied = denoise.minimize()  # empty tree
     assert applied == {}
-    assert restore(state_path=state) == {}
+    assert denoise.restore() == {}
 
 
 def test_status_reads_present_knobs(tmp_path: Path):
     _fake_tree(tmp_path)
-    st = status(root=tmp_path)
+
+    denoise = Denoise(root=tmp_path)
+    st = denoise.status()
     assert any("scaling_governor" in k and v == "powersave" for k, v in st.items())
 
 
@@ -79,7 +85,7 @@ def test_session_restores_on_exception(tmp_path: Path):
     gov = tmp_path / "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 
     with pytest.raises(RuntimeError):
-        with denoise_session(root=tmp_path, state_path=state):
+        with Denoise(root=tmp_path, state_path=state):
             assert _read(gov) == "performance"  # minimized inside the session
             raise RuntimeError("boom")
 
@@ -107,9 +113,11 @@ def test_state_is_written_before_any_mutation(tmp_path: Path, monkeypatch):
     def boom(_path: Path, _value: str) -> bool:
         raise RuntimeError("crash mid-apply")
 
+    denoise = Denoise(state_path=state, root=tmp_path)
+
     monkeypatch.setattr(denoise_mod, "write_text", boom)
     with pytest.raises(RuntimeError):
-        minimize(root=tmp_path, state_path=state)
+        denoise.minimize()
 
     # The undo-log was persisted before the first knob write, with ALL originals.
     assert state.exists()
@@ -127,10 +135,12 @@ def test_minimize_self_heals_stale_state(tmp_path: Path):
     state = tmp_path / "state.json"
     gov = tmp_path / "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 
-    minimize(root=tmp_path, state_path=state)  # originals (powersave) saved
+    denoise = Denoise(state_path=state, root=tmp_path)
+
+    denoise.minimize()  # originals (powersave) saved
     assert _read(gov) == "performance"
     assert state.exists()  # simulate crash: state left, knobs still minimized
 
-    minimize(root=tmp_path, state_path=state)  # must self-heal, not re-snapshot
-    restore(state_path=state)
+    denoise.minimize()  # must self-heal, not re-snapshot
+    denoise.restore()
     assert _read(gov) == "powersave"  # true original, not the minimized value

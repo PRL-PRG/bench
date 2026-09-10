@@ -38,12 +38,9 @@ from bench.builder import (
 from bench.console.styling import Styling
 from bench.core import stats
 from bench.core.denoise import (
-    STATE_PATH,
-    denoise_session,
+    DENOISE_DEFAULT_STATE_PATH,
+    Denoise,
     is_root,
-    minimize,
-    restore,
-    status,
 )
 from bench.core.diagnostic import (
     Diagnostic,
@@ -209,11 +206,8 @@ __all__ = [
     "SuiteMaterializationError",
     "plan",
     # bench.core.denoise
-    "STATE_PATH",
-    "minimize",
-    "restore",
-    "status",
-    "denoise_session",
+    "DENOISE_DEFAULT_STATE_PATH",
+    "Denoise",
     "is_root",
     # bench.core.diagnostic
     "Severity",
