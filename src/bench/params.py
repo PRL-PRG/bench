@@ -4,7 +4,7 @@ import argparse
 import dataclasses
 import types
 import typing
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, dataclass_transform
 
@@ -194,9 +194,9 @@ type _Arg = tuple[_Flags, _Kwargs]
 def add_dataclass_args(
     # argparse exposes no public name for the add_argument_group() return type.
     parser: argparse.ArgumentParser | argparse._ArgumentGroup,  # pyright: ignore[reportPrivateUsage]
-    dc: type,
+    dc: type[Params],
 ) -> None:
-    """Generate `--<name>` arguments from a dataclass's fields.
+    """Generate `--<name>` arguments from a Params fields.
 
     Per-field `field(metadata=...)` keys refine the generated argument:
       - `flags`: extra option strings, e.g. `("-j",)`
@@ -206,9 +206,6 @@ def add_dataclass_args(
     A `list[T]` field is repeatable (`action="append"`), or `nargs="+"` when it
     is positional.
     """
-    if not is_dataclass(dc):
-        raise TypeError(f"{dc!r} must be a @dataclass")
-
     try:
         hints = typing.get_type_hints(dc)
     except Exception:
