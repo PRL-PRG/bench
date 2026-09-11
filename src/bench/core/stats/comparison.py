@@ -17,7 +17,6 @@ from bench.core.stats.base import (
     geomean_ratio,
     ratio,
 )
-from bench.error import BenchError
 from bench.model.benchmark import Variant, format_variant_pairs
 
 type AxisIssueReason = Literal["absent", "incomplete", "never_combined", "bad_ref"]
@@ -121,7 +120,7 @@ def _axes_of(axis: str | Sequence[str]) -> tuple[str, ...]:
     axis whose values are their combinations (`version` + `mode`)."""
     axes = (axis,) if isinstance(axis, str) else tuple(axis)
     if not axes:
-        raise BenchError("axis must name at least one matrix dimension")
+        raise ValueError("axis must name at least one matrix dimension")
     return axes
 
 

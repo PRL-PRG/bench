@@ -245,7 +245,7 @@ class BenchAppBuilder(BuilderBase):
         summary = self.get_summary(use_defaults=use_defaults)
 
         if reporter is None and summary is None:
-            raise ValueError("No reporter nor summary is defined")
+            raise BenchError("No reporter nor summary is defined")
 
         # Get runner
         if self.runner is not None:
@@ -253,11 +253,11 @@ class BenchAppBuilder(BuilderBase):
         elif use_defaults:
             runner = default_runner(params)
             if runner is None:
-                raise ValueError(
+                raise BenchError(
                     "Cannot instantiate default runner without SharedRunnerParams parameters"
                 )
         else:
-            raise ValueError("No runner is defined")
+            raise BenchError("No runner is defined")
 
         # Get benchmarks
         if planned is None:
@@ -427,15 +427,6 @@ def bench_app_params_type[T: Params](t: type[T]) -> type[T]:
                 "group": default_actions_group,
                 "action": "store_true",
                 "help": "List the suite/benchmark/variant tree and exit (run nothing).",
-            },
-        )
-
-        show: str | None = dataclasses.field(
-            default=None,
-            metadata={
-                "group": default_actions_group,
-                "metavar": "JSON",
-                "help": "Render a previously saved JSON report with the default summary, then exit (run nothing).",
             },
         )
 
