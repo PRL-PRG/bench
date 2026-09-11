@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from bench.core.policy import format_policy
+from bench.model.hook import Hook
 from bench.model.invocation import (
     Invocation,
     SuccessFn,
@@ -37,6 +38,7 @@ class Benchmark:
     outlier_detection: OutlierDetection
     cooldown: float
     controller: Controller
+    hooks: Sequence[Hook]
     data: Mapping[str, Any]
     label_fn: LabelFn
 

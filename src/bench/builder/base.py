@@ -24,6 +24,7 @@ from bench.core.metric import (
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.model.benchmark import Benchmark, BenchmarkPred, LabelFn
+from bench.model.hook import Hook, SetupHook, TearDownHook
 from bench.model.invocation import Env, SuccessFn, Timeout
 from bench.runner import Controller
 
@@ -145,6 +146,9 @@ class BuilderBase:
     outlier_detection: OutlierDetection | None = None
     cooldown: float | None = None
     controller: Factory[Controller] | None = None
+    hooks: Sequence[Factory[Hook]] = dataclasses.field(
+        default_factory=list[Factory[Hook]]
+    )
     label_fn: LabelFn | None = None
     matrix: Mapping[str, Factory[MatrixAxis]] = dataclasses.field(
         default_factory=dict[str, Factory[MatrixAxis]]
@@ -342,6 +346,25 @@ class BuilderBase:
             merge=merge_sequence,
         )
 
+    # ----- hooks --------------------------------------
+
+    def _add_hook(self, hook: Factory[Hook]) -> Self:
+        return self.replace(
+            "hooks",
+            [hook],
+            override=False,
+            merge=merge_sequence,
+        )
+
+    def with_hook(self, hook: Hook | Factory[Hook]) -> Self:
+        return self._add_hook(as_build(hook))
+
+    def with_setup(self, hook: Callable[[Benchmark], None]) -> Self:
+        return self._add_hook(const(SetupHook(hook)))
+
+    def with_teardown(self, hook: Callable[[Benchmark], None]) -> Self:
+        return self._add_hook(const(TearDownHook(hook)))
+
     # ----- label -------------------------
 
     def with_label(self, fn: LabelFn, override: bool = False) -> Self:
@@ -427,4 +450,7 @@ _BUILDER_MERGABLE_FIELDS = {
     "matrix": merge_matrix,
     "filters": merge_sequence,
     "inherit_env": _or,
+    "hooks": merge_swap(
+        merge_sequence
+    ),  # The higher-level hooks should run before the lower levels
 }

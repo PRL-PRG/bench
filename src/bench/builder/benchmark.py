@@ -186,6 +186,8 @@ class BenchmarkBuilder(BuilderBase):
         else:
             label_fn = self.label_fn
 
+        hooks = [h(ctx) for h in self.hooks]
+
         return Benchmark(
             suite=suite,
             name=self.name,
@@ -198,6 +200,7 @@ class BenchmarkBuilder(BuilderBase):
             outlier_detection=outlier_detection,
             cooldown=cooldown,
             controller=controller,
+            hooks=hooks,
             data=self.data,
             label_fn=label_fn,
         )

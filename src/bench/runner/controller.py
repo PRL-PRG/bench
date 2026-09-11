@@ -164,8 +164,17 @@ class Controller:
             with _VERBOSE_LOCK:
                 print(format_benchmark_verbose(b, run))
 
+        # Setup
+        for h in b.hooks:
+            h.setup(b)
+
         # The execution
         result = self.evaluate_invocation(b, execute(b.invocation))
+
+        # Tear down
+        for h in reversed(b.hooks):
+            h.teardown(b)
+
         return self.extract_execution(b, result, run)
 
     def run_benchmark(
