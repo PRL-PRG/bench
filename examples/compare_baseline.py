@@ -10,7 +10,7 @@
 
 Typical workflow:
     ./compare_baseline.py --json a.json      # save a run
-    ./compare_baseline.py --show a.json       # re-render it with this reporter
+    ./compare_baseline.py show a.json         # re-render it with this reporter
     # ... change something, save b.json, then:
     bench compare a.json b.json               # diff the two, first is baseline
 """

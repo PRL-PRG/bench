@@ -6,7 +6,6 @@ import pytest
 from rich.console import Console, RenderableType
 
 from bench import (
-    BenchError,
     ByBenchmarkMetricSummary,
     ByMetricSummary,
     ComparisonSummary,
@@ -435,7 +434,9 @@ def test_grouped_summary_ref_absent_from_one_group_is_silent():
 
 
 def test_grouped_summary_empty_axis_is_an_error():
-    with pytest.raises(BenchError, match="at least one matrix dimension"):
+    # A summary configured with no axis is a mistake in the benchmark script,
+    # not a user-facing failure, so it raises ValueError rather than BenchError.
+    with pytest.raises(ValueError, match="at least one matrix dimension"):
         GeomeanComparisonSummary(axis=[]).on_metrics("elapsed")(_matrix_data())
 
 

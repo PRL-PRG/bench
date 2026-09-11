@@ -171,14 +171,6 @@ def test_run_list_prints_the_plan_and_runs_nothing():
     assert "elapsed" not in r.stdout  # nothing was measured
 
 
-def test_run_show_replays_a_saved_report(tmp_path: Path):
-    out = tmp_path / "out.json"
-    _run("run", "--runs", "2", "--json", str(out), "sleep 0.01")
-    r = _run("run", "--show", str(out), "sleep 0.01")
-    assert r.returncode == 0, r.stderr
-    assert "elapsed" in r.stdout
-
-
 def test_show_missing_file_errors(tmp_path: Path):
     r = _run("show", str(tmp_path / "nope.json"))
     assert r.returncode == 1
@@ -211,7 +203,7 @@ def test_compare_missing_file_errors(tmp_path: Path):
 def test_script_show_replays_through_configured_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
-    # `./my-bench --show r.json` renders a saved report with the script's own
+    # `./my-bench show r.json` renders a saved report with the script's own
     # configured summary (here a GeomeanComparisonSummary), running nothing. The
     # summary has no console of its own any more - the app prints it - so this
     # reads the real one.
@@ -237,7 +229,7 @@ def test_script_show_replays_through_configured_summary(
     summary = ByBenchmarkMetricSummary() & GeomeanComparisonSummary(
         axis="sleep"
     ).on_metrics("elapsed")
-    bench_app(summary=summary).add(s).run_cli(["--show", str(out)])
+    bench_app(summary=summary).add(s).run_cli(["show", str(out)])
     # the configured GeomeanComparisonSummary ran. The saved executions are
     # replayed through the reporter on the way, so its output is here too.
     assert "Comparison - sleep" in capsys.readouterr().out
