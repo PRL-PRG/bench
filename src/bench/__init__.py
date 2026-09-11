@@ -96,6 +96,11 @@ from bench.model.benchmark import (
     LabelFn,
     Variant,
 )
+from bench.model.hook import (
+    Hook,
+    SetupHook,
+    TearDownHook,
+)
 from bench.model.invocation import (
     Command,
     Env,
@@ -266,6 +271,10 @@ __all__ = [
     "InvocationResult",
     "Verdict",
     "SuccessFn",
+    # bench.model.hook
+    "Hook",
+    "SetupHook",
+    "TearDownHook",
     # bench.model.results
     "Direction",
     "Sample",

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bench.core.fingerprint.base import Fingerprint
-from bench.core.fingerprint.system.common import base
+from bench.core.fingerprint.system.common import UnixSystemEnvironment
 from bench.io import read_bracketed, read_int, read_text, to_int
 
 # Filesystem locations of the Linux tuning knobs, shared with `bench.denoise` so
@@ -19,27 +18,74 @@ SWAPPINESS = "sys/vm/swappiness"
 ASLR = "sys/kernel/randomize_va_space"
 
 
-def collect_linux(root: Path = Path("/")) -> Fingerprint:
+class LinuxSystemEnvironment(UnixSystemEnvironment, total=False):
+    governors: list[str]
+    turbo_enabled: bool
+    aslr: int
+    transparent_hugepage: str
+    swappiness: int
+    perf_event_paranoid: int
+
+
+def collect_linux(root: Path = Path("/")) -> LinuxSystemEnvironment:
     sys_cpu = root / CPU_DIR
     proc = root / "proc"
-    govs = sorted(
-        {g for p in sys_cpu.glob(GOVERNOR_GLOB) if (g := read_text(p)) is not None}
-    )
-    cpu_model, physical = _parse_cpuinfo(read_text(proc / "cpuinfo"))
 
-    return base() | Fingerprint.from_optional(
-        cpu_model=cpu_model,
-        physical_cpus=physical,
-        governors=govs or None,
-        turbo_enabled=_linux_turbo(sys_cpu),
-        aslr=read_int(proc / ASLR),
-        transparent_hugepage=read_bracketed(root / THP_ENABLED),
-        smt_enabled=_linux_smt(sys_cpu),
-        swappiness=read_int(proc / SWAPPINESS),
-        swap_in_use=_swap_in_use(proc / "swaps"),
-        perf_event_paranoid=read_int(proc / PERF_EVENT_PARANOID),
-        on_battery=_on_battery(root / "sys/class/power_supply"),
-    )
+    env = LinuxSystemEnvironment()
+
+    cpu_model, physical_cpus = _parse_cpuinfo(read_text(proc / "cpuinfo"))
+    if cpu_model is not None:
+        env["cpu_model"] = cpu_model
+    if physical_cpus is not None:
+        env["physical_cpus"] = physical_cpus
+
+    governors = _linux_goveners(sys_cpu)
+    if governors:
+        env["governors"] = governors
+
+    turbo_enabled = _linux_turbo(sys_cpu)
+    if turbo_enabled is not None:
+        env["turbo_enabled"] = turbo_enabled
+
+    aslr = read_int(proc / ASLR)
+    if aslr is not None:
+        env["aslr"] = aslr
+
+    transparent_hugepage = read_bracketed(root / THP_ENABLED)
+    if transparent_hugepage is not None:
+        env["transparent_hugepage"] = transparent_hugepage
+
+    smt_enabled = _linux_smt(sys_cpu)
+    if smt_enabled is not None:
+        env["smt_enabled"] = smt_enabled
+
+    swappiness = read_int(proc / SWAPPINESS)
+    if swappiness is not None:
+        env["swappiness"] = swappiness
+
+    swap_in_use = _swap_in_use(proc / "swaps")
+    if swap_in_use is not None:
+        env["swap_in_use"] = swap_in_use
+
+    perf_event_paranoid = read_int(proc / PERF_EVENT_PARANOID)
+    if perf_event_paranoid is not None:
+        env["perf_event_paranoid"] = perf_event_paranoid
+
+    on_battery = _on_battery(root / "sys/class/power_supply")
+    if on_battery is not None:
+        env["on_battery"] = on_battery
+
+    return env
+
+
+def _linux_goveners(sys_cpu: Path):
+    def it():
+        for p in sys_cpu.glob(GOVERNOR_GLOB):
+            t = read_text(p)
+            if t is not None:
+                yield t
+
+    return sorted({*it()})
 
 
 def _linux_turbo(sys_cpu: Path) -> bool | None:

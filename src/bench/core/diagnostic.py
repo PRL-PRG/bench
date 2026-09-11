@@ -12,12 +12,19 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from rich.markup import escape as markup_escape
 
 from bench.console.theme import console
 from bench.core.fingerprint import Fingerprint
+from bench.core.fingerprint.system import (
+    LinuxSystemEnvironment,
+    MacOSSystemEnvironment,
+    SystemEnvironment,
+    UnixSystemEnvironment,
+    is_system_environment,
+)
 
 type Severity = Literal["warn", "high"]
 
@@ -38,96 +45,111 @@ LOAD_FRACTION = 0.5
 def run_checks(fp: Fingerprint) -> list[Diagnostic]:
     """Fingerprint-based warnings. A check whose fact the probe did not record
     skips itself."""
-    out: list[Diagnostic] = []
+    if not is_system_environment(fp.data):
+        return []
 
-    governors: list[str] | None = fp.get("governors")
-    aslr: int | None = fp.get("aslr")
-    thp: str | None = fp.get("transparent_hugepage")
-    load_avg: list[float] | None = fp.get("load_avg")
-    logical_cpus: int | None = fp.get("logical_cpus")
+    env = fp.data
+    out = (
+        run_system_checks(cast(SystemEnvironment, env))
+        + run_unix_checks(cast(UnixSystemEnvironment, env))
+        + run_linux_checks(cast(LinuxSystemEnvironment, env))
+        + run_macos_checks(cast(MacOSSystemEnvironment, env))
+    )
 
-    if governors is not None and any(g != "performance" for g in governors):
-        out.append(
-            Diagnostic(
-                "high",
-                f"CPU frequency scaling enabled (governor: {', '.join(governors)}); "
-                "real-time measurements will be noisy.",
-                "sudo cpupower frequency-set -g performance",
-            )
-        )
-    if fp.get("turbo_enabled"):
-        out.append(
-            Diagnostic(
-                "warn",
-                "Turbo boost enabled; frequency varies under load.",
-                "echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo "
-                "(or echo 0 > .../cpufreq/boost)",
-            )
-        )
-    if aslr is not None and aslr != 0:
-        out.append(
-            Diagnostic(
-                "warn",
-                "ASLR enabled; layout-dependent noise is unreproducible.",
-                "run under `setarch $(uname -m) -R <cmd>` "
-                "or sudo sysctl -w kernel.randomize_va_space=0",
-            )
-        )
-    if thp is not None and thp != "never":
-        out.append(
-            Diagnostic(
-                "warn",
-                f"Transparent huge pages are '{thp}'; "
-                "background compaction adds latency spikes.",
-                "echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
-            )
-        )
-    if fp.get("smt_enabled"):
-        out.append(
-            Diagnostic(
-                "warn",
-                "SMT/hyper-threading enabled; sibling threads contend for a core.",
-                "echo off | sudo tee /sys/devices/system/cpu/smt/control",
-            )
-        )
-    if fp.get("swap_in_use"):
-        out.append(
-            Diagnostic(
-                "warn",
-                "Swap is in use; paging adds latency spikes.",
-                "sudo swapoff -a (or sudo sysctl -w vm.swappiness=0)",
-            )
-        )
-    if fp.get("on_battery"):
-        out.append(
-            Diagnostic(
-                "high",
-                "Running on battery; the CPU is likely frequency-capped.",
-                "connect AC power",
-            )
-        )
-    if fp.get("low_power_mode"):
-        out.append(
-            Diagnostic(
-                "high",
-                "Low Power Mode is on; the CPU is throttled.",
-                "sudo pmset -a lowpowermode 0",
-            )
-        )
-    if (
-        load_avg is not None
-        and logical_cpus
-        and load_avg[0] > LOAD_FRACTION * logical_cpus
-    ):
-        out.append(
-            Diagnostic(
-                "warn",
-                f"System under load (1-min load {load_avg[0]:.1f} "
-                f"over {logical_cpus} CPUs).",
-                "close background processes before benchmarking",
-            )
-        )
     return out
+
+
+def _filter_optional(*ds: Diagnostic | None) -> list[Diagnostic]:
+    return [x for x in ds if x is not None]
+
+
+def _optional_diagnostic(
+    flag: bool, severity: Severity, message: str, fix: str | None = None
+) -> Diagnostic | None:
+    if flag:
+        return Diagnostic(severity, message, fix)
+
+
+def run_system_checks(env: SystemEnvironment) -> list[Diagnostic]:
+    load_avg = env.get("load_avg")
+    logical_cpus = env.get("logical_cpus")
+    return _filter_optional(
+        _optional_diagnostic(
+            load_avg is not None
+            and logical_cpus is not None
+            and logical_cpus > 0
+            and load_avg[0] > LOAD_FRACTION * logical_cpus,
+            "warn",
+            f"System under load (1-min load {load_avg[0] if load_avg else 0:.1f} over {logical_cpus} CPUs).",
+            "close background processes before benchmarking",
+        )
+    )
+
+
+def run_unix_checks(env: UnixSystemEnvironment) -> list[Diagnostic]:
+    return _filter_optional(
+        _optional_diagnostic(
+            env.get("smt_enabled", False),
+            "warn",
+            "SMT/hyper-threading enabled; sibling threads contend for a core.",
+            "echo off | sudo tee /sys/devices/system/cpu/smt/control",
+        ),
+        _optional_diagnostic(
+            env.get("swap_in_use", False),
+            "warn",
+            "Swap is in use; paging adds latency spikes.",
+            "sudo swapoff -a (or sudo sysctl -w vm.swappiness=0)",
+        ),
+        _optional_diagnostic(
+            env.get("on_battery", False),
+            "high",
+            "Running on battery; the CPU is likely frequency-capped.",
+            "connect AC power",
+        ),
+    )
+
+
+def run_linux_checks(env: LinuxSystemEnvironment) -> list[Diagnostic]:
+    governors = env.get("governors", [])
+    thp = env.get("transparent_hugepage", "never")
+
+    return _filter_optional(
+        _optional_diagnostic(
+            any(g != "performance" for g in governors),
+            "high",
+            f"CPU frequency scaling enabled (governor: {', '.join(governors)}); real-time measurements will be noisy.",
+            "sudo cpupower frequency-set -g performance",
+        ),
+        _optional_diagnostic(
+            env.get("turbo_enabled", False),
+            "warn",
+            "Turbo boost enabled; frequency varies under load.",
+            "echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo (or echo 0 > .../cpufreq/boost)",
+        ),
+        _optional_diagnostic(
+            env.get("aslr", 0) != 0,
+            "warn",
+            "ASLR enabled; layout-dependent noise is unreproducible.",
+            "run under `setarch $(uname -m) -R <cmd>` or sudo sysctl -w kernel.randomize_va_space=0",
+        ),
+        _optional_diagnostic(
+            thp != "never",
+            "warn",
+            f"Transparent huge pages are '{thp}'; background compaction adds latency spikes.",
+            "echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
+        ),
+    )
+
+
+def run_macos_checks(env: MacOSSystemEnvironment) -> list[Diagnostic]:
+    return _filter_optional(
+        _optional_diagnostic(
+            env.get("low_power_mode", False),
+            "high",
+            "Low Power Mode is on; the CPU is throttled.",
+            "sudo pmset -a lowpowermode 0",
+        ),
+    )
 
 
 def print_diagnostics(diagnostics: list[Diagnostic], title: str) -> None:
