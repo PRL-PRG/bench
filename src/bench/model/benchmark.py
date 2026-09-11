@@ -4,8 +4,8 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from bench.core.hook import Hook
 from bench.core.policy import format_policy
-from bench.model.hook import Hook
 from bench.model.invocation import (
     Invocation,
     SuccessFn,

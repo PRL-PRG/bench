@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Self, cast
 
 from bench.builder.context import Context
+from bench.core.hook import Hook, SetupHook, TearDownHook
 from bench.core.metric import (
     Metric,
 )
 from bench.core.outlier import OutlierDetection
 from bench.core.policy import FixedRuns, StoppingPolicy
 from bench.model.benchmark import Benchmark, BenchmarkPred, LabelFn
-from bench.model.hook import Hook, SetupHook, TearDownHook
 from bench.model.invocation import Env, SuccessFn, Timeout
 from bench.runner import Controller
 

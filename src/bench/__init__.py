@@ -57,6 +57,11 @@ from bench.core.fingerprint import (
     Probe,
     SystemProbe,
 )
+from bench.core.hook import (
+    Hook,
+    SetupHook,
+    TearDownHook,
+)
 from bench.core.metric import (
     BuildableMetric,
     FloatPerLine,
@@ -95,11 +100,6 @@ from bench.model.benchmark import (
     BenchmarkPred,
     LabelFn,
     Variant,
-)
-from bench.model.hook import (
-    Hook,
-    SetupHook,
-    TearDownHook,
 )
 from bench.model.invocation import (
     Command,
@@ -271,7 +271,7 @@ __all__ = [
     "InvocationResult",
     "Verdict",
     "SuccessFn",
-    # bench.model.hook
+    # bench.core.hook
     "Hook",
     "SetupHook",
     "TearDownHook",
