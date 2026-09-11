@@ -48,6 +48,9 @@ testpaths = ["tests"]
 # ----------
 # Lint
 # ----------
+[tool.ruff]
+include = ["src/**.py", "tests/**.py", "examples/**.py"]
+
 [tool.ruff.format]
 docstring-code-format = true
 
