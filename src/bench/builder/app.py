@@ -233,44 +233,8 @@ class BenchAppBuilder(BuilderBase):
         use_defaults: bool = False,
         print_diagnostics: bool = True,
     ) -> Report:
-        # Setup probe
-        fingerprint = self.probe(params).collect() if self.probe is not None else None
-        diagnostics = run_checks(fingerprint) if fingerprint is not None else []
-
-        if print_diagnostics:
-            do_print_diagnostics(diagnostics, "Machine checks")
-
-        # Setup report
-        reporter = self.get_reporter(params, use_defaults=use_defaults)
-        summary = self.get_summary(use_defaults=use_defaults)
-
-        if reporter is None and summary is None:
-            raise BenchError("No reporter nor summary is defined")
-
-        # Get runner
-        if self.runner is not None:
-            runner = self.runner(params)
-        elif use_defaults:
-            runner = default_runner(params)
-            if runner is None:
-                raise BenchError(
-                    "Cannot instantiate default runner without SharedRunnerParams parameters"
-                )
-        else:
-            raise BenchError("No runner is defined")
-
-        # Get benchmarks
-        if planned is None:
-            planned = self.plan_benchmarks(
-                params,
-                use_defaults=use_defaults,
-            )
-
-        if len(planned) == 0:
-            raise NoBenchmarksMatchedError("No benchmark planned")
-
-        # Run
         with ExitStack() as stack:
+            # Denoise
             if self.denoise:
                 if not is_root():
                     raise BenchError(
@@ -290,6 +254,47 @@ class BenchAppBuilder(BuilderBase):
                     f"state saved to {denoise_path}"
                 )
 
+            # Probe system
+            fingerprint = (
+                self.probe(params).collect() if self.probe is not None else None
+            )
+            diagnostics = []
+            if fingerprint is not None:
+                diagnostics = run_checks(fingerprint)
+
+                if print_diagnostics:
+                    do_print_diagnostics(diagnostics, "Machine checks")
+
+            # Setup report
+            reporter = self.get_reporter(params, use_defaults=use_defaults)
+            summary = self.get_summary(use_defaults=use_defaults)
+
+            if reporter is None and summary is None:
+                raise BenchError("No reporter nor summary is defined")
+
+            # Get runner
+            if self.runner is not None:
+                runner = self.runner(params)
+            elif use_defaults:
+                runner = default_runner(params)
+                if runner is None:
+                    raise BenchError(
+                        "Cannot instantiate default runner without SharedRunnerParams parameters"
+                    )
+            else:
+                raise BenchError("No runner is defined")
+
+            # Get benchmarks
+            if planned is None:
+                planned = self.plan_benchmarks(
+                    params,
+                    use_defaults=use_defaults,
+                )
+
+            if len(planned) == 0:
+                raise NoBenchmarksMatchedError("No benchmark planned")
+
+            # Run
             report = runner.run(
                 planned,
                 reporter or Reporter(),
@@ -297,13 +302,13 @@ class BenchAppBuilder(BuilderBase):
                 diagnostics,
             )
 
-        if summary is not None:
-            console.print()
-            console.print(summary(summarize(report)))
+            if summary is not None:
+                console.print()
+                console.print(summary(summarize(report)))
 
-        # Report failed runs
-        error_console.print(format_failures(report.failures))
-        return report
+            # Report failed runs
+            error_console.print(format_failures(report.failures))
+            return report
 
     # ----- run_cli -----------
 
