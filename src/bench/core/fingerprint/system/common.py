@@ -17,8 +17,11 @@ class SystemEnvironment(TypedDict):
     release: str
     machine: str
     python_version: str
+
     logical_cpus: NotRequired[int]
     load_avg: NotRequired[list[float]]
+
+    niceness: NotRequired[int]
 
 
 class UnixSystemEnvironment(TypedDict, total=False):
@@ -50,6 +53,9 @@ def base() -> SystemEnvironment:
 
     with contextlib.suppress(OSError, AttributeError):
         env["load_avg"] = list(os.getloadavg())
+
+    if hasattr(os, "getpriority"):
+        env["niceness"] = os.getpriority(os.PRIO_PROCESS, 0)
 
     logical_cpus = os.cpu_count()
     if logical_cpus is not None:

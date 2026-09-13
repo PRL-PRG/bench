@@ -82,7 +82,13 @@ def run_system_checks(env: SystemEnvironment) -> list[Diagnostic]:
             "warn",
             f"System under load (1-min load {load_avg[0] if load_avg else 0:.1f} over {logical_cpus} CPUs).",
             "close background processes before benchmarking",
-        )
+        ),
+        _optional_diagnostic(
+            "niceness" in env and env["niceness"] > -20,
+            "warn",
+            f"Niceness is set to {env.get('niceness', 0)}, could be lowered to -20",
+            "Set up the NiceHook",
+        ),
     )
 
 
