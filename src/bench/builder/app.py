@@ -327,29 +327,32 @@ class BenchAppBuilder(BuilderBase):
                 else SharedBenchAppParams
             )
             parser = argparse.ArgumentParser(description=self.name)
-            add_params(parser, param_type)
 
-            # Add show subcommand
-            if allow_show:
-                subp = parser.add_subparsers(dest="cmd")
-                add_params(
-                    subp.add_parser(
-                        "show",
-                        help=SHOW_HELP,
-                        description=SHOW_DESCRIPTION,
-                    ),
-                    ShowParams,
-                )
+            if args is None:
+                args = sys.argv[1:]
 
-            ns = parser.parse_args(args)
-            if ns.cmd == "show":
+            if allow_show and args[0] == "show":
+                add_params(parser, ShowParams)
                 summary = self.get_summary(use_defaults=True)
                 if summary is None:
                     raise BenchError("Cannot show without any summary")
 
-                return show_report(build_params(ns, ShowParams), summary)
+                return show_report(
+                    build_params(parser.parse_args(args), ShowParams), summary
+                )
 
-            params = build_params(ns, param_type)
+            # Add rest of params
+            add_params(parser, param_type)
+
+            # This is entirely a dummy to show in help
+            if allow_show:
+                parser.add_subparsers().add_parser(
+                    "show",
+                    help=SHOW_HELP,
+                    description=SHOW_DESCRIPTION,
+                )
+
+            params = build_params(parser.parse_args(args), param_type)
 
         # --show
         planned = self.plan_benchmarks(params, use_defaults=True)
