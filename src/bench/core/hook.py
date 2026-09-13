@@ -1,5 +1,6 @@
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+import os
+from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from bench.model.benchmark import Benchmark
@@ -31,3 +32,14 @@ class TearDownHook(Hook):
 
     def teardown(self, benchmark: Benchmark) -> None:
         self._fun(benchmark)
+
+
+class PinCPUHook(Hook):
+    __slots__ = ("_cpus",)
+
+    def __init__(self, cpus: Iterable[int]) -> None:
+        super().__init__()
+        self._cpus = cpus
+
+    def setup(self, benchmark: Benchmark) -> None:
+        os.sched_setaffinity(0, self._cpus)
