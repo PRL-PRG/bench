@@ -269,7 +269,11 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         variant_cols = self._report.variant_keys()
         cols = (
-            ["suite", "benchmark", "run"]
+            # "execution" and not "run": a suite is free to name a matrix
+            # dimension `run` (a driver whose unit of replication is the
+            # process does), and a duplicate column would silently overwrite
+            # this one in the row dict below.
+            ["suite", "benchmark", "execution"]
             + variant_cols
             + ["iteration", "warmup"]
             + ["metric", "value", "unit", "lower_is_better", "outlier", "failure"]
@@ -295,7 +299,7 @@ class CsvReporter(_EnvironmentAware, _BufferingReporter):
                 base: dict[str, Any] = {
                     "suite": r.suite,
                     "benchmark": r.benchmark,
-                    "run": r.run,
+                    "execution": r.run,
                 }
                 for k in variant_cols:
                     base[k] = variant_map.get(k, "")
