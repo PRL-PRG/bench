@@ -61,7 +61,7 @@ def test_csv_reporter_writes_environment_comments(tmp_path: Path):
     text = (tmp_path / "o.csv").read_text()
     assert text.splitlines()[0].startswith("#")
     assert "# cpu_model: X" in text
-    assert "suite,benchmark,run" in text  # header still present
+    assert "suite,benchmark,execution" in text  # header still present
 
 
 def test_dir_reporter_writes_environment_json(tmp_path: Path):

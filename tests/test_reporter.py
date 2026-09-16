@@ -66,7 +66,7 @@ def test_csv_writer(tmp_path: Path):
     Sequential(reporter=CsvReporter(out)).run(plan([_s()], None), None)
     text = out.read_text()
     lines = text.splitlines()
-    assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
+    assert lines[0].split(",")[:3] == ["suite", "benchmark", "execution"]
     assert sum(1 for ln in lines[1:] if ",runtime," in ln) == 2  # 2 runs
     assert (
         sum(1 for ln in lines[1:] if ",elapsed," in ln) == 2
