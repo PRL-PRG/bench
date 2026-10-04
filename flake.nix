@@ -38,6 +38,11 @@
               act
             ];
 
+            shellHook = ''
+              uv sync --group test --frozen
+              source .venv/bin/activate
+            '';
+
             PYTHON_NO_NATIVE = "1";
           };
         };
