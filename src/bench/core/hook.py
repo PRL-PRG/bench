@@ -1,6 +1,6 @@
-from collections.abc import Callable
 import os
-from typing import TYPE_CHECKING, Iterable
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bench.model.benchmark import Benchmark
