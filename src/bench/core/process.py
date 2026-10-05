@@ -140,7 +140,7 @@ def execute(exe: Invocation) -> InvocationResult:
 
     env = dict(exe.env)
     if exe.inherit_env:
-        env |= os.environ
+        env = os.environ | env
 
     stdout_f = tempfile.TemporaryFile() if exe.capture_output else None
     stderr_f = tempfile.TemporaryFile() if exe.capture_output else None
@@ -348,7 +348,7 @@ def spawn_streaming(exe: Invocation) -> LiveProcess:
 
     child_env = dict(exe.env)
     if exe.inherit_env:
-        child_env |= os.environ
+        child_env = os.environ | child_env
 
     # A harness streams per-iteration lines, so a Python child must not
     # block-buffer its stdout - writing to a file it would flush everything at
