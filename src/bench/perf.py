@@ -31,7 +31,7 @@ from bench.core.process import execute
 from bench.model.benchmark import Benchmark
 from bench.model.invocation import Invocation
 from bench.model.results import Direction, Execution, Sample
-from bench.report.dir import execution_dir, variant_path
+from bench.report.dir import execution_dir
 from bench.runner import Controller
 
 # ---------------------------------------------------------------------------
@@ -178,9 +178,7 @@ class PerfRecord(Controller):
         ]
 
     def execute_benchmark(self, b: Benchmark, run: int, verbose: bool) -> Execution:
-        folder = execution_dir(
-            self.root, b.suite, b.name, variant_path(b.variant, nested=self.nested)
-        )
+        folder = execution_dir(self.root, b, run, nested=self.nested)
         folder.mkdir(parents=True, exist_ok=True)
         data_file = folder / "perf.data"
 

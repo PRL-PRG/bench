@@ -1,57 +1,64 @@
 from __future__ import annotations
 
-import itertools
 import json
-import threading
 from pathlib import Path
+from typing import overload
 
 from cattrs import unstructure
 
-from bench.model.benchmark import (
-    Benchmark,
-    Variant,
-    format_variant_pairs,
-)
+from bench.model.benchmark import Benchmark
 from bench.model.results import Execution, Report
 from bench.report.base import Reporter
 
 
 # TODO: Move somewhere else
+@overload
+def execution_dir(root: Path, execution: Execution, /, *, nested: bool) -> Path: ...
+@overload
 def execution_dir(
-    root: Path, suite: str, benchmark: str, leaf: str | int | Path
+    root: Path, benchmark: Benchmark, run: int, /, *, nested: bool
+) -> Path: ...
+def execution_dir(
+    root: Path,
+    id: Execution | Benchmark,
+    run: int | None = None,
+    /,
+    *,
+    nested: bool,
 ) -> Path:
-    """The per-execution directory `<root>/<suite>/<benchmark>/<leaf>`, the one
-    source of truth for the `--dir` layout.
+    if isinstance(id, Execution):
+        run = id.run
+        name = id.benchmark
+    else:
+        if run is None:
+            raise ValueError("Run cannot be None when using Benchmark")
+        name = id.name
 
-    `leaf` is the matrix variant sub-path (see `variant_path`) when the benchmark
-    has variants, else the 1-based completion ordinal `DirReporter` assigns per
-    `(suite, benchmark)`.
-    """
-    return root / suite / benchmark / (leaf if isinstance(leaf, Path) else str(leaf))
+    path = root / id.suite / name
 
-
-# TODO: Move somewhere else
-def variant_path(variant: Variant, *, nested: bool = False) -> Path:
-    """The sub-directory a matrix `variant` maps to under its benchmark.
-
-    Flat (the default): a single `dim1=val1, dim2=val2` component, so the tree
-    stays one level deep whatever the matrix. Nested: one directory level per
-    dimension, `dim1/val1/dim2/val2`. An empty variant maps to an empty path.
-    """
-    if not variant:
-        return Path()
     if nested:
-        return Path(*itertools.chain.from_iterable(variant))
-    return Path(format_variant_pairs(variant))
+        for k, v in id.variant:
+            path /= f"{k}={v}"
+    elif id.variant_label:
+        path /= id.variant_label.replace("/", "_")
+    elif id.variant:
+        path /= ",".join(f"{k}={v}" for k, v in id.variant)
+
+    path /= str(run)
+
+    return path
 
 
 class DirReporter(Reporter):
-    """Per-execution tree at `<out>/<suite>/<bench>/<leaf>/` (see `execution_dir`).
+    """Per-execution tree at `<out>/<suite>/<bench>[/<variant>]/<run>/` (see
+    `execution_dir`).
 
     Files: stdout, stderr, exitcode, seq (cwd + cmd + info). For a matrix variant
-    `leaf` is the variant sub-path - a flat `dim=val, ...` component by default, or
-    nested `dim/val/...` when constructed with `nested=True`; a plain benchmark's
-    runs count up per (suite, benchmark) in completion order.
+    `<variant>` is a single component - the variant label with `/` replaced by
+    `_`, or `dim=val,...` when it has none - by default, or one `dim=val`
+    directory per dimension when constructed with `nested=True`. A plain
+    benchmark has no `<variant>` level.
+    `<run>` is the execution's run number.
     """
 
     def __init__(
@@ -62,42 +69,12 @@ class DirReporter(Reporter):
     ) -> None:
         self.root = root
         self.nested = nested
-        self._counters: dict[tuple[str, str], int] = {}
-        self._lock = threading.Lock()
-
-    def output_dir(
-        self, suite: str, benchmark: str, variant: Variant = Variant()
-    ) -> Path:
-        """Where this reporter writes a given execution's files."""
-        return execution_dir(
-            self.root, suite, benchmark, variant_path(variant, nested=self.nested)
-        )
 
     def start(self, plan: list[Benchmark]) -> None:
-        self._counters = {}
         self.root.mkdir(parents=True, exist_ok=True)
-        # Pre-create the per-variant directories so a wrapped command (e.g. `perf
-        # record -o <dir>/perf.data`) has somewhere to write before it runs. Only
-        # variant benchmarks get a deterministic path up front; plain runs are
-        # numbered lazily, in completion order, by execution_done.
-        for b in plan:
-            if b.variant:
-                self.output_dir(b.suite, b.name, b.variant).mkdir(
-                    parents=True, exist_ok=True
-                )
 
     def execution_done(self, execution: Execution) -> None:
-        # Stable path per variant, lazy per-run numbering otherwise (see start).
-        if execution.variant:
-            exec_dir = self.output_dir(
-                execution.suite, execution.benchmark, execution.variant
-            )
-        else:
-            key = (execution.suite, execution.benchmark)
-            with self._lock:
-                self._counters[key] = self._counters.get(key, 0) + 1
-                n = self._counters[key]
-            exec_dir = execution_dir(self.root, execution.suite, execution.benchmark, n)
+        exec_dir = execution_dir(self.root, execution, nested=self.nested)
         exec_dir.mkdir(parents=True, exist_ok=True)
 
         lines = [

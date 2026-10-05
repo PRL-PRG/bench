@@ -2,7 +2,7 @@
 
 from bench.report.base import CompositeReporter, Reporter
 from bench.report.csv import CsvReporter
-from bench.report.dir import DirReporter, execution_dir, variant_path
+from bench.report.dir import DirReporter, execution_dir
 from bench.report.json import JsonReporter
 from bench.report.progress import ProgressReporter
 
@@ -11,7 +11,6 @@ __all__ = [
     "CompositeReporter",
     "CsvReporter",
     "execution_dir",
-    "variant_path",
     "DirReporter",
     "JsonReporter",
     "ProgressReporter",
