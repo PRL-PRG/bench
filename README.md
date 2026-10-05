@@ -64,21 +64,20 @@ Variants can be dropped with `.add_matrix_skip(...)` or `.with_filter(...)`,
 runs spaced with `.with_cooldown(s)`, and a suite's order randomized with
 `.with_shuffle(seed)`.
 
-| Component         | Setter                         |                                                   |
-|-------------------|--------------------------------|---------------------------------------------------|
-| Metric            | `.with_metric(...)`            | Turns a finished run into samples.                |
-| Stopping policy   | `.with_runs(...)`,             | Decides when a variant has run enough times.      |
-|                   | `.with_warmup(...)`            |                                                   |
-| Runner            | `.with_runner(...)`            | Schedules variants: sequential, parallel or dry.  |
-| Controller        | `.with_controller(...)`        | Runs one variant's executions, e.g. under `perf`. |
-| Summary           | `bench_app(summary=...)`       | Renders the statistics after the run.             |
-| Hooks             | `.with_hook(...)`              | Runs setup/teardown code around each execution.   |
-| Outlier detection | `.with_outlier_detection(...)` | Flags outlying samples; they stay in the stats.   |
+| Component         | Setter                         |                                                         |
+|-------------------|--------------------------------|---------------------------------------------------------|
+| Metric            | `.with_metric(...)`            | Turns a finished run into samples                       |
+| Stopping policy   | `.with_runs(...)`,             | Decides when a variant has run enough times             |
+|                   | `.with_warmup(...)`            | Same as runs, but marks runs as warmups                 |
+| Runner            | `.with_runner(...)`            | Schedules variants: sequential, parallel or dry         |
+| Reporter          | `.with_reporter(...)`          | Shows progress reports to setup output (JSON, CSV, ...) |
+| Summary           | `.with_summary(...)`           | Renders statistics after the run                        |
+| Hooks             | `.with_hook(...)`              | Runs setup/teardown code around each execution          |
+| Outlier detection | `.with_outlier_detection(...)` | Flags outlying samples                                  |
 
 **Outputs**: live progress, the summary, and optionally `--json`, `--csv` and
-`--dir` (`<dir>/<suite>/<benchmark>[/<variant>]/<run>/`). `bench show
-report.json` re-renders a saved report; `bench compare a.json b.json ...`
-compares saved reports, the first being the baseline.
+`--dir`. `bench show report.json` re-renders a saved report.
+`bench compare a.json b.json ...` compares saved reports, the first being the baseline.
 
 **Noise**: `bench doctor` prints the machine fingerprint and flags noise
 sources, exiting non-zero on a high-severity one. On Linux as root, `bench
