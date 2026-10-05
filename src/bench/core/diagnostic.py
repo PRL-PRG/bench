@@ -138,6 +138,16 @@ def run_linux_checks(env: LinuxSystemEnvironment) -> list[Diagnostic]:
             f"Transparent huge pages are '{thp}'; background compaction adds latency spikes.",
             "echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled",
         ),
+        # Unlike the knobs above, a wrong value here does not add noise: it makes
+        # every `perf record` run fail outright, as the kernel refuses to let it
+        # sample this user's own processes.
+        _optional_diagnostic(
+            env.get("perf_event_paranoid", 0) > 2,
+            "warn",
+            f"perf_event_paranoid is {env.get('perf_event_paranoid')}; "
+            "`perf record` cannot sample this user's processes.",
+            "sudo sysctl -w kernel.perf_event_paranoid=1",
+        ),
     )
 
 
