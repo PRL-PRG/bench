@@ -51,19 +51,25 @@ def _unregister_proc(proc: subprocess.Popen[bytes]) -> None:
         _LIVE_PROCS.discard(proc)
 
 
+def _kill_process_group(proc: subprocess.Popen[bytes]) -> None:
+    """SIGKILL the whole process group `proc` leads, so a `sh -c "..."` wrapper
+    takes the real workload down with it."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        # Already dead, or never made it into its own group, so fall back to
+        # a direct kill on the proc itself.
+        try:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
+
+
 def _kill_all_live_procs() -> None:
     with _LIVE_LOCK:
         procs = list(_LIVE_PROCS)
     for p in procs:
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError, OSError):
-            # Already dead, or never made it into its own group, so fall back to
-            # a direct kill on the proc itself.
-            try:
-                p.kill()
-            except (ProcessLookupError, OSError):
-                pass
+        _kill_process_group(p)
 
 
 @contextlib.contextmanager
@@ -173,7 +179,7 @@ def execute(exe: Invocation) -> InvocationResult:
 
             def _kill() -> None:
                 killed.set()
-                proc.kill()
+                _kill_process_group(proc)
 
             timer = threading.Timer(exe.timeout, _kill)
             timer.start()
