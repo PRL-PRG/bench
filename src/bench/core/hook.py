@@ -41,7 +41,7 @@ class PinCPUHook(Hook):
 
     def __init__(self, cpus: Iterable[int]) -> None:
         super().__init__()
-        self._cpus = cpus
+        self._cpus = list(cpus)
 
     def setup(self, benchmark: Benchmark) -> None:
         os.sched_setaffinity(0, self._cpus)
