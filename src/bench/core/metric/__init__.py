@@ -1,5 +1,4 @@
 from bench.core.metric.base import (
-    BuildableMetric,
     IterationMetric,
     Metric,
     MetricSource,
@@ -23,7 +22,6 @@ __all__ = [
     "RegexMetric",
     "FloatPerLine",
     "Metric",
-    "BuildableMetric",
     "MetricSource",
     "StdoutMetricSource",
     "StderrMetricSource",

@@ -3,11 +3,11 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 
-from bench.core.metric.base import BuildableMetric, IterationMetric, MetricSource
+from bench.core.metric.base import IterationMetric, MetricSource
 from bench.model.results import Direction, Sample
 
 
-class RegexMetric(IterationMetric, BuildableMetric):
+class RegexMetric(IterationMetric):
     """Extract metric values via a regex against the iteration text."""
 
     def __init__(

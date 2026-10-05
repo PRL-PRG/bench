@@ -4,15 +4,12 @@ import sys
 from collections.abc import Iterable
 from typing import Literal
 
-from bench.core.metric.base import (
-    BuildableMetric,
-    Metric,
-)
+from bench.core.metric.base import Metric
 from bench.model.invocation import InvocationResult
 from bench.model.results import Direction, Sample
 
 
-class RUsage(BuildableMetric):
+class RUsage(Metric):
     """Emit one sample from a single `resource.struct_rusage` field."""
 
     Field = Literal[

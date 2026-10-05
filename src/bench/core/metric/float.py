@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from bench.core.metric.base import BuildableMetric, IterationMetric, MetricSource
+from bench.core.metric.base import IterationMetric, MetricSource
 from bench.model.results import Direction, Sample
 
 
-class FloatPerLine(IterationMetric, BuildableMetric):
+class FloatPerLine(IterationMetric):
     """Parse non-empty lines of the iteration text as floats, one sample each.
 
     `line` selects a single 1-based non-empty line (negative counts from the

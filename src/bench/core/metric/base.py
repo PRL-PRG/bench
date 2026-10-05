@@ -28,7 +28,8 @@ class Metric(abc.ABC):
     """Reads one run's `InvocationResult` and emits Samples.
 
     Implement `process`; build the Samples with `get_sample`, which fills in the
-    metric name, unit and direction configured here.
+    metric name, unit and direction configured here. The direction can also be
+    set fluently with `lower_is_better`/`higher_is_better`, returning a copy.
     """
 
     metric: str
@@ -61,10 +62,6 @@ class Metric(abc.ABC):
             iteration=iteration,
             extra=extra,
         )
-
-
-class BuildableMetric(Metric):
-    """A Metric whose direction can be set fluently, returning a copy."""
 
     def lower_is_better(self) -> Self:
         o = copy.copy(self)

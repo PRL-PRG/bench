@@ -63,7 +63,6 @@ from bench.core.hook import (
     TearDownHook,
 )
 from bench.core.metric import (
-    BuildableMetric,
     FloatPerLine,
     IterationMetric,
     Metric,
@@ -236,7 +235,6 @@ __all__ = [
     "RegexMetric",
     "FloatPerLine",
     "Metric",
-    "BuildableMetric",
     "MetricSource",
     "StdoutMetricSource",
     "StderrMetricSource",
