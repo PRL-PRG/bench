@@ -18,7 +18,7 @@ from bench.core.denoise import (
     Denoise,
     is_root,
 )
-from bench.core.diagnostic import print_diagnostics, run_checks
+from bench.core.diagnostic import Diagnostic, print_diagnostics, run_checks
 from bench.core.fingerprint import NoProbe, SystemProbe
 from bench.core.metric import Time
 from bench.core.policy import FixedRuns, MaxDuration
@@ -106,7 +106,9 @@ def main(argv: list[str] | None = None) -> int:
             help="Inspect the machine for benchmarking noise sources.",
             description=(
                 "Print the machine fingerprint and the noise checks. "
-                "Exits non-zero if any high-severity issue is found."
+                "Exits non-zero on a high-severity issue; --fail-on any also "
+                "fails on warnings, which makes it usable as a gate in front "
+                "of a measurement run."
             ),
         ),
         DoctorParams,
@@ -387,6 +389,24 @@ class DoctorParams(Params):
         },
     )
 
+    fail_on: str = field(
+        default="high",
+        metadata={
+            "choices": ("none", "high", "any"),
+            "help": "Which findings make the exit status non-zero: `high` only "
+            "issues that invalidate a measurement outright, `any` also the "
+            "warnings, `none` never.",
+        },
+    )
+
+
+def _doctor_exit_code(diagnostics: list[Diagnostic], fail_on: str) -> int:
+    if fail_on == "none":
+        return 0
+    if fail_on == "any":
+        return 1 if diagnostics else 0
+    return 1 if any(d.severity == "high" for d in diagnostics) else 0
+
 
 def _cmd_doctor(ns: argparse.Namespace) -> int:
     params = build_params(ns, DoctorParams)
@@ -396,7 +416,7 @@ def _cmd_doctor(ns: argparse.Namespace) -> int:
         console.print("No fingerprint information available.")
         return 0
     diagnostics = run_checks(fingerprint)
-    exit_code = 1 if any(d.severity == "high" for d in diagnostics) else 0
+    exit_code = _doctor_exit_code(diagnostics, params.fail_on)
 
     if params.json:
         json.dump(fingerprint.data, sys.stdout, indent=2)
