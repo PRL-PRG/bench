@@ -44,7 +44,15 @@ class CsvReporter(Reporter):
         cols = (
             ["suite", "benchmark", "run"]
             + variant_cols
-            + ["failure", "iteration", "metric", "value", "unit", "lower_is_better"]
+            + [
+                "failure",
+                "iteration",
+                "warmup",
+                "metric",
+                "value",
+                "unit",
+                "lower_is_better",
+            ]
             + samples_extra
         )
 
@@ -64,8 +72,13 @@ class CsvReporter(Reporter):
                 for k in variant_cols:
                     base[k] = e.variant.get(k, "")
 
-                for sample in itertools.chain(
-                    e.process_samples, (s for i in e.iterations for s in i.samples)
+                execution_warmup = len(e.iterations) > 0 and all(
+                    i.warmup for i in e.iterations
+                )
+
+                for sample, warmup in itertools.chain(
+                    zip(e.process_samples, itertools.repeat(execution_warmup)),
+                    ((s, i.warmup) for i in e.iterations for s in i.samples),
                 ):
                     w.writerow(
                         base
@@ -73,6 +86,7 @@ class CsvReporter(Reporter):
                             "iteration": sample.iteration
                             if sample.iteration is not None
                             else "",
+                            "warmup": warmup,
                             "metric": sample.metric,
                             "value": sample.value,
                             "unit": sample.unit,
