@@ -365,18 +365,17 @@ class BenchAppBuilder(BuilderBase):
 
         return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
-    def main(self, args: list[str] | Params | None = None) -> int:
+    def main(self, args: list[str] | Params | None = None) -> None:
         """`run_cli` as a process exit code: user-facing errors become a clean
         stderr message instead of a traceback. The entry point a `__main__` wants."""
         try:
             self.run_cli(args)
-            return 0
         except BenchError as e:
             print_exception(e, with_traceback=False)
-            return e.exit_code
+            sys.exit(e.exit_code)
         except KeyboardInterrupt:
             error_console.print("[bench.failure]Interrupted[/]")
-            return 130
+            sys.exit( 130)
 
 
 # ---------------------------------------------------------------------------

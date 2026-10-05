@@ -306,17 +306,14 @@ def _cmd_run(ns: argparse.Namespace) -> int:
     if metrics is not None:
         summary = summary.on_metrics(metrics)
 
-    return (
-        bench_app(
-            "bench",
-            params=RunParams,
-            probe=probe,
-            denoise=params.denoise,
-            summary=summary,
-        )
-        .add(s)
-        .main(params)
-    )
+    bench_app(
+        "bench",
+        params=RunParams,
+        probe=probe,
+        denoise=params.denoise,
+        summary=summary,
+    ).add(s).main(params)
+    return 0
 
 
 # ----- show ----------------------------------------------------------------
