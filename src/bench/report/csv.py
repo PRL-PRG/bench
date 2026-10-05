@@ -23,8 +23,8 @@ class CsvReporter(Reporter):
 
     Schema: `suite, benchmark, run, <variant cols...>, failure, iteration,
     metric, value, unit, lower_is_better, <sample extra cols...>`. Each run
-    contributes one `elapsed` row for the process runtime, then one row per
-    whole-process and per-iteration Sample. All runs appear, warmup included.
+    contributes one  row per whole-process and per-iteration Sample. All runs
+    appear, warmup included.
     """
 
     def __init__(
@@ -63,15 +63,6 @@ class CsvReporter(Reporter):
                 }
                 for k in variant_cols:
                     base[k] = e.variant.get(k, "")
-
-                w.writerow(
-                    base
-                    | {
-                        "metric": "elapsed",
-                        "value": str(e.runtime),
-                        "unit": "s",
-                    }
-                )
 
                 for sample in itertools.chain(
                     e.process_samples, (s for i in e.iterations for s in i.samples)
