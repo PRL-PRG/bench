@@ -14,17 +14,16 @@ Each Renaissance iteration prints a multi-line block:
     GC before operation: completed in 4.812 ms, heap usage 121.567 MB -> 3.935 MB.
     ====== mnemonics (functional) [default], iteration 0 completed (1575.265 ms) ======
 
-`renaissance_monitor` used to reassemble those blocks so the metrics could parse
-one iteration at a time. That framing is no longer needed: each `Regex` carries
-`iterate=True`, walks its own matches across the whole output in order, and
-stamps match N with iteration index N. The Controller then collects match N of
-every metric into `Iteration` N, which reproduces the block grouping.
+Each `RegexMetric` uses `iterate=True`: it walks its own matches across the
+whole output in order and stamps match N with iteration index N. The Controller
+then collects match N of every metric into `Iteration` N, which reproduces the
+block grouping.
 
 Caveat worth knowing: the pairing is positional per metric. If a run emits a
 different number of `GC before operation` lines than `iteration ... completed`
 lines, `gc_time` drifts out of step with `runtime`. Renaissance is regular
-enough in practice; a harness that is not wants one Regex matching a whole block
-(with `(?s)` and several capture groups) instead of one Regex per field.
+enough in practice; a harness that is not wants one `RegexMetric` matching a
+whole block (with `(?s)` and several capture groups) instead of one per field.
 
 `-r N` sets the iteration count, and Renaissance owns its warmup: bench's
 `.with_warmup()` counts whole JVM launches, not iterations inside one.
@@ -107,8 +106,7 @@ def make_benchmarks(ctx: SuiteContext[RenaissanceParams]) -> list[BenchmarkBuild
 
 
 def _iterating(metric: str, pattern: str, unit: str) -> RegexMetric:
-    """One sample per match, indexed in match order - the replacement for the
-    old block-framing monitor."""
+    """One sample per match, indexed in match order."""
     return RegexMetric(metric, pattern, StdoutMetricSource, unit=unit, iterate=True)
 
 

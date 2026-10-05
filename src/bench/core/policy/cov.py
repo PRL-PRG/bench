@@ -45,8 +45,8 @@ class CoVState(PolicyState):
 
     def observe(self, execution: Execution) -> None:
         # CoV tracks one scalar per run. More than one matching sample is
-        # ambiguous and would inflate the
-        # window / min_runs counters, so reject it loudly.
+        # ambiguous and would inflate the window / min_runs counters, so reject
+        # it loudly.
 
         iteration_samples = (s for i in execution.iterations for s in i.samples)
         samples = itertools.chain(execution.process_samples, iteration_samples)
@@ -57,7 +57,7 @@ class CoVState(PolicyState):
                 f"CoefficientOfVariation metric {self.cfg.metric!r} matched "
                 f"{len(matching)} samples in a single run; it expects at most "
                 f"one per run. Restrict the metric to a single line (e.g. "
-                f".last_line()) or watch a different metric."
+                f"FloatPerLine.last_line(...)) or watch a different metric."
             )
         for value in matching:  # 0 or 1
             if len(self.window) == self.window.maxlen:

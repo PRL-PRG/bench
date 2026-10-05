@@ -8,12 +8,10 @@
 # ///
 """Opt-in hardware counters via `perf stat` (Linux).
 
-`PerfStat` is the single source of truth for the event list: `counters.wrap(...)`
-runs the command under `perf stat -e <events>`, and `with_metric(counters)`
-parses those counters back out of stderr. Nothing perf-related touches a benchmark
-that doesn't opt in.
+`PerfStat` is a Controller: `.with_controller(PerfStat(...))` runs the command
+under `perf stat -e <events>` and parses the counters back out of stderr.
 
-Execution on a Linux box where `perf` can count (see `bench doctor` /
+Run on a Linux box where `perf` can count (see `bench doctor` /
 `perf_event_paranoid`). On other platforms this still imports fine. It only fails
 if you actually run it without perf.
 """

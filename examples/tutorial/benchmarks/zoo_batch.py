@@ -1,6 +1,6 @@
 """Time-boxed throughput workload: count how many 10k-call batches finish in a
 fixed window. Wall time is ~constant (the window itself), so the meaningful
-signal is the batch count, which tutorial 2 extracts with a custom metric.
+signal is the batch count, which tutorials 3 and 4 extract with a custom metric.
 """
 
 import time

@@ -22,20 +22,4 @@ s = (
 
 run(s)
 
-# a better comparison across experiments
-# from bench import (
-#     ByBenchmarkMetricSummary,
-#     ComparisonSummary,
-#     GeomeanComparisonSummary,
-#     SummaryReporter,
-# )
-# run(
-#     s,
-#     reporter=SummaryReporter(
-#         ByBenchmarkMetricSummary()
-#         & ComparisonSummary()
-#         & GeomeanComparisonSummary(axis="vm", metrics="elapsed"),
-#     ),
-# )
-
 # vim: ft=python

@@ -9,7 +9,7 @@
 """File-discovered benchmarks: every script in workloads/ becomes a benchmark.
 
 `from_files` names each benchmark by its path relative to the root (without
-extension) and stamps the file onto `b.path`.
+extension) and stores the file as `ctx.data.path`.
 """
 
 from pathlib import Path

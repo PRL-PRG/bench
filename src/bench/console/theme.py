@@ -1,4 +1,4 @@
-"""Rich theme + shared Console used by all reporters."""
+"""Rich theme and the shared stdout/stderr Consoles."""
 
 from __future__ import annotations
 

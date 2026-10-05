@@ -21,7 +21,7 @@ type Direction = Literal["lower better", "higher better", "uncomparable"]
 
 @dataclass(frozen=True, slots=True)
 class Sample:
-    """One parsed metric value such as a time in seconds. Belongs to an Iteration."""
+    """One parsed metric value, e.g. a time in seconds."""
 
     metric: str
     value: float
@@ -36,8 +36,8 @@ class Sample:
 
 @dataclass(frozen=True, slots=True)
 class Iteration:
-    """One measurement. A command benchmark produces one Iteration per Execution,
-    a harness produces many. Holds the parsed Samples and an optional failure."""
+    """One measurement within an Execution: the Samples sharing one iteration
+    index."""
 
     samples: list[Sample] = field(default_factory=list[Sample])
     warmup: bool = False  # a discarded warmup iteration, flagged by the Controller
@@ -48,8 +48,8 @@ class Iteration:
 
 @dataclass(frozen=True, slots=True)
 class Execution:
-    """One subprocess run start to finish. Holds the Iterations measured from it,
-    one for a command benchmark and many for a harness, plus any whole-process Samples."""
+    """One subprocess run: its outcome, the Iterations measured from it and any
+    whole-process Samples."""
 
     suite: str
     benchmark: str
@@ -92,7 +92,7 @@ class Report:
 
     @property
     def failures(self) -> list[Execution]:
-        """Executions whose process failed (returncode-bearing failures)."""
+        """Executions judged as failed."""
         return [ex for ex in self.executions if ex.is_failure()]
 
     def metrics(self) -> list[str]:

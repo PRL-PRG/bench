@@ -33,7 +33,7 @@ from bench.runner import (
 
 
 def default_label(b: Benchmark) -> str:
-    """Default variant label: the formatted `(k=v, ...)` tuple, no parens."""
+    """Default variant label: `k=v, ...`."""
     return format_variant_pairs(b.variant)
 
 

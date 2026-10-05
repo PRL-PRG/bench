@@ -7,7 +7,7 @@
 # bench = { path = "../..", editable = true }
 # ///
 """Lox: two file-discovered suites, each with its own metrics and a per-suite
-`ByMetricSummary` (via `CompositeReporter`)."""
+`ByMetricSummary` (narrowed with `.on_suite(...)`, joined with `&`)."""
 
 from pathlib import Path
 

@@ -35,6 +35,4 @@ def _failure_span(execution: Execution) -> list[Span]:
         Span(execution.failure or "failed", "failure"),
         Span(": "),
         Span(execution.message or "(no output)"),
-        # f"[bench.failure]✗[/] {markup_escape(execution.identifier())}"
-        # f" - {verdict}: {markup_escape(execution.message) or '(no output)'}"
     ]

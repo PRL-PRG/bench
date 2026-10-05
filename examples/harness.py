@@ -9,10 +9,10 @@
 """Harness-style benchmarks: one process runs all the iterations, the VM pattern.
 
 A *harness* executes its command once and prints one measurement per iteration
-(here `workloads/fakevm.py`, a fake JIT whose early iterations are slow). There
-is no `.with_harness()` switch any more, and none is needed: a metric that
-indexes its samples turns one process's output into many `Iteration`s.
-`FloatPerLine` does that by default, `Regex` does it with `iterate=True`.
+(here `workloads/fakevm.py`, a fake JIT whose early iterations are slow). A
+metric that indexes its samples turns one process's output into many
+`Iteration`s: `FloatPerLine` does that by default, `RegexMetric` with
+`iterate=True`.
 
 So the whole wiring is:
 
@@ -22,12 +22,12 @@ So the whole wiring is:
 
 Warmup is the harness's job (`-w` here), because bench's `.with_warmup()`
 counts whole processes - it cannot discard the leading iterations *inside* one
-process. Real harnesses all work this way: Renaissance takes `-r`, AWFY takes an
-iteration count, ReBench harnesses print only what they want measured.
+process.
 
-Real-world harnesses fit the same shape: Renaissance (`-r N` plus a Regex on its
-`iteration N completed (... ms)` lines), LevelDB's db_bench (a Regex on
-`micros/op`), or any ReBench-format harness (the `Rebench()` metric).
+Real-world harnesses fit the same shape: Renaissance (`-r N` plus a
+`RegexMetric` on its `iteration N completed (... ms)` lines), LevelDB's
+db_bench (a `RegexMetric` on `micros/op`), or any ReBench-format harness
+(`RebenchMetric`).
 """
 
 import sys

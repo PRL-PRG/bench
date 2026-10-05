@@ -1,21 +1,9 @@
-"""Opt-in Linux `perf` integration. A benchmark that doesn't opt in is untouched.
+"""Opt-in Linux `perf` integration: `PerfStat` (hardware counters) and
+`PerfRecord` (sampling profile), both `Controller`s that run the invocation
+under `perf`, e.g. `.with_controller(PerfStat("cache-misses"))`.
 
-  - `PerfStat` - hardware-counter totals. A `Metric` that also builds its own
-    `perf stat` prefix, via `wrap`: the only place perf enters the argv.
-  - `PerfRecord` - a sampling profile. A `Controller`, so it can wrap the
-    invocation it is about to run and read the recording back afterwards.
-
-Usage::
-
-    counters = PerfStat(("cache-misses", "cache-references")).lower_is_better()
-
-    bench("matmul")
-        .with_command(counters.wrap("./workload"))
-        .with_metric(counters)
-        .with_controller(PerfRecord(Path("out")))
-
-perf is Linux-only and needs a permissive enough `perf_event_paranoid`; a missing
-`perf` fails loudly.
+perf needs a permissive enough `perf_event_paranoid`; a missing `perf` fails
+loudly.
 """
 
 from __future__ import annotations
@@ -40,7 +28,7 @@ from bench.runner import Controller
 
 
 class PerfStatMetric(IterationMetric):
-    """Run a command under `perf stat` and read its counters from stderr.
+    """Parse `perf stat -x,` counters from stderr, one sample per event.
 
     `events` are symbolic perf event names - raw `cpu/event=.../` names embed
     commas and are not supported. `direction` applies to every event.
@@ -117,8 +105,8 @@ class PerfRecord(Controller):
 
     Writes `perf.data` and, unless `frames=False`, the `perf script` frame table
     `perf-frames.csv`, adding the recording's size and sample / frame counts to
-    the execution's process samples. Both land in the run's directory under
-    `root` - the layout `DirReporter` writes, so they sit beside its stdout.
+    the execution's process samples. Both land in `execution_dir(root, ...)`,
+    the same directory `DirReporter` uses for the run.
 
     `call_graph` picks the unwind method: `"dwarf"` copies `stack_size` bytes of
     user stack per sample and unwinds offline (works on any binary, but costs

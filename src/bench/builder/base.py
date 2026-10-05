@@ -1,11 +1,5 @@
-"""Builder foundation: the shared configuration base for the three builder levels.
-
-`BuilderBase` declares every inheritable field once and carries the `with_*`
-setters plus the `inherit_from` merge that cascades configuration across
-`BenchAppBuilder` -> `SuiteBuilder` -> `BenchmarkBuilder` (the more specific
-level wins). The `Factory[T]` field-builder concept and the merge helpers live
-here too.
-"""
+"""`BuilderBase`: the configuration shared by the app, suite and benchmark
+builders, inherited downwards with the more specific level winning."""
 
 from __future__ import annotations
 
@@ -40,7 +34,6 @@ type UnresolvedCommand = Sequence[StrOrBytesPath]
 # `Any` is a hack - it lets callers use more concrete types of "Params".
 type Factory[T] = Callable[[Context[Any]], T]
 
-# A matrix axis: a sequence of values for some dimension.
 type MatrixAxis = Sequence[Any]
 
 # ---------------------------------------------------------------------------
@@ -112,8 +105,7 @@ def normalize_matrix(
 def merge_matrix(
     outer: Mapping[str, Factory[MatrixAxis]], inner: Mapping[str, Factory[MatrixAxis]]
 ) -> Mapping[str, Factory[MatrixAxis]]:
-    """Accumulate matrix dims for `overlay`: `inner` (more specific) dims first,
-    then `outer`. A dimension declared on both sides is an error."""
+    """Union of both levels' dims; a dimension declared on both is an error."""
     dup = inner.keys() & outer.keys()
     if dup:
         raise ValueError(f"Duplicate matrix axes: {','.join(dup)}")
@@ -137,7 +129,7 @@ class BuilderBase:
     cwd: Factory[Path] | None = None
     env: Factory[Env] | None = None
     inherit_env: bool = False
-    stdin: Factory[bytes | None] | None = None  # None = no stdin (never inherited)
+    stdin: Factory[bytes | None] | None = None  # None = stdin is /dev/null
     timeout: Factory[Timeout] | None = None
     metrics: Sequence[Factory[Metric]] = ()
     success: Factory[SuccessFn] | None = None
@@ -165,10 +157,10 @@ class BuilderBase:
         override: bool,
         merge: Callable[[T, T], T] | None = None,
     ) -> Self:
-        """Replace a field in the current builder.
+        """Return a copy with `field` set to `value`.
 
-        An already-set field is merged with `merge` when one is given, else
-        replaced - with a warning unless `override`."""
+        Unless `override`, an already-set field is merged with `merge`, or
+        replaced with a warning when there is no `merge`."""
         if field not in (f.name for f in dataclasses.fields(self)):
             raise ValueError(f"Field {field} is not field of {type(self)}")
 
@@ -380,8 +372,7 @@ class BuilderBase:
     def with_metric(
         self, *metrics: Metric | Factory[Metric], override: bool = False
     ) -> Self:
-        """Set the per-iteration metrics, each reading stdout."""
-
+        """Add metrics."""
         return self.replace(
             "metrics",
             [as_build(m) for m in metrics],
@@ -392,12 +383,8 @@ class BuilderBase:
     # ----- inheritance ------------------------------------------------
 
     def inherit_from(self, over: BuilderBase) -> Self:
-        """Merge `over` on top of `self` (self wins): the inheritance step used
-        at every builder boundary (app < suite < benchmark).
-
-        A field set on `self` keeps its value, except for the mergable ones -
-        `env` merges per key, `matrix` accumulates (a dimension declared on both
-        sides is an error), `metrics`/`filters` concatenate, `inherit_env` ORs.
+        """Fill the fields unset on `self` from the less specific `over`.
+        The mergeable fields combine instead.
         """
         result = self
         for name in _BUILDER_FIELDS:

@@ -29,8 +29,6 @@ s = (
 )
 
 
-# run(s)
-
 bench_app(
     summary=(
         ByBenchmarkMetricSummary()

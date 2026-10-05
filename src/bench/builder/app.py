@@ -74,7 +74,7 @@ type SuiteGenerator = ParamFactory[Sequence[SuiteBuilder]]
 
 
 class NoBenchmarksMatchedError(BenchError):
-    """No benchmark matched the --include/--exclude selection."""
+    """No benchmark was planned, e.g. `--include`/`--exclude` matched nothing."""
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +319,8 @@ class BenchAppBuilder(BuilderBase):
     def run_cli(
         self, args: list[str] | Params | None = None, *, allow_show: bool = True
     ) -> Report:
-        """Resolve generators, apply app defaults, and run every suite."""
+        """Parse `args` (or use the given params) and run every suite with the
+        app defaults; also handles the `show` subcommand and `--list`."""
 
         if isinstance(args, Params):
             params = args
@@ -366,8 +367,8 @@ class BenchAppBuilder(BuilderBase):
         return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
     def main(self, args: list[str] | Params | None = None) -> None:
-        """`run_cli` as a process exit code: user-facing errors become a clean
-        stderr message instead of a traceback. The entry point a `__main__` wants."""
+        """`run_cli` for a `__main__`: a user-facing error is printed as a clean
+        stderr message and exits with its exit code instead of a traceback."""
         try:
             self.run_cli(args)
         except BenchError as e:
@@ -384,11 +385,8 @@ class BenchAppBuilder(BuilderBase):
 
 
 def run(*suites: SuiteBuilder) -> None:
-    """Run one or more suites with default settings, returning their report.
-
-    Sugar for `bench_app(<script>).add(*suites).main()`. For anything richer
-    build a `bench_app(...)` directly.
-    """
+    """Run suites with default settings: sugar for
+    `bench_app(<script name>).add(*suites).main()`."""
     return bench_app(Path(sys.argv[0]).stem).add(*suites).main()
 
 
@@ -474,16 +472,10 @@ def show_report(
 
 # TODO: This should live somewhere else
 def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
-    """Group planned benchmarks into a `suite -> benchmark -> variant` tree.
-
-    A benchmark with several variants becomes a node whose leaves are the
-    per-variant labels. A benchmark with a single variant stays a leaf labeled
-    `name (k=v, ...)`. The root carries a one-line count summary. This is what
-    `--list` prints.
-    """
+    """The `--list` tree (suite -> benchmark -> variant) under a count header."""
     n_suites = len({b.suite for b in planned})
     n_benchmarks = len({(b.suite, b.name) for b in planned})
-    n_variants = len(planned)  # each runnable instance is a variant
+    n_variants = len(planned)
 
     def plural(n: int, word: str) -> str:
         return f"{n} {word}{'' if n == 1 else 's'}"

@@ -1,4 +1,5 @@
-""" "<subject> was N× better than <target>", shared by both rankings"""
+"""The `<subject> was N× better than <target>` rankings: within a benchmark,
+and across the values of a matrix axis."""
 
 from __future__ import annotations
 
@@ -70,7 +71,7 @@ def compute_ranking(
     """Per benchmark: rank the variants best-first. With `axis`, instead fold the
     other (residual) variants by geomean and compare the values of that axis
     (e.g. python3.14 vs python3.9). Several axis names make one composite axis
-    (see `axes_of`), and `ref` names one of its values."""
+    (see `_axes_of`), and `ref` names one of its values."""
     if axis is not None:
         return _axis_summary(
             stats,

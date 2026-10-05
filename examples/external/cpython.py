@@ -11,13 +11,12 @@
 Each pyperformance benchmark is one bench execution: the command runs
 `pyperformance run` once, writing its JSON to a known path. Nothing is
 observable while pyperformance works - it only writes that JSON once fully
-done - so the old harness monitor did nothing but wait for the exit and then
-read the file.
+done.
 
-That is exactly what a `MetricSource` is: a `(InvocationResult) -> str` called
-after the process exits. `json_values_source` reads the result JSON and returns
-one measured value per line, and `FloatPerLine` turns each of those lines into
-its own `Iteration`. No monitor, no streaming, no harness switch.
+So the metric reads it through a `MetricSource`: a `(InvocationResult) -> str`
+called after the process exits. `json_values_source` reads the result JSON and
+returns one measured value per line, and `FloatPerLine` turns each of those
+lines into its own `Iteration`.
 
 Wanting more independent measurements is a `--runs` concern: it spawns that many
 separate pyperformance processes (matrix variants), each contributing its own

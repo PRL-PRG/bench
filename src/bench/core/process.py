@@ -214,8 +214,7 @@ def execute(exe: Invocation) -> InvocationResult:
             TIMEOUT_RC if killed.is_set() else os.waitstatus_to_exitcode(waitstatus)
         )
 
-        # execute() records facts only. Judging success is the Runner's job
-        # (see default_success / Benchmark.with_success).
+        # Judging success is the Controller's job (`evaluate_invocation`).
         return InvocationResult(
             invocation=exe,
             returncode=returncode,
@@ -254,7 +253,7 @@ class LiveProcess:
     # The reaper runs exactly once and caches its result: is_alive() polls it
     # non-blockingly, finish() reaps blockingly, and both go through _reap so
     # the rusage-bearing wait4 is never lost to a stray poll(). Locked because
-    # a harness reader thread races finish()/close().
+    # is_alive() may be polled from another thread while finish() runs.
     _reap_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _reaped: bool = False
     _waitstatus: int = 0
@@ -356,9 +355,8 @@ def spawn_streaming(exe: Invocation) -> LiveProcess:
     if exe.inherit_env:
         child_env = os.environ | child_env
 
-    # A harness streams per-iteration lines, so a Python child must not
-    # block-buffer its stdout - writing to a file it would flush everything at
-    # exit, defeating live framing. A no-op for non-Python children.
+    # The output is read while the process runs, so a Python child must not
+    # block-buffer its stdout into the file until exit.
     child_env["PYTHONUNBUFFERED"] = "1"
 
     proc = subprocess.Popen(

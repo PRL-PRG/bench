@@ -10,7 +10,7 @@ from bench.runner.base import Runner
 
 
 class SequentialRunner(Runner):
-    """Run benchmarks one at a time, in suite-then-benchmark order."""
+    """Run benchmarks one at a time, in planned order."""
 
     def __init__(
         self,

@@ -1,14 +1,5 @@
-"""Benchmark builder: a builder template and the resolved instances it produces.
-
-Every configurable field takes either a static value or a `Factory[T]` =
-`(ctx) -> value` builder, resolved once per variant by `create()`.
-
-Variants within a benchmark are what the end-of-run Summary compares;
-comparison across different benchmarks is never emitted.
-
-The shared configuration base (`BuilderBase`), the `Factory[T]` primitive, and
-the matrix/skip helpers live in `bench.builder.base`.
-"""
+"""`BenchmarkBuilder`: a benchmark template that `create()` expands into one
+resolved `Benchmark` per matrix variant."""
 
 from __future__ import annotations
 
@@ -41,11 +32,8 @@ from bench.runner import Controller
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkBuilder(BuilderBase):
-    """A benchmark *spec*: a builder-style API configuring a workload that
-    `.create()` expands into one resolved `Benchmark` per surviving variant.
-
-    `data` holds arbitrary user-supplied keyword args, readable as attributes.
-    """
+    """A benchmark spec that `.create()` expands into one resolved `Benchmark`
+    per surviving variant. `data` holds arbitrary user-supplied values."""
 
     name: str = ""
     data: Mapping[str, Any] = dataclasses.field(default_factory=dict[str, Any])
@@ -53,11 +41,10 @@ class BenchmarkBuilder(BuilderBase):
     # ----- with_* setters -----------
 
     def with_data(self, **data: Any) -> BenchmarkBuilder:
-        """Attach static key/value data, readable as `ctx.data.<key>` (and `b.<key>`).
+        """Attach static data, readable as `ctx.data.<key>` and `b.data["<key>"]`.
 
         Merges with any data already set (later keys win). Values are stored
-        verbatim - a list value stays a list. Use `.with_matrix(...)` to expand a
-        dimension into variants."""
+        verbatim; use `.with_matrix(...)` to expand a dimension into variants."""
         return self.replace(
             "data",
             data,
@@ -68,11 +55,8 @@ class BenchmarkBuilder(BuilderBase):
     # ----- creation ----------------------------------------------------
 
     def create(self, params: Params, *, suite: str) -> Iterator[Benchmark]:
-        """Yield one fully-resolved `Benchmark` per surviving matrix variant.
-
-        Expands the matrix (cartesian product), resolves every field against the
-        variant `Context`, then drops any variant matched by a skip rule.
-        """
+        """Yield one resolved `Benchmark` per matrix variant (cartesian product)
+        that passes every filter."""
         bench_ctx: Context[Params] = Context(
             params=params,
             suite=suite,
@@ -212,12 +196,8 @@ class BenchmarkBuilder(BuilderBase):
 
 
 def bench(name: str, **data: Any) -> BenchmarkBuilder:
-    """Build a BenchmarkBuilder with arbitrary attached data.
-
-    `bench("zoo", path=Path("zoo.lox"))` makes `b.path` available. It is exact
-    sugar for `bench("zoo").with_data(path=Path("zoo.lox"))`. To add matrix
-    dimensions use `.with_matrix(...)`.
-    """
+    """A `BenchmarkBuilder` with attached data: sugar for
+    `BenchmarkBuilder(name=name).with_data(**data)`."""
     return BenchmarkBuilder(name=name).with_data(**data)
 
 
@@ -228,7 +208,8 @@ def from_files(
     recursive: bool = True,
     exclude: set[str] | None = None,
 ) -> list[BenchmarkBuilder]:
-    """Discover files under `root`, each becomes a factory with `b.path` set."""
+    """One `bench(name, path=file)` per file under `root` (or `root` itself if it
+    is a file), named by its relative path without suffix."""
     compiled = re.compile(pattern) if pattern else None
     exclude_set = exclude or set()
     r = Path(root)

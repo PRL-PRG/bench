@@ -114,9 +114,7 @@ class Variant:
 
 
 def format_variant_pairs(pairs: Variant) -> str:
-    """`k=v, ...` naming a variant on its own. `""` if empty. Unlike
-    `format_variant` this carries no surrounding ` (...)`, so it also serves where
-    the variant is the whole string: a summary label, a directory component."""
+    """`k=v, ...` naming a variant, `""` if empty."""
     return ", ".join(f"{k}={v}" for k, v in pairs)
 
 
@@ -150,8 +148,6 @@ def format_identifier(
 
 def format_benchmark_verbose(b: Benchmark, run: int) -> str:
     def _metric_name(m: Any) -> str:
-        """A metric's display name: its `metric` field if it has one, else the
-        class name (e.g. Time, Rebench)."""
         return getattr(m, "metric", type(m).__name__)
 
     e = b.invocation

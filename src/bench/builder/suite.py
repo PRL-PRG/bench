@@ -1,9 +1,6 @@
-"""SuiteBuilder: a named collection of Benchmarks plus the defaults they inherit.
-
-A `.with_*` call only sets the suite's own field; nothing propagates eagerly.
-Resolution happens once, in `materialize(params)`, where every unset benchmark
-field is filled from the suite - so builder-call order never matters.
-"""
+"""`SuiteBuilder`: a named collection of benchmarks plus the defaults they
+inherit, resolved once in `materialize(params)` so builder-call order never
+matters."""
 
 from __future__ import annotations
 
@@ -63,7 +60,7 @@ class SuiteBuilder(BuilderBase):
     # ----- name -----------
 
     def with_name(self, name: str, override: bool = False) -> SuiteBuilder:
-        # Special case - allow override for empty name
+        # Clearing the name never warns.
         if name == "":
             override = True
 
@@ -84,8 +81,8 @@ class SuiteBuilder(BuilderBase):
         )
 
     def generator(self, fn: BenchmarkGenerator) -> SuiteBuilder:
-        """Register a deferred `(ctx: Context) -> [BenchmarkBuilder]` producer,
-        called when the suite materializes."""
+        """Register a deferred `(ctx: SuiteContext) -> [BenchmarkBuilder]`
+        producer, called when the suite materializes."""
         return self.replace(
             "benchmarks",
             (fn,),
@@ -188,7 +185,7 @@ def suite(name: str, *children: BenchmarkBuilder | SuiteBuilder) -> SuiteBuilder
 
 
 class SuiteMaterializationError(BenchError):
-    """A suite's factory failed while building its benchmarks."""
+    """A suite's generator failed while building its benchmarks."""
 
     def __init__(self, suite: str, cause: BaseException) -> None:
         self.suite = suite
@@ -198,7 +195,7 @@ class SuiteMaterializationError(BenchError):
     def _format(self) -> str:
         lines = [f"Failed to materialize suite {self.suite!r}: {self.cause}"]
 
-        # TODO: the idea is that only subprocess failures carry capturable output worth surfacing to user
+        # Only a failed subprocess carries output worth showing the user.
         if isinstance(self.cause, subprocess.CalledProcessError):
             out = self.cause.output or self.cause.stderr
             if out:
@@ -213,7 +210,7 @@ def plan(
     suites: list[SuiteBuilder],
     params: Params,
 ) -> list[Benchmark]:
-    """Flatten suites + their deferred factories into resolved benchmarks."""
+    """Materialize every suite into one list of resolved benchmarks."""
     out: list[Benchmark] = []
     for s in suites:
         try:

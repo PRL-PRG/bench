@@ -8,8 +8,8 @@
 # ///
 """Failure handling: mixed success / failure runs.
 
-Failed runs emit no metrics. bench records each as a structured failure that
-the summary lists in a `Failures:` block. `.with_runs(N)` counts every attempt,
+Failed runs are kept out of the stats. bench records each as a structured
+failure, listed in a `Failures` block after the summary. `.with_runs(N)` counts every attempt,
 so `broken` runs exactly 3 times and reports 3 failures (no fake timings).
 """
 

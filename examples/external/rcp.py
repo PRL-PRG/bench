@@ -28,7 +28,7 @@ class RcpParams(SharedBenchParams):
     R_HOME: Path  # R installation root
     output: Path = Path(tempfile.gettempdir()) / "rcp"
     path_filter: str = ""
-    iterations: int = 1  # harness --runs (avoids bench's reserved --runs)
+    iterations: int = 1  # passed to the harness as its own --runs
 
 
 def _cmd(ctx: Context[RcpParams]):

@@ -6,7 +6,8 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Typed CLI parameters: a @dataclass becomes --flags, passed to builders as ctx.
+"""Typed CLI parameters: a `Params` subclass becomes --flags, read in builders as
+`ctx.params`.
 
 Run with defaults, or override:
     ./params.py
@@ -18,9 +19,9 @@ from bench import Context, SharedBenchParams, Time, bench, bench_app, suite
 
 class ExampleParams(SharedBenchParams):
     # Inherit SharedBenchParams to keep the builtin flags (-j/--json/--include/
-    # ...); a plain @dataclass would expose only the fields declared here.
-    n: int = 100_000  # --n INT       (default: 100000)
-    python: str = "python3"  # --python STR  (default: python3)
+    # ...); plain `Params` would expose only the fields declared here.
+    n: int = 100_000
+    python: str = "python3"
 
 
 def cmd(ctx: Context[ExampleParams]):

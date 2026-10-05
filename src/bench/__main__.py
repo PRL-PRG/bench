@@ -44,7 +44,7 @@ from bench.summary import (
 )
 
 # ---------------------------------------------------------------------------
-# `bench` CLI: run / compare
+# `bench` CLI
 # ---------------------------------------------------------------------------
 
 
@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     _subcommand(
         sub.add_parser(
             "denoise",
-            help="Minimize/restore system noise knobs (requres linux with root access).",
+            help="Minimize/restore system noise knobs (requires linux with root access).",
             description=(
                 "Set the CPU governor to performance, disable turbo, and quiet "
                 "perf/swap/ASLR, saving the originals so `restore` can revert "
@@ -210,7 +210,7 @@ class RunParams(SharedRunnerParams, SharedReporterParams):
         metadata={
             "group": EXECUTION_GROUP,
             "metavar": "NAME",
-            "help": "Metric to highlight in the comparison summary.",
+            "help": "Metric to summarize.",
         },
     )
 

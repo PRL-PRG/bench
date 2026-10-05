@@ -1,12 +1,7 @@
 """Metric: extract Samples from a benchmark run.
 
-Two kinds, distinguished by what they read:
-
-  - `Metric` reads the whole `InvocationResult`.
-  - `IterationMetric` parses the text one `MetricSource` pulls out of it
-    (stdout by default) into per-iteration Samples.
-
-Both carry a `direction` saying which way is better.
+A `Metric` reads the whole `InvocationResult`; an `IterationMetric` parses the
+text its `MetricSource` pulls out of it (e.g. stdout).
 """
 
 from __future__ import annotations

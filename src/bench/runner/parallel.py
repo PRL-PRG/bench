@@ -4,9 +4,6 @@ Parallelism is per benchmark, not per run, so each keeps its own sequential
 loop and convergence-driven policies still work. Timing under contention is
 meaningless, so this is for work where time is **not** the metric: test suites,
 smoke runs, or getting through a batch faster.
-
-The shared `Report` and reporter are mutated from worker threads, hence the
-lock-guarded proxies below.
 """
 
 from __future__ import annotations

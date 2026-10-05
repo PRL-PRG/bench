@@ -6,11 +6,8 @@
 # [tool.uv.sources]
 # bench = { path = "..", editable = true }
 # ///
-"""Two suites with different metrics, a per-suite `ByMetricSummary` each.
-
-Each suite gets its own `SummaryReporter` whose `ByMetricSummary` is
-scoped with `suite=...`. A `CompositeReporter` fans the run out to both.
-"""
+"""Two suites with different metrics, a per-suite `ByMetricSummary` each,
+narrowed with `.on_suite(...)` and joined with `&`."""
 
 import os
 

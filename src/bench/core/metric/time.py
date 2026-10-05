@@ -10,10 +10,7 @@ from bench.model.results import Sample
 
 
 class Time(Metric):
-    """Up to three time samples: `elapsed` (wall), `user`, `system` (s).
-
-    All are lower-is-better by default, override with `.higher_is_better()`.
-    """
+    """Wall-clock runtime as `elapsed` (s), lower-is-better."""
 
     def __init__(self) -> None:
         super().__init__("elapsed", "s", "lower better")

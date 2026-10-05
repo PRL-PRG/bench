@@ -14,11 +14,10 @@ Autodiscovers the four reportable suites (those whose `.bset` metric is
 `Success ... runtime=...` line per iteration to its logfile.
 
 The wrinkle is that runcpu writes its measurements to a logfile rather than to
-stdout, and reveals the path only at the end. The old `spec_monitor` polled for
-that file and tailed it while the process ran. Nothing needs to stream now, so
-this is just a `MetricSource`: a `(InvocationResult) -> str` that runs *after*
-the process exits, finds this run's log and hands its text to the metrics. Each
-`Regex` carries `iterate=True`, so the Nth `Success` line becomes `Iteration` N.
+stdout, and reveals the path only at the end. So the metrics read it through a
+`MetricSource`: a `(InvocationResult) -> str` that runs *after* the process
+exits, finds this run's log and returns its text. Each `RegexMetric` uses
+`iterate=True`, so the Nth `Success` line becomes `Iteration` N.
 
 Still sequential-only: `latest_run_log` picks the newest logfile, which would
 race if several runcpu processes wrote at once.

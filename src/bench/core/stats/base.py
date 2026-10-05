@@ -1,11 +1,5 @@
-"""Report -> Statistics -> view models: the numeric half of the analysis layer.
-
-`summarize(report)` reduces raw runs to a `Statistics` - one `Stat` per
-benchmark-variant x metric, holding the samples themselves. Every view is a
-`compute_*` query over that flat list returning a model of plain numbers, which
-`bench.summary` turns into console output. Comparing report files is
-`merge_reports` tagging each file as a `compare` axis and reusing the views.
-"""
+"""Report -> Statistics: `summarize` reduces a report to one `Stat` per
+benchmark variant and metric, which the `compute_*` views query."""
 
 from __future__ import annotations
 
@@ -120,10 +114,9 @@ class Counts:
 
 @dataclass(frozen=True, slots=True)
 class Statistics:
-    """A whole report reduced to `Stat`s, with the grouping the views query it by.
+    """A whole report reduced to `Stat`s, in the report's execution order.
 
-    Every filter returns a new `Statistics`; first-seen order is preserved
-    throughout, so the report's execution order drives the output order.
+    `group_by` results carry no `counts`; read those from the original.
     """
 
     stats: Sequence[Stat] = field(default_factory=list[Stat])
@@ -214,9 +207,8 @@ def summarize(report: Report) -> Statistics:
                 for s in it.samples:
                     add(id, "iteration", s)
 
-        # Whole-process samples - collected only if there are either no
-        # iteration samples or at least one of them is not warmup,
-        # i.e., all iteration samples are warmup -> run is warmup
+        # An execution whose every iteration is warmup is a warmup run, so its
+        # whole-process samples are dropped too.
         # FIXME: sync when (if ?) iteration/execution warmup split lands
         if ex.iterations and not measured:
             acc.warmup_runs += 1

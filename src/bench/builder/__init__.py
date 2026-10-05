@@ -1,4 +1,4 @@
-"""Builder DSL for benchmarks: Invocation, Metric, Policy, Benchmark, SuiteBuilder."""
+"""Builder DSL: the app, suite and benchmark builders and their defaults."""
 
 from bench.builder.app import (
     BenchAppBuilder,

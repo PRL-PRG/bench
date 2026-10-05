@@ -1,8 +1,4 @@
-"""Invocation: the pure atom of a benchmark run.
-
-An Invocation is a description of how to start one subprocess: command,
-working directory, environment, optional timeout, optional stdin payload.
-"""
+"""Invocation: how to start one subprocess, and its result."""
 
 from __future__ import annotations
 
@@ -35,15 +31,15 @@ class Invocation:
 class InvocationResult:
     """Outcome of running one Invocation.
 
-       `failure` is the human-readable reason a run is treated as failed, or
-       `None` for a success.
+    `failure` is the human-readable reason a run is treated as failed, or `None`
+    for a success.
 
     `returncode` conventions:
       0 ............. clean exit
       124 .......... timed out (coreutils `timeout(1)` convention)
-      any other > 0  process crash / non-zero exit
-      -1 ........... pre-execution failure (spawn errored before the process ran,
-                     no real exit code, `failure` set by `execute`)
+      other > 0 .... non-zero exit
+      -N ........... killed by signal N
+      -1 ........... also a spawn failure (no process ran; `failure` is set)
     """
 
     invocation: Invocation

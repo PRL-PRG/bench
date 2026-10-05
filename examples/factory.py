@@ -9,11 +9,10 @@
 """Factory: build benchmarks programmatically at materialization time.
 
 `.generator(fn)` registers a deferred `(ctx) -> [BenchmarkBuilder]` producer. It runs
-when the Runner materializes the suite, so the benchmark list can depend on
-`ctx` (CLI params) or anything computed at run time. SuiteBuilder defaults
-(`.with_cwd` / `.with_metric` / `.runs`) resolve at the same moment, so
-they reach factory-produced benchmarks too. Execution `--dry` to see what the
-factory expands to.
+when the app plans the suites, so the benchmark list can depend on `ctx.params`
+or anything computed at run time. Suite defaults (`.with_cwd` / `.with_metric` /
+`.with_runs`) reach generated benchmarks too. Run with `--dry` or `--list` to
+see what the generator expands to.
 """
 
 from bench import Time, bench, run, suite

@@ -179,8 +179,7 @@ def counts_cell(counts: Counts) -> Cell:
 
 
 def range_runs_cells(stat: Stat, scale: Scale) -> list[Cell]:
-    """`(min … max)` - the range (dropped for fewer than 2
-    samples) then the shared count suffix (see `counts_cell`)."""
+    """The `(min … max)` range cells, or none for fewer than 2 samples."""
     if stat.n >= 2:
         return [
             Cell(Span("("), Span(num(scale(stat.min)), "min")),

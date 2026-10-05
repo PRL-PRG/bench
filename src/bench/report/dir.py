@@ -58,7 +58,7 @@ class DirReporter(Reporter):
     `_`, or `dim=val,...` when it has none - by default, or one `dim=val`
     directory per dimension when constructed with `nested=True`. A plain
     benchmark has no `<variant>` level.
-    `<run>` is the execution's run number.
+    `<run>` is the execution's run number. `fingerprint.json` goes in `<out>`.
     """
 
     def __init__(

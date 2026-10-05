@@ -9,7 +9,7 @@ from typing import Any, NotRequired, TypedDict
 
 
 class SystemEnvironment(TypedDict):
-    """Machine facts at run time. `None` = unknown or not applicable here."""
+    """Machine facts at run time. A missing key means unknown or not applicable."""
 
     timestamp: str
     hostname: str

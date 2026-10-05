@@ -22,9 +22,9 @@ class CsvReporter(Reporter):
     fingerprint preamble.
 
     Schema: `suite, benchmark, run, <variant cols...>, failure, iteration,
-    metric, value, unit, lower_is_better, <sample extra cols...>`. Each run
-    contributes one  row per whole-process and per-iteration Sample. All runs
-    appear, warmup included.
+    warmup, metric, value, unit, lower_is_better, <sample extra cols...>`, one
+    row per whole-process and per-iteration Sample. All runs appear, warmup
+    included.
     """
 
     def __init__(

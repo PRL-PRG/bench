@@ -5,7 +5,7 @@ from pathlib import Path
 from bench.core.fingerprint.system.common import UnixSystemEnvironment
 from bench.io import read_bracketed, read_int, read_text, to_int
 
-# Filesystem locations of the Linux tuning knobs, shared with `bench.denoise` so
+# Filesystem locations of the Linux tuning knobs, shared with `bench.core.denoise` so
 # a path change is a one-file edit. The governor glob and turbo files are under
 # `CPU_DIR`; paranoid/swappiness/aslr under `/proc`; THP under the root.
 CPU_DIR = "sys/devices/system/cpu"

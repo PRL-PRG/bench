@@ -12,9 +12,8 @@ line per iteration:
 
     Bounce: iterations=1 runtime: 1234us
 
-The old `awfy_monitor` framed those lines into iterations by hand. A
-`Regex(..., iterate=True)` does the same job: it walks its matches in order and
-stamps each one with its iteration index, so match N lands in `Iteration` N.
+A `RegexMetric(..., iterate=True)` walks its matches in order and stamps each
+one with its iteration index, so match N lands in `Iteration` N.
 Lines that do not match (AWFY's totals and startup noise) are simply skipped.
 
 AWFY's harness has no warmup flag, so the JIT curve is *in* the data - which is
@@ -74,7 +73,7 @@ awfy = (
     .with_command(command)
     .with_cwd(lambda ctx: ctx.params.awfy)  # so AWFY's `import <bench>` resolves
     .with_metric(
-        # One Iteration per `runtime: <us>us` line - this replaces the monitor.
+        # One Iteration per `runtime: <us>us` line.
         RegexMetric(
             "runtime",
             r"runtime: (\d+)us",
