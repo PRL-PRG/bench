@@ -8,7 +8,7 @@ facts is not a machine description and is checked by nothing.
 
 from typing import Any
 
-from bench.core.diagnostic import run_checks
+from bench.core.diagnostic import Diagnostic, print_diagnostics, run_checks
 from bench.core.fingerprint import Fingerprint
 
 # The platform-independent facts `SystemProbe` always merges in. `run_checks`
@@ -115,3 +115,40 @@ def test_low_power_mode_is_high_with_pmset_fix():
 def test_high_load_warns():
     diags = run_checks(_fp(load_avg=[7.0, 6.0, 5.0], logical_cpus=8))
     assert [d.severity for d in diags] == ["warn"]
+
+
+# ----- print_diagnostics -------------------------------------------------------
+
+
+def test_print_diagnostics_prints_nothing_without_findings(capsys):
+    print_diagnostics([], "Checks")
+    assert capsys.readouterr().out == ""
+
+
+def test_print_diagnostics_tags_each_finding_by_severity_with_its_fix(capsys):
+    print_diagnostics(
+        [
+            Diagnostic("high", "On battery.", "connect AC power"),
+            Diagnostic("warn", "Turbo on."),
+        ],
+        "Checks",
+    )
+    lines = capsys.readouterr().out.splitlines()
+    assert "Checks:" in lines
+    assert any("✗" in ln and "On battery." in ln for ln in lines)
+    assert any("fix:" in ln and "connect AC power" in ln for ln in lines)
+    assert any("!!" in ln and "Turbo on." in ln for ln in lines)
+    # a finding without a fix gets no fix line
+    assert sum("fix:" in ln for ln in lines) == 1
+
+
+def test_print_diagnostics_does_not_interpret_markup_in_findings(capsys):
+    # Messages and fixes carry shell commands and sysfs paths; brackets in them
+    # are text, not rich markup.
+    print_diagnostics(
+        [Diagnostic("warn", "THP is '[madvise]'.", "echo [never] > enabled")],
+        "Checks",
+    )
+    out = capsys.readouterr().out
+    assert "'[madvise]'" in out
+    assert "echo [never] > enabled" in out

@@ -5,7 +5,7 @@ stamps `Sample.iteration` makes a single subprocess produce many `Iteration`s,
 which is exactly the "one process runs all the iterations and prints one
 measurement per line" pattern (a JIT-warming VM, Renaissance, AWFY, ReBench).
 
-`FloatPerLine` indexes per line by default; `Regex` needs `iterate=True`. What
+`FloatPerLine` indexes per line by default; `RegexMetric` needs `iterate=True`. What
 used to be a `HarnessMonitor` - framing the process output into iterations - is
 now the metric's own parsing, and a metric that must read something other than
 stdout/stderr (a logfile the harness wrote, a JSON dump) supplies its own
@@ -17,8 +17,6 @@ kept), and warmup counts whole executions rather than leading iterations.
 """
 
 from pathlib import Path
-
-import pytest
 
 from bench import (
     DryRunner,
@@ -34,6 +32,7 @@ from bench import (
 )
 from bench.builder.suite import plan
 from bench.core.metric import StdoutMetricSource
+from bench.core.stats import summarize
 from bench.params import Params
 
 
@@ -82,20 +81,24 @@ def test_one_execution_yields_one_iteration_per_line():
     assert report.failures == []
 
 
-@pytest.mark.skip(
-    reason="warmup counts whole executions, not leading iterations (see BUGS.md)"
-)
-def test_leading_iterations_can_be_marked_warmup():
-    s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0", "4.0", "5.0"), warmup=2)
+def test_warmup_counts_whole_executions_not_leading_iterations():
+    # `warmup=1` discards the first *process* with every iteration it delivered;
+    # the measured process keeps all of its iterations, including the leading
+    # ones a JIT would still be warming up in.
+    s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0"), warmup=1, runs=1)
     report = SequentialRunner().run(plan([s], Params()))
-    assert len(report.executions) == 1
-    assert [it.warmup for it in report.executions[0].iterations] == [
-        True,
-        True,
-        False,
-        False,
-        False,
-    ]
+    assert len(report.executions) == 2
+    warm, measured = report.executions
+    assert [it.warmup for it in warm.iterations] == [True, True, True]
+    assert [it.warmup for it in measured.iterations] == [False, False, False]
+    assert _values(measured) == [1.0, 2.0, 3.0]
+
+
+def test_warmup_iterations_stay_out_of_the_stats():
+    s = _iteration_suite(_echo_lines("1.0", "2.0", "3.0"), warmup=1, runs=1)
+    report = SequentialRunner().run(plan([s], Params()))
+    (stat,) = list(summarize(report))
+    assert stat.n == 3  # the measured process's iterations only
 
 
 def test_multi_metric_iterations_pair_up():
@@ -120,7 +123,7 @@ def test_multi_metric_iterations_pair_up():
 
 
 def test_regex_without_iterate_stays_a_process_sample():
-    # `iterate=False` (the Regex default) keeps every match a whole-process
+    # `iterate=False` (the RegexMetric default) keeps every match a whole-process
     # sample, so nothing is framed into iterations.
     cmd = ["sh", "-c", "echo 'x: 1.0'; echo 'x: 2.0'"]
     s = _iteration_suite(

@@ -35,26 +35,6 @@ def make_success(
     )
 
 
-def make_failure(
-    returncode: int = 1,
-    stdout: str = "",
-    stderr: str = "",
-    runtime: float = 0.0,
-    rusage=None,
-    failure: str | None = None,
-    **exe_kw,
-) -> InvocationResult:
-    return InvocationResult(
-        invocation=make_execution(**exe_kw),
-        returncode=returncode,
-        stdout=stdout,
-        stderr=stderr,
-        runtime=runtime,
-        rusage=rusage,
-        failure=failure if failure is not None else f"exit code {returncode}",
-    )
-
-
 def make_rusage(**fields) -> SimpleNamespace:
     defaults = {
         "ru_utime": 0.5,

@@ -1,7 +1,7 @@
 """Active denoise: minimize/restore/status against a (fake) sysfs tree.
 
-The knobs are Linux sysfs/proc files. The functions are rooted so the logic is
-exercised here against a writable fake tree (and naturally no-op where the
+The knobs are Linux sysfs/proc files. `Denoise` takes a `root`, so the logic is
+exercised here against a writable fake tree (and naturally no-ops where the
 files are absent, e.g. on macOS).
 """
 
@@ -79,14 +79,14 @@ def test_status_reads_present_knobs(tmp_path: Path):
     assert any("scaling_governor" in k and v == "powersave" for k, v in st.items())
 
 
-def test_session_restores_on_exception(tmp_path: Path):
+def test_context_manager_restores_on_exception(tmp_path: Path):
     _fake_tree(tmp_path)
     state = tmp_path / "state.json"
     gov = tmp_path / "sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 
     with pytest.raises(RuntimeError):
         with Denoise(root=tmp_path, state_path=state):
-            assert _read(gov) == "performance"  # minimized inside the session
+            assert _read(gov) == "performance"  # minimized inside the `with`
             raise RuntimeError("boom")
 
     assert _read(gov) == "powersave"  # restored despite the exception
@@ -104,7 +104,7 @@ def test_read_bracketed_extracts_selected_token(tmp_path: Path):
 
 def test_state_is_written_before_any_mutation(tmp_path: Path, monkeypatch):
     """Write-ahead: a crash during the apply loop still leaves a complete state
-    file, so `restore` can recover. (Old code wrote the state file last.)"""
+    file, so `restore` can recover."""
     _fake_tree(tmp_path)
     state = tmp_path / "state.json"
     swappiness = tmp_path / "proc/sys/vm/swappiness"

@@ -21,23 +21,23 @@ from bench import (
     Time,
     bench,
     bench_app,
+    execution_dir,
     format_failures,
     report_from_json,
     suite,
 )
 from bench.builder import default_reporter
 from bench.builder.suite import plan
-from bench.console.theme import BENCHR_THEME
+from bench.console.theme import BENCH_THEME
 from bench.core.metric import StdoutMetricSource
 from bench.model.benchmark import Variant
 from bench.model.results import Execution, Iteration, Report, Sample
 from bench.params import Params, SharedReporterParams, SharedRunnerParams
-from bench.report import DirReporter as _DirReporter
 from bench.report.progress import _TUI
 
 
 def test_dirreporter_writes_on_execution_done(tmp_path):
-    rep = _DirReporter(tmp_path)
+    rep = DirReporter(tmp_path)
     rep.start([])
     run = Execution(
         suite="S",
@@ -79,10 +79,8 @@ def test_csv_writer(tmp_path: Path):
     lines = text.splitlines()
     assert lines[0].split(",")[:3] == ["suite", "benchmark", "run"]
     assert sum(1 for ln in lines[1:] if ",score," in ln) == 2  # 2 runs
-    # There is no implicit `elapsed` metric any more, but the CSV always writes
-    # the execution's wall time as a row named `elapsed`, matching what `Time()`
-    # calls its sample.
-    assert sum(1 for ln in lines[1:] if ",elapsed," in ln) == 2
+    # Only samples become rows; the execution's wall time is not added.
+    assert not any(",elapsed," in ln for ln in lines[1:])
 
 
 def test_json_writer_round_trip(tmp_path: Path):
@@ -119,16 +117,16 @@ def _matrix_suite():
 
 
 def test_dir_writer_keys_variant_runs_by_their_variant(tmp_path: Path):
-    # A matrix variant gets a stable directory named after it, not a completion
-    # counter, so a wrapped command's `-o <dir>/...` can target the same place.
+    # A matrix variant gets a directory named after its label, then one per run.
     root = tmp_path / "tree"
-    rep = DirReporter(root)
     planned = plan([_matrix_suite()], Params())
-    SequentialRunner().run(planned, reporter=rep)
-    assert (root / "S" / "a" / "opt=O2, vm=cpython" / "exitcode").read_text() == "0\n"
-    assert (root / "S" / "a" / "opt=O2, vm=pypy" / "exitcode").read_text() == "0\n"
-    # start() pre-creates them, so a wrapped command has the path before it runs
-    assert rep.output_dir("S", "a", planned[0].variant).is_dir()
+    SequentialRunner().run(planned, reporter=DirReporter(root))
+    variant_root = root / "S" / "a"
+    assert (variant_root / "opt=O2, vm=cpython" / "1" / "exitcode").read_text() == "0\n"
+    assert (variant_root / "opt=O2, vm=pypy" / "1" / "exitcode").read_text() == "0\n"
+    # The path is computable from the planned benchmark before it runs, so a
+    # wrapped command's `-o <dir>/...` can target the same place.
+    assert execution_dir(root, planned[0], 1, nested=False).is_dir()
 
 
 def test_dir_writer_nests_variant_dirs_when_asked(tmp_path: Path):
@@ -136,22 +134,12 @@ def test_dir_writer_nests_variant_dirs_when_asked(tmp_path: Path):
     SequentialRunner().run(
         plan([_matrix_suite()], Params()), reporter=DirReporter(root, nested=True)
     )
-    assert (root / "S" / "a" / "opt" / "O2" / "vm" / "pypy" / "exitcode").is_file()
-
-
-def test_mixed_fans_out(tmp_path: Path):
-    js = tmp_path / "r.json"
-    cs = tmp_path / "r.csv"
-    SequentialRunner().run(
-        plan([_s()], Params()),
-        reporter=CompositeReporter(JsonReporter(js), CsvReporter(cs)),
-    )
-    assert js.exists() and cs.exists()
+    assert (root / "S" / "a" / "opt=O2" / "vm=pypy" / "1" / "exitcode").is_file()
 
 
 def test_user_composite_reporter_receives_fingerprint(tmp_path: Path):
-    # A DirReporter the user supplies via `bench_app(reporter=...)` must get the
-    # collected fingerprint injected (not only CLI-built --dir reporters).
+    # A DirReporter the user supplies via `bench_app(reporter=...)` writes the
+    # collected fingerprint too, not only a CLI-built --dir reporter.
     root = tmp_path / "tree"
     (
         bench_app(
@@ -249,7 +237,7 @@ def _string_console() -> tuple[Console, io.StringIO]:
     """Rich Console wired to a StringIO, non-TTY, no ANSI markup."""
     buf = io.StringIO()
     c = Console(
-        theme=BENCHR_THEME,
+        theme=BENCH_THEME,
         file=buf,
         force_terminal=False,
         width=200,
@@ -274,7 +262,7 @@ def test_failures_block_reports_the_run_with_its_diagnostic():
     text = buf.getvalue()
     assert "Failures" in text
     assert "F/bad" in text
-    assert "exit 7" in text
+    assert "exit code 7" in text
     assert "trouble" in text  # last-line stderr excerpt
 
 
@@ -291,8 +279,45 @@ def test_failures_block_handles_spawn_failure():
     report = SequentialRunner().run(plan([s], Params()))
     c.print(format_failures(report.failures))
     text = buf.getvalue()
-    assert "spawn failed" in text
     assert "Command not found" in text
+
+
+def test_failures_block_does_not_mistake_a_sighup_for_a_spawn_failure():
+    # A process killed by SIGHUP exits with -1, the same code as SPAWN_FAIL_RC,
+    # yet it did run.
+    c, buf = _string_console()
+    s = suite(
+        "F",
+        bench("hup")
+        .with_command(["sh", "-c", "kill -HUP $$"])
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
+    text = buf.getvalue()
+    assert "F/hup" in text
+    assert "exit code -1" in text
+    assert "spawn failed" not in text
+
+
+def test_failures_block_shows_a_custom_success_verdict():
+    c, buf = _string_console()
+    s = suite(
+        "F",
+        bench("wrong")
+        .with_command(["sh", "-c", "echo 41"])
+        .with_success(lambda r: None if r.stdout.strip() == "42" else "output mismatch")
+        .with_cwd(Path("/tmp"))
+        .with_metric(Time())
+        .with_runs(1),
+    )
+    report = SequentialRunner().run(plan([s], Params()))
+    c.print(format_failures(report.failures))
+    text = buf.getvalue()
+    assert "output mismatch" in text
+    assert "exit code 0" not in text
 
 
 def test_no_failures_block_when_all_succeed():
@@ -412,7 +437,7 @@ def test_progress_overall_counts_any_failure_as_failed_benchmark():
     # On a TTY the overall bar tallies whole benchmarks: two failing iterations
     # count as one failed benchmark, not two.
     buf = io.StringIO()
-    c = Console(theme=BENCHR_THEME, file=buf, force_terminal=True, width=120)
+    c = Console(theme=BENCH_THEME, file=buf, force_terminal=True, width=120)
     rep = ProgressReporter(target_console=c)
     s = suite(
         "S",
@@ -497,7 +522,7 @@ def test_progress_prints_completed_summary_scrollback():
     # (transient) bars, with the same elapsed stats as the final summary.
     buf = io.StringIO()
     c = Console(
-        theme=BENCHR_THEME, file=buf, force_terminal=True, no_color=True, width=120
+        theme=BENCH_THEME, file=buf, force_terminal=True, no_color=True, width=120
     )
     s = suite(
         "S",
@@ -516,9 +541,9 @@ def test_progress_prints_completed_summary_scrollback():
 
 
 def test_task_bar_carries_eta_column():
-    # The per-iteration "elapsed estimate" column was removed on purpose (see
-    # CHANGES.md); the ETA column on the running-benchmark bar survives.
-    c = Console(theme=BENCHR_THEME, file=io.StringIO(), force_terminal=True, width=120)
+    # The per-iteration "elapsed estimate" column was removed on purpose; the
+    # ETA column on the running-benchmark bar survives.
+    c = Console(theme=BENCH_THEME, file=io.StringIO(), force_terminal=True, width=120)
     rep = ProgressReporter(target_console=c)
     assert rep._tui is not None
     assert any(

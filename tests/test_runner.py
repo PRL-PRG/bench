@@ -422,12 +422,12 @@ def test_relative_cmd_resolves_independently_of_subprocess_cwd(
     assert all(s.metric == "elapsed" for s in samples)
 
 
-def test_default_metric_is_time():
+def test_no_metric_configured_emits_no_samples():
+    # There is no implicit metric - not even `elapsed`.
     s = suite("s", bench("x").with_command(["true"]))
     report = SequentialRunner().run(plan([s], Params()))
-    # No metric configured: the refactored default is an empty metrics tuple
-    # (DEFAULTS.metrics == ()), so nothing is emitted - not even `elapsed`.
     assert report.executions[0].process_samples == []
+    assert report.executions[0].iterations == []
 
 
 def test_plan_default_params():

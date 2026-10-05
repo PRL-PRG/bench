@@ -61,7 +61,7 @@ def _planned(runs, *, warmup=0, outlier_detection=None):
     return plan([s], Params())[0]
 
 
-def test_records_run_per_slot(monkeypatch):
+def test_records_run_per_slot():
     rep = _Collect()
     ctrl = _FakeController([1, 2, 3])
     executions = ctrl.run_benchmark(_planned(FixedRuns(3)), rep)

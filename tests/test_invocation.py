@@ -1,11 +1,76 @@
 """Invocation, run identifiers, and streaming spawn."""
 
+import os
+import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from bench import Invocation
-from bench.core.process import spawn_streaming
+from bench.core.process import execute, spawn_streaming
 from bench.model.benchmark import Variant, format_identifier
+from bench.model.invocation import TIMEOUT_RC
+
+linux_only = pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="reads /proc"
+)
+
+
+def _is_gone(pid: int) -> bool:
+    """True once `pid` no longer runs. A killed orphan may linger briefly as a
+    zombie until its new parent reaps it, which counts as gone."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except FileNotFoundError:
+        return True
+    return stat.rsplit(")", 1)[1].split()[0] == "Z"
+
+
+@linux_only
+def test_execute_timeout_kills_the_whole_process_group(tmp_path: Path):
+    # The `sh -c` wrapper is the direct child; the workload is its child. A
+    # timeout must take both down, not orphan the workload.
+    pidfile = tmp_path / "pid"
+    exe = Invocation(
+        command=("sh", "-c", f"sleep 30 & echo $! > {pidfile}; wait"),
+        cwd=tmp_path,
+        timeout=0.3,
+        inherit_env=True,
+    )
+    res = execute(exe)
+    assert res.returncode == TIMEOUT_RC
+
+    workload = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while not _is_gone(workload) and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert _is_gone(workload)
+
+
+@linux_only
+def test_execute_without_stdin_gives_the_child_devnull():
+    # `stdin=None` means "no stdin", not "inherit the terminal's".
+    exe = Invocation(
+        command=("readlink", "/proc/self/fd/0"),
+        cwd=Path("/tmp"),
+        inherit_env=True,
+    )
+    res = execute(exe)
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "/dev/null"
+
+
+def test_execute_feeds_the_given_stdin():
+    exe = Invocation(
+        command=("cat",), cwd=Path("/tmp"), stdin=b"hello\n", inherit_env=True
+    )
+    res = execute(exe)
+    assert res.stdout == "hello\n"
 
 
 def test_format_identifier():

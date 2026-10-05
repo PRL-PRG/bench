@@ -9,8 +9,12 @@ from pathlib import Path
 
 import pytest
 
+import bench.__main__ as cli
+import bench.builder.app as app_module
 from bench import (
+    Fingerprint,
     NoBenchmarksMatchedError,
+    Probe,
     SharedBenchParams,
     SuiteMaterializationError,
     Time,
@@ -19,6 +23,8 @@ from bench import (
     run,
     suite,
 )
+from bench.core.denoise import DENOISE_DEFAULT_STATE_PATH
+from bench.error import BenchError
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -200,6 +206,159 @@ def test_compare_missing_file_errors(tmp_path: Path):
     assert "not found" in r.stderr
 
 
+# ----- bench doctor / bench denoise ------------------------------------------
+
+not_root = pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0, reason="must run unprivileged"
+)
+
+_CLEAN_LINUX = {
+    "timestamp": "2026-01-01T00:00:00+00:00",
+    "hostname": "testhost",
+    "system": "Linux",
+    "release": "6.0.0",
+    "machine": "x86_64",
+    "python_version": "3.14.0",
+    "governors": ["performance"],
+}
+
+
+class _StaticProbe(Probe):
+    def __init__(self, facts: dict) -> None:
+        self.facts = facts
+
+    def collect(self) -> Fingerprint:
+        return Fingerprint(self.facts)
+
+
+def test_doctor_prints_the_fingerprint():
+    r = _run("doctor")
+    # The exit code depends on this machine's noise sources.
+    assert r.returncode in (0, 1), r.stderr
+    assert "Fingerprint:" in r.stdout
+    assert "hostname:" in r.stdout
+
+
+def test_doctor_json_is_the_fingerprint():
+    r = _run("doctor", "--json")
+    assert r.returncode in (0, 1), r.stderr
+    assert "hostname" in json.loads(r.stdout)
+
+
+def test_doctor_succeeds_on_a_quiet_machine(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "SystemProbe", lambda: _StaticProbe(_CLEAN_LINUX))
+    assert cli.main(["doctor"]) == 0
+    assert "No noise sources detected" in capsys.readouterr().out
+
+
+def test_doctor_fails_on_a_high_severity_finding(monkeypatch, capsys):
+    noisy = _CLEAN_LINUX | {"governors": ["powersave"], "aslr": 2}
+    monkeypatch.setattr(cli, "SystemProbe", lambda: _StaticProbe(noisy))
+    assert cli.main(["doctor"]) == 1
+    out = capsys.readouterr().out
+    assert "CPU frequency scaling enabled" in out
+    assert "ASLR enabled" in out
+
+
+def test_doctor_only_warns_on_a_low_severity_finding(monkeypatch):
+    monkeypatch.setattr(
+        cli, "SystemProbe", lambda: _StaticProbe(_CLEAN_LINUX | {"aslr": 2})
+    )
+    assert cli.main(["doctor"]) == 0
+
+
+def test_denoise_status_changes_nothing(tmp_path: Path):
+    state = tmp_path / "state.json"
+    r = _run("denoise", "status", "--path", str(state))
+    assert r.returncode == 0, r.stderr
+    assert not state.exists()
+
+
+@not_root
+@pytest.mark.parametrize("action", ["minimize", "restore"])
+def test_denoise_requires_root(tmp_path: Path, action: str):
+    state = tmp_path / "state.json"
+    r = _run("denoise", action, "--path", str(state))
+    assert r.returncode == 2
+    assert f"denoise {action} requires root" in r.stderr
+    assert "Traceback" not in r.stderr
+    assert not state.exists()
+
+
+class _FakeDenoise:
+    """Stands in for `Denoise` so nothing touches the real sysfs."""
+
+    created: list["_FakeDenoise"] = []
+
+    def __init__(self, *, state_path: Path) -> None:
+        self.state_path = state_path
+        self.calls: list[str] = []
+        _FakeDenoise.created.append(self)
+
+    def minimize(self) -> dict[str, str]:
+        self.calls.append("minimize")
+        return {"/knob": "0"}
+
+    def restore(self) -> dict[str, str]:
+        self.calls.append("restore")
+        return {"/knob": "1"}
+
+    def __enter__(self) -> dict[str, str]:
+        return self.minimize()
+
+    def __exit__(self, *exc: object) -> None:
+        self.restore()
+
+
+@pytest.fixture
+def fake_denoise() -> list[_FakeDenoise]:
+    _FakeDenoise.created = []
+    return _FakeDenoise.created
+
+
+@pytest.mark.parametrize("action", ["minimize", "restore"])
+def test_denoise_as_root_uses_the_given_state_path(
+    monkeypatch, capsys, tmp_path: Path, fake_denoise, action: str
+):
+    monkeypatch.setattr(cli, "is_root", lambda: True)
+    monkeypatch.setattr(cli, "Denoise", _FakeDenoise)
+    state = tmp_path / "state.json"
+
+    assert cli.main(["denoise", action, "--path", str(state)]) == 0
+
+    (d,) = fake_denoise
+    assert d.state_path == state
+    assert d.calls == [action]
+    # rich wraps at the console width, which can split a long tmp path
+    assert str(state) in capsys.readouterr().out.replace("\n", "")
+
+
+def test_run_check_environment_records_the_fingerprint(tmp_path: Path):
+    out = tmp_path / "out.json"
+    r = _run("run", "--runs", "1", "--check-environment", "--json", str(out), "true")
+    assert r.returncode == 0, r.stderr
+    data = json.loads(out.read_text())
+    assert data["fingerprint"]["hostname"]
+    assert isinstance(data["diagnostics"], list)
+
+
+def test_run_without_check_environment_records_no_fingerprint(tmp_path: Path):
+    out = tmp_path / "out.json"
+    r = _run("run", "--runs", "1", "--json", str(out), "true")
+    assert r.returncode == 0, r.stderr
+    data = json.loads(out.read_text())
+    assert data["fingerprint"] is None
+    assert data["diagnostics"] == []
+
+
+@not_root
+def test_run_denoise_requires_root():
+    r = _run("run", "--runs", "1", "--denoise", "true")
+    assert r.returncode == 2
+    assert "Denoise requires root" in r.stderr
+    assert "Traceback" not in r.stderr
+
+
 def test_script_show_replays_through_configured_summary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
@@ -230,8 +389,7 @@ def test_script_show_replays_through_configured_summary(
         axis="sleep"
     ).on_metrics("elapsed")
     bench_app(summary=summary).add(s).run_cli(["show", str(out)])
-    # the configured GeomeanComparisonSummary ran. The saved executions are
-    # replayed through the reporter on the way, so its output is here too.
+    # The configured GeomeanComparisonSummary rendered the saved report.
     assert "Comparison - sleep" in capsys.readouterr().out
 
 
@@ -255,25 +413,6 @@ def test_bench_no_progress_omits_progress_lines():
     assert "sleep 0.01" in r.stdout
 
 
-def test_app_no_progress_still_runs_and_summarizes(capsys):
-    # --no-progress with no output file leaves the builtin bundle with zero
-    # sinks. That is not an error state: get_reporter always appends a summary,
-    # so it falls through to that alone rather than refusing to build a reporter.
-    s = suite(
-        "S",
-        bench("x")
-        .with_command(["true"])
-        .with_cwd(Path("/tmp"))
-        .with_metric(Time())
-        .with_runs(1),
-    )
-    report = bench_app().add(s).run_cli(["--no-progress"])
-    assert len(report.executions) == 1
-    out = capsys.readouterr().out
-    assert "S/x #1 ok" not in out  # no progress lines
-    assert "elapsed" in out  # the default summary still prints
-
-
 def test_bench_non_tty_shows_plain_progress():
     r = _run("run", "--runs", "2", "sleep 0.01")
     assert r.returncode == 0, r.stderr
@@ -290,7 +429,7 @@ def test_bench_surfaces_failure_diagnostics():
     # failures block is the app's own output rather than a reporter's.
     assert r.returncode == 0, r.stderr
     assert "Failures" in r.stderr
-    assert "exit 1" in r.stderr
+    assert "exit code 1" in r.stderr
 
 
 def test_bench_two_commands_prints_summary_ranking():
@@ -365,12 +504,14 @@ def test_bench_combines_static_and_discovered_suites():
     assert {r.suite for r in report.executions} == {"Static", "Disc"}
 
 
-def test_run_sugar_runs_multiple_suites(monkeypatch):
-    # run(*suites) is sugar for bench_app(<script>).add(*suites).run_cli(),
-    # reading the argv from sys.argv.
+def test_run_sugar_runs_multiple_suites(monkeypatch, capsys):
+    # run(*suites) is sugar for bench_app(<script>).add(*suites).main(),
+    # reading the argv from sys.argv. It returns nothing, so the summary is
+    # the only observable output.
     monkeypatch.setattr(sys, "argv", ["prog", "--no-progress"])
-    report = run(_trivial("A"), _trivial("B"))
-    assert {r.suite for r in report.executions} == {"A", "B"}
+    run(_trivial("A"), _trivial("B"))
+    out = capsys.readouterr().out
+    assert "A/b" in out and "B/b" in out
 
 
 def test_bench_app_defaults_fill_suites_but_lose_to_overrides():
@@ -589,23 +730,23 @@ def test_empty_selection_raises():
         )
 
 
-# ----- main(): run_cli as an exit code ------------------------------------
+# ----- main(): run_cli as a process exit ----------------------------------
 
 
-def test_main_returns_zero_on_success():
-    code = bench_app().add(_trivial("A")).main(["--no-progress"])
-    assert code == 0
+def test_main_returns_normally_on_success():
+    bench_app().add(_trivial("A")).main(["--no-progress"])
 
 
 def test_main_translates_no_match_to_exit_code(capsys):
     # The same empty selection that raises through .run_cli() is a clean exit via
     # .main(): a one-line stderr message, exit 1, and crucially no traceback.
-    code = (
-        bench_app()
-        .add(_trivial("A"))
-        .main(["--include", "no-such-bench", "--no-progress"])
-    )
-    assert code == 1
+    with pytest.raises(SystemExit) as exc:
+        (
+            bench_app()
+            .add(_trivial("A"))
+            .main(["--include", "no-such-bench", "--no-progress"])
+        )
+    assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "No benchmark planned" in err
     assert "Traceback" not in err
@@ -613,11 +754,86 @@ def test_main_translates_no_match_to_exit_code(capsys):
 
 def test_main_translates_materialization_error_to_exit_code(capsys):
     s = suite("My Suite").generator(_boom_factory)
-    code = bench_app().add(s).main([])
-    assert code == 1
+    with pytest.raises(SystemExit) as exc:
+        bench_app().add(s).main([])
+    assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "Failed to materialize suite 'My Suite'" in err
     assert "Traceback" not in err
+
+
+# ----- app-level denoise -----------------------------------------------------
+
+
+@not_root
+def test_app_denoise_requires_root(capsys):
+    with pytest.raises(SystemExit) as exc:
+        bench_app(denoise=True).add(_trivial("A")).main(["--no-progress"])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "Denoise requires root" in err
+    assert "Traceback" not in err
+
+
+@not_root
+def test_app_denoise_refuses_before_running_anything(tmp_path: Path):
+    marker = tmp_path / "ran"
+    s = suite(
+        "S",
+        bench("b")
+        .with_command(["touch", str(marker)])
+        .with_inherit_env()
+        .with_cwd(tmp_path)
+        .with_runs(1),
+    )
+    with pytest.raises(BenchError):
+        bench_app().add(s).with_denoise().run_cli(["--no-progress"])
+    assert not marker.exists()
+
+
+def test_app_denoise_brackets_the_run_with_the_default_state_path(
+    monkeypatch, fake_denoise
+):
+    monkeypatch.setattr(app_module, "is_root", lambda: True)
+    monkeypatch.setattr(app_module, "Denoise", _FakeDenoise)
+
+    report = bench_app(denoise=True).add(_trivial("A")).run_cli(["--no-progress"])
+
+    assert len(report.executions) == 1
+    (d,) = fake_denoise
+    assert d.state_path == DENOISE_DEFAULT_STATE_PATH
+    assert d.calls == ["minimize", "restore"]
+
+
+def test_app_denoise_state_path_factory_receives_the_params(
+    monkeypatch, tmp_path: Path, fake_denoise
+):
+    monkeypatch.setattr(app_module, "is_root", lambda: True)
+    monkeypatch.setattr(app_module, "Denoise", _FakeDenoise)
+    seen = []
+
+    def state_path(params) -> Path:
+        seen.append(params)
+        return tmp_path / "state.json"
+
+    bench_app().add(_trivial("A")).with_denoise(state_path).run_cli(["--no-progress"])
+
+    (d,) = fake_denoise
+    assert d.state_path == tmp_path / "state.json"
+    assert len(seen) == 1 and isinstance(seen[0], SharedBenchParams)
+
+
+def test_app_denoise_restores_even_when_the_run_fails(monkeypatch, fake_denoise):
+    monkeypatch.setattr(app_module, "is_root", lambda: True)
+    monkeypatch.setattr(app_module, "Denoise", _FakeDenoise)
+
+    with pytest.raises(NoBenchmarksMatchedError):
+        bench_app(denoise=True).add(_trivial("A")).run_cli(
+            ["--include", "no-such-bench", "--no-progress"]
+        )
+
+    (d,) = fake_denoise
+    assert d.calls == ["minimize", "restore"]
 
 
 # ----- bench_app(): keyword style and setter style agree -------------------

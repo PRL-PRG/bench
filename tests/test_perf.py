@@ -12,12 +12,17 @@ from pathlib import Path
 import pytest
 from conftest import make_success
 
+import bench.perf as perf_module
+import bench.runner.controller as controller_module
 from bench import (
+    Invocation,
+    InvocationResult,
     Params,
     PerfRecord,
     PerfStat,
     Sample,
     bench,
+    execution_dir,
     suite,
 )
 from bench.builder.suite import plan
@@ -179,6 +184,72 @@ def test_read_recording_without_frames_reports_only_the_size(tmp_path: Path):
         Sample(metric="perf_data_size", value=10.0, unit="B")
     ]
     assert not (tmp_path / "f.csv").exists()
+
+
+def _fake_perf_record(monkeypatch, *, returncode: int = 0) -> list[Invocation]:
+    """Replace the process spawn with one that writes the `-o` recording perf
+    would have written, and records every invocation it was handed."""
+    seen: list[Invocation] = []
+
+    def execute(invocation: Invocation) -> InvocationResult:
+        seen.append(invocation)
+        command = list(invocation.command)
+        Path(command[command.index("-o") + 1]).write_bytes(b"0123456789")
+        return InvocationResult(invocation, returncode=returncode, runtime=0.1)
+
+    monkeypatch.setattr(controller_module, "execute", execute)
+    return seen
+
+
+def test_perf_record_wraps_the_command_and_records_into_the_execution_dir(
+    monkeypatch, tmp_path: Path
+):
+    seen = _fake_perf_record(monkeypatch)
+    recorder = PerfRecord(tmp_path, frames=False)
+    b = _planned(recorder)
+
+    execution = recorder.execute_benchmark(b, 1, False)
+
+    folder = execution_dir(tmp_path, b, 1, nested=False)
+    (invocation,) = seen
+    assert list(invocation.command) == [
+        *recorder.record_prefix(folder / "perf.data"),
+        "true",
+    ]
+    assert (folder / "perf.data").is_file()
+    assert Sample(metric="perf_data_size", value=10.0, unit="B") in (
+        execution.process_samples
+    )
+
+
+def test_perf_record_reads_frames_from_perf_script(monkeypatch, tmp_path: Path):
+    _fake_perf_record(monkeypatch)
+    monkeypatch.setattr(
+        perf_module,
+        "execute",
+        lambda invocation: InvocationResult(
+            invocation, returncode=0, runtime=0.1, stdout=SCRIPT_OUT
+        ),
+    )
+    recorder = PerfRecord(tmp_path)
+    b = _planned(recorder)
+
+    execution = recorder.execute_benchmark(b, 1, False)
+
+    samples = {s.metric: s.value for s in execution.process_samples}
+    assert samples["perf_samples"] == 2.0
+    assert samples["perf_frames"] == 3.0
+    assert (execution_dir(tmp_path, b, 1, nested=False) / "perf-frames.csv").is_file()
+
+
+def test_perf_record_adds_nothing_to_a_failed_execution(monkeypatch, tmp_path: Path):
+    _fake_perf_record(monkeypatch, returncode=1)
+    recorder = PerfRecord(tmp_path, frames=False)
+
+    execution = recorder.execute_benchmark(_planned(recorder), 1, False)
+
+    assert execution.is_failure()
+    assert not any(s.metric.startswith("perf_") for s in execution.process_samples)
 
 
 # ----- perf script -> per-frame CSV -----------------------------------------

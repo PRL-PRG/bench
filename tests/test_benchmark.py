@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from conftest import make_success
 
 from bench import FixedRuns, FloatPerLine, bench, suite
 from bench.core.metric import StderrMetricSource, StdoutMetricSource
@@ -96,14 +97,16 @@ def test_with_metric_takes_several_in_one_call():
     assert len(b.metrics) == 2
 
 
-def test_add_metric_appends_with_source():
+def test_with_metric_keeps_each_metrics_source():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="ms"))
-        .with_metric(FloatPerLine(StderrMetricSource, "runtime", unit="s"))
+        .with_metric(FloatPerLine(StdoutMetricSource, "out", unit="ms"))
+        .with_metric(FloatPerLine(StderrMetricSource, "err", unit="s"))
     )
-    assert len(b.metrics) == 2
+    result = make_success(stdout="1.5\n", stderr="2.5\n")
+    samples = [s for m in b.metrics for s in m.process(result)]
+    assert [(s.metric, s.value) for s in samples] == [("out", 1.5), ("err", 2.5)]
 
 
 def test_with_matrix_accumulates_dimensions():

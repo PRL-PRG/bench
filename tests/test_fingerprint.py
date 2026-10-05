@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 
+from bench import bench, bench_app, suite
 from bench.core.fingerprint import (
     BenchVersionProbe,
     CompositeProbe,
@@ -30,6 +31,7 @@ from bench.core.fingerprint import (
 from bench.core.fingerprint.system.common import base, is_system_environment
 from bench.core.fingerprint.system.linux import collect_linux
 from bench.core.fingerprint.system.macos import _sysctl_run, collect_macos
+from bench.error import BenchError
 
 needs_git = pytest.mark.skipif(
     shutil.which("git") is None, reason="requires a git binary"
@@ -154,8 +156,9 @@ def test_git_probe_collects_nothing_outside_a_repository(tmp_path: Path):
 @needs_git
 def test_git_probe_raises_outside_a_repository_by_default(tmp_path: Path):
     # A probe that silently records nothing hides a mis-pointed folder, so the
-    # failure is opt-in via allow_failure.
-    with pytest.raises(ValueError, match="Git failed to run"):
+    # failure is opt-in via allow_failure. A BenchError, so the app reports it
+    # without a traceback.
+    with pytest.raises(BenchError, match="Git failed to run"):
         GitProbe(tmp_path, key="k").collect()
 
 
@@ -165,10 +168,35 @@ def test_git_probe_key_is_configurable(tmp_path: Path):
     )
 
 
+@needs_git
+def test_a_failing_git_probe_is_a_clean_app_error(tmp_path: Path, capsys):
+    app = bench_app(probe=GitProbe(tmp_path)).add(
+        suite("S", bench("b").with_command(["true"]).with_cwd(tmp_path))
+    )
+    with pytest.raises(SystemExit) as exc:
+        app.main(["--no-progress"])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Git failed to run" in err
+    assert "Traceback" not in err
+
+
 def test_bench_version_probe_reports_a_version():
     fp = BenchVersionProbe().collect()
     assert fp is not None
     assert fp["bench version"]
+
+
+@needs_git
+def test_bench_version_probe_works_outside_a_git_checkout(tmp_path: Path):
+    # An installed bench is not a git checkout; the commit is then simply absent.
+    probe = BenchVersionProbe()
+    assert probe.git_probe is not None
+    probe.git_probe.folder = tmp_path
+    fp = probe.collect()
+    assert fp is not None
+    assert fp["bench version"]
+    assert "bench commit" not in fp
 
 
 def test_collect_linux_parses_sysfs(tmp_path: Path):

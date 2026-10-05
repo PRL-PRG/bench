@@ -17,7 +17,7 @@ from bench import (
     Sample,
     format_failures,
 )
-from bench.console.theme import BENCHR_THEME
+from bench.console.theme import BENCH_THEME
 from bench.core.stats import Statistics, summarize
 from bench.model.benchmark import Variant
 from bench.model.invocation import SPAWN_FAIL_RC, TIMEOUT_RC
@@ -130,7 +130,7 @@ def _render(renderable: RenderableType) -> str:
     """The text a real console would print. The summaries return renderables, so
     the table layout (and any markup the theme swallows) only shows up here."""
     buf = StringIO()
-    Console(file=buf, force_terminal=False, width=200, theme=BENCHR_THEME).print(
+    Console(file=buf, force_terminal=False, width=200, theme=BENCH_THEME).print(
         renderable
     )
     return buf.getvalue()
@@ -462,6 +462,56 @@ def test_composed_summary_renders_every_part():
     assert "Comparison - interp" in out  # GeomeanComparisonSummary
 
 
+# ----- on_metrics / on_suite -------------------------------------------------
+
+
+def _two_metric_report() -> Report:
+    return Report(
+        executions=[
+            _ok(
+                i,
+                samples=[
+                    _smp("elapsed", 0.5),
+                    _smp("elapsed_extra", 0.7),
+                ],
+            )
+            for i in range(1, 4)
+        ]
+    )
+
+
+def test_on_metrics_list_keeps_only_the_named_metrics():
+    out = _render(
+        ByBenchmarkMetricSummary().on_metrics(["elapsed_extra"])(
+            _data(_two_metric_report())
+        )
+    )
+    assert "(elapsed_extra)" in out
+    assert "(elapsed)" not in out
+
+
+def test_on_metrics_string_matches_the_whole_metric_name():
+    out = _render(
+        ByBenchmarkMetricSummary().on_metrics("elapsed_extra")(
+            _data(_two_metric_report())
+        )
+    )
+    assert "(elapsed_extra)" in out
+    assert "(elapsed)" not in out
+
+
+def test_on_suite_keeps_only_that_suite():
+    r = Report(
+        executions=[
+            *[_ok(i, suite="A", samples=[_smp("elapsed", 0.5)]) for i in range(1, 4)],
+            *[_ok(i, suite="B", samples=[_smp("elapsed", 0.5)]) for i in range(1, 4)],
+        ]
+    )
+    out = _render(ByBenchmarkMetricSummary().on_suite("A")(_data(r)))
+    assert "A/b" in out
+    assert "B/b" not in out
+
+
 # ----- format_failures -------------------------------------------------------
 
 
@@ -482,25 +532,28 @@ def test_format_failures_names_every_failed_run_and_its_verdict():
     out = _render(
         format_failures(
             [
-                _failed("bad", returncode=7, failure="exit 7", message="trouble"),
+                _failed("bad", returncode=7, failure="exit code 7", message="trouble"),
                 _failed(
                     "hangs", returncode=TIMEOUT_RC, failure="timeout", message="killed"
                 ),
                 _failed(
                     "missing",
                     returncode=SPAWN_FAIL_RC,
-                    failure="No such file or directory",
+                    failure="spawn failed: No such file or directory",
                 ),
+                _failed("wrong", returncode=0, failure="output mismatch"),
             ]
         )
     )
     assert "Failures" in out
-    assert "S/bad" in out and "exit 7" in out and "trouble" in out
-    assert "timeout (exit 124)" in out and "killed" in out
-    assert "spawn failed" in out and "No such file or directory" in out
+    assert "S/bad" in out and "exit code 7" in out and "trouble" in out
+    assert "timeout" in out and "killed" in out
+    assert "spawn failed: No such file or directory" in out
     assert "(no output)" in out  # the spawn failure carried no message
+    # a custom success verdict is shown as is, not as the clean exit code
+    assert "output mismatch" in out and "exit 0" not in out
     # one line per failure, not one run-together line
-    assert len([ln for ln in out.splitlines() if "✗" in ln]) == 3
+    assert len([ln for ln in out.splitlines() if "✗" in ln]) == 4
 
 
 def test_format_failures_is_empty_without_failures():

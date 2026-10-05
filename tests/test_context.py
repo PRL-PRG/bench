@@ -7,7 +7,10 @@ from typing import Any
 
 import pytest
 
+from bench import bench, suite
 from bench.builder import Context, Data
+from bench.builder.benchmark import BenchmarkBuilder
+from bench.builder.suite import SuiteContext
 from bench.params import (
     Params,
     ParamsGroup,
@@ -108,12 +111,22 @@ def test_context_data_attribute_access():
         _ = ctx.data.nope
 
 
-def test_context_suite_level_has_no_benchmark_or_data():
-    # At suite level (factories) benchmark is None and the data is empty.
-    ctx = _ctx(benchmark=None, data=Data())
-    assert ctx.benchmark is None
-    with pytest.raises(AttributeError):
-        _ = ctx.data.vm
+def test_suite_generators_receive_a_suite_context_without_benchmark_or_data():
+    # Generators run before any benchmark exists, so they get the params and
+    # the resolved suite name only.
+    seen: list[SuiteContext[Params]] = []
+
+    def generate(ctx: SuiteContext[Params]) -> list[BenchmarkBuilder]:
+        seen.append(ctx)
+        return [bench("b").with_command(["true"])]
+
+    params = Params()
+    suite("S").generator(generate).materialize(params)
+
+    (ctx,) = seen
+    assert isinstance(ctx, SuiteContext)
+    assert ctx.params is params and ctx.suite == "S"
+    assert not hasattr(ctx, "benchmark") and not hasattr(ctx, "data")
 
 
 # ----- add_params extensions --------------------------------------

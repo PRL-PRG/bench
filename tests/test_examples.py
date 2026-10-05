@@ -13,11 +13,21 @@ Two layers, both parametrized over the top-level ``examples/*.py``:
 
 The ``run`` layer only asserts a clean exit, not "zero failures": some examples
 (``failure_handling.py``) record benchmark failures on purpose, and the process
-still exits 0. The ``workloads/`` helpers, the ``external/`` examples (which need
-real binaries), and ``hyperfine_like.sh`` (a CLI-usage snippet) are excluded.
+still exits 0. The ``workloads/`` helpers and ``hyperfine_like.sh`` (a CLI-usage
+snippet) are excluded.
+
+The ``tutorial/`` scripts benchmark VMs this machine may not have, so they are
+planned with ``--dry`` from their own directory instead; only 04 is measured, on
+the interpreter running the tests.
+
+The ``external/`` examples need real binaries, source trees or required path
+flags, so each only has to build its CLI (``--help``); the one that needs
+nothing external is also planned with ``--dry``.
 """
 
 import importlib.util
+import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,6 +37,11 @@ import pytest
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 EXAMPLE_FILES = sorted(EXAMPLES.glob("*.py"))
+TUTORIAL = EXAMPLES / "tutorial"
+TUTORIAL_FILES = sorted(TUTORIAL.glob("*.py"))
+EXTERNAL = EXAMPLES / "external"
+# sqlite_bench.py is the workload throughput_sqlite.py measures, not a bench app.
+EXTERNAL_APPS = sorted(p for p in EXTERNAL.glob("*.py") if p.name != "sqlite_bench.py")
 
 PERF_EXAMPLE = "perf_cache_misses.py"
 
@@ -71,3 +86,101 @@ def test_example_runs(path: Path):
         f"--- stdout ---\n{proc.stdout}\n"
         f"--- stderr ---\n{proc.stderr}"
     )
+
+
+# ----- tutorial/ --------------------------------------------------------------
+
+
+def _run_tutorial(path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(
+        [sys.executable, str(path), "--no-progress", *args],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        cwd=TUTORIAL,
+    )
+    assert proc.returncode == 0, (
+        f"{path.name} exited {proc.returncode}\n"
+        f"--- stdout ---\n{proc.stdout}\n"
+        f"--- stderr ---\n{proc.stderr}"
+    )
+    return proc
+
+
+def _dry_commands(stdout: str) -> list[str]:
+    """The backticked command of every `--dry` line."""
+    return [ln.split("`")[1] for ln in stdout.splitlines() if "`" in ln]
+
+
+def test_tutorials_present():
+    assert TUTORIAL_FILES, f"no tutorial scripts found under {TUTORIAL}"
+
+
+@pytest.mark.parametrize("path", TUTORIAL_FILES, ids=lambda p: p.name)
+def test_tutorial_plans(path: Path):
+    proc = _run_tutorial(path, "--dry")
+    assert _dry_commands(proc.stdout), proc.stdout
+
+
+def test_awfy_tutorial_harness_resolves_inside_its_cwd():
+    # The cwd is the AWFY directory, so a harness path relative to it must not
+    # repeat that directory.
+    proc = _run_tutorial(TUTORIAL / "06_awfy.py", "--dry")
+    for command in _dry_commands(proc.stdout):
+        cd, cwd, sep, _vm, harness, *_ = shlex.split(command)
+        assert (cd, sep) == ("cd", "&&"), command
+        resolved = (TUTORIAL / cwd / harness).resolve()
+        assert resolved.parent == (TUTORIAL / cwd).resolve(), command
+
+
+@pytest.mark.skipif(
+    shutil.which(f"python{sys.version_info.major}.{sys.version_info.minor}") is None,
+    reason="needs a versioned python on PATH",
+)
+def test_custom_metric_tutorial_measures_every_suite(tmp_path: Path):
+    vm = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    out = tmp_path / "r.json"
+    _run_tutorial(
+        TUTORIAL / "04_custom_metric.py",
+        "--include",
+        f"^example/.*vm={vm}",
+        "--json",
+        str(out),
+    )
+    executions = json.loads(out.read_text())["executions"]
+    assert executions
+    for e in executions:
+        samples = e.get("process_samples", []) + [
+            s for it in e.get("iterations", []) for s in it.get("samples", [])
+        ]
+        assert samples, f"{e['suite']}/{e['benchmark']} carries no samples"
+
+
+# ----- external/ --------------------------------------------------------------
+
+
+def _run_external(path: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(
+        [sys.executable, str(path), *args],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=EXTERNAL,
+    )
+    assert proc.returncode == 0, (
+        f"{path.name} exited {proc.returncode}\n"
+        f"--- stdout ---\n{proc.stdout}\n"
+        f"--- stderr ---\n{proc.stderr}"
+    )
+    return proc
+
+
+@pytest.mark.parametrize("path", EXTERNAL_APPS, ids=lambda p: p.name)
+def test_external_builds_its_cli(path: Path):
+    assert "usage:" in _run_external(path, "--help").stdout
+
+
+def test_external_throughput_sqlite_plans():
+    proc = _run_external(EXTERNAL / "throughput_sqlite.py", "--dry", "--no-progress")
+    commands = _dry_commands(proc.stdout)
+    assert commands and all("sqlite_bench.py" in c for c in commands)

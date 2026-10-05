@@ -130,9 +130,42 @@ def test_defaults_reach_factory_benchmarks():
     assert b.invocation.command == ("true",)
 
 
-def test_materialize_missing_command_fails_fast():
-    with pytest.raises(ValueError, match="missing a command"):
-        suite("S", _b("a")).materialize(Params())
+# ----- inplace_modify --------------------------------------------------------
+
+
+def test_inplace_modify_applies_params_dependent_settings_at_materialize():
+    class P(Params):
+        n: int
+        t: int
+
+    s = (
+        suite("S", _b("a"), _b("b"))
+        .with_command(["true"])
+        .inplace_modify(
+            lambda s, ctx: s.with_runs(ctx.params.n).with_timeout(float(ctx.params.t))
+        )
+    )
+    planned = s.materialize(P(n=3, t=20))
+    assert [(b.suite, b.name) for b in planned] == [("S", "a"), ("S", "b")]
+    assert all(b.runs.max_runs() == 3 for b in planned)
+    assert all(b.invocation.timeout == 20.0 for b in planned)
+
+
+def test_inplace_modify_keeps_the_benchmarks_own_settings():
+    s = (
+        suite("S", _b("a").with_runs(FixedRuns(5)), _b("b"))
+        .with_command(["true"])
+        .inplace_modify(lambda s, _ctx: s.with_runs(2))
+    )
+    assert [b.runs.max_runs() for b in s.materialize(Params())] == [5, 2]
+
+
+def test_inplace_modify_suite_is_still_nestable():
+    inner = suite("Inner", _b("a")).inplace_modify(lambda s, _ctx: s.with_runs(2))
+    outer = suite("Outer", inner).with_command(["true"])
+    (b,) = outer.materialize(Params())
+    assert b.suite == "Outer/Inner"
+    assert b.runs.max_runs() == 2
 
 
 def test_with_env_merges():

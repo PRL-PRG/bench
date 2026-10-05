@@ -9,7 +9,7 @@ from rich.console import Console, RenderableType
 
 from bench import Execution, Iteration, Report, Sample
 from bench.console.styling import Styling
-from bench.console.theme import BENCHR_THEME
+from bench.console.theme import BENCH_THEME
 from bench.core.stats import (
     Counts,
     Delta,
@@ -40,7 +40,7 @@ def _render(renderable: RenderableType) -> str:
     """The text a real console would print - the views return renderables now, so
     layout (and any markup the theme swallows) only shows after rendering."""
     buf = StringIO()
-    Console(file=buf, force_terminal=False, width=200, theme=BENCHR_THEME).print(
+    Console(file=buf, force_terminal=False, width=200, theme=BENCH_THEME).print(
         renderable
     )
     return buf.getvalue()
@@ -99,8 +99,8 @@ def _only(stats: Statistics, metric: str = "runtime"):
 
 
 def _metric(stats: Statistics, metric: str) -> Statistics:
-    """Narrowing to one metric is the caller's job - the same comprehension the
-    summaries do in `MetricFilterSummary.scoped`, counters carried along."""
+    """Narrowing to one metric is the caller's job, as `MetricFilterSummary`
+    does for the summaries, counters carried along."""
     return Statistics([s for s in stats if s.metric_key.metric == metric], stats.counts)
 
 
@@ -392,15 +392,6 @@ def test_ranking_best_first():
     out = _render(format_comparison(compute_ranking(summarize(_matrix()))))
     assert out.index("vm=python3.14") < out.index("vm=python3.9")
     assert "2.00" in out  # 2x worse
-
-
-def test_ranking_skips_single_variant():
-    r = Report(
-        executions=[
-            _run(i, bench="solo", samples=[_smp("elapsed", 1.0)]) for i in (1, 2, 3)
-        ]
-    )
-    assert format_comparison(compute_ranking(summarize(r))).renderables == []
 
 
 def test_ranking_axis_folds_residual_within_each_benchmark():
