@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from rich.console import Group, RenderableType
 
 from bench.console.styling import Cell, Span, Styling
-from bench.model.invocation import SPAWN_FAIL_RC, TIMEOUT_RC
 from bench.model.results import Execution
 
 
@@ -29,26 +28,11 @@ def format_failures(
 
 
 def _failure_span(execution: Execution) -> list[Span]:
-    if execution.returncode == TIMEOUT_RC:
-        verdict = [
-            Span(f"timeout (exit {TIMEOUT_RC})", "failure"),
-        ]
-    elif execution.returncode == SPAWN_FAIL_RC:
-        verdict = [
-            Span("spawn failed", "failure"),
-            Span(": "),
-            Span(execution.failure or "unknown"),
-        ]
-    else:
-        verdict = [
-            Span(f"exit {execution.returncode}", "failure"),
-        ]
-
     return [
         Span("✗ ", "failure"),
         Span(execution.identifier()),
         Span(" - "),
-        *verdict,
+        Span(execution.failure or "failed", "failure"),
         Span(": "),
         Span(execution.message or "(no output)"),
         # f"[bench.failure]✗[/] {markup_escape(execution.identifier())}"
