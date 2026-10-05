@@ -310,7 +310,7 @@ class BuilderBase:
             "matrix",
             normalize_matrix(dims),
             override=False,
-            merge=merge_mapping,
+            merge=merge_matrix,
         )
 
     def add_matrix_skip(self, /, **kwargs: Any) -> Self:

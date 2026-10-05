@@ -52,7 +52,7 @@ class SuiteBuilder(BuilderBase):
 
     # ----- modify multiple parameters at once -------------------------
 
-    def implace_modify(
+    def inplace_modify(
         self, fun: Callable[[SuiteBuilder, SuiteContext[Any]], SuiteBuilder]
     ) -> SuiteBuilder:
         return suite("").add_suite_generator(lambda ctx: [fun(self, ctx)])

@@ -48,7 +48,7 @@ class Params(metaclass=ParamsMeta):
             for k in f.metadata:
                 if not isinstance(k, str):
                     raise ValueError(
-                        f"Params metadata should strings, got {type(k)} for key {k}"
+                        f"Params metadata should be strings, got {type(k)} for key {k}"
                     )
 
     if TYPE_CHECKING:

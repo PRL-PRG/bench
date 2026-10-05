@@ -39,7 +39,7 @@ def collect_linux(root: Path = Path("/")) -> LinuxSystemEnvironment:
     if physical_cpus is not None:
         env["physical_cpus"] = physical_cpus
 
-    governors = _linux_goveners(sys_cpu)
+    governors = _linux_govreners(sys_cpu)
     if governors:
         env["governors"] = governors
 
@@ -78,7 +78,7 @@ def collect_linux(root: Path = Path("/")) -> LinuxSystemEnvironment:
     return env
 
 
-def _linux_goveners(sys_cpu: Path):
+def _linux_govreners(sys_cpu: Path):
     def it():
         for p in sys_cpu.glob(GOVERNOR_GLOB):
             t = read_text(p)

@@ -42,15 +42,6 @@ class _TUI:
                 return Text("")
             return Text("ETA ") + super().render(task)
 
-    class _Current:
-        current: str
-
-        def __init__(self) -> None:
-            self.current = ""
-
-        def __rich__(self):
-            return Text(f"[bold]Running:[/bold] {markup_escape(self.current)}")
-
     overall_progress: RichProgress
     overall_task: TaskID | None
     task_progress: RichProgress

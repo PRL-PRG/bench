@@ -6,6 +6,7 @@ from bench.summary.base import (
     MIN_MAX_HEADER,
     CompositeSummary,
     MetricFilterSummary,
+    SuiteFilterSummary,
     Summary,
     bench_label,
     counts_cell,
@@ -33,31 +34,26 @@ from bench.summary.default import (
 from bench.summary.failures import format_failures
 
 __all__ = [
-    # bench.summary.base
-    "Summary",
+    "ByBenchmarkMetricSummary",
+    "ByMetricSummary",
+    "ComparisonSummary",
     "CompositeSummary",
-    "MetricFilterSummary",
-    "bench_label",
+    "DefaultSummary",
+    "GeomeanComparisonSummary",
     "MEAN_HEADER_LONG",
     "MEAN_HEADER_SHORT",
     "MIN_MAX_HEADER",
+    "MetricFilterSummary",
+    "SuiteFilterSummary",
+    "Summary",
+    "bench_label",
+    "counts_cell",
+    "format_by_benchmark_metric",
+    "format_by_metric",
+    "format_comparison",
+    "format_failures",
     "mean_cells",
     "mean_cells_raw",
-    "counts_cell",
     "range_runs_cells",
     "stat_line",
-    # bench.summary.by_benchmark_metric
-    "ByBenchmarkMetricSummary",
-    "format_by_benchmark_metric",
-    # bench.summary.comparison
-    "ComparisonSummary",
-    "GeomeanComparisonSummary",
-    "format_comparison",
-    # bench.summary.by_metric
-    "ByMetricSummary",
-    "format_by_metric",
-    # bench.summary.default
-    "DefaultSummary",
-    # bench.summary.failures
-    "format_failures",
 ]

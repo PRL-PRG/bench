@@ -59,6 +59,7 @@ from bench.core.fingerprint import (
 )
 from bench.core.hook import (
     Hook,
+    PinCPUHook,
     SetupHook,
     TearDownHook,
 )
@@ -164,6 +165,7 @@ from bench.summary import (
     DefaultSummary,
     GeomeanComparisonSummary,
     MetricFilterSummary,
+    SuiteFilterSummary,
     Summary,
     bench_label,
     counts_cell,
@@ -272,6 +274,7 @@ __all__ = [
     "Hook",
     "SetupHook",
     "TearDownHook",
+    "PinCPUHook",
     # bench.model.results
     "Direction",
     "Sample",
@@ -319,6 +322,7 @@ __all__ = [
     "Summary",
     "CompositeSummary",
     "MetricFilterSummary",
+    "SuiteFilterSummary",
     "ByBenchmarkMetricSummary",
     "ComparisonSummary",
     "GeomeanComparisonSummary",

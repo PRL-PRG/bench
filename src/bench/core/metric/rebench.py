@@ -26,14 +26,11 @@ class RebenchMetric(IterationMetric):
         r"(?P<unit>[a-zA-Z]+)"
     )
 
-    iteration: int
-
     def __init__(
         self,
         source: MetricSource,
     ) -> None:
         super().__init__(source, "runtime", "ms", "lower better")
-        self.iteration = 0
 
     def process_text(self, text: str) -> Iterable[Sample]:
         iteration = 0

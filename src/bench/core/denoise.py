@@ -40,7 +40,7 @@ class Denoise(AbstractContextManager[dict[str, str], None]):
     def __init__(
         self,
         *,
-        state_path: Path = Path("/var/tmp/bench-denoise-state.json"),
+        state_path: Path = DENOISE_DEFAULT_STATE_PATH,
         root: Path = Path("/"),
     ) -> None:
         self.root = root

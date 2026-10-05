@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.theme import Theme
 
-BENCHR_THEME = Theme(
+BENCH_THEME = Theme(
     {
         # Success
         "bench.success": "green",
@@ -28,5 +28,5 @@ BENCHR_THEME = Theme(
     }
 )
 
-console = Console(theme=BENCHR_THEME, highlight=False)
-error_console = Console(stderr=True, theme=BENCHR_THEME, highlight=False)
+console = Console(theme=BENCH_THEME, highlight=False)
+error_console = Console(stderr=True, theme=BENCH_THEME, highlight=False)
