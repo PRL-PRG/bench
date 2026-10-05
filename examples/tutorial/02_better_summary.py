@@ -7,7 +7,16 @@
 # ///
 from __future__ import annotations
 
-from bench import Time, bench, max_rss, run, suite
+from bench import (
+    ByBenchmarkMetricSummary,
+    ComparisonSummary,
+    GeomeanComparisonSummary,
+    Time,
+    bench,
+    bench_app,
+    max_rss,
+    suite,
+)
 
 s = (
     suite("simple")
@@ -20,6 +29,13 @@ s = (
 )
 
 
-run(s)
+if __name__ == "__main__":
+    bench_app(
+        summary=(
+            ByBenchmarkMetricSummary()
+            & ComparisonSummary()
+            & GeomeanComparisonSummary(axis="vm").on_metrics("elapsed")
+        )
+    ).add(s).main()
 
 # vim: ft=python

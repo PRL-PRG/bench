@@ -7,34 +7,20 @@
 # ///
 from __future__ import annotations
 
-from bench import (
-    ByBenchmarkMetricSummary,
-    ComparisonSummary,
-    GeomeanComparisonSummary,
-    Time,
-    bench,
-    bench_app,
-    max_rss,
-    suite,
-)
+from bench import Time, bench, max_rss, run, suite
 
 s = (
     suite("simple")
     .add(bench("fib"))
     .add(bench("hanoi"))
-    .with_matrix(vm=["python3.9", "python3.14"], a=[1, 2])
+    .with_matrix(vm=["python3.9", "python3.14"], experiment=[1, 2])
     .with_command(lambda ctx: [ctx.data.vm, f"benchmarks/{ctx.benchmark}.py"])
     .with_metric(Time(), max_rss())
     .with_runs(5)
 )
 
 
-bench_app(
-    summary=(
-        ByBenchmarkMetricSummary()
-        & ComparisonSummary()
-        & GeomeanComparisonSummary(axis="vm").on_metrics("elapsed")
-    )
-).add(s).main()
+if __name__ == "__main__":
+    run(s)
 
 # vim: ft=python

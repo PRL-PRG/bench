@@ -40,17 +40,16 @@ from bench import (
 )
 
 
-class Params(SharedBenchParams):
+class AwfyParams(SharedBenchParams):
     awfy: Path = Path("are-we-fast-yet/benchmarks/Python")
     runs: int = 10
     warmup: int = 5
 
 
-def command(ctx: Context[Params]) -> list[str]:
+def command(ctx: Context[AwfyParams]) -> list[str]:
     name = str(ctx.benchmark)
     n = ctx.params.warmup + ctx.params.runs
-    harness = ctx.params.awfy / "harness.py"
-    return [ctx.data.vm, str(harness), name, str(n), str(ctx.data.arg)]
+    return [ctx.data.vm, "harness.py", name, str(n), str(ctx.data.arg)]
 
 
 awfy = (
@@ -94,6 +93,7 @@ summary = (
     & GeomeanComparisonSummary(axis="vm").on_metrics(["runtime", "max_rss"])
 )
 
-bench_app("AWFY", params=Params, summary=summary).add(awfy).main()
+if __name__ == "__main__":
+    bench_app("AWFY", params=AwfyParams, summary=summary).add(awfy).main()
 
 # vim: ft=python

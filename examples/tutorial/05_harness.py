@@ -39,6 +39,7 @@ s = (
     .with_runs(1)  # one process per variant; RUNS iterations come out of it
 )
 
-run(s)
+if __name__ == "__main__":
+    run(s)
 
 # vim: ft=python

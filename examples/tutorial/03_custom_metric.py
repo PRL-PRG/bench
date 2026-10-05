@@ -33,6 +33,7 @@ s = (
     .with_runs(3)
 )
 
-run(s)
+if __name__ == "__main__":
+    run(s)
 
 # vim: ft=python
