@@ -7,12 +7,14 @@ from pathlib import Path
 
 from bench.core.fingerprint.base import Fingerprint, Probe
 from bench.core.process import execute
+from bench.error import BenchError
 from bench.model.invocation import Invocation
 
 
 class GitProbe(Probe):
     """The HEAD commit of `folder`, suffixed `(dirty)` when the tree has
-    uncommitted changes. `None` when `folder` is not a git repository."""
+    uncommitted changes. `None` when `folder` is not a git repository and
+    `allow_failure=True`."""
 
     __slots__ = ("folder", "key", "git_binary", "allow_failure")
 
@@ -43,7 +45,7 @@ class GitProbe(Probe):
             if self.allow_failure:
                 return None
             else:
-                raise ValueError("Git failed to run")
+                raise BenchError("Git failed to run")
 
         # --no-optional-locks so probing never writes to someone else's index.
         dirty = self.run_git("--no-optional-locks", "status", "--porcelain")

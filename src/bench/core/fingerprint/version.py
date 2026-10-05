@@ -25,6 +25,7 @@ class BenchVersionProbe(Probe):
                 Path(__file__).parent,
                 key="bench commit",
                 git_binary=git_binary,
+                allow_failure=True,
             )
         else:
             self.git_probe = None
