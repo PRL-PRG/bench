@@ -121,7 +121,7 @@ class BenchmarkBuilder(BuilderBase):
 
         if self.command is None:
             raise ValueError(
-                f"Benchmark f{self.name} (suite {suite}) is missing a command!"
+                f"Benchmark {self.name} (suite {suite}) is missing a command!"
             )
         command = tuple(map(os.fsdecode, self.command(ctx)))
 
