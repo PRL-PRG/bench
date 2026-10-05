@@ -49,4 +49,4 @@ if __name__ == "__main__":
             ByMetricSummary("elapsed").on_suite("fast")
             & ByMetricSummary("elapsed").on_suite("slow")
         )
-    ).add(fast, slow).run_cli()
+    ).add(fast, slow).main()

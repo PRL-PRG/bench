@@ -135,4 +135,4 @@ renaissance = (
 )
 
 if __name__ == "__main__":
-    bench_app(params=RenaissanceParams).add(renaissance).run_cli()
+    bench_app(params=RenaissanceParams).add(renaissance).main()

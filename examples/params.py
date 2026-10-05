@@ -31,4 +31,4 @@ s = suite("params", bench("sum").with_command(cmd).with_metric(Time()).with_runs
 
 
 if __name__ == "__main__":
-    bench_app(params=ExampleParams).add(s).run_cli()
+    bench_app(params=ExampleParams).add(s).main()

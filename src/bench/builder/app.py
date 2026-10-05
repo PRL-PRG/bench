@@ -375,7 +375,7 @@ class BenchAppBuilder(BuilderBase):
             sys.exit(e.exit_code)
         except KeyboardInterrupt:
             error_console.print("[bench.failure]Interrupted[/]")
-            sys.exit( 130)
+            sys.exit(130)
 
 
 # ---------------------------------------------------------------------------
@@ -383,13 +383,13 @@ class BenchAppBuilder(BuilderBase):
 # ---------------------------------------------------------------------------
 
 
-def run(*suites: SuiteBuilder) -> Report:
+def run(*suites: SuiteBuilder) -> None:
     """Run one or more suites with default settings, returning their report.
 
-    Sugar for `bench_app(<script>).add(*suites).run_cli()`. For anything richer
+    Sugar for `bench_app(<script>).add(*suites).main()`. For anything richer
     build a `bench_app(...)` directly.
     """
-    return bench_app(Path(sys.argv[0]).stem).add(*suites).run_cli()
+    return bench_app(Path(sys.argv[0]).stem).add(*suites).main()
 
 
 def bench_app[P: Params](

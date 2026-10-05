@@ -37,6 +37,6 @@ bench_app(
         & ComparisonSummary()
         & GeomeanComparisonSummary(axis="vm").on_metrics("elapsed")
     )
-).add(s).run_cli()
+).add(s).main()
 
 # vim: ft=python

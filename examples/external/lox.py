@@ -90,4 +90,4 @@ if __name__ == "__main__":
             ByMetricSummary("runtime").on_suite("LoxSuite")
             & ByMetricSummary("throughput").on_suite("ZooBatch")
         ),
-    ).add(lox_suite, zoo_suite).run_cli()
+    ).add(lox_suite, zoo_suite).main()

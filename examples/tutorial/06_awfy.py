@@ -95,6 +95,6 @@ summary = (
     & GeomeanComparisonSummary(axis="vm").on_metrics(["runtime", "max_rss"])
 )
 
-bench_app("AWFY", params=Params, summary=summary).add(awfy).run_cli()
+bench_app("AWFY", params=Params, summary=summary).add(awfy).main()
 
 # vim: ft=python
