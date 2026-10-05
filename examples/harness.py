@@ -33,7 +33,7 @@ db_bench (a `RegexMetric` on `micros/op`), or any ReBench-format harness
 import sys
 from pathlib import Path
 
-from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
+from bench import FloatPerLine, bench, run, stdout_metric_source, suite
 
 FAKEVM = Path(__file__).parent / "workloads" / "fakevm.py"
 
@@ -57,7 +57,7 @@ s = (
     suite("fakevm", bench("fib"), bench("sort"))
     .with_command(vm_command)
     .with_metric(
-        FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+        FloatPerLine(stdout_metric_source, "runtime", unit="ms").lower_is_better()
     )
     .with_runs(1)  # one process; RUNS iterations come out of it
 )

@@ -78,11 +78,11 @@ class Metric(abc.ABC):
 type MetricSource = Callable[[InvocationResult], str]
 
 
-def StdoutMetricSource(result: InvocationResult) -> str:
+def stdout_metric_source(result: InvocationResult) -> str:
     return result.stdout or ""
 
 
-def StderrMetricSource(result: InvocationResult) -> str:
+def stderr_metric_source(result: InvocationResult) -> str:
     return result.stderr or ""
 
 
@@ -95,9 +95,9 @@ def as_metric_source(
 
     match source:
         case "stdout":
-            return StdoutMetricSource
+            return stdout_metric_source
         case "stderr":
-            return StderrMetricSource
+            return stderr_metric_source
         case _:
             raise ValueError(f"unknown metric source: {source!r}")
 

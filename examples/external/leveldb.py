@@ -20,12 +20,12 @@ from bench import (
     BenchmarkBuilder,
     RegexMetric,
     SharedBenchParams,
-    StdoutMetricSource,
     SystemTime,
     UserTime,
     bench,
     bench_app,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 
@@ -45,7 +45,7 @@ def _micros(op: str) -> RegexMetric:
     return RegexMetric(
         "micros_per_op",
         rf"(?m)^{re.escape(op)}\s+:\s+([\d.]+) micros/op",
-        StdoutMetricSource,
+        stdout_metric_source,
         unit="us",
     ).lower_is_better()
 
@@ -54,7 +54,7 @@ def _throughput(op: str) -> RegexMetric:
     return RegexMetric(
         "throughput",
         rf"(?m)^{re.escape(op)}\s+:\s+[\d.]+ micros/op;\s+([\d.]+) MB/s",
-        StdoutMetricSource,
+        stdout_metric_source,
         unit="MB/s",
     ).higher_is_better()
 

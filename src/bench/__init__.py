@@ -71,13 +71,13 @@ from bench.core.metric import (
     RebenchMetric,
     RegexMetric,
     RUsage,
-    StderrMetricSource,
-    StdoutMetricSource,
     SystemTime,
     Time,
     UserTime,
     as_metric_source,
     max_rss,
+    stderr_metric_source,
+    stdout_metric_source,
 )
 from bench.core.outlier import (
     ModifiedZScore,
@@ -238,8 +238,8 @@ __all__ = [
     "FloatPerLine",
     "Metric",
     "MetricSource",
-    "StdoutMetricSource",
-    "StderrMetricSource",
+    "stdout_metric_source",
+    "stderr_metric_source",
     "as_metric_source",
     "IterationMetric",
     # bench.core.outlier

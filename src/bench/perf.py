@@ -14,7 +14,7 @@ import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from bench.core.metric.base import IterationMetric, StderrMetricSource
+from bench.core.metric.base import IterationMetric, stderr_metric_source
 from bench.core.process import execute
 from bench.model.benchmark import Benchmark
 from bench.model.invocation import Invocation
@@ -37,7 +37,7 @@ class PerfStatMetric(IterationMetric):
     events: tuple[str, ...]
 
     def __init__(self, events: tuple[str, ...], direction: Direction) -> None:
-        super().__init__(StderrMetricSource, "", "", direction)
+        super().__init__(stderr_metric_source, "", "", direction)
 
         if len(events) == 0:
             raise ValueError("PerfStat needs at least one event")

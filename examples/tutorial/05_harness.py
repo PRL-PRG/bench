@@ -16,7 +16,7 @@ does, and its second argument how many leading ones it discards as warmup
 
 from __future__ import annotations
 
-from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
+from bench import FloatPerLine, bench, run, stdout_metric_source, suite
 
 WARMUP, RUNS = 5, 10
 
@@ -34,7 +34,7 @@ s = (
         ]
     )
     .with_metric(
-        FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+        FloatPerLine(stdout_metric_source, "runtime", unit="ms").lower_is_better()
     )
     .with_runs(1)  # one process per variant; RUNS iterations come out of it
 )

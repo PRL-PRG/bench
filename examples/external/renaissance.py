@@ -38,7 +38,6 @@ from bench import (
     BenchmarkBuilder,
     RegexMetric,
     SharedBenchParams,
-    StdoutMetricSource,
     SuiteContext,
     SystemTime,
     Time,
@@ -46,6 +45,7 @@ from bench import (
     bench,
     bench_app,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 
@@ -107,7 +107,7 @@ def make_benchmarks(ctx: SuiteContext[RenaissanceParams]) -> list[BenchmarkBuild
 
 def _iterating(metric: str, pattern: str, unit: str) -> RegexMetric:
     """One sample per match, indexed in match order."""
-    return RegexMetric(metric, pattern, StdoutMetricSource, unit=unit, iterate=True)
+    return RegexMetric(metric, pattern, stdout_metric_source, unit=unit, iterate=True)
 
 
 renaissance = (

@@ -16,9 +16,9 @@ from bench import (
     IterationMetric,
     MetricSource,
     Sample,
-    StderrMetricSource,
     bench,
     run,
+    stderr_metric_source,
     suite,
 )
 
@@ -57,7 +57,7 @@ s = suite(
     "custom",
     bench("with_stderr")
     .with_command(["sh", "-c", "echo OK; echo 'TIME=0.42' >&2"])
-    .with_metric(TaggedFloat(StderrMetricSource))
+    .with_metric(TaggedFloat(stderr_metric_source))
     .with_success(succeeded)
     .with_runs(3),
 )

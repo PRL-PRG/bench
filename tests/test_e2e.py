@@ -12,7 +12,7 @@ from bench import (
     suite,
 )
 from bench.builder.suite import plan
-from bench.core.metric import StdoutMetricSource
+from bench.core.metric import stdout_metric_source
 from bench.params import Params
 
 
@@ -55,7 +55,7 @@ def test_e2e_warmup_then_measure():
         .with_cwd(Path("/tmp"))
         .with_inherit_env()
         .with_metric(
-            FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+            FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
         )
         .with_warmup(2)
         .with_runs(2),

@@ -21,9 +21,9 @@ from bench import (
     Context,
     FloatPerLine,
     SharedBenchParams,
-    StdoutMetricSource,
     bench_app,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 from bench import (
@@ -76,7 +76,7 @@ def _suite_cwd(subdir: str):
 # Suites
 # ----------------------------------------------------------------------
 
-_ITER = (FloatPerLine(StdoutMetricSource, "runtime", unit="us").lower_is_better(),)
+_ITER = (FloatPerLine(stdout_metric_source, "runtime", unit="us").lower_is_better(),)
 _PROC = (max_rss(),)
 
 

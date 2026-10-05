@@ -13,7 +13,7 @@ from bench import (
     from_files,
     suite,
 )
-from bench.core.metric import StdoutMetricSource
+from bench.core.metric import stdout_metric_source
 from bench.model.benchmark import Variant
 from bench.params import Params
 
@@ -85,7 +85,7 @@ def test_with_timeout_accepts_ctx_callable():
 
 def test_with_metric_accepts_ctx_callable():
     # A metric factory resolves to one metric, not a tuple of them.
-    m = FloatPerLine(StdoutMetricSource, "runtime", unit="s")
+    m = FloatPerLine(stdout_metric_source, "runtime", unit="s")
     s = suite("S", _b("a")).with_command(["true"]).with_metric(lambda ctx: m)
     b = s.materialize(Params())[0]
     assert list(b.metrics) == [m]

@@ -2,9 +2,9 @@ from bench.core.metric.base import (
     IterationMetric,
     Metric,
     MetricSource,
-    StderrMetricSource,
-    StdoutMetricSource,
     as_metric_source,
+    stderr_metric_source,
+    stdout_metric_source,
 )
 from bench.core.metric.float import FloatPerLine
 from bench.core.metric.rebench import RebenchMetric
@@ -23,8 +23,8 @@ __all__ = [
     "FloatPerLine",
     "Metric",
     "MetricSource",
-    "StdoutMetricSource",
-    "StderrMetricSource",
+    "stdout_metric_source",
+    "stderr_metric_source",
     "as_metric_source",
     "IterationMetric",
 ]

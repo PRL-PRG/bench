@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from bench import (
     FloatPerLine,
-    StdoutMetricSource,
     Time,
     bench,
     bench_app,
+    stdout_metric_source,
     suite,
 )
 
@@ -23,7 +23,7 @@ s2 = (
     .add(bench("zoo_batch"))
     .with_metric(
         FloatPerLine(
-            StdoutMetricSource, "throughput", line=1, unit="iters"
+            stdout_metric_source, "throughput", line=1, unit="iters"
         ).higher_is_better()
     )
 )

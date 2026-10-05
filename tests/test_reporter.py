@@ -29,7 +29,7 @@ from bench import (
 from bench.builder import default_reporter
 from bench.builder.suite import plan
 from bench.console.theme import BENCH_THEME
-from bench.core.metric import StdoutMetricSource
+from bench.core.metric import stdout_metric_source
 from bench.model.benchmark import Variant
 from bench.model.results import Execution, Iteration, Report, Sample
 from bench.params import Params, SharedReporterParams, SharedRunnerParams
@@ -65,7 +65,7 @@ def _s():
         .with_cwd(Path("/tmp"))
         .with_metric(
             FloatPerLine(
-                StdoutMetricSource, "score", line=2, unit="s"
+                stdout_metric_source, "score", line=2, unit="s"
             ).lower_is_better()
         )
         .with_runs(2),

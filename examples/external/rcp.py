@@ -15,10 +15,10 @@ from bench import (
     Context,
     RebenchMetric,
     SharedBenchParams,
-    StdoutMetricSource,
     bench_app,
     from_files,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 
@@ -60,7 +60,7 @@ rcp_suite = (
     .generator(lambda ctx: from_files(_bench_root(ctx.params), pattern=r"\.R$"))
     .with_cwd(Path.cwd())
     .with_command(_cmd)
-    .with_metric(RebenchMetric(StdoutMetricSource), max_rss())
+    .with_metric(RebenchMetric(stdout_metric_source), max_rss())
 )
 
 

@@ -6,7 +6,7 @@ import pytest
 from conftest import make_success
 
 from bench import FixedRuns, FloatPerLine, bench, suite
-from bench.core.metric import StderrMetricSource, StdoutMetricSource
+from bench.core.metric import stderr_metric_source, stdout_metric_source
 from bench.params import Params
 
 
@@ -20,7 +20,7 @@ def _base():
         bench("b")
         .with_command(["sh", "-c", "echo 1"])
         .with_cwd(Path("/tmp"))
-        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s"))
+        .with_metric(FloatPerLine(stdout_metric_source, "runtime", unit="s"))
     )
 
 
@@ -78,8 +78,8 @@ def test_with_metric_accumulates():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="ms"))
-        .with_metric(FloatPerLine(StdoutMetricSource, "runtime", unit="s"))
+        .with_metric(FloatPerLine(stdout_metric_source, "runtime", unit="ms"))
+        .with_metric(FloatPerLine(stdout_metric_source, "runtime", unit="s"))
     )
     assert len(b.metrics) == 2
     assert [m.unit for m in b.metrics if isinstance(m, FloatPerLine)] == ["ms", "s"]
@@ -90,8 +90,8 @@ def test_with_metric_takes_several_in_one_call():
         bench("x")
         .with_command(["true"])
         .with_metric(
-            FloatPerLine(StdoutMetricSource, "runtime", unit="ms"),
-            FloatPerLine(StdoutMetricSource, "runtime", unit="s"),
+            FloatPerLine(stdout_metric_source, "runtime", unit="ms"),
+            FloatPerLine(stdout_metric_source, "runtime", unit="s"),
         )
     )
     assert len(b.metrics) == 2
@@ -101,8 +101,8 @@ def test_with_metric_keeps_each_metrics_source():
     b = _mat(
         bench("x")
         .with_command(["true"])
-        .with_metric(FloatPerLine(StdoutMetricSource, "out", unit="ms"))
-        .with_metric(FloatPerLine(StderrMetricSource, "err", unit="s"))
+        .with_metric(FloatPerLine(stdout_metric_source, "out", unit="ms"))
+        .with_metric(FloatPerLine(stderr_metric_source, "err", unit="s"))
     )
     result = make_success(stdout="1.5\n", stderr="2.5\n")
     samples = [s for m in b.metrics for s in m.process(result)]

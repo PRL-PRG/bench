@@ -13,8 +13,8 @@ from pathlib import Path
 from bench import (
     RebenchMetric,
     SharedBenchParams,
-    StdoutMetricSource,
     bench_app,
+    stdout_metric_source,
     suite,
 )
 from bench import bench as B
@@ -70,7 +70,7 @@ areWeFast = (
             str(ctx.data.size),
         ]
     )
-    .with_metric(RebenchMetric(StdoutMetricSource))
+    .with_metric(RebenchMetric(stdout_metric_source))
 )
 
 
@@ -105,7 +105,7 @@ shootout = (
             str(ctx.data.arg),
         ]
     )
-    .with_metric(RebenchMetric(StdoutMetricSource))
+    .with_metric(RebenchMetric(stdout_metric_source))
 )
 
 
@@ -125,7 +125,7 @@ realThing = (
             str(ctx.data.size),
         ]
     )
-    .with_metric(RebenchMetric(StdoutMetricSource))
+    .with_metric(RebenchMetric(stdout_metric_source))
 )
 
 
@@ -145,7 +145,7 @@ kaggle = (
             str(ctx.params.iterations),
         ]
     )
-    .with_metric(RebenchMetric(StdoutMetricSource))
+    .with_metric(RebenchMetric(stdout_metric_source))
 )
 
 
@@ -154,7 +154,7 @@ recommenderlab = (
     .add(B("recommenderlab"))
     .with_cwd(INPUTS / "recommenderlab")
     .with_command(lambda ctx: [_rscript(ctx.params), "runner.r"])
-    .with_metric(RebenchMetric(StdoutMetricSource))
+    .with_metric(RebenchMetric(stdout_metric_source))
 )
 
 

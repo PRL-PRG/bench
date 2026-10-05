@@ -2,7 +2,7 @@
 
 An `IterationMetric` parses one iteration's text (`process_text`), while a
 process `Metric` reads the whole `InvocationResult` (`process`). Iteration
-metrics take a `MetricSource` (e.g. `StdoutMetricSource`) as their first
+metrics take a `MetricSource` (e.g. `stdout_metric_source`) as their first
 argument; the parsing tests exercise `process_text` directly.
 """
 
@@ -18,11 +18,11 @@ from bench import (
     max_rss,
 )
 from bench.core.metric import (
-    StderrMetricSource,
-    StdoutMetricSource,
     SystemTime,
     UserTime,
     as_metric_source,
+    stderr_metric_source,
+    stdout_metric_source,
 )
 
 # ----- iteration metrics (parse text) ---------------------------------------
@@ -30,7 +30,7 @@ from bench.core.metric import (
 
 def test_float_per_line_basic():
     samples = list(
-        FloatPerLine(StdoutMetricSource, "runtime", unit="s").process_text("1.5\n2.5\n")
+        FloatPerLine(stdout_metric_source, "runtime", unit="s").process_text("1.5\n2.5\n")
     )
     assert [s.value for s in samples] == [1.5, 2.5]
     assert all(s.unit == "s" and s.metric == "runtime" for s in samples)
@@ -38,7 +38,7 @@ def test_float_per_line_basic():
 
 def test_float_per_line_skips_garbage():
     samples = list(
-        FloatPerLine(StdoutMetricSource, "runtime", unit="s").process_text(
+        FloatPerLine(stdout_metric_source, "runtime", unit="s").process_text(
             "garbage\n1.0\nmore\n2.0\n"
         )
     )
@@ -47,7 +47,7 @@ def test_float_per_line_skips_garbage():
 
 def test_float_per_line_empty_text_emits_nothing():
     assert (
-        list(FloatPerLine(StdoutMetricSource, "runtime", unit="s").process_text(""))
+        list(FloatPerLine(stdout_metric_source, "runtime", unit="s").process_text(""))
         == []
     )
 
@@ -57,14 +57,14 @@ def test_line_select_last_and_nth():
     assert (
         list(
             FloatPerLine.last_line(
-                StdoutMetricSource, "runtime", unit="s"
+                stdout_metric_source, "runtime", unit="s"
             ).process_text(text)
         )[0].value
         == 3
     )
     assert (
         list(
-            FloatPerLine(StdoutMetricSource, "runtime", line=2, unit="s").process_text(
+            FloatPerLine(stdout_metric_source, "runtime", line=2, unit="s").process_text(
                 text
             )
         )[0].value
@@ -73,9 +73,9 @@ def test_line_select_last_and_nth():
 
 
 def test_direction_decorator():
-    proc = FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+    proc = FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
     assert next(iter(proc.process_text("1\n"))).direction == "lower better"
-    proc = FloatPerLine(StdoutMetricSource, "runtime", unit="s").higher_is_better()
+    proc = FloatPerLine(stdout_metric_source, "runtime", unit="s").higher_is_better()
     assert next(iter(proc.process_text("1\n"))).direction == "higher better"
 
 
@@ -83,7 +83,7 @@ def test_regex_unit_in_pattern_or_arg():
     proc = RegexMetric(
         "rt",
         re.compile(r"time:\s*([\d.]+)\s*(ms|us)"),
-        StdoutMetricSource,
+        stdout_metric_source,
         match_group=1,
         unit_group=2,
     )
@@ -93,7 +93,7 @@ def test_regex_unit_in_pattern_or_arg():
 
 
 def test_regex_unit_defaults_to_empty():
-    samples = list(RegexMetric("n", r"(\d+)", StdoutMetricSource).process_text("42\n"))
+    samples = list(RegexMetric("n", r"(\d+)", stdout_metric_source).process_text("42\n"))
     assert samples[0].unit == ""
 
 
@@ -101,7 +101,7 @@ def test_rebench_metric():
     text = (
         "log: bench1 total: iterations=1 runtime: 1500ms\nlog: bench1: gc-rate: 12kB\n"
     )
-    samples = list(RebenchMetric(StdoutMetricSource).process_text(text))
+    samples = list(RebenchMetric(stdout_metric_source).process_text(text))
     assert any(s.metric == "runtime" and s.unit == "ms" for s in samples)
     assert any(s.metric == "gc-rate" for s in samples)
 
@@ -134,10 +134,10 @@ def test_max_rss():
 
 def test_metric_source_shorthands():
     pr = make_success(stdout="out", stderr="err")
-    assert as_metric_source("stdout") is StdoutMetricSource
-    assert as_metric_source("stderr") is StderrMetricSource
-    assert StdoutMetricSource(pr) == "out"
-    assert StderrMetricSource(pr) == "err"
+    assert as_metric_source("stdout") is stdout_metric_source
+    assert as_metric_source("stderr") is stderr_metric_source
+    assert stdout_metric_source(pr) == "out"
+    assert stderr_metric_source(pr) == "err"
 
 
 def test_metric_source_callable_passthrough():
@@ -149,7 +149,7 @@ def test_last_line_indexes_the_first_iteration():
     # A negative `line` used to leak straight into `Sample.iteration`, and the
     # Controller then routed it to `iterations[-1]` of an empty list.
     samples = list(
-        FloatPerLine.last_line(StdoutMetricSource, "runtime", unit="s").process_text(
+        FloatPerLine.last_line(stdout_metric_source, "runtime", unit="s").process_text(
             "1\n2\n3\n"
         )
     )

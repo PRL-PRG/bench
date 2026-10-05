@@ -31,7 +31,7 @@ from bench import (
     suite,
 )
 from bench.builder.suite import plan
-from bench.core.metric import StdoutMetricSource
+from bench.core.metric import stdout_metric_source
 from bench.core.stats import summarize
 from bench.params import Params
 
@@ -43,7 +43,7 @@ def _echo_lines(*values) -> list[str]:
 
 
 def _runtime_metric() -> FloatPerLine:
-    return FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+    return FloatPerLine(stdout_metric_source, "runtime", unit="ms").lower_is_better()
 
 
 def _iteration_suite(command, *, warmup=0, runs=1, metric=None):
@@ -107,8 +107,8 @@ def test_multi_metric_iterations_pair_up():
     cmd = ["sh", "-c", "echo 't: 1.0 m: 10'; echo 't: 2.0 m: 20'"]
     s = _iteration_suite(
         cmd,
-        metric=RegexMetric("t", r"t: ([\d.]+)", StdoutMetricSource, iterate=True),
-    ).with_metric(RegexMetric("m", r"m: ([\d.]+)", StdoutMetricSource, iterate=True))
+        metric=RegexMetric("t", r"t: ([\d.]+)", stdout_metric_source, iterate=True),
+    ).with_metric(RegexMetric("m", r"m: ([\d.]+)", stdout_metric_source, iterate=True))
     report = SequentialRunner().run(plan([s], Params()))
     assert len(report.executions) == 1
     iterations = report.executions[0].iterations
@@ -127,7 +127,7 @@ def test_regex_without_iterate_stays_a_process_sample():
     # sample, so nothing is framed into iterations.
     cmd = ["sh", "-c", "echo 'x: 1.0'; echo 'x: 2.0'"]
     s = _iteration_suite(
-        cmd, metric=RegexMetric("x", r"x: ([\d.]+)", StdoutMetricSource)
+        cmd, metric=RegexMetric("x", r"x: ([\d.]+)", stdout_metric_source)
     )
     execution = SequentialRunner().run(plan([s], Params())).executions[0]
     assert execution.iterations == []

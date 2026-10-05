@@ -28,7 +28,7 @@ from bench import (
 )
 from bench.builder import default_runner
 from bench.builder.suite import plan
-from bench.core.metric import StdoutMetricSource
+from bench.core.metric import stdout_metric_source
 from bench.params import (
     Params,
     SharedReporterParams,
@@ -77,7 +77,7 @@ def test_sequential_three_runs_yields_three_samples():
         .with_command(["sh", "-c", "echo 0.5"])
         .with_cwd(Path("/tmp"))
         .with_metric(
-            FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+            FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
         )
         .with_runs(3),
     )
@@ -138,7 +138,7 @@ def test_parallel_runs_convergence_benchmarks():
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
             .with_metric(
-                FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+                FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
             )
             .with_runs(
                 CoefficientOfVariation("runtime", threshold=0.5, window=2, min_runs=2)
@@ -167,7 +167,7 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
             .with_metric(
-                FloatPerLine(StdoutMetricSource, "runtime", unit="s").lower_is_better()
+                FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
             )
             .with_runs(n_runs)
             for i in range(n_bench)

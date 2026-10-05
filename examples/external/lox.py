@@ -16,13 +16,13 @@ from bench import (
     Context,
     FloatPerLine,
     SharedBenchParams,
-    StdoutMetricSource,
     SystemTime,
     UserTime,
     bench,
     bench_app,
     from_files,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 
@@ -55,7 +55,7 @@ lox_suite = (
     .with_runs(10)
     .with_metric(
         FloatPerLine.last_line(
-            StdoutMetricSource, "runtime", unit="s"
+            stdout_metric_source, "runtime", unit="s"
         ).lower_is_better(),
         max_rss(),
         UserTime(),
@@ -77,7 +77,7 @@ zoo_suite = (
     .with_runs(5)
     .with_metric(
         FloatPerLine(
-            StdoutMetricSource, "throughput", line=2, unit="iter"
+            stdout_metric_source, "throughput", line=2, unit="iter"
         ).higher_is_better()
     )
 )

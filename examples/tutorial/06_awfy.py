@@ -32,10 +32,10 @@ from bench import (
     GeomeanComparisonSummary,
     RegexMetric,
     SharedBenchParams,
-    StdoutMetricSource,
     bench,
     bench_app,
     max_rss,
+    stdout_metric_source,
     suite,
 )
 
@@ -76,7 +76,7 @@ awfy = (
         RegexMetric(
             "runtime",
             r"runtime: (\d+)us",
-            StdoutMetricSource,
+            stdout_metric_source,
             unit="us",
             iterate=True,
         ).lower_is_better(),

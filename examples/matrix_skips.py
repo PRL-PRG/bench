@@ -21,7 +21,7 @@ roughly 2x slower than VM2 and bigger `size` slightly slower.
 
 import os
 
-from bench import FloatPerLine, StdoutMetricSource, bench, run, suite
+from bench import FloatPerLine, bench, run, stdout_metric_source, suite
 
 
 def cmd(ctx):
@@ -51,7 +51,7 @@ s = (
         .with_filter(lambda b: b.data["size"] == 500),
     )
     .with_metric(
-        FloatPerLine(StdoutMetricSource, "runtime", unit="ms").lower_is_better()
+        FloatPerLine(stdout_metric_source, "runtime", unit="ms").lower_is_better()
     )
     .with_runs(5)
     # A benchmark runs with exactly the environment it is given, so a command

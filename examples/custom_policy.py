@@ -21,10 +21,10 @@ from dataclasses import dataclass
 from bench import (
     PolicyState,
     RegexMetric,
-    StdoutMetricSource,
     StoppingPolicy,
     bench,
     run,
+    stdout_metric_source,
     suite,
 )
 
@@ -73,7 +73,7 @@ s = suite(
     bench("p")
     .with_command(["bash", "-c", SCRIPT])
     .with_metric(
-        RegexMetric("READY", r"READY\s+(\d)", StdoutMetricSource, iterate=True)
+        RegexMetric("READY", r"READY\s+(\d)", stdout_metric_source, iterate=True)
     )
     .with_runs(ConsecutiveReady(n=3).at_most(20)),
     # A benchmark runs with exactly the environment it is given, so the script
