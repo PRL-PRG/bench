@@ -30,7 +30,9 @@ from bench.core.metric import (
 
 def test_float_per_line_basic():
     samples = list(
-        FloatPerLine(stdout_metric_source, "runtime", unit="s").process_text("1.5\n2.5\n")
+        FloatPerLine(stdout_metric_source, "runtime", unit="s").process_text(
+            "1.5\n2.5\n"
+        )
     )
     assert [s.value for s in samples] == [1.5, 2.5]
     assert all(s.unit == "s" and s.metric == "runtime" for s in samples)
@@ -64,9 +66,9 @@ def test_line_select_last_and_nth():
     )
     assert (
         list(
-            FloatPerLine(stdout_metric_source, "runtime", line=2, unit="s").process_text(
-                text
-            )
+            FloatPerLine(
+                stdout_metric_source, "runtime", line=2, unit="s"
+            ).process_text(text)
         )[0].value
         == 2
     )
@@ -93,7 +95,9 @@ def test_regex_unit_in_pattern_or_arg():
 
 
 def test_regex_unit_defaults_to_empty():
-    samples = list(RegexMetric("n", r"(\d+)", stdout_metric_source).process_text("42\n"))
+    samples = list(
+        RegexMetric("n", r"(\d+)", stdout_metric_source).process_text("42\n")
+    )
     assert samples[0].unit == ""
 
 

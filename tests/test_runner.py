@@ -138,7 +138,9 @@ def test_parallel_runs_convergence_benchmarks():
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
             .with_metric(
-                FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
+                FloatPerLine(
+                    stdout_metric_source, "runtime", unit="s"
+                ).lower_is_better()
             )
             .with_runs(
                 CoefficientOfVariation("runtime", threshold=0.5, window=2, min_runs=2)
@@ -167,7 +169,9 @@ def test_parallel_shared_report_not_corrupted_under_concurrency():
             .with_command(["sh", "-c", "echo 1.0"])
             .with_cwd(Path("/tmp"))
             .with_metric(
-                FloatPerLine(stdout_metric_source, "runtime", unit="s").lower_is_better()
+                FloatPerLine(
+                    stdout_metric_source, "runtime", unit="s"
+                ).lower_is_better()
             )
             .with_runs(n_runs)
             for i in range(n_bench)
