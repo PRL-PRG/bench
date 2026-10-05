@@ -8,6 +8,8 @@ unbounded one has nothing to enumerate at all, so it prints a single
 
 from __future__ import annotations
 
+from bench.core.diagnostic import Diagnostic
+from bench.core.fingerprint.base import Fingerprint
 from bench.model.benchmark import Benchmark, format_benchmark_verbose, format_identifier
 from bench.model.invocation import format_command
 from bench.model.results import Report
@@ -22,6 +24,16 @@ class DryRunner(Runner):
 
     The `reporter` is ignored - a dry run produces no results to report.
     """
+
+    def run(
+        self,
+        planned: list[Benchmark],
+        reporter: Reporter = Reporter(),
+        fingerprint: Fingerprint | None = None,
+        diagnostics: list[Diagnostic] = [],
+    ) -> Report:
+        # Ignore the passed-in reporter
+        return super().run(planned, Reporter(), fingerprint, diagnostics)
 
     def run_with_report(
         self, planned: list[Benchmark], reporter: Reporter, report: Report
