@@ -132,7 +132,9 @@ def format_benchmark(
     head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
     if variant_label:
         return f"{head}/{variant_label}"
-    return f"{head} ({format_variant_pairs(variant)})"
+    elif variant:
+        return f"{head} ({format_variant_pairs(variant)})"
+    return head
 
 
 def format_identifier(
