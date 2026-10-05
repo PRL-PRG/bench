@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from bench import Invocation
-from bench.core.process import execute, spawn_streaming
+from bench.core.process import execute_invocation, spawn_streaming
 from bench.model.benchmark import Variant, format_identifier
 from bench.model.invocation import TIMEOUT_RC
 
@@ -42,7 +42,7 @@ def test_execute_timeout_kills_the_whole_process_group(tmp_path: Path):
         timeout=0.3,
         inherit_env=True,
     )
-    res = execute(exe)
+    res = execute_invocation(exe)
     assert res.returncode == TIMEOUT_RC
 
     workload = int(pidfile.read_text())
@@ -60,7 +60,7 @@ def test_execute_without_stdin_gives_the_child_devnull():
         cwd=Path("/tmp"),
         inherit_env=True,
     )
-    res = execute(exe)
+    res = execute_invocation(exe)
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip() == "/dev/null"
 
@@ -69,7 +69,7 @@ def test_execute_feeds_the_given_stdin():
     exe = Invocation(
         command=("cat",), cwd=Path("/tmp"), stdin=b"hello\n", inherit_env=True
     )
-    res = execute(exe)
+    res = execute_invocation(exe)
     assert res.stdout == "hello\n"
 
 

@@ -8,7 +8,6 @@ from pathlib import Path
 from bench.core.fingerprint.base import Fingerprint, Probe
 from bench.core.process import execute
 from bench.error import BenchError
-from bench.model.invocation import Invocation
 
 
 class GitProbe(Probe):
@@ -56,10 +55,8 @@ class GitProbe(Probe):
 
     def run_git(self, *args: str) -> str | None:
         res = execute(
-            Invocation(
-                command=[self.git_binary, *args],
-                cwd=self.folder,
-                inherit_env=True,
-            )
+            command=[self.git_binary, *args],
+            cwd=self.folder,
+            inherit_env=True,
         )
         return res.stdout.strip() if res.returncode == 0 else None

@@ -17,7 +17,6 @@ from pathlib import Path
 from bench.core.metric.base import IterationMetric, stderr_metric_source
 from bench.core.process import execute
 from bench.model.benchmark import Benchmark
-from bench.model.invocation import Invocation
 from bench.model.results import Direction, Execution, Sample
 from bench.report.dir import execution_dir
 from bench.runner import Controller
@@ -201,11 +200,9 @@ class PerfRecord(Controller):
             return
 
         script = execute(
-            Invocation(
-                command=["perf", "script", "-i", str(data_file)],
-                cwd=data_file.parent,
-                inherit_env=True,
-            )
+            command=["perf", "script", "-i", str(data_file)],
+            cwd=data_file.parent,
+            inherit_env=True,
         )
         if script.is_failure():
             return

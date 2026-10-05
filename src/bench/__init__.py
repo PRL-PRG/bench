@@ -93,6 +93,7 @@ from bench.core.policy import (
 )
 from bench.core.process import (
     execute,
+    execute_invocation,
 )
 from bench.error import BenchError, print_exception
 from bench.model.benchmark import (
@@ -254,6 +255,7 @@ __all__ = [
     "MaxDuration",
     # bench.core.process
     "execute",
+    "execute_invocation",
     # bench.error
     "BenchError",
     "print_exception",

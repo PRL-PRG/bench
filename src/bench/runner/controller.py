@@ -8,7 +8,7 @@ import time
 from typing import TYPE_CHECKING
 
 from bench.core.outlier import NoDetection, OutlierDetection
-from bench.core.process import execute, interrupted
+from bench.core.process import execute_invocation, interrupted
 from bench.model.benchmark import format_benchmark_verbose
 from bench.model.invocation import InvocationResult
 from bench.model.results import Execution, Iteration, Sample, diagnostic_excerpt
@@ -169,7 +169,7 @@ class Controller:
             h.setup(b)
 
         # The execution
-        result = self.evaluate_invocation(b, execute(b.invocation))
+        result = self.evaluate_invocation(b, execute_invocation(b.invocation))
 
         # Tear down
         for h in reversed(b.hooks):

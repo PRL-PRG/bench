@@ -27,8 +27,10 @@ from bench.model.invocation import (
     SPAWN_FAIL_RC,
     TIMEOUT_RC,
     Command,
+    Env,
     Invocation,
     InvocationResult,
+    Timeout,
 )
 
 _INTERRUPTED = threading.Event()
@@ -130,7 +132,30 @@ def _resolve_command(command: Command) -> Command:
     return cmd
 
 
-def execute(exe: Invocation) -> InvocationResult:
+def execute(
+    command: Command,
+    cwd: Path,
+    env: Env = {},
+    inherit_env: bool = False,
+    timeout: Timeout = None,
+    stdin: bytes | None = None,
+    capture_output: bool = True,
+) -> InvocationResult:
+    """Wrapper around `execute_invocation`"""
+    return execute_invocation(
+        Invocation(
+            command=command,
+            cwd=cwd,
+            env=env,
+            inherit_env=inherit_env,
+            timeout=timeout,
+            stdin=stdin,
+            capture_output=capture_output,
+        )
+    )
+
+
+def execute_invocation(exe: Invocation) -> InvocationResult:
     """Spawn one subprocess and return an InvocationResult.
 
     Honors `exe.timeout` (returncode `TIMEOUT_RC` on timeout), captures

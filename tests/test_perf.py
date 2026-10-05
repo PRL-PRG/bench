@@ -197,7 +197,7 @@ def _fake_perf_record(monkeypatch, *, returncode: int = 0) -> list[Invocation]:
         Path(command[command.index("-o") + 1]).write_bytes(b"0123456789")
         return InvocationResult(invocation, returncode=returncode, runtime=0.1)
 
-    monkeypatch.setattr(controller_module, "execute", execute)
+    monkeypatch.setattr(controller_module, "execute_invocation", execute)
     return seen
 
 
@@ -227,8 +227,8 @@ def test_perf_record_reads_frames_from_perf_script(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         perf_module,
         "execute",
-        lambda invocation: InvocationResult(
-            invocation, returncode=0, runtime=0.1, stdout=SCRIPT_OUT
+        lambda **kwargs: InvocationResult(
+            Invocation(**kwargs), returncode=0, runtime=0.1, stdout=SCRIPT_OUT
         ),
     )
     recorder = PerfRecord(tmp_path)
