@@ -139,9 +139,16 @@ def test_awfy_tutorial_harness_resolves_inside_its_cwd():
 )
 def test_custom_metric_tutorial_measures_every_suite(tmp_path: Path):
     vm = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    tutorial = TUTORIAL / "04_custom_metric.py"
+    planned_vms = {
+        shlex.split(c)[0]
+        for c in _dry_commands(_run_tutorial(tutorial, "--dry").stdout)
+    }
+    if vm not in planned_vms:
+        pytest.skip(f"{vm} is not in the tutorial's vm matrix {sorted(planned_vms)}")
     out = tmp_path / "r.json"
     _run_tutorial(
-        TUTORIAL / "04_custom_metric.py",
+        tutorial,
         "--include",
         f"^example/.*vm={vm}",
         "--json",
