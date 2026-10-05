@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -113,19 +113,11 @@ class Variant:
 # ---------------------------------------------------------------------------
 
 
-def format_variant_pairs(pairs: Iterable[tuple[str, str]]) -> str:
+def format_variant_pairs(pairs: Variant) -> str:
     """`k=v, ...` naming a variant on its own. `""` if empty. Unlike
     `format_variant` this carries no surrounding ` (...)`, so it also serves where
     the variant is the whole string: a summary label, a directory component."""
     return ", ".join(f"{k}={v}" for k, v in pairs)
-
-
-def format_variant(variant: Variant) -> str:
-    """` (k=v, ...)` suffix identifying a matrix variant. `""` if empty."""
-    if not variant:
-        return ""
-
-    return f" ({format_variant_pairs(variant)})"
 
 
 def format_benchmark(
@@ -140,7 +132,7 @@ def format_benchmark(
     head = benchmark if suite == benchmark else f"{suite}/{benchmark}"
     if variant_label:
         return f"{head}/{variant_label}"
-    return f"{head}{format_variant(variant)}"
+    return f"{head} ({format_variant_pairs(variant)})"
 
 
 def format_identifier(

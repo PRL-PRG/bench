@@ -37,7 +37,11 @@ from bench.core.fingerprint import (
 )
 from bench.core.stats import summarize
 from bench.error import BenchError, print_exception
-from bench.model.benchmark import Benchmark, format_benchmark, format_variant
+from bench.model.benchmark import (
+    Benchmark,
+    format_benchmark,
+    format_variant_pairs,
+)
 from bench.model.results import Report, report_from_json
 from bench.params import (
     SHOW_DESCRIPTION,
@@ -508,7 +512,7 @@ def _list_planned_benchmarks(planned: list[Benchmark]) -> Tree:
                 bench_node = node.add(Text(name, style="bench.label"))
                 for b in variants:
                     bench_node.add(
-                        Text(b.variant_label or format_variant(b.variant).strip())
+                        Text(b.variant_label or f"({format_variant_pairs(b.variant)})")
                     )
             else:
                 b = variants[0]

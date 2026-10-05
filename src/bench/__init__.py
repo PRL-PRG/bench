@@ -146,7 +146,6 @@ from bench.report import (
     ProgressReporter,
     Reporter,
     execution_dir,
-    variant_path,
 )
 from bench.runner import (
     Controller,
@@ -305,7 +304,6 @@ __all__ = [
     "CompositeReporter",
     "CsvReporter",
     "execution_dir",
-    "variant_path",
     "DirReporter",
     "JsonReporter",
     "ProgressReporter",
