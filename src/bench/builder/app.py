@@ -346,7 +346,7 @@ class BenchAppBuilder(BuilderBase):
                 )
 
             ns = parser.parse_args(args)
-            if ns.cmd == "show":
+            if "cmd" in ns and ns.cmd == "show":
                 summary = self.get_summary(use_defaults=True)
                 if summary is None:
                     raise BenchError("Cannot show without any summary")
