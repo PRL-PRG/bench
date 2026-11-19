@@ -1,21 +1,17 @@
-"""Thermal: was the CPU hot or throttled while a benchmark ran?
+"""CPU temperature and thermal throttling during each execution.
 
-A hot or throttled CPU runs slower, so its numbers are suspect. `Thermal` is
-both a `Hook` and a `Metric`; add the same object as each:
+A hot or throttled CPU runs slower, so the measurements taken on it are
+suspect. `Thermal` is both a `Hook` and a `Metric`; add the same object as
+each::
 
     t = Thermal()
     bench("x").with_hook(t).with_metric(t)
 
-Around every execution it samples the CPU package temperature (Linux hwmon:
-`coretemp` on Intel, `k10temp` on AMD) and reads the kernel's thermal-throttle
-counters, then emits two process samples:
-
-- `cpu_temp_max`: the hottest package temperature seen (C);
-- `cpu_throttle`: how many throttle events the CPUs counted (summed over CPUs).
-
-Both carry `extra={"suspect": True}` when the CPU throttled or came within
-`margin` degrees of the temperature where it starts throttling (hwmon's `crit`,
-else `fallback_crit`). Where the sensors are missing, it emits nothing.
+It emits two process samples, `cpu_temp_max` (C) and `cpu_throttle` (throttle
+events), marked `extra={"suspect": True}` when the CPU throttled or came within
+`margin` degrees of a limit the hardware declares. On Linux it reads the CPU's
+hwmon and thermal-zone sensors and the kernel's throttle counters; where they
+are missing it emits nothing, and a sensor that fails never fails a benchmark.
 """
 
 from __future__ import annotations
@@ -33,113 +29,126 @@ from bench.model.results import Sample
 if TYPE_CHECKING:
     from bench.model.benchmark import Benchmark
 
-_DRIVERS = {"coretemp": ("Package id",), "k10temp": ("Tctl", "Tdie")}
+# hwmon drivers of CPU packages, and the labels of their package sensors
+_HWMON = {"coretemp": ("Package id",), "k10temp": ("Tctl", "Tdie")}
+# thermal zones that measure the CPU, by their type
+_ZONES = ("cpu", "pkg", "soc")
+_TRIPS = ("passive", "hot", "critical")
+
+type Sensor = tuple[Path, int | None]  # its reading, and its limit in m°C
 
 
-def _read(path: Path) -> int | None:
+def _text(path: Path) -> str:
     try:
-        return int(path.read_text())
-    except (OSError, ValueError):
+        return path.read_text().strip()
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _int(path: Path) -> int | None:
+    try:
+        return int(_text(path))
+    except ValueError:
         return None
 
 
-def package_sensors(sysfs: Path = Path("/sys")) -> list[tuple[Path, int | None]]:
-    """(temp*_input, crit in m°C or None) of every CPU package sensor."""
-    sensors: list[tuple[Path, int | None]] = []
-    for hwmon in sorted((sysfs / "class/hwmon").glob("hwmon*")):
-        try:
-            labels = _DRIVERS.get((hwmon / "name").read_text().strip())
-        except OSError:
-            continue
-        if labels is None:
-            continue
-        for label in sorted(hwmon.glob("temp*_label")):
-            if label.read_text().strip().startswith(labels):
-                base = label.name.removesuffix("_label")
-                sensors.append((hwmon / f"{base}_input", _read(hwmon / f"{base}_crit")))
+def cpu_sensors(sysfs: Path = Path("/sys")) -> list[Sensor]:
+    """The CPU temperature sensors, each with the limit it declares."""
+    sensors: list[Sensor] = []
+    for hwmon in sorted(sysfs.glob("class/hwmon/hwmon*")):
+        labels = _HWMON.get(_text(hwmon / "name"))
+        for label in sorted(hwmon.glob("temp*_label")) if labels else []:
+            if _text(label).startswith(labels or ()):
+                base = str(label).removesuffix("_label")
+                sensors.append((Path(f"{base}_input"), _int(Path(f"{base}_crit"))))
+    for zone in sorted(sysfs.glob("class/thermal/thermal_zone*")):
+        if any(z in _text(zone / "type").lower() for z in _ZONES):
+            trips = [
+                _int(Path(str(t).replace("_type", "_temp")))
+                for t in zone.glob("trip_point_*_type")
+                if _text(t) in _TRIPS
+            ]
+            limits = [t for t in trips if t is not None and t > 0]
+            sensors.append((zone / "temp", min(limits, default=None)))
     return sensors
 
 
 def throttle_events(sysfs: Path = Path("/sys")) -> int | None:
     """Thermal-throttle events counted so far, summed over all CPUs."""
-    counts = [
-        _read(f)
-        for f in (sysfs / "devices/system/cpu").glob(
-            "cpu[0-9]*/thermal_throttle/*_throttle_count"
-        )
-    ]
-    counts = [c for c in counts if c is not None]
+    files = sysfs.glob("devices/system/cpu/cpu[0-9]*/thermal_throttle/*_throttle_count")
+    counts = [c for c in map(_int, files) if c is not None]
     return sum(counts) if counts else None
 
 
 class _Watch:
-    """Sample the hottest package temperature every `interval` s until stopped."""
+    """Samples the sensors every `interval` seconds until stopped."""
 
-    def __init__(
-        self, sensors: list[tuple[Path, int | None]], sysfs: Path, interval: float
-    ) -> None:
-        self.sensors, self.sysfs = sensors, sysfs
+    def __init__(self, thermal: Thermal) -> None:
+        self.thermal = thermal
         self.hottest: int | None = None
-        self.throttles_before = throttle_events(sysfs)
+        self.hot = False
+        self.throttles_before = throttle_events(thermal.sysfs)
         self.throttles: int | None = None
         self._stop = threading.Event()
         self._sample()
-        self._thread = threading.Thread(
-            target=self._loop, args=(interval,), daemon=True
-        )
+        self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def _sample(self) -> None:
-        for path, _ in self.sensors:
-            t = _read(path)
-            if t is not None and (self.hottest is None or t > self.hottest):
-                self.hottest = t
+        for path, limit in self.thermal.sensors:
+            if (t := _int(path)) is None:
+                continue
+            self.hottest = t if self.hottest is None else max(self.hottest, t)
+            if limit is not None and t >= limit - self.thermal.margin * 1000:
+                self.hot = True
 
-    def _loop(self, interval: float) -> None:
-        while not self._stop.wait(interval):
+    def _loop(self) -> None:
+        while not self._stop.wait(self.thermal.interval):
             self._sample()
 
     def stop(self) -> None:
         self._stop.set()
         self._thread.join()
         self._sample()
-        after = throttle_events(self.sysfs)
+        after = throttle_events(self.thermal.sysfs)
         if self.throttles_before is not None and after is not None:
             self.throttles = after - self.throttles_before
 
 
 class Thermal(Hook, Metric):
-    """CPU temperature and throttling during each execution (see module doc)."""
+    """CPU temperature and thermal throttling around each execution."""
 
     def __init__(
-        self,
-        interval: float = 1.0,
-        margin: float = 10.0,
-        fallback_crit: float = 100.0,
-        sysfs: Path = Path("/sys"),
+        self, interval: float = 1.0, margin: float = 10.0, sysfs: Path = Path("/sys")
     ) -> None:
         Metric.__init__(self, "cpu_temp_max", "C")
-        self.interval, self.margin, self.fallback_crit = interval, margin, fallback_crit
-        self.sysfs = sysfs
-        self._sensors = package_sensors(sysfs)
-        # one watch per thread: executions may run in parallel
-        self._local = threading.local()
+        self.interval, self.margin, self.sysfs = interval, margin, sysfs
+        try:
+            self.sensors = cpu_sensors(sysfs)
+            self.observable = bool(self.sensors) or throttle_events(sysfs) is not None
+        except Exception:
+            self.sensors, self.observable = [], False
+        self._local = threading.local()  # executions may run in parallel threads
 
     def setup(self, benchmark: Benchmark) -> None:
-        self._local.watch = _Watch(self._sensors, self.sysfs, self.interval)
+        self._local.watch = None
+        if self.observable:
+            try:
+                self._local.watch = _Watch(self)
+            except Exception:
+                pass
 
     def teardown(self, benchmark: Benchmark) -> None:
-        self._local.watch.stop()
+        if (watch := getattr(self._local, "watch", None)) is not None:
+            watch.stop()
 
     def process(self, data: InvocationResult) -> Iterable[Sample]:
         watch: _Watch | None = getattr(self._local, "watch", None)
         self._local.watch = None
         if watch is None:
             return
-        crits = [c / 1000 for _, c in self._sensors if c is not None]
-        limit = (min(crits) if crits else self.fallback_crit) - self.margin
-        hot = watch.hottest is not None and watch.hottest / 1000 >= limit
-        extra = {"suspect": True} if hot or (watch.throttles or 0) > 0 else {}
+        suspect = watch.hot or (watch.throttles or 0) > 0
+        extra = {"suspect": True} if suspect else {}
         if watch.hottest is not None:
             yield self.get_sample(watch.hottest / 1000, extra=extra)
         if watch.throttles is not None:
