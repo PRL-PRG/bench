@@ -78,6 +78,19 @@ def test_thermal_zone_uses_its_lowest_trip_point(tmp_path: Path):
     assert _measure(Thermal(sysfs=root)) == {"cpu_temp_max": (77.0, {"suspect": True})}
 
 
+def test_thermal_zones_are_ignored_where_hwmon_covers_the_cpu(tmp_path: Path):
+    root = _write(
+        _coretemp(tmp_path),
+        {
+            "class/thermal/thermal_zone0/type": "CPUV\n",  # a firmware policy zone
+            "class/thermal/thermal_zone0/temp": "55000\n",
+            "class/thermal/thermal_zone0/trip_point_0_type": "passive\n",
+            "class/thermal/thermal_zone0/trip_point_0_temp": "60050\n",
+        },
+    )
+    assert _measure(Thermal(sysfs=root))["cpu_temp_max"] == (50.0, {})
+
+
 def test_without_a_declared_limit_nothing_is_guessed(tmp_path: Path):
     root = _write(
         tmp_path,

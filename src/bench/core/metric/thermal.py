@@ -61,6 +61,10 @@ def cpu_sensors(sysfs: Path = Path("/sys")) -> list[Sensor]:
             if _text(label).startswith(labels or ()):
                 base = str(label).removesuffix("_label")
                 sensors.append((Path(f"{base}_input"), _int(Path(f"{base}_crit"))))
+    if sensors:
+        # where a driver covers the package, thermal zones add only firmware
+        # policy zones, whose trip points are not CPU limits
+        return sensors
     for zone in sorted(sysfs.glob("class/thermal/thermal_zone*")):
         if any(z in _text(zone / "type").lower() for z in _ZONES):
             trips = [
