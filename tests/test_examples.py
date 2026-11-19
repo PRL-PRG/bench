@@ -9,7 +9,7 @@ Two layers, both parametrized over the top-level ``examples/*.py``:
   - **run** (`test_example_runs`): each example is executed as a subprocess and
     must exit 0. This runs the benchmarks end to end, catching runtime breakage
     the import layer can't see. ``perf_cache_misses.py`` is skipped unless this
-    is Linux with ``perf`` available.
+    is Linux with a ``perf`` that can count its hardware events.
 
 Any recorded benchmark failure makes the process exit 1, so the exit code also
 asserts "zero failures" - except for the examples in ``EXPECTED_EXIT``
@@ -48,7 +48,16 @@ EXPECTED_EXIT = {"failure_handling.py": 1}
 
 
 def _perf_available() -> bool:
-    return sys.platform.startswith("linux") and shutil.which("perf") is not None
+    if not sys.platform.startswith("linux") or shutil.which("perf") is None:
+        return False
+    # Installed is not enough: perf_event_paranoid (CI runners) or a VM without
+    # hardware counters makes `perf stat` fail or report <not supported>.
+    probe = subprocess.run(
+        ["perf", "stat", "-e", "cache-misses,cache-references", "true"],
+        capture_output=True,
+        text=True,
+    )
+    return probe.returncode == 0 and "<not supported>" not in probe.stderr
 
 
 def test_examples_present():
@@ -73,7 +82,7 @@ def test_example_imports(path: Path):
 @pytest.mark.parametrize("path", EXAMPLE_FILES, ids=lambda p: p.name)
 def test_example_runs(path: Path):
     if path.name == PERF_EXAMPLE and not _perf_available():
-        pytest.skip("perf example requires Linux with perf available")
+        pytest.skip("perf cannot count hardware events here")
     # --no-progress keeps this layer's output readable, and an example that
     # configures no output sink of its own must still run under it.
     proc = subprocess.run(
