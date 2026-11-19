@@ -27,7 +27,10 @@ packages = ["src/bench"]
 # Dev tools
 # ----------
 [dependency-groups]
-test = ["pytest"]
+test = [
+    "pytest",
+    "pytest-cov>=7.1.0",
+]
 lint = ["ruff>=0.15.17", "pyright>=1.1.408"]
 docs = [
     "mkdocs-gen-files>=0.6.1",
@@ -44,6 +47,20 @@ default-groups = ["test"]
 # ----------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--cov", "--cov-report=term-missing:skip-covered"]
+
+[tool.coverage.run]
+source = ["bench"]
+branch = true
+# CLI and example tests spawn `python -m bench`; without this they contribute nothing.
+patch = ["subprocess"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
 
 # ----------
 # Lint

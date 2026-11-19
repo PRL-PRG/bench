@@ -5,3 +5,6 @@ build/
 .venv/
 site/
 /examples/external/harness-*
+.coverage
+.coverage.*
+htmlcov/

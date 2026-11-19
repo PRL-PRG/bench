@@ -24,6 +24,19 @@ jobs:
       - name: Lint, typecheck, test
         run: make check
 
+      - name: Coverage summary
+        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+        run: |
+          uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          uv run coverage html
+
+      - name: Upload coverage HTML report
+        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+
       - name: Format
         if: ${{ !cancelled() }}
         run: make check-format

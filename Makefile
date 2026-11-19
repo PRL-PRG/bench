@@ -23,6 +23,13 @@ check-format:
 	uv run $(LINT_FLAGS) ruff format --check
 
 # -------------
+# coverage report
+# -------------
+.PHONY:
+coverage-html:
+	uv run coverage html
+
+# -------------
 # act
 # -------------
 .PHONY: format fix-lint
