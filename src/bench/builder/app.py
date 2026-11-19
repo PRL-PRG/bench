@@ -366,11 +366,11 @@ class BenchAppBuilder(BuilderBase):
 
         return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
-    def main(self, args: list[str] | Params | None = None) -> None:
+    def main(self, args: list[str] | Params | None = None) -> Report:
         """`run_cli` for a `__main__`: a user-facing error is printed as a clean
         stderr message and exits with its exit code instead of a traceback."""
         try:
-            self.run_cli(args)
+            return self.run_cli(args)
         except BenchError as e:
             print_exception(e, with_traceback=False)
             sys.exit(e.exit_code)
@@ -384,7 +384,7 @@ class BenchAppBuilder(BuilderBase):
 # ---------------------------------------------------------------------------
 
 
-def run(*suites: SuiteBuilder) -> None:
+def run(*suites: SuiteBuilder) -> Report:
     """Run suites with default settings: sugar for
     `bench_app(<script name>).add(*suites).main()`."""
     return bench_app(Path(sys.argv[0]).stem).add(*suites).main()
