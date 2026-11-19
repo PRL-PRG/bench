@@ -1,6 +1,7 @@
 # bench
 
 [![CI](https://github.com/PRL-PRG/bench/actions/workflows/ci.yml/badge.svg)](https://github.com/PRL-PRG/bench/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/PRL-PRG/bench/badges/coverage.json)](https://github.com/PRL-PRG/bench/actions/workflows/ci.yml?query=branch%3Amain)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

@@ -14,6 +14,8 @@ jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishes the coverage badge to the `badges` branch
     steps:
       - uses: actions/checkout@v5
 
@@ -43,6 +45,28 @@ jobs:
         with:
           name: coverage-html
           path: htmlcov/
+
+      - name: Coverage badge JSON
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('.coverage') != '' }}
+        run: |
+          pct=$(uv run coverage report --format=total)
+          if   [ "$pct" -ge 90 ]; then color=brightgreen
+          elif [ "$pct" -ge 75 ]; then color=green
+          elif [ "$pct" -ge 60 ]; then color=yellow
+          else                         color=red
+          fi
+          mkdir -p badge
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
+            "$pct" "$color" > badge/coverage.json
+
+      - name: Publish coverage badge
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('badge/coverage.json') != '' }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ github.token }}
+          publish_branch: badges
+          publish_dir: badge
+          force_orphan: true
 
       - name: Format
         if: ${{ !cancelled() }}
