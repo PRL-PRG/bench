@@ -10,6 +10,7 @@ from bench.core.metric.float import FloatPerLine
 from bench.core.metric.rebench import RebenchMetric
 from bench.core.metric.regex import RegexMetric
 from bench.core.metric.rusage import RUsage, max_rss
+from bench.core.metric.thermal import Thermal
 from bench.core.metric.time import SystemTime, Time, UserTime
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "SystemTime",
     "RUsage",
     "max_rss",
+    "Thermal",
     "RebenchMetric",
     "RegexMetric",
     "FloatPerLine",

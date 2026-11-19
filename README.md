@@ -84,7 +84,10 @@ runs spaced with `.with_cooldown(s)`, and a suite's order randomized with
 sources, exiting non-zero on a high-severity one. On Linux as root, `bench
 denoise minimize|restore|status` quiets those knobs and reverts them.
 `bench run --check-environment` / `--denoise` do the same around a run;
-scripts use `bench_app(probe=SystemProbe(), denoise=True)`.
+scripts use `bench_app(probe=SystemProbe(), denoise=True)`. During a run,
+`Thermal()` (added as both a hook and a metric) records each execution's hottest
+CPU package temperature and thermal-throttle events on Linux, flagging the
+samples `suspect` when the CPU throttled or ran near its limit.
 
 ## Development
 
