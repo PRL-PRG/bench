@@ -24,6 +24,13 @@ jobs:
       - name: Lint, typecheck, test
         run: make check
 
+      - name: Test summary
+        if: ${{ !cancelled() && hashFiles('pytest.xml') != '' }}
+        uses: test-summary/action@v2
+        with:
+          paths: pytest.xml
+          show: fail, skip
+
       - name: Coverage summary
         if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
         run: |

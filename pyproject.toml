@@ -47,7 +47,7 @@ default-groups = ["test"]
 # ----------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--cov", "--cov-report=term-missing:skip-covered"]
+addopts = ["--cov", "--cov-report=term-missing:skip-covered", "--junitxml=pytest.xml"]
 
 [tool.coverage.run]
 source = ["bench"]
