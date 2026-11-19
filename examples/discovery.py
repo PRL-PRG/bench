@@ -9,7 +9,8 @@
 """File-discovered benchmarks: every script in workloads/ becomes a benchmark.
 
 `from_files` names each benchmark by its path relative to the root (without
-extension) and stores the file as `ctx.data.path`.
+extension) and stores the file as `ctx.data.path`. `fakevm` is excluded: it is
+the harness example's workload and needs arguments.
 """
 
 from pathlib import Path
@@ -19,7 +20,10 @@ from bench import Time, from_files, run, suite
 HERE = Path(__file__).resolve().parent
 
 s = (
-    suite("discovered", *from_files(HERE / "workloads", pattern=r"\.py$"))
+    suite(
+        "discovered",
+        *from_files(HERE / "workloads", pattern=r"\.py$", exclude={"fakevm"}),
+    )
     .with_command(lambda ctx: ["python3", str(ctx.data.path)])
     .with_metric(Time())
     .with_runs(3)

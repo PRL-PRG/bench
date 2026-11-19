@@ -424,10 +424,9 @@ def test_bench_non_tty_shows_plain_progress():
 
 def test_bench_surfaces_failure_diagnostics():
     r = _run("run", "--runs", "1", "false")
-    # Returncode is 0 because the runner itself succeeded. The *benchmark*
-    # failed, which is communicated through the report - on stderr, since the
-    # failures block is the app's own output rather than a reporter's.
-    assert r.returncode == 0, r.stderr
+    # The failures block is the app's own output rather than a reporter's, so it
+    # goes to stderr.
+    assert r.returncode == 1, r.stderr
     assert "Failures" in r.stderr
     assert "exit code 1" in r.stderr
 

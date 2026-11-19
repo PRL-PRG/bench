@@ -11,10 +11,10 @@ Two layers, both parametrized over the top-level ``examples/*.py``:
     the import layer can't see. ``perf_cache_misses.py`` is skipped unless this
     is Linux with ``perf`` available.
 
-The ``run`` layer only asserts a clean exit, not "zero failures": some examples
-(``failure_handling.py``) record benchmark failures on purpose, and the process
-still exits 0. The ``workloads/`` helpers and ``hyperfine_like.sh`` (a CLI-usage
-snippet) are excluded.
+Any recorded benchmark failure makes the process exit 1, so the exit code also
+asserts "zero failures" - except for the examples in ``EXPECTED_EXIT``
+(``failure_handling.py``), which record failures on purpose. The ``workloads/``
+helpers and ``hyperfine_like.sh`` (a CLI-usage snippet) are excluded.
 
 The ``tutorial/`` scripts benchmark VMs this machine may not have, so they are
 planned with ``--dry`` from their own directory instead; only 04 is measured, on
@@ -44,6 +44,7 @@ EXTERNAL = EXAMPLES / "external"
 EXTERNAL_APPS = sorted(p for p in EXTERNAL.glob("*.py") if p.name != "sqlite_bench.py")
 
 PERF_EXAMPLE = "perf_cache_misses.py"
+EXPECTED_EXIT = {"failure_handling.py": 1}
 
 
 def _perf_available() -> bool:
@@ -81,7 +82,7 @@ def test_example_runs(path: Path):
         text=True,
         timeout=180,
     )
-    assert proc.returncode == 0, (
+    assert proc.returncode == EXPECTED_EXIT.get(path.name, 0), (
         f"{path.name} exited {proc.returncode}\n"
         f"--- stdout ---\n{proc.stdout}\n"
         f"--- stderr ---\n{proc.stderr}"
