@@ -366,11 +366,16 @@ class BenchAppBuilder(BuilderBase):
 
         return self.run(params, planned, use_defaults=True, print_diagnostics=True)
 
-    def main(self, args: list[str] | Params | None = None) -> Report:
+    def main(
+        self, args: list[str] | Params | None = None, exit_on_failure: bool = True
+    ) -> Report:
         """`run_cli` for a `__main__`: a user-facing error is printed as a clean
         stderr message and exits with its exit code instead of a traceback."""
         try:
-            return self.run_cli(args)
+            report = self.run_cli(args)
+            if exit_on_failure and len(report.failures) > 0:
+                sys.exit(1)
+            return report
         except BenchError as e:
             print_exception(e, with_traceback=False)
             sys.exit(e.exit_code)
