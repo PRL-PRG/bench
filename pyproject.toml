@@ -1,5 +1,5 @@
 [project]
-name = "bench"
+name = "bench-framework"
 version = "0.1.0"
 description = "A Python benchmarking framework and command-line tool"
 maintainers = [

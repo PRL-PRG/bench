@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"%(prog)s {_pkg_version('bench')}",
+        version=f"%(prog)s {_pkg_version('bench-framework')}",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 

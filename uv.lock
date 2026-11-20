@@ -34,7 +34,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bench"
+name = "bench-framework"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
