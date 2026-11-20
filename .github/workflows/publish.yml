@@ -1,0 +1,109 @@
+name: Publish the new version
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Which version to release (without the leading 'v')
+        type: string
+        required: true
+      skip_tests:
+        description: Skip the tests, for callers that already ran them on this version
+        type: boolean
+        default: false
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Which version to release (without the leading 'v')
+        type: string
+        required: true
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERSION_TAG: v${{ inputs.version }}
+  VERSION_REF: refs/tags/v${{ inputs.version }}
+
+jobs:
+  check:
+    name: Check the version release
+    runs-on: ubuntu-latest
+    steps:
+      # Fails unless the version exists as a tag.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.VERSION_REF }}
+          fetch-depth: 0 # full history, needed for the ancestry check against main
+
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::Tag $VERSION_TAG is not on main"
+            exit 1
+          fi
+
+      - if: ${{ !inputs.skip_tests }}
+        uses: ./.github/actions/test
+
+  build:
+    name: Build the release
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.VERSION_REF }}
+
+      - uses: astral-sh/setup-uv@v6
+
+      - run: uv build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: astral-sh/setup-uv@v6
+
+      - run: uv publish
+
+  github-release:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION_TAG" \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --generate-notes \
+            dist/*

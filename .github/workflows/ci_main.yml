@@ -1,0 +1,44 @@
+name: CI [main branch]
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-main-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish-coverage:
+    name: Publish coverage
+    runs-on: ubuntu-latest
+    needs: ci
+    permissions:
+      contents: write # publishes the coverage badge to the `badges` branch
+    steps:
+      - name: Coverage badge JSON
+        run: |
+          pct="${{ needs.ci.outputs.coverage }}"
+          if   [ "$pct" -ge 90 ]; then color=brightgreen
+          elif [ "$pct" -ge 75 ]; then color=green
+          elif [ "$pct" -ge 60 ]; then color=yellow
+          else                         color=red
+          fi
+          mkdir -p badge
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
+            "$pct" "$color" > badge/coverage.json
+
+      - name: Publish coverage badge
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ github.token }}
+          publish_branch: badges
+          publish_dir: badge
+          force_orphan: true
+

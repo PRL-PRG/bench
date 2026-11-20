@@ -62,6 +62,7 @@ addopts = ["--cov", "--cov-report=term-missing:skip-covered", "--junitxml=pytest
 [tool.coverage.run]
 source = ["bench"]
 branch = true
+relative_files = true
 # CLI and example tests spawn `python -m bench`; without this they contribute nothing.
 patch = ["subprocess"]
 

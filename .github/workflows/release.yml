@@ -1,0 +1,78 @@
+name: Release a new version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version component to bump
+        type: choice
+        options: [patch, minor, major]
+      publish:
+        description: Also publish the new version
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the branch and tests
+    runs-on: ubuntu-latest
+    steps:
+      - if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow must be run from main, not ${{ github.ref_name }}"
+          exit 1
+
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/test
+
+  bump:
+    name: Bump version
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release commit and tag
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Bump version
+        id: version
+        run: |
+          uv version --bump ${{ inputs.bump }}
+          version="$(uv version --short)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump version to ${{ steps.version.outputs.tag }}"
+          git tag "${{ steps.version.outputs.tag }}"
+
+      - name: Push
+        run: git push --atomic origin HEAD:main "${{ steps.version.outputs.tag }}"
+
+  publish:
+    needs: bump
+    if: inputs.publish
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      version: ${{ needs.bump.outputs.version }}
+      skip_tests: true
+

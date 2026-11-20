@@ -1,73 +1,50 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out, defaults to the triggering ref
+        type: string
+        default: ""
+    outputs:
+      coverage:
+        value: ${{ jobs.test.outputs.coverage }}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # When called from another workflow, `github.workflow` is the caller's name,
+  # keeping runs called from different workflows on the same ref from cancelling each other.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  check:
-    name: Check
+  test:
+    name: Test and coverage
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # publishes the coverage badge to the `badges` branch
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
     steps:
       - uses: actions/checkout@v5
-
-      - uses: astral-sh/setup-uv@v6
         with:
-          enable-cache: true
+          ref: ${{ inputs.ref }}
 
-      - name: Lint, typecheck, test
-        run: make check
-
-      - name: Test summary
-        if: ${{ !cancelled() && hashFiles('pytest.xml') != '' }}
-        uses: test-summary/action@v2
-        with:
-          paths: pytest.xml
-          show: fail, skip
+      - uses: ./.github/actions/test
 
       - name: Coverage summary
+        id: coverage
         if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
         run: |
           uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          echo "coverage=$(uv run coverage report --format=total)" >> "$GITHUB_OUTPUT"
           uv run coverage html
 
-      - name: Upload coverage HTML report
-        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+      - name: Upload coverage
+        if: ${{ !cancelled() && hashFiles('htmlcov/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
           path: htmlcov/
-
-      - name: Coverage badge JSON
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('.coverage') != '' }}
-        run: |
-          pct=$(uv run coverage report --format=total)
-          if   [ "$pct" -ge 90 ]; then color=brightgreen
-          elif [ "$pct" -ge 75 ]; then color=green
-          elif [ "$pct" -ge 60 ]; then color=yellow
-          else                         color=red
-          fi
-          mkdir -p badge
-          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
-            "$pct" "$color" > badge/coverage.json
-
-      - name: Publish coverage badge
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('badge/coverage.json') != '' }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ github.token }}
-          publish_branch: badges
-          publish_dir: badge
-          force_orphan: true
-
-      - name: Format
-        if: ${{ !cancelled() }}
-        run: make check-format
