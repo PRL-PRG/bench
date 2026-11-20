@@ -1,73 +1,29 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: Check
+  test:
+    name: Test and coverage
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # publishes the coverage badge to the `badges` branch
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Lint, typecheck, test
-        run: make check
-
-      - name: Test summary
-        if: ${{ !cancelled() && hashFiles('pytest.xml') != '' }}
-        uses: test-summary/action@v2
-        with:
-          paths: pytest.xml
-          show: fail, skip
+      - uses: ./.github/workflows/test.yml
 
       - name: Coverage summary
         if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
         run: |
           uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          echo "coverage=$(uv run coverage report --format=total)" >> "$GITHUB_OUTPUT"
           uv run coverage html
 
-      - name: Upload coverage HTML report
-        if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
+      - name: Upload coverage
+        if: ${{ !cancelled() && hashFiles('htmlcov/') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
           path: htmlcov/
-
-      - name: Coverage badge JSON
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('.coverage') != '' }}
-        run: |
-          pct=$(uv run coverage report --format=total)
-          if   [ "$pct" -ge 90 ]; then color=brightgreen
-          elif [ "$pct" -ge 75 ]; then color=green
-          elif [ "$pct" -ge 60 ]; then color=yellow
-          else                         color=red
-          fi
-          mkdir -p badge
-          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
-            "$pct" "$color" > badge/coverage.json
-
-      - name: Publish coverage badge
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && hashFiles('badge/coverage.json') != '' }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ github.token }}
-          publish_branch: badges
-          publish_dir: badge
-          force_orphan: true
-
-      - name: Format
-        if: ${{ !cancelled() }}
-        run: make check-format

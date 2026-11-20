@@ -1,0 +1,87 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Which version to release (or the latest)
+        type: string
+        default: latest
+
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Resolve latest tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Find latest vX.Y.Z tag
+        id: latest
+        run: |
+          tag=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          [ -n "$tag" ] || { echo "No vX.Y.Z tag found"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  ci:
+    name: CI
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write # requested by ci.yml's job; its badge step is skipped outside pushes
+
+  pypi:
+    name: PyPI
+    needs: [tag, ci]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+
+      - uses: astral-sh/setup-uv@v6
+
+      - run: uv build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - run: uv publish
+
+  github-release:
+    name: GitHub release
+    needs: [tag, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ needs.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --verify-tag \
+            --generate-notes \
+            dist/*
+

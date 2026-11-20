@@ -1,0 +1,48 @@
+name: Bump version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version component to bump
+        type: choice
+        options: [patch, minor, major]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: write # requested by ci.yml's job
+
+  bump:
+    name: Bump version
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release commit and tag
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Bump version
+        id: version
+        run: |
+          uv version --bump ${{ inputs.bump }}
+          echo "tag=v$(uv version --short)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump version to ${{ steps.version.outputs.tag }}"
+
+      - name: Push
+        run: git push --atomic origin HEAD:main "${{ steps.version.outputs.tag }}"
+
