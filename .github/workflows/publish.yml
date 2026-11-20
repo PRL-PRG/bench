@@ -1,56 +1,49 @@
-name: Publish
+name: Publish the new version
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Which version to release
+        type: string
+        required: true
+      skip_tests:
+        description: Skip the tests, for callers that already ran them on this version
+        type: boolean
+        default: false
+
   workflow_dispatch:
     inputs:
       version:
-        description: Which version to release (or the latest)
+        description: Which version to release
         type: string
-        default: latest
-
+        required: true
 
 concurrency:
   group: publish
   cancel-in-progress: false
 
 jobs:
-  tag:
-    name: Resolve latest tag
+  check:
+    name: Check the version release
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.latest.outputs.tag }}
+    steps:
+      # Fails unless the version exists as a tag.
+      - uses: actions/checkout@v5
+        with:
+          ref: refs/tags/${{ inputs.version }}
+
+      - if: ${{ !inputs.skip_tests }}
+        uses: ./.github/actions/test
+
+  build:
+    name: Build the release
+    needs: check
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-
-      - name: Find latest vX.Y.Z tag
-        id: latest
-        run: |
-          tag=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
-          [ -n "$tag" ] || { echo "No vX.Y.Z tag found"; exit 1; }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-  ci:
-    name: CI
-    needs: tag
-    uses: ./.github/workflows/ci.yml
-    with:
-      ref: ${{ needs.tag.outputs.tag }}
-    permissions:
-      contents: write # requested by ci.yml's job; its badge step is skipped outside pushes
-
-  pypi:
-    name: PyPI
-    needs: [tag, ci]
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write # PyPI trusted publishing
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.tag.outputs.tag }}
+          ref: refs/tags/${{ inputs.version }}
 
       - uses: astral-sh/setup-uv@v6
 
@@ -61,11 +54,26 @@ jobs:
           name: dist
           path: dist/
 
+  pypi:
+    name: PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # PyPI trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: astral-sh/setup-uv@v6
+
       - run: uv publish
 
   github-release:
     name: GitHub release
-    needs: [tag, pypi]
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release
@@ -79,9 +87,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ needs.tag.outputs.tag }}" \
+          gh release create "${{ inputs.version }}" \
             --repo "${{ github.repository }}" \
             --verify-tag \
             --generate-notes \
             dist/*
-

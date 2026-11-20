@@ -13,7 +13,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   publish-coverage:
-    name: Test and coverage
+    name: Publish coverage
     runs-on: ubuntu-latest
     needs: ci
     permissions:
@@ -21,6 +21,7 @@ jobs:
     steps:
       - name: Coverage badge JSON
         run: |
+          pct="${{ needs.ci.outputs.coverage }}"
           if   [ "$pct" -ge 90 ]; then color=brightgreen
           elif [ "$pct" -ge 75 ]; then color=green
           elif [ "$pct" -ge 60 ]; then color=yellow
@@ -28,7 +29,7 @@ jobs:
           fi
           mkdir -p badge
           printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' \
-            "${{ needs.ci.outputs.coverage }}" "$color" > badge/coverage.json
+            "$pct" "$color" > badge/coverage.json
 
       - name: Publish coverage badge
         uses: peaceiris/actions-gh-pages@v4

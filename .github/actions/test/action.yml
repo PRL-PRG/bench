@@ -1,0 +1,24 @@
+name: Test
+description: Lint, typecheck, test and check formatting
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
+    - name: Lint, typecheck, test
+      run: make check
+      shell: bash
+
+    - name: Test summary
+      if: ${{ !cancelled() && hashFiles('pytest.xml') != '' }}
+      uses: test-summary/action@v2
+      with:
+        paths: pytest.xml
+        show: fail, skip
+
+    - name: Check format
+      run: make check-format
+      shell: bash

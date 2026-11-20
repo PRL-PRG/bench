@@ -1,4 +1,4 @@
-name: Bump version
+name: Release a new version
 
 on:
   workflow_dispatch:
@@ -7,25 +7,39 @@ on:
         description: Version component to bump
         type: choice
         options: [patch, minor, major]
+      publish:
+        description: Also publish the new version
+        type: boolean
+        default: false
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  ci:
-    name: CI
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/ci.yml
-    permissions:
-      contents: write # requested by ci.yml's job
+  check:
+    name: Check the branch and tests
+    runs-on: ubuntu-latest
+    steps:
+      - if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::This workflow must be run from main, not ${{ github.ref_name }}"
+          exit 1
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: ./.github/actions/test
 
   bump:
     name: Bump version
-    needs: ci
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the release commit and tag
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -45,4 +59,11 @@ jobs:
 
       - name: Push
         run: git push --atomic origin HEAD:main "${{ steps.version.outputs.tag }}"
+
+  publish:
+    needs: bump
+    if: inputs.publish
+    uses: ./.github/workflows/release.yml
+    with:
+      version: needs.bump.outputs.tag
 

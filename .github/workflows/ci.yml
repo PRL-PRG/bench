@@ -1,21 +1,38 @@
 name: CI
 
 on:
-  workflow_call:
   pull_request:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out, defaults to the triggering ref
+        type: string
+        default: ""
+    outputs:
+      coverage:
+        value: ${{ jobs.test.outputs.coverage }}
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # When called from another workflow, `github.workflow` is the caller's name,
+  # keeping runs called from different workflows on the same ref from cancelling each other.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   test:
     name: Test and coverage
     runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
     steps:
-      - uses: ./.github/workflows/test.yml
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: ./.github/actions/test
 
       - name: Coverage summary
+        id: coverage
         if: ${{ !cancelled() && hashFiles('.coverage') != '' }}
         run: |
           uv run coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
@@ -23,7 +40,7 @@ jobs:
           uv run coverage html
 
       - name: Upload coverage
-        if: ${{ !cancelled() && hashFiles('htmlcov/') != '' }}
+        if: ${{ !cancelled() && hashFiles('htmlcov/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
