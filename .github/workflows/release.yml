@@ -16,6 +16,9 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check the branch and tests
@@ -27,8 +30,6 @@ jobs:
           exit 1
 
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.ref }}
 
       - uses: ./.github/actions/test
 
@@ -39,6 +40,7 @@ jobs:
     permissions:
       contents: write # push the release commit and tag
     outputs:
+      version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
@@ -49,13 +51,16 @@ jobs:
         id: version
         run: |
           uv version --bump ${{ inputs.bump }}
-          echo "tag=v$(uv version --short)" >> "$GITHUB_OUTPUT"
+          version="$(uv version --short)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Commit and tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
           git commit -am "Bump version to ${{ steps.version.outputs.tag }}"
+          git tag "${{ steps.version.outputs.tag }}"
 
       - name: Push
         run: git push --atomic origin HEAD:main "${{ steps.version.outputs.tag }}"
@@ -63,7 +68,11 @@ jobs:
   publish:
     needs: bump
     if: inputs.publish
-    uses: ./.github/workflows/release.yml
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+      id-token: write
     with:
-      version: needs.bump.outputs.tag
+      version: ${{ needs.bump.outputs.version }}
+      skip_tests: true
 

@@ -8,6 +8,9 @@ concurrency:
   group: ci-main-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
@@ -32,7 +35,7 @@ jobs:
             "$pct" "$color" > badge/coverage.json
 
       - name: Publish coverage badge
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
         with:
           github_token: ${{ github.token }}
           publish_branch: badges
